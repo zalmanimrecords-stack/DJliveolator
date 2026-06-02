@@ -1,0 +1,98 @@
+# 13 — Data and Persistence
+
+## Purpose
+
+Define the persisted data types for Live Mode and the rules for storing them, so
+mappings, scenes, and shows survive restarts and can be shared — without clobbering
+the user's manual edits.
+
+## Existing persistence this follows
+
+- `MilkDropVisualizer.App/Helpers/Settings.cs` — JSON settings in
+  `%LOCALAPPDATA%/MilkDropVisualizer/settings.json`, loaded on demand, debounced
+  saves (~250 ms).
+- `SessionStateService` — persists window geometry, last preset, playlist, playback
+  position, overlay state on close/save.
+- `SessionProfileManager` — existing project/export profiles (distinct from live
+  show sessions; do not overload it).
+
+Live Mode reuses the same JSON-under-`%LOCALAPPDATA%` approach and the debounced-save
+discipline, but stores its data in dedicated files so live data is separable and
+shareable.
+
+## Persisted types
+
+| Type | Doc | Contents |
+|------|-----|----------|
+| `ControllerMappingProfile` | 05 | device hint + bindings |
+| `PushProfile` | 06 | Push mapping + feedback config (a specialized mapping profile) |
+| `DjControllerProfile` | 07 | DJ controller mapping (a specialized mapping profile) |
+| `VisualScene` | 08 | preset(s), overlays, macro values, transition, beat behavior |
+| `VisualBank` | 08 | named group of scenes |
+| `VisualMacro` | 08 | macro definitions (name, range, target) |
+| `BeatGrid` | 03 | per-track beat grid / downbeat anchor (manual edits sacred) |
+| `TrackAnalysisCache` | 09 | BPM, beatgrid, waveform, key, energy per track |
+| `LivePerformanceSession` | — | active source, loaded profiles, queue, active bank |
+| `AutopilotRuleSet` | 10 | rules + scene pool + seed |
+
+## Storage layout (proposed)
+
+```text
+%LOCALAPPDATA%/MilkDropVisualizer/
+  settings.json                 # existing global settings (unchanged)
+  live/
+    mappings/<name>.json        # ControllerMappingProfile / Push / DJ profiles
+    scenes/<bank>.json          # VisualBank (contains its VisualScenes)
+    macros.json                 # VisualMacro definitions
+    autopilot/<name>.json       # AutopilotRuleSet
+    sessions/<name>.json        # LivePerformanceSession (setlists/shows)
+    cache/track-analysis.json   # TrackAnalysisCache (regenerable)
+  defaults/live/                # app-shipped defaults (read-only baseline)
+```
+
+## Persistence rules (from the plan)
+
+1. **User data separate from app defaults.** Shipped defaults (Push v1 profile,
+   starter scenes) live under `defaults/live/` and are never written to. User edits
+   are clones under `live/` (global standard #20 — don't break the baseline).
+2. **Mappings exportable / importable.** Profiles are self-contained JSON for sharing
+   (docs 05–07).
+3. **Do not overwrite manual beatgrid edits during automatic reanalysis** unless the
+   user explicitly requests it. A `BeatGrid` carries an `IsManual` flag; reanalysis
+   skips manual grids.
+4. **Regenerable vs authored.** `TrackAnalysisCache` is a cache (safe to delete);
+   scenes/mappings/sessions are authored data (treated as precious).
+
+## Versioning & migration
+
+Each file carries a `schemaVersion`. Loaders tolerate older versions and migrate
+forward; unknown newer versions load defensively (don't crash, log, fall back). This
+follows the safe-migration spirit of global standard #22 for file-based data.
+
+## Validation (global standard #19)
+
+- All loaded JSON is validated: referenced preset paths, slot ranges, action kinds,
+  device hints. Invalid entries are dropped with a logged warning, not silently
+  accepted, and never crash startup.
+- Import of a shared profile is validated the same way before it is applied.
+
+## Error handling & logging
+
+- Load/save wrapped in try/catch with the file path in context; a corrupt file is
+  backed up (`.bak`) and a default is used, so a bad file never blocks the app
+  (global standards #16, #26).
+- Never log file contents that could include user-identifying paths beyond what is
+  necessary for diagnosis.
+
+## Phase
+
+Cross-cutting. Each persisted type lands with its owning subsystem's phase; the
+`live/` layout, versioning, and the defaults-vs-user separation are established when
+the first profile is saved (Phase 5).
+
+## Risks
+
+- Beat-grid protection (#3) is easy to get wrong; the `IsManual` flag and a test that
+  asserts reanalysis skips manual grids are mandatory (doc 14).
+- Schema churn across phases — keep types additive and versioned to avoid breaking
+  saved shows.

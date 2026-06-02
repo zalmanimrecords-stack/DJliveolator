@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+artifacts/
+
+# .NET
+*.user
+*.suo
+*.userprefs
+project.lock.json
+.vs/
+
+# Rider / IDE
+.idea/
+*.DotSettings.user
+
+# Native build artifacts
+*.o
+*.obj
+*.dll.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+
+# Native dependency binaries (shipped per-platform, fetched by setup scripts)
+/native/**/bin/
+/runtimes/
