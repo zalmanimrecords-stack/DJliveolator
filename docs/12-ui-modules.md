@@ -7,6 +7,40 @@ pattern. UI is a thin action source/feedback sink — it dispatches
 `PerformanceAction`s (doc 04) and reflects feedback state; it holds no engine logic
 (global standard #4).
 
+## Visual language (chosen direction)
+
+> Decided from the design prototypes in `design/mockups/` (dark analog-rack vs.
+> vintage vs. Ableton-style). **Chosen: clean, flat, Ableton-Live-style.** The
+> canonical reference is `design/mockups/live-mode-ableton.html`; the other skins
+> are kept for record only. This supersedes the "analog-rack aesthetic" wording
+> below — that text predates the cross-platform Avalonia move and is retained only
+> for the module/feature map, not the look.
+
+Principles (translate to Avalonia `Styles`/`ControlThemes` when building
+`src/Liveolator.App`):
+
+- **Flat & dense.** Neutral grays, dark 1px hairlines, ~2–3px corner radius, no
+  gradients or drop shadows. Function over decoration.
+- **Color = meaning.** Grays carry the chrome; saturated colors are reserved for
+  clip/scene state and signal (selection yellow, play green, armed/clip orange,
+  per-track clip colors). Never color-only — pair with text/icon (standard #25).
+- **Typography.** Compact sans for labels/UI; monospace for numeric readouts
+  (BPM, time, values).
+- **Components.** Colored clip slots with a play triangle / stop square
+  (Session-View grid), thin signal meters, ring-style encoders, minimal faders.
+
+**Push 1 representation.** The performance surface mirrors the hardware on screen
+so UI and pads/encoders stay in lockstep (one source of truth — dispatcher
+feedback, doc 04):
+
+- **Pads → Visual Scene Grid** as an 8×8 Session-View grid (clips + scene-launch
+  column), see Module 4 below and doc 08.
+- **8 encoders → a row of ring encoders** bound to visual macros
+  (intensity / speed / echo / particles / kaleidoscope / zoom / hue / opacity,
+  per doc 08). Plus the **Master + Swing** encoders. Encoders are an action
+  source like any other (doc 04); the on-screen row reflects the same macro state
+  the physical encoders drive (doc 06).
+
 ## Existing UI pattern this follows
 
 `MilkDropVisualizer.App/UI.Analog/Windows/AnalogMainWindow.xaml.cs` hosts modules,
