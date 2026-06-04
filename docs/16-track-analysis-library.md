@@ -142,6 +142,22 @@ domain over a shared, fully unit-tested scan core (all in `Liveolator.Core/Libra
 The real `IFileEnumerator`, FFmpeg-backed `IAudioDecoder`, and `IVisualMediaProbe` live in the
 binding projects (Liveolator.Audio / Liveolator.Visuals); Core stays pure and hardware-free.
 
+## Deferred idea — online metadata enrichment (not now)
+
+A future, **optional** enrichment step could augment local analysis with online data
+(genre/style, plus a BPM/key **cross-check**). Decisions captured so we don't relearn them:
+
+- **Identify by acoustic fingerprint, not filename** — Chromaprint + AcoustID → MusicBrainz
+  (filenames are unreliable). Filename is fallback only.
+- **Sources:** MusicBrainz/Discogs (genre/style), Spotify audio-features or Beatport/Tunebat
+  (tempo/key/energy cross-check) — **licensing/ToS is the deciding factor for a distributed
+  app** and must be researched first (like the audio-stack decision).
+- **Architecture:** an `IMetadataProvider` seam, **offline-first** (local analysis always
+  works; enrichment only augments, with provenance local-vs-online), cached, rate-limited,
+  API keys in config (never hardcoded). Agreement with local detection → raise confidence to
+  Ok; disagreement → flag `PartiallyAnalyzed` for review.
+- **Status: deferred** (2026-06-03) by user decision; revisit after the core modules/UI.
+
 ## Phase
 
 Early — buildable in `Liveolator.Core` before the audio-library decision lands (fake
