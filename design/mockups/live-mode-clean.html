@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Liveolator — Live Mode</title>
+<style>
+  /* ============================================================
+     Liveolator — Live Mode UI mockup
+     Refined / spartan: near-monochrome, one accent, strict 8px
+     rhythm, hairline borders, no gradients/glows/shadows.
+     HTML/CSS only — design prototype, no logic.
+     ============================================================ */
+
+  :root {
+    --bg:    #0d0d0e;
+    --s1:    #151517;   /* module surface */
+    --s2:    #1c1c1f;   /* inset / well */
+    --s3:    #232327;   /* control */
+    --s4:    #2c2c31;   /* control hover */
+    --hair:  #2a2a2e;   /* the single border color */
+
+    --text:  #e7e5e0;
+    --dim:   #8c8c92;
+    --faint: #56565c;
+
+    --accent:#d99a3c;   /* the one accent — active / signal */
+    --accent-ink: #1a1206;
+    --red:   #cf5340;   /* reserved: rec / blackout / strobe */
+
+    --r: 2px;
+    --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 12px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased; letter-spacing: .01em;
+  }
+
+  .app {
+    max-width: 1440px; margin: 0 auto; padding: 16px;
+    display: grid; gap: 16px; min-height: 100vh;
+  }
+
+  .lbl { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); }
+
+  .m { background: var(--s1); border: 1px solid var(--hair); border-radius: var(--r); }
+  .m > h3 {
+    margin: 0; padding: 12px 16px 10px;
+    font-size: 10px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--faint); border-bottom: 1px solid var(--hair);
+  }
+  .m > .body { padding: 16px; }
+
+  /* HEADER */
+  .bar { display:flex; align-items:center; gap: 28px; padding: 4px; }
+  .wordmark { font-size: 13px; font-weight: 600; letter-spacing: .34em; }
+  .tempo { display:flex; align-items:baseline; gap: 8px; }
+  .tempo .v { font-family: var(--mono); font-size: 28px; font-weight: 500; }
+  .tempo .u { font-size: 10px; letter-spacing: .16em; color: var(--faint); }
+  .ticks { display:flex; gap: 6px; }
+  .ticks i { width: 6px; height: 6px; border-radius: 50%; background: var(--s4); }
+  .ticks i.on { background: var(--accent); }
+  .ticks i.beat { background: var(--dim); }
+  .bar .sp { flex: 1; }
+  .tog { display:flex; gap: 22px; }
+  .tog button { appearance:none; background:none; border:0; cursor:pointer; display:flex; align-items:center; gap:8px; padding:0;
+    font-size:10px; letter-spacing:.16em; text-transform:uppercase; color: var(--faint); }
+  .tog button .d { width:6px; height:6px; border-radius:50%; background: var(--s4); }
+  .tog button.on { color: var(--text); }
+  .tog button.on .d { background: var(--accent); }
+
+  /* PROGRAM OUT + SYNC */
+  .row-v { display:grid; grid-template-columns: 1fr 320px; gap: 16px; }
+  .prog { position:relative; min-height: 240px; border:1px solid var(--hair); border-radius: var(--r); overflow:hidden; background:#0a0a0b; }
+  .prog .frame { position:absolute; inset:0; background: radial-gradient(140% 120% at 50% 38%, #1b1b1f 0%, #0a0a0b 70%); }
+  .prog .corner { position:absolute; top:14px; left:16px; right:16px; display:flex; justify-content:space-between; }
+  .prog .corner .rec { display:flex; align-items:center; gap:8px; color: var(--dim); font-family: var(--mono); font-size:11px; }
+  .prog .corner .rec .d { width:7px; height:7px; border-radius:50%; background: var(--red); }
+  .prog .layers { position:absolute; left:16px; bottom:16px; display:flex; gap:14px; }
+  .layers .l { font-family: var(--mono); font-size:10px; color: var(--faint); display:flex; align-items:center; gap:7px; }
+  .layers .l::before { content:""; width:6px; height:6px; border-radius:1px; background: var(--s4); }
+  .layers .l.on { color: var(--text); }
+  .layers .l.on::before { background: var(--accent); }
+
+  .sync .row { display:flex; justify-content:space-between; padding: 7px 0; border-bottom:1px solid var(--hair); }
+  .sync .row:last-of-type { border-bottom:0; }
+  .sync .row .k { color: var(--faint); font-size:10px; letter-spacing:.14em; text-transform:uppercase; }
+  .sync .row .val { font-family: var(--mono); font-size:13px; }
+  .sync .row .val.acc { color: var(--accent); }
+  .keys { display:grid; grid-template-columns: repeat(3,1fr); gap:8px; margin-top:16px; }
+  .key { height:30px; display:grid; place-items:center; border:1px solid var(--hair); border-radius: var(--r);
+    background: var(--s2); color: var(--dim); font-size:10px; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; }
+  .key:hover { background: var(--s3); color: var(--text); }
+  .key.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  /* DECKS + MIXER */
+  .row-d { display:grid; grid-template-columns: 1fr 196px 1fr; gap:16px; }
+  .deck .top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .deck .id { width:22px; height:22px; border:1px solid var(--hair); border-radius: var(--r); display:grid; place-items:center; font-size:11px; font-weight:600; color: var(--dim); }
+  .deck .title { font-size:13px; font-weight:500; }
+  .deck .meta { font-family: var(--mono); font-size:10px; color: var(--faint); margin-top:2px; }
+  .wave { height:44px; margin:16px 0; background: var(--s2); border:1px solid var(--hair); border-radius: var(--r); position:relative; overflow:hidden; }
+  .wave svg { width:100%; height:100%; display:block; }
+  .wave .ph { position:absolute; top:0; bottom:0; width:1px; background: var(--accent); }
+  .cues { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; }
+  .cue { height:22px; border:1px solid var(--hair); border-radius: var(--r); background: var(--s2); display:grid; place-items:center; font-family: var(--mono); font-size:10px; color: var(--faint); cursor:pointer; }
+  .cue.set { color: var(--accent); border-color: rgba(217,154,60,.5); }
+  .ctl { display:grid; grid-template-columns: 1fr 56px; gap:18px; margin-top:16px; align-items:start; }
+  .transport { display:grid; grid-template-columns: repeat(4,1fr); gap:8px; }
+  .tb { height:34px; display:grid; place-items:center; border:1px solid var(--hair); border-radius: var(--r);
+    background: var(--s2); color: var(--dim); cursor:pointer; font-size:9px; letter-spacing:.1em; text-transform:uppercase; }
+  .tb:hover { background: var(--s3); color: var(--text); }
+  .tb svg { width:13px; height:13px; fill: currentColor; }
+  .tb.play.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .eq { display:flex; justify-content:space-between; gap:6px; margin-top:18px; }
+  .knob { display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .knob .dial { width:40px; height:40px; }
+  .knob .dial svg { width:100%; height:100%; display:block; }
+  .pitch { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .pitch .slot { width:4px; height:130px; background: var(--hair); border-radius:2px; position:relative; }
+  .pitch .slot .cap { position:absolute; left:-9px; right:-9px; height:4px; background: var(--text); border-radius:1px; }
+  .pitch .v { font-family: var(--mono); font-size:10px; color: var(--dim); }
+
+  .mix .vu { display:grid; grid-template-columns:1fr 1fr; gap:22px; justify-items:center; }
+  .stack { display:flex; align-items:flex-end; gap:10px; }
+  .meter { width:3px; height:130px; background: var(--hair); border-radius:2px; position:relative; overflow:hidden; }
+  .meter .f { position:absolute; left:0; right:0; bottom:0; background: var(--dim); }
+  .meter .f.hot { background: var(--accent); }
+  .xf { margin-top:20px; }
+  .xf .slot { height:4px; background: var(--hair); border-radius:2px; position:relative; }
+  .xf .slot .cap { position:absolute; top:-9px; bottom:-9px; width:4px; background: var(--text); border-radius:1px; left:42%; }
+  .xf .ends { display:flex; justify-content:space-between; margin-top:12px; }
+
+  /* SCENES + MASTER/FX */
+  .row-b { display:grid; grid-template-columns: 1fr 280px; gap:16px; }
+  .banks { display:flex; border:1px solid var(--hair); border-radius: var(--r); overflow:hidden; margin-bottom:16px; }
+  .banks .tab { flex:1; text-align:center; padding:8px 0; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color: var(--faint); cursor:pointer; border-right:1px solid var(--hair); }
+  .banks .tab:last-child { border-right:0; }
+  .banks .tab.on { background: var(--s3); color: var(--text); }
+  .grid { display:grid; grid-template-columns: repeat(8,1fr); gap:6px; }
+  .pad { aspect-ratio:1/1; border:1px solid var(--hair); border-radius: var(--r); background: var(--bg); position:relative; cursor:pointer; }
+  .pad.has { background: var(--s2); }
+  .pad.has::after { content:""; position:absolute; left:7px; top:7px; width:5px; height:5px; border-radius:1px; background: var(--faint); }
+  .pad.on { background: var(--accent); border-color: var(--accent); }
+  .pad.on::after { background: var(--accent-ink); }
+  .pad.pending { border-color: var(--accent); }
+  .pad.pending::after { background: var(--accent); }
+  .mf { display:flex; flex-direction:column; gap:22px; }
+  .mf .pair { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .mf .knob .dial { width:48px; height:48px; }
+  .fx { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .fx button { appearance:none; height:34px; border:1px solid var(--hair); border-radius: var(--r); background: var(--s2); color: var(--dim); font-size:10px; letter-spacing:.14em; text-transform:uppercase; cursor:pointer; }
+  .fx button:hover { color: var(--text); border-color: var(--faint); }
+
+  /* PUSH ENCODERS */
+  .encoders { display:grid; grid-template-columns: repeat(8,1fr); gap:12px; }
+  .enc { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .enc .dial { width:46px; height:46px; }
+  .enc .dial svg { width:100%; height:100%; display:block; }
+  .enc .nm { font-size:9px; letter-spacing:.14em; text-transform:uppercase; color: var(--faint); }
+  .enc .v { font-family: var(--mono); font-size:11px; color: var(--text); }
+
+  /* FOOTER */
+  .status { display:flex; align-items:center; gap:24px; padding:2px 4px; font-family: var(--mono); font-size:10px; color: var(--faint); }
+  .status .g { display:flex; align-items:center; gap:8px; }
+  .status .g .d { width:6px; height:6px; border-radius:50%; background: var(--s4); }
+  .status .g .d.on { background: var(--accent); }
+  .status .sp { flex:1; }
+
+  .note { max-width:1440px; margin:0 auto; padding:4px 16px 24px; color: var(--faint); font-size:10px; line-height:1.7; }
+</style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- HEADER -->
+    <header class="bar">
+      <div class="wordmark">LIVEOLATOR</div>
+      <div class="tempo"><span class="v">128.0</span><span class="u">BPM</span></div>
+      <div class="ticks"><i class="on"></i><i></i><i class="beat"></i><i></i></div>
+      <div class="sp"></div>
+      <div class="tog">
+        <button class="on"><span class="d"></span> Live</button>
+        <button class="on"><span class="d"></span> Autopilot</button>
+        <button><span class="d"></span> Devices 2/2</button>
+      </div>
+    </header>
+
+    <!-- PROGRAM OUT + SYNC -->
+    <section class="row-v">
+      <div class="prog">
+        <div class="frame"></div>
+        <div class="corner">
+          <span class="lbl">Program Out · 1920×1080 · 60</span>
+          <span class="rec"><span class="d"></span> REC 00:42:17</span>
+        </div>
+        <div class="layers">
+          <span class="l on">Clip</span>
+          <span class="l on">Kaleido</span>
+          <span class="l">Camera</span>
+          <span class="l">Echo</span>
+        </div>
+      </div>
+
+      <div class="m">
+        <h3>Beat Engine</h3>
+        <div class="body sync">
+          <div class="row"><span class="k">Source</span><span class="val">Master mix</span></div>
+          <div class="row"><span class="k">Tempo</span><span class="val acc">128.02</span></div>
+          <div class="row"><span class="k">Confidence</span><span class="val">94%</span></div>
+          <div class="row"><span class="k">Lock</span><span class="val">On</span></div>
+          <div class="row"><span class="k">Beat · Bar</span><span class="val">137 · 35.1</span></div>
+          <div class="keys">
+            <div class="key on">Auto</div><div class="key on">Lock</div><div class="key">Tap</div>
+            <div class="key">÷2</div><div class="key">×2</div><div class="key">Set</div>
+            <div class="key">Nudge−</div><div class="key">Nudge+</div><div class="key">Reset</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DECKS + MIXER -->
+    <section class="row-d">
+
+      <!-- DECK A -->
+      <div class="m deck">
+        <h3>Deck A</h3>
+        <div class="body">
+          <div class="top">
+            <div>
+              <div class="title">Midnight City — Extended Mix</div>
+              <div class="meta">6A · −2.1% · 03:14 / 06:48</div>
+            </div>
+            <div class="id">A</div>
+          </div>
+          <div class="wave">
+            <svg viewBox="0 0 600 44" preserveAspectRatio="none">
+              <g fill="#56565c">
+                <rect x="0" y="16" width="3" height="12"/><rect x="6" y="9" width="3" height="26"/>
+                <rect x="12" y="18" width="3" height="8"/><rect x="18" y="5" width="3" height="34"/>
+                <rect x="24" y="13" width="3" height="18"/><rect x="30" y="10" width="3" height="24"/>
+                <rect x="36" y="17" width="3" height="10"/><rect x="42" y="6" width="3" height="32"/>
+                <rect x="48" y="13" width="3" height="18"/><rect x="54" y="8" width="3" height="28"/>
+              </g>
+              <g fill="#8c8c92">
+                <rect x="62" y="15" width="3" height="13"/><rect x="68" y="10" width="3" height="24"/>
+                <rect x="74" y="18" width="3" height="8"/><rect x="80" y="8" width="3" height="28"/>
+                <rect x="86" y="13" width="3" height="18"/><rect x="92" y="5" width="3" height="34"/>
+              </g>
+            </svg>
+            <div class="ph" style="left:46%"></div>
+          </div>
+          <div class="cues">
+            <div class="cue set">1</div><div class="cue set">2</div><div class="cue">3</div><div class="cue">4</div>
+          </div>
+          <div class="ctl">
+            <div>
+              <div class="transport">
+                <div class="tb"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+                <div class="tb play on"><svg viewBox="0 0 20 20"><path d="M6 4 L16 10 L6 16 Z"/></svg></div>
+                <div class="tb">Loop</div>
+                <div class="tb">Sync</div>
+              </div>
+              <div class="eq">
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="55 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Hi</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="44 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Mid</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="30 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Low</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="40 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Flt</span></div>
+              </div>
+            </div>
+            <div class="pitch"><div class="slot"><div class="cap" style="top:52%"></div></div><span class="v">−2.1</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MIXER -->
+      <div class="m mix">
+        <h3>Mixer</h3>
+        <div class="body">
+          <div class="vu">
+            <div class="stack">
+              <div class="meter"><div class="f" style="height:62%"></div><div class="f hot" style="height:10%"></div></div>
+              <div class="pitch"><div class="slot" style="height:130px"><div class="cap" style="top:26%"></div></div></div>
+            </div>
+            <div class="stack">
+              <div class="pitch"><div class="slot" style="height:130px"><div class="cap" style="top:42%"></div></div></div>
+              <div class="meter"><div class="f" style="height:44%"></div></div>
+            </div>
+          </div>
+          <div class="xf">
+            <div class="slot"><div class="cap"></div></div>
+            <div class="ends"><span class="lbl">A</span><span class="lbl">B</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DECK B -->
+      <div class="m deck">
+        <h3>Deck B</h3>
+        <div class="body">
+          <div class="top">
+            <div>
+              <div class="title">Strobe — Club Edit</div>
+              <div class="meta">7A · +0.4% · 01:02 / 10:34</div>
+            </div>
+            <div class="id">B</div>
+          </div>
+          <div class="wave">
+            <svg viewBox="0 0 600 44" preserveAspectRatio="none">
+              <g fill="#56565c">
+                <rect x="0" y="18" width="3" height="9"/><rect x="6" y="12" width="3" height="22"/>
+                <rect x="12" y="15" width="3" height="13"/><rect x="18" y="7" width="3" height="30"/>
+                <rect x="24" y="19" width="3" height="6"/><rect x="30" y="9" width="3" height="26"/>
+                <rect x="36" y="13" width="3" height="18"/><rect x="42" y="5" width="3" height="34"/>
+                <rect x="48" y="17" width="3" height="9"/><rect x="54" y="11" width="3" height="22"/>
+              </g>
+              <g fill="#8c8c92">
+                <rect x="62" y="13" width="3" height="18"/><rect x="68" y="8" width="3" height="28"/>
+                <rect x="74" y="17" width="3" height="9"/><rect x="80" y="11" width="3" height="22"/>
+                <rect x="86" y="14" width="3" height="14"/><rect x="92" y="6" width="3" height="32"/>
+              </g>
+            </svg>
+            <div class="ph" style="left:12%"></div>
+          </div>
+          <div class="cues">
+            <div class="cue set">1</div><div class="cue">2</div><div class="cue">3</div><div class="cue">4</div>
+          </div>
+          <div class="ctl">
+            <div>
+              <div class="transport">
+                <div class="tb"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+                <div class="tb play"><svg viewBox="0 0 20 20"><path d="M6 4 L16 10 L6 16 Z"/></svg></div>
+                <div class="tb">Loop</div>
+                <div class="tb">Sync</div>
+              </div>
+              <div class="eq">
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="48 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Hi</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="42 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Mid</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#8c8c92" stroke-width="2.5" stroke-dasharray="52 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Low</span></div>
+                <div class="knob"><div class="dial"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="84.8 28.3" transform="rotate(135 22 22)"/><circle cx="22" cy="22" r="18" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="38 999" transform="rotate(135 22 22)"/></svg></div><span class="lbl">Flt</span></div>
+              </div>
+            </div>
+            <div class="pitch"><div class="slot"><div class="cap" style="top:46%"></div></div><span class="v">+0.4</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCENES + MASTER/FX -->
+    <section class="row-b">
+      <div class="m">
+        <h3>Visual Scenes · mirrors Push pads</h3>
+        <div class="body">
+          <div class="banks">
+            <div class="tab on">Warmup</div><div class="tab">Peak</div><div class="tab">Breaks</div><div class="tab">Outro</div>
+          </div>
+          <div class="grid">
+            <div class="pad on"></div><div class="pad has"></div><div class="pad pending"></div><div class="pad has"></div>
+            <div class="pad has"></div><div class="pad"></div><div class="pad has"></div><div class="pad has"></div>
+            <div class="pad has"></div><div class="pad has"></div><div class="pad"></div><div class="pad has"></div>
+            <div class="pad"></div><div class="pad has"></div><div class="pad"></div><div class="pad has"></div>
+            <div class="pad has"></div><div class="pad"></div><div class="pad has"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad has"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad has"></div>
+            <div class="pad has"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad has"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad has"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad has"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+            <div class="pad"></div><div class="pad"></div><div class="pad"></div><div class="pad"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="m">
+        <h3>Master · FX</h3>
+        <div class="body mf">
+          <div class="pair">
+            <div class="knob"><div class="dial"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="94.2 31.4" transform="rotate(135 24 24)"/><circle cx="24" cy="24" r="20" fill="none" stroke="#e7e5e0" stroke-width="2.5" stroke-dasharray="68 999" transform="rotate(135 24 24)"/></svg></div><span class="lbl">Master</span></div>
+            <div class="knob"><div class="dial"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="94.2 31.4" transform="rotate(135 24 24)"/><circle cx="24" cy="24" r="20" fill="none" stroke="#e7e5e0" stroke-width="2.5" stroke-dasharray="15 999" transform="rotate(135 24 24)"/></svg></div><span class="lbl">Swing</span></div>
+          </div>
+          <div class="fx">
+            <button>Strobe</button>
+            <button>Blackout</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PUSH ENCODERS -->
+    <section class="m">
+      <h3>Push Encoders · visual macros</h3>
+      <div class="body">
+        <div class="encoders">
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="69.8 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Intensity</span><span class="v">0.78</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="37.6 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Speed</span><span class="v">0.42</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="26.9 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Echo</span><span class="v">0.30</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="49.2 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Particles</span><span class="v">0.55</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="54.6 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Kaleido</span><span class="v">0.61</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="44.8 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Zoom</span><span class="v">0.50</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="76.1 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Hue</span><span class="v">0.85</span></div>
+          <div class="enc"><div class="dial"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="#2a2a2e" stroke-width="2.5" stroke-dasharray="89.5 29.8" transform="rotate(135 23 23)"/><circle cx="23" cy="23" r="19" fill="none" stroke="#d99a3c" stroke-width="2.5" stroke-dasharray="89.5 999" transform="rotate(135 23 23)"/></svg></div><span class="nm">Opacity</span><span class="v">1.00</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="status">
+      <div class="g"><span class="d on"></span> Push 1 · User mode</div>
+      <div class="g"><span class="d on"></span> CMD STUDIO 2A · ASIO 4ch</div>
+      <div class="g"><span class="d on"></span> Master + Cue</div>
+      <div class="sp"></div>
+      <div class="g">1 mapping conflict</div>
+      <div class="g">11.6 ms</div>
+      <div class="g">CPU 34 · GPU 41</div>
+    </footer>
+
+  </div>
+
+  <p class="note">
+    Live Mode — refined / spartan pass. Near-monochrome with a single accent, 8px spacing rhythm, hairline
+    borders, no gradients or glows. HTML/CSS design prototype only (no logic). Module map unchanged:
+    program out, beat engine, Deck A / mixer / Deck B, visual scene grid (mirrors Push pads), Push encoder
+    macros, master / FX.
+  </p>
+</body>
+</html>

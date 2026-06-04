@@ -10,31 +10,37 @@ pattern. UI is a thin action source/feedback sink — it dispatches
 ## Visual language (chosen direction)
 
 > Decided from the design prototypes in `design/mockups/` (dark analog-rack vs.
-> vintage vs. Ableton-style). **Chosen: clean, flat, Ableton-Live-style.** The
-> canonical reference is `design/mockups/live-mode-ableton.html`; the other skins
-> are kept for record only. This supersedes the "analog-rack aesthetic" wording
-> below — that text predates the cross-platform Avalonia move and is retained only
-> for the module/feature map, not the look.
+> vintage vs. clean). **Chosen: a refined, spartan, near-monochrome look** — one
+> accent color, strict 8px spacing, hairline borders, no gradients/glows/shadows.
+> The canonical reference is `design/mockups/live-mode-clean.html`; the other
+> skins are kept for record only. This supersedes the "analog-rack aesthetic"
+> wording below — that text predates the cross-platform Avalonia move and is
+> retained only for the module/feature map, not the look.
 
 Principles (translate to Avalonia `Styles`/`ControlThemes` when building
 `src/Liveolator.App`):
 
-- **Flat & dense.** Neutral grays, dark 1px hairlines, ~2–3px corner radius, no
-  gradients or drop shadows. Function over decoration.
-- **Color = meaning.** Grays carry the chrome; saturated colors are reserved for
-  clip/scene state and signal (selection yellow, play green, armed/clip orange,
-  per-track clip colors). Never color-only — pair with text/icon (standard #25).
-- **Typography.** Compact sans for labels/UI; monospace for numeric readouts
+- **Spartan & flat.** Near-black background, ~5 grays of chrome, a single hairline
+  border color, ~2px corner radius. No gradients, glows, or drop shadows. Remove
+  decoration and redundant labels — restraint over density.
+- **One accent.** A single accent (amber) carries *all* active/signal state —
+  active toggle, playing/armed pad, encoder arc, playhead, selected cue. Distinguish
+  states by treatment (fill vs. outline), not by adding more hues. One reserved
+  red for destructive/REC (rec, blackout, strobe). Never color-only — pair with
+  text/position (standard #25).
+- **Strict rhythm.** 8px spacing grid; a small fixed type scale (≈10 / 11 / 13 /
+  28); uppercase letter-spaced micro-labels; monospace for all numeric readouts
   (BPM, time, values).
-- **Components.** Colored clip slots with a play triangle / stop square
-  (Session-View grid), thin signal meters, ring-style encoders, minimal faders.
+- **Components.** Crisp geometric SVG icons (no emoji/glyph fonts); thin ring
+  encoders with a single accent arc; thin line faders/meters; flat pad cells
+  (empty / loaded / active-accent / armed-outline). No skeuomorphism.
 
 **Push 1 representation.** The performance surface mirrors the hardware on screen
 so UI and pads/encoders stay in lockstep (one source of truth — dispatcher
 feedback, doc 04):
 
-- **Pads → Visual Scene Grid** as an 8×8 Session-View grid (clips + scene-launch
-  column), see Module 4 below and doc 08.
+- **Pads → Visual Scene Grid** as an 8×8 grid; cells read as empty / loaded /
+  active (accent fill) / armed (accent outline). See Module 4 below and doc 08.
 - **8 encoders → a row of ring encoders** bound to visual macros
   (intensity / speed / echo / particles / kaleidoscope / zoom / hue / opacity,
   per doc 08). Plus the **Master + Swing** encoders. Encoders are an action
