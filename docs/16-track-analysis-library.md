@@ -123,11 +123,31 @@ public sealed record ScanProgress(int Done, int Total, string CurrentFile);
 - **Playlist/library (doc 09):** the scanned set is the crate the performer loads from.
 - **Audio binding (doc 01):** provides the concrete `IAudioDecoder`.
 
+## Implemented design (2026-06-03) — Media Library = shared scan infra + two domains
+
+Per the chosen structure, the library is split into a **music** domain and a **visual media**
+domain over a shared, fully unit-tested scan core (all in `Liveolator.Core/Library`):
+
+- **Shared infra:** `IFileEnumerator` (filesystem seam), `IncrementalScan.Diff` (pure
+  Added/Modified/Unchanged/Removed classification by size+mtime fingerprint), and the generic
+  `MediaLibrary<TEntry>` base — incremental scan (skip unchanged, drop removed), cancellation,
+  `IProgress<ScanProgress>`, and **failure isolation** (a bad file becomes a `Failed` entry,
+  never aborts the scan; failures are surfaced as queryable entry state, not swallowed).
+- **Music:** `MusicLibrary : MediaLibrary<MusicTrack>` — runs offline BPM/key analysis per
+  file via `IAudioDecoder` + `TrackAnalyzer`; `HarmonicMatches(seed)` applies the Camelot rules.
+- **Visual media (files only):** `VisualMediaLibrary : MediaLibrary<VisualAsset>` — classifies
+  images vs video by extension and probes dimensions/duration via the `IVisualMediaProbe` seam;
+  `OfKind(kind)` filters. Live camera/capture is a separate runtime source, **not** in this library.
+
+The real `IFileEnumerator`, FFmpeg-backed `IAudioDecoder`, and `IVisualMediaProbe` live in the
+binding projects (Liveolator.Audio / Liveolator.Visuals); Core stays pure and hardware-free.
+
 ## Phase
 
 Early — buildable in `Liveolator.Core` before the audio-library decision lands (fake
 decoder for tests; real decoder swapped in later). Natural first vertical slice: scan a
-folder → list tracks with BPM + Camelot key.
+folder → list tracks with BPM + Camelot key. **Status: Core scan/catalog logic for both
+domains implemented and unit-tested behind seams.**
 
 ## Testing (doc 14)
 

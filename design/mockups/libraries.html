@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Liveolator — Libraries</title>
+<style>
+  /* ============================================================
+     Liveolator — Libraries tab
+     Same spartan design line as live-mode-clean.html:
+     near-monochrome, one accent, 8px rhythm, hairline borders.
+     HTML/CSS only — design prototype, no logic.
+     ============================================================ */
+
+  :root {
+    --bg:    #0d0d0e;
+    --s1:    #151517;
+    --s2:    #1c1c1f;
+    --s3:    #232327;
+    --s4:    #2c2c31;
+    --hair:  #2a2a2e;
+
+    --text:  #e7e5e0;
+    --dim:   #8c8c92;
+    --faint: #56565c;
+
+    --accent:#d99a3c;
+    --accent-ink: #1a1206;
+    --red:   #cf5340;
+
+    --r: 2px;
+    --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 12px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased; letter-spacing: .01em;
+  }
+
+  .app { max-width: 1440px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; min-height: 100vh; grid-template-rows: auto 1fr auto; }
+  .lbl { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--faint); }
+
+  /* tabs */
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--hair); }
+  .tabs a { padding:10px 16px 12px; font-size:10px; letter-spacing:.16em; text-transform:uppercase; color: var(--faint); text-decoration:none; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tabs a:hover { color: var(--dim); }
+  .tabs a.on { color: var(--text); border-bottom-color: var(--accent); }
+
+  /* sub-bar: domain toggle + search + scan status */
+  .subbar { display:flex; align-items:center; gap:16px; }
+  .seg { display:flex; border:1px solid var(--hair); border-radius: var(--r); overflow:hidden; }
+  .seg button { appearance:none; background: var(--s1); border:0; border-right:1px solid var(--hair); color: var(--dim);
+    padding:8px 16px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; cursor:pointer; }
+  .seg button:last-child { border-right:0; }
+  .seg button.on { background: var(--s3); color: var(--text); }
+  .search { flex:1; max-width:340px; }
+  .search input { width:100%; background: var(--s2); border:1px solid var(--hair); border-radius: var(--r); color: var(--text);
+    padding:8px 10px; font-family: var(--sans); font-size:12px; }
+  .search input::placeholder { color: var(--faint); }
+  .subbar .sp { flex:1; }
+  .scan { display:flex; align-items:center; gap:10px; color: var(--dim); font-family: var(--mono); font-size:10px; }
+  .scan .track { width:120px; height:3px; background: var(--hair); border-radius:2px; overflow:hidden; }
+  .scan .track .f { height:100%; background: var(--accent); width:89%; }
+  .btn { appearance:none; background: var(--s2); border:1px solid var(--hair); border-radius: var(--r); color: var(--dim);
+    padding:8px 12px; font-size:10px; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; }
+  .btn:hover { color: var(--text); border-color: var(--faint); }
+
+  /* main 3-column layout */
+  .cols { display:grid; grid-template-columns: 220px 1fr 320px; gap:16px; min-height:0; }
+  .panel { background: var(--s1); border:1px solid var(--hair); border-radius: var(--r); min-height:0; display:flex; flex-direction:column; }
+  .panel > h3 { margin:0; padding:12px 16px 10px; font-size:10px; font-weight:500; letter-spacing:.18em; text-transform:uppercase; color: var(--faint); border-bottom:1px solid var(--hair); }
+  .panel > .body { padding:12px; overflow:auto; }
+
+  /* sources tree */
+  .src .grp { margin-bottom:16px; }
+  .src .grp > .lbl { padding:0 4px 8px; display:block; }
+  .src a { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 8px; border-radius: var(--r);
+    color: var(--dim); text-decoration:none; font-size:12px; cursor:pointer; }
+  .src a:hover { background: var(--s2); color: var(--text); }
+  .src a.on { background: var(--s3); color: var(--text); }
+  .src a.on::before { content:""; position:absolute; }
+  .src a .c { font-family: var(--mono); font-size:10px; color: var(--faint); }
+  .src a.work .c { color: var(--accent); }
+
+  /* track table */
+  .tbl { display:flex; flex-direction:column; }
+  .thead, .trow { display:grid; grid-template-columns: 16px 2.2fr 1.4fr 56px 44px 56px 1fr; gap:12px; align-items:center; }
+  .thead { padding:0 12px 8px; border-bottom:1px solid var(--hair); }
+  .thead span { font-size:9px; letter-spacing:.14em; text-transform:uppercase; color: var(--faint); }
+  .thead .r, .trow .r { text-align:right; }
+  .trow { padding:9px 12px; border-bottom:1px solid var(--hair); cursor:pointer; border-left:2px solid transparent; }
+  .trow:hover { background: var(--s2); }
+  .trow.sel { background: var(--s2); border-left-color: var(--accent); }
+  .trow .ti { color: var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .trow .ar { color: var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .trow .mono { font-family: var(--mono); }
+  .trow .mut { color: var(--faint); }
+  .st { width:7px; height:7px; border-radius:50%; }
+  .st.ok { background: var(--dim); }
+  .st.part { background: var(--accent); }
+  .st.fail { background: var(--red); }
+  .key { font-family: var(--mono); color: var(--dim); }
+  .energy { display:flex; gap:2px; align-items:center; }
+  .energy i { width:3px; height:10px; background: var(--hair); border-radius:1px; }
+  .energy i.on { background: var(--dim); }
+
+  /* detail panel */
+  .det .body { display:flex; flex-direction:column; gap:18px; }
+  .det .ttl { font-size:14px; font-weight:500; }
+  .det .sub { font-family: var(--mono); font-size:10px; color: var(--faint); margin-top:2px; }
+  .dwave { height:64px; background: var(--s2); border:1px solid var(--hair); border-radius: var(--r); position:relative; overflow:hidden; }
+  .dwave svg { width:100%; height:100%; display:block; }
+  .dwave .cue { position:absolute; top:0; bottom:0; width:1px; background: var(--accent); }
+  .dwave .cue span { position:absolute; top:3px; left:3px; font-family: var(--mono); font-size:8px; color: var(--accent); letter-spacing:.06em; white-space:nowrap; }
+  .facts { display:grid; grid-template-columns:1fr 1fr; gap:1px; background: var(--hair); border:1px solid var(--hair); border-radius: var(--r); overflow:hidden; }
+  .facts .f { background: var(--s1); padding:10px 12px; }
+  .facts .f .k { font-size:9px; letter-spacing:.14em; text-transform:uppercase; color: var(--faint); }
+  .facts .f .v { font-family: var(--mono); font-size:14px; margin-top:3px; }
+  .facts .f .v.acc { color: var(--accent); }
+  .facts .f .v small { font-size:10px; color: var(--faint); }
+  .sec .lbl { display:block; margin-bottom:8px; }
+  .match a { display:flex; justify-content:space-between; gap:8px; padding:7px 8px; border-radius: var(--r); color: var(--dim); text-decoration:none; cursor:pointer; }
+  .match a:hover { background: var(--s2); color: var(--text); }
+  .match a .key { color: var(--accent); }
+  .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .actions button { appearance:none; height:34px; border:1px solid var(--hair); border-radius: var(--r); cursor:pointer;
+    font-size:10px; letter-spacing:.12em; text-transform:uppercase; background: var(--s2); color: var(--dim); }
+  .actions button:hover { color: var(--text); border-color: var(--faint); }
+  .actions button.pri { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .actions .wide { grid-column: 1 / -1; }
+
+  /* footer */
+  .status { display:flex; align-items:center; gap:24px; padding:2px 4px; font-family: var(--mono); font-size:10px; color: var(--faint); }
+  .status .g { display:flex; align-items:center; gap:8px; }
+  .status .g .d { width:6px; height:6px; border-radius:50%; background: var(--s4); }
+  .status .g .d.on { background: var(--accent); }
+  .status .sp { flex:1; }
+
+  .note { max-width:1440px; margin:0 auto; padding:4px 16px 24px; color: var(--faint); font-size:10px; line-height:1.7; }
+</style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- TABS -->
+    <nav class="tabs">
+      <a href="live-mode-clean.html">Live</a>
+      <a href="#">DJ</a>
+      <a href="#">VJ</a>
+      <a class="on" href="libraries.html">Libraries</a>
+      <a href="#">Mappings</a>
+      <a href="#">Settings</a>
+    </nav>
+
+    <!-- BODY -->
+    <div style="display:grid; gap:16px; min-height:0; grid-template-rows:auto 1fr;">
+
+      <!-- sub-bar -->
+      <div class="subbar">
+        <div class="seg">
+          <button class="on">Tracks</button>
+          <button>Visuals</button>
+        </div>
+        <div class="search"><input type="text" placeholder="Search title, artist, key…" /></div>
+        <div class="sp"></div>
+        <div class="scan" title="Background folder scan (doc 16)">
+          <span>Analyzing 873 / 980</span>
+          <span class="track"><span class="f"></span></span>
+        </div>
+        <button class="btn">Add folder</button>
+        <button class="btn">Re-scan</button>
+      </div>
+
+      <!-- 3 columns -->
+      <div class="cols">
+
+        <!-- SOURCES -->
+        <div class="panel src">
+          <h3>Sources</h3>
+          <div class="body">
+            <div class="grp">
+              <span class="lbl">Library</span>
+              <a class="on">All tracks <span class="c">980</span></a>
+              <a>Recently added <span class="c">24</span></a>
+              <a class="work">Analyzing <span class="c">107</span></a>
+              <a>Low confidence <span class="c">12</span></a>
+              <a>Failed <span class="c">3</span></a>
+            </div>
+            <div class="grp">
+              <span class="lbl">Crates</span>
+              <a>Warmup <span class="c">86</span></a>
+              <a>Peak time <span class="c">142</span></a>
+              <a>Breaks <span class="c">54</span></a>
+              <a>Closing <span class="c">38</span></a>
+            </div>
+            <div class="grp">
+              <span class="lbl">Folders</span>
+              <a>/Music/DJ <span class="c">612</span></a>
+              <a>/Music/Promos <span class="c">368</span></a>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRACK TABLE -->
+        <div class="panel">
+          <h3>All tracks · 980</h3>
+          <div class="body">
+            <div class="tbl">
+              <div class="thead">
+                <span></span><span>Title</span><span>Artist</span>
+                <span class="r">BPM</span><span class="r">Key</span><span class="r">Time</span><span>Energy</span>
+              </div>
+
+              <div class="trow sel">
+                <span class="st ok"></span>
+                <span class="ti">Midnight City — Extended Mix</span><span class="ar">M83</span>
+                <span class="r mono">128.0</span><span class="r key">8A</span><span class="r mono mut">6:48</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Strobe — Club Edit</span><span class="ar">Deadmau5</span>
+                <span class="r mono">128.0</span><span class="r key">7A</span><span class="r mono mut">10:34</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Opus — Original Mix</span><span class="ar">Eric Prydz</span>
+                <span class="r mono">126.0</span><span class="r key">9A</span><span class="r mono mut">9:04</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Innerbloom</span><span class="ar">RÜFÜS DU SOL</span>
+                <span class="r mono">121.5</span><span class="r key">5A</span><span class="r mono mut">9:38</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Spectrum — Calvin Harris Edit</span><span class="ar">Zedd</span>
+                <span class="r mono">130.0</span><span class="r key">12A</span><span class="r mono mut">6:12</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+              </div>
+              <div class="trow">
+                <span class="st part" title="Partially analyzed — low confidence"></span>
+                <span class="ti">Resonance</span><span class="ar">HOME</span>
+                <span class="r mono">90.0</span><span class="r key mut">—</span><span class="r mono mut">3:32</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Faded — Restrung</span><span class="ar">Alan Walker</span>
+                <span class="r mono">127.0</span><span class="r key">4B</span><span class="r mono mut">5:21</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Teardrop</span><span class="ar">Massive Attack</span>
+                <span class="r mono">78.0</span><span class="r key">11B</span><span class="r mono mut">5:30</span>
+                <span class="energy"><i class="on"></i><i></i><i></i><i></i><i></i></span>
+              </div>
+              <div class="trow">
+                <span class="st fail" title="Decode failed — file unsupported/corrupt"></span>
+                <span class="ti mut">04 - untitled.aiff</span><span class="ar mut">—</span>
+                <span class="r mono mut">—</span><span class="r key mut">—</span><span class="r mono mut">—</span>
+                <span class="mut" style="font-size:10px">Failed</span>
+              </div>
+              <div class="trow">
+                <span class="st ok"></span>
+                <span class="ti">Greece 2000</span><span class="ar">Three Drives</span>
+                <span class="r mono">134.0</span><span class="r key">2A</span><span class="r mono mut">7:18</span>
+                <span class="energy"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DETAIL -->
+        <div class="panel det">
+          <h3>Track</h3>
+          <div class="body">
+            <div>
+              <div class="ttl">Midnight City — Extended Mix</div>
+              <div class="sub">M83 · /Music/DJ · 320kbps · WAV</div>
+            </div>
+
+            <div class="dwave">
+              <svg viewBox="0 0 320 64" preserveAspectRatio="none">
+                <g fill="#56565c">
+                  <rect x="0" y="26" width="2" height="12"/><rect x="5" y="18" width="2" height="28"/>
+                  <rect x="10" y="30" width="2" height="6"/><rect x="15" y="12" width="2" height="40"/>
+                  <rect x="20" y="22" width="2" height="20"/><rect x="25" y="16" width="2" height="32"/>
+                  <rect x="30" y="28" width="2" height="9"/><rect x="35" y="10" width="2" height="44"/>
+                  <rect x="40" y="20" width="2" height="24"/><rect x="45" y="14" width="2" height="36"/>
+                  <rect x="50" y="26" width="2" height="12"/><rect x="55" y="18" width="2" height="28"/>
+                  <rect x="60" y="30" width="2" height="6"/><rect x="65" y="12" width="2" height="40"/>
+                  <rect x="70" y="22" width="2" height="20"/><rect x="75" y="16" width="2" height="32"/>
+                  <rect x="80" y="28" width="2" height="9"/><rect x="85" y="10" width="2" height="44"/>
+                  <rect x="90" y="20" width="2" height="24"/><rect x="95" y="14" width="2" height="36"/>
+                  <rect x="100" y="26" width="2" height="12"/><rect x="105" y="18" width="2" height="28"/>
+                  <rect x="110" y="30" width="2" height="6"/><rect x="115" y="12" width="2" height="40"/>
+                  <rect x="120" y="22" width="2" height="20"/><rect x="125" y="16" width="2" height="32"/>
+                  <rect x="130" y="28" width="2" height="9"/><rect x="135" y="10" width="2" height="44"/>
+                  <rect x="140" y="20" width="2" height="24"/><rect x="145" y="14" width="2" height="36"/>
+                  <rect x="150" y="26" width="2" height="12"/><rect x="155" y="18" width="2" height="28"/>
+                  <rect x="160" y="30" width="2" height="6"/><rect x="165" y="12" width="2" height="40"/>
+                  <rect x="170" y="22" width="2" height="20"/><rect x="175" y="16" width="2" height="32"/>
+                  <rect x="180" y="28" width="2" height="9"/><rect x="185" y="10" width="2" height="44"/>
+                  <rect x="190" y="20" width="2" height="24"/><rect x="195" y="14" width="2" height="36"/>
+                  <rect x="200" y="26" width="2" height="12"/><rect x="205" y="18" width="2" height="28"/>
+                  <rect x="210" y="30" width="2" height="6"/><rect x="215" y="12" width="2" height="40"/>
+                  <rect x="220" y="22" width="2" height="20"/><rect x="225" y="16" width="2" height="32"/>
+                  <rect x="230" y="28" width="2" height="9"/><rect x="235" y="10" width="2" height="44"/>
+                  <rect x="240" y="20" width="2" height="24"/><rect x="245" y="14" width="2" height="36"/>
+                  <rect x="250" y="26" width="2" height="12"/><rect x="255" y="18" width="2" height="28"/>
+                  <rect x="260" y="30" width="2" height="6"/><rect x="265" y="12" width="2" height="40"/>
+                  <rect x="270" y="22" width="2" height="20"/><rect x="275" y="16" width="2" height="32"/>
+                  <rect x="280" y="28" width="2" height="9"/><rect x="285" y="14" width="2" height="36"/>
+                  <rect x="290" y="24" width="2" height="16"/><rect x="295" y="20" width="2" height="22"/>
+                  <rect x="300" y="28" width="2" height="9"/><rect x="305" y="26" width="2" height="12"/>
+                  <rect x="310" y="30" width="2" height="6"/><rect x="315" y="31" width="2" height="4"/>
+                </g>
+              </svg>
+              <div class="cue" style="left:8%"><span>Intro end</span></div>
+              <div class="cue" style="left:88%"><span>Outro</span></div>
+            </div>
+
+            <div class="facts">
+              <div class="f"><div class="k">Tempo</div><div class="v acc">128.0 <small>94%</small></div></div>
+              <div class="f"><div class="k">Key</div><div class="v">8A <small>A♭min</small></div></div>
+              <div class="f"><div class="k">Length</div><div class="v">6:48</div></div>
+              <div class="f"><div class="k">Cues</div><div class="v">0:16 · 6:02</div></div>
+            </div>
+
+            <div class="sec match">
+              <span class="lbl">Harmonic matches · Camelot 8A</span>
+              <a>Strobe — Club Edit <span class="key">7A</span></a>
+              <a>Opus — Original Mix <span class="key">9A</span></a>
+              <a>Lasse — Sundown <span class="key">8B</span></a>
+            </div>
+
+            <div class="actions">
+              <button class="pri">Load → A</button>
+              <button>Load → B</button>
+              <button class="wide">Re-analyze</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="status">
+      <div class="g"><span class="d on"></span> Library · 980 tracks</div>
+      <div class="g"><span class="d on"></span> Cache · content-hash</div>
+      <div class="g">Analyzing 873 / 980</div>
+      <div class="sp"></div>
+      <div class="g">3 failed</div>
+      <div class="g">12 low-confidence</div>
+    </footer>
+
+  </div>
+
+  <p class="note">
+    Libraries tab — design prototype (HTML/CSS, no logic). Folder-scan library with offline analysis
+    (BPM + beatgrid, Camelot key, intro/outro cues) per doc 16; sources / crates / folders on the left, the
+    analyzed track table in the centre, and a detail panel (waveform + cues, facts, harmonic matches, load to
+    Deck A/B) on the right per docs 09 / 11 / 16. Same spartan design line as the Live tab.
+  </p>
+</body>
+</html>
