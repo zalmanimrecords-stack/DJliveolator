@@ -139,8 +139,22 @@ domain over a shared, fully unit-tested scan core (all in `Liveolator.Core/Libra
   images vs video by extension and probes dimensions/duration via the `IVisualMediaProbe` seam;
   `OfKind(kind)` filters. Live camera/capture is a separate runtime source, **not** in this library.
 
-The real `IFileEnumerator`, FFmpeg-backed `IAudioDecoder`, and `IVisualMediaProbe` live in the
-binding projects (Liveolator.Audio / Liveolator.Visuals); Core stays pure and hardware-free.
+The real bindings live outside Core and stay pure/hardware-free:
+- **Decode:** `Liveolator.Audio` — `WavAudioDecoder` (managed) + `FfmpegAudioDecoder` (CLI
+  subprocess, compressed formats) behind `CompositeAudioDecoder`.
+- **Filesystem + persistence:** `Liveolator.Media` — `FileSystemFileEnumerator`,
+  `JsonCatalogStore` (doc 13 cache; pairs with `MediaLibrary.Restore()` for cache-seeded
+  incremental scans), `PlaylistWriter`.
+- **Visual probe:** `Liveolator.Visuals` — `CompositeVisualMediaProbe` = `ImageHeaderProbe`
+  (managed header reads: PNG/JPEG/GIF/BMP/WebP) + `FfprobeVideoProbe` (video dims/duration via ffprobe).
+- **Harmonic sets:** `Liveolator.Core/Playlist/HarmonicSetBuilder` builds Camelot-compatible
+  track sequences over the analyzed library.
+- **External surface:** `Liveolator.Mcp` exposes library/analysis/harmonic/playlist as MCP tools.
+
+> **Consolidation pending (see doc 00-architecture-overview):** parallel work left duplicate
+> `IFileEnumerator` (Platform/Media/App) and `WavAudioDecoder` (Audio/App) implementations.
+> Canonical = **Media** (file enumeration) and **Audio** (decode); the redundant copies are
+> removed once the running App unlocks its build output.
 
 ## Deferred idea — online metadata enrichment (not now)
 

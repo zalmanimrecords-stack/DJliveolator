@@ -75,22 +75,40 @@ src/
     Actions/              # PerformanceAction model + dispatcher               (doc 04)
     Mapping/              # mapping engine, learn, profiles (device-agnostic)  (doc 05)
     Mapping/Profiles/     # Push profile, DJ controller profile                (docs 06, 07)
-    Playlist/             # Now/Next/Later live queue + library                (doc 09)
+    Playlist/             # HarmonicSetBuilder (Camelot sets) + library queue   (docs 09, 16)
+    Library/              # MediaLibrary<T>, Music/Visual libraries, IFileEnumerator seam (doc 16)
     Autopilot/            # rule engine, scene pools                           (doc 10)
     VisualModel/          # VisualScene, Bank, Macro, Quantize (model only)    (doc 08)
     Persistence/          # profile + session + analysis-cache serialization   (doc 13)
-  Liveolator.Audio/       # audio I/O binding: IAudioSource impls, IAudioDecoder, decks
-                          # output (audio library, TBD)                        (docs 01, 11)
+  Liveolator.Audio/       # audio I/O binding: WavAudioDecoder, FfmpegAudioDecoder (CLI),
+                          # CompositeAudioDecoder; decks output                 (docs 01, 11, 16)
+  Liveolator.Media/       # filesystem IFileEnumerator, JsonCatalogStore (doc 13 cache),
+                          # PlaylistWriter — the I/O + persistence binding      (docs 13, 16)
+  Liveolator.Visuals/     # IVisualMediaProbe (ImageHeaderProbe + ffprobe video); Silk.NET
+                          # compositor + GLSL + FFmpeg (compositor TBD)         (docs 08, 16)
   Liveolator.Midi/        # RtMidi/libremidi binding: IMidiInput/IMidiOutput    (doc 05)
-  Liveolator.Visuals/     # Silk.NET/OpenGL compositor, GLSL effects, FFmpeg    (doc 08)
+  Liveolator.Mcp/         # MCP server exposing library/analysis/harmonic/playlist tools
   Liveolator.App/         # Avalonia UI; hosts modules, wires seams             (doc 12)
-tests/                    # xUnit over Liveolator.Core (pure logic, no native) (doc 14)
+tests/                    # xUnit: Core.Tests (pure) + Media/Audio/Visuals/Integration (doc 14)
 ```
 
 **Module ↔ seam wiring:** every module talks to the others *only* through the four seams
-(`IAudioSource`, `IAudioFrameProvider`, `IBeatClock`, `IPerformanceActionDispatcher`). The
-Push module (docs 05/06) and the MIDI-mapping module (doc 05) emit `PerformanceAction`s; the
-visual module (doc 08) consumes `IBeatClock`. No module references another module directly.
+(`IAudioSource`, `IAudioFrameProvider`, `IBeatClock`, `IPerformanceActionDispatcher`) plus the
+library seams (`IAudioDecoder`, `IFileEnumerator`, `IVisualMediaProbe`). The Push module
+(docs 05/06) and the MIDI-mapping module (doc 05) emit `PerformanceAction`s; the visual module
+(doc 08) consumes `IBeatClock`. No module references another module directly.
+
+### Canonical bindings & consolidation (2026-06-04)
+
+Parallel development produced duplicate seam implementations. The canonical choices (others to
+be removed once `Liveolator.App` is closed so its output unlocks):
+
+- **`IFileEnumerator` → `Liveolator.Media.FileSystemFileEnumerator`** (the established I/O +
+  persistence home that the MCP server already depends on). `Liveolator.Platform.FileSystemEnumerator`
+  and `Liveolator.App/Services` copies are redundant and should be removed; consumers point to Media.
+- **`IAudioDecoder` → `Liveolator.Audio`** (`Composite` routing `WavAudioDecoder` + CLI `FfmpegAudioDecoder`).
+  The `Liveolator.App/Services/WavAudioDecoder` copy is redundant; App references Audio.
+- **`IVisualMediaProbe` → `Liveolator.Visuals.CompositeVisualMediaProbe`** (image header + ffprobe video).
 
 Tests live in `tests/` over `Liveolator.Core` — see
 [14 — Testing and validation](14-testing-and-validation.md).
