@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             x:Class="Liveolator.App.Features.Libraries.LibrariesView"
+             x:DataType="lib:LibrariesViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- sub-bar -->
+    <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
+      <Button Grid.Column="0" Classes="spartan" Content="Add folder"
+              Click="OnAddFolder" Margin="0,0,8,0" />
+      <Button Grid.Column="1" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
+      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
+               Watermark="Search title or key…" Text="{Binding SearchText}" />
+      <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
+                 Text="{Binding ScanStatus}" />
+    </Grid>
+
+    <!-- main: table | detail -->
+    <Grid Row="1" ColumnDefinitions="*,300">
+
+      <!-- track table -->
+      <Border Grid.Column="0" Classes="panel">
+        <DockPanel Margin="12">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="Tracks" Margin="0,0,0,10" />
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,*,70,50,64,72" Margin="11,0,9,8">
+            <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
+            <TextBlock Grid.Column="2" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="3" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="4" Classes="faint" Text="TIME" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="5" Classes="faint" Text="STATUS" />
+          </Grid>
+          <ListBox Classes="rows"
+                   ItemsSource="{Binding Tracks}"
+                   SelectedItem="{Binding SelectedTrack}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="lib:TrackRowViewModel">
+                <Grid ColumnDefinitions="14,*,70,50,64,72" VerticalAlignment="Center">
+                  <Ellipse Grid.Column="0" Width="6" Height="6" VerticalAlignment="Center"
+                           Fill="{Binding Status, Converter={x:Static lib:StatusToBrushConverter.Instance}}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="3" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="4" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="5" Classes="faint" Text="{Binding StatusText}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <!-- detail -->
+      <Border Grid.Column="1" Classes="panel" Margin="16,0,0,0">
+        <StackPanel Margin="16" Spacing="16">
+          <TextBlock Classes="section" Text="Track" />
+
+          <TextBlock Classes="faint"
+                     Text="Select a track to see details."
+                     IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNull}}" />
+
+          <StackPanel Spacing="14"
+                      IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="2">
+              <TextBlock FontSize="14" Text="{Binding SelectedTrack.Title}" />
+              <TextBlock Classes="mono faint" Text="{Binding SelectedTrack.StatusText}" />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" >
+              <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                <TextBlock Classes="faint" Text="TEMPO" />
+                <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Bpm}" />
+              </StackPanel>
+              <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+                <TextBlock Classes="faint" Text="KEY" />
+                <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Key}" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,12,0,0">
+                <TextBlock Classes="faint" Text="LENGTH" />
+                <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Duration}" />
+              </StackPanel>
+            </Grid>
+
+            <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="HARMONIC MATCHES" />
+              <ItemsControl ItemsSource="{Binding HarmonicMatches}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="lib:TrackRowViewModel">
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                      <TextBlock Grid.Column="0" Classes="muted" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding Key}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </Grid>
+</UserControl>

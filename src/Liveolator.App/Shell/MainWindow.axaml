@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:Liveolator.App.Shell"
+        x:Class="Liveolator.App.Shell.MainWindow"
+        x:DataType="shell:MainWindowViewModel"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        Title="Liveolator"
+        Background="{StaticResource Bg}">
+
+  <DockPanel LastChildFill="True">
+
+    <!-- tab strip -->
+    <Border DockPanel.Dock="Top"
+            BorderBrush="{StaticResource Hair}"
+            BorderThickness="0,0,0,1">
+      <ListBox Classes="tabs"
+               ItemsSource="{Binding Tabs}"
+               SelectedItem="{Binding CurrentTab, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="shell:TabItemViewModel">
+            <TextBlock Text="{Binding Title}" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <!-- selected page (resolved by ViewLocator) -->
+    <ContentControl Margin="16" Content="{Binding CurrentTab.Page}" />
+
+  </DockPanel>
+</Window>

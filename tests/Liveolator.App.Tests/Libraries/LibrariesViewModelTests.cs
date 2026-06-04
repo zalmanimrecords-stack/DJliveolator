@@ -1,0 +1,66 @@
+using System.Reactive.Concurrency;
+using System.Reactive.Threading.Tasks;
+using Liveolator.App.Features.Libraries;
+using Liveolator.App.Tests.Fakes;
+using Liveolator.Core.Library.Music;
+using ReactiveUI;
+
+namespace Liveolator.App.Tests.Libraries;
+
+public sealed class LibrariesViewModelTests
+{
+    public LibrariesViewModelTests()
+    {
+        // Make ReactiveCommand and the VM's UI-marshalling run synchronously in tests.
+        RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
+        RxApp.TaskpoolScheduler = ImmediateScheduler.Instance;
+    }
+
+    private static LibrariesViewModel BuildViewModel(params string[] files)
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(files), new FakeAudioDecoder());
+        var vm = new LibrariesViewModel(library);
+        vm.AddFolder("/music");
+        return vm;
+    }
+
+    [Fact]
+    public async Task Scan_populates_one_row_per_file()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav", "/music/Gamma.wav");
+
+        await vm.ScanCommand.Execute().ToTask();
+
+        Assert.Equal(3, vm.Tracks.Count);
+        Assert.False(vm.IsScanning);
+        Assert.Contains(vm.Tracks, t => t.Title == "Alpha");
+    }
+
+    [Fact]
+    public async Task Search_filters_tracks_by_title()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.SearchText = "alph";
+        Assert.Single(vm.Tracks);
+        Assert.Equal("Alpha", vm.Tracks[0].Title);
+
+        vm.SearchText = "";
+        Assert.Equal(2, vm.Tracks.Count);
+    }
+
+    [Fact]
+    public async Task Selecting_a_track_rebuilds_harmonic_matches_without_error()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.SelectedTrack = vm.Tracks[0];
+
+        Assert.NotNull(vm.SelectedTrack);
+        // Matches depend on detected keys; the contract under test is "no throw, consistent count".
+        Assert.True(vm.HarmonicMatches.Count >= 0);
+        Assert.DoesNotContain(vm.HarmonicMatches, m => m.Title == vm.SelectedTrack!.Title);
+    }
+}

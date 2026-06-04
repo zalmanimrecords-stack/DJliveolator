@@ -1,0 +1,45 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Liveolator.App"
+             x:Class="Liveolator.App.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.DataTemplates>
+    <local:ViewLocator />
+  </Application.DataTemplates>
+
+  <Application.Resources>
+    <!-- Spartan design tokens (mirrors design/mockups/live-mode-clean.html) -->
+    <Color x:Key="BgColor">#0D0D0E</Color>
+    <Color x:Key="S1Color">#151517</Color>
+    <Color x:Key="S2Color">#1C1C1F</Color>
+    <Color x:Key="S3Color">#232327</Color>
+    <Color x:Key="S4Color">#2C2C31</Color>
+    <Color x:Key="HairColor">#2A2A2E</Color>
+    <Color x:Key="TextColor">#E7E5E0</Color>
+    <Color x:Key="DimColor">#8C8C92</Color>
+    <Color x:Key="FaintColor">#56565C</Color>
+    <Color x:Key="AccentColor">#D99A3C</Color>
+    <Color x:Key="AccentInkColor">#1A1206</Color>
+    <Color x:Key="RedColor">#CF5340</Color>
+
+    <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
+    <SolidColorBrush x:Key="S1" Color="{StaticResource S1Color}" />
+    <SolidColorBrush x:Key="S2" Color="{StaticResource S2Color}" />
+    <SolidColorBrush x:Key="S3" Color="{StaticResource S3Color}" />
+    <SolidColorBrush x:Key="S4" Color="{StaticResource S4Color}" />
+    <SolidColorBrush x:Key="Hair" Color="{StaticResource HairColor}" />
+    <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
+    <SolidColorBrush x:Key="Dim" Color="{StaticResource DimColor}" />
+    <SolidColorBrush x:Key="Faint" Color="{StaticResource FaintColor}" />
+    <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentInk" Color="{StaticResource AccentInkColor}" />
+    <SolidColorBrush x:Key="Red" Color="{StaticResource RedColor}" />
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://Liveolator.App/Theme/Spartan.axaml" />
+  </Application.Styles>
+
+</Application>
