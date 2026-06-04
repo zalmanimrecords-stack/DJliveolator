@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C2899C12-E89B-40DD-B222-FF086230F082}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Liveolator.Core", "src\Liveolator.Core\Liveolator.Core.csproj", "{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{1A969337-FD32-4F2E-AACD-3D3677CE198D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Liveolator.Core.Tests", "tests\Liveolator.Core.Tests\Liveolator.Core.Tests.csproj", "{B1ADB97F-92FE-4239-94CD-348F1093D535}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1ADB97F-92FE-4239-94CD-348F1093D535}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1ADB97F-92FE-4239-94CD-348F1093D535}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1ADB97F-92FE-4239-94CD-348F1093D535}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1ADB97F-92FE-4239-94CD-348F1093D535}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C} = {C2899C12-E89B-40DD-B222-FF086230F082}
+		{B1ADB97F-92FE-4239-94CD-348F1093D535} = {1A969337-FD32-4F2E-AACD-3D3677CE198D}
+	EndGlobalSection
+EndGlobal

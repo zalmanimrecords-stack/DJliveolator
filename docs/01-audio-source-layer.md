@@ -1,5 +1,14 @@
 # 01 — Audio Source Layer
 
+> **Revision status (doc 00):** this doc still shows the Zalmanolator-era Windows stack
+> (NAudio types, `WasapiLoopbackCapture`, `AsioOut`). Per doc 00 the project is now
+> cross-platform and the **audio library is an OPEN DECISION** (BASS/ManagedBass vs
+> PortAudio/miniaudio). Treat the NAudio-specific types below as **placeholders**: the
+> `IAudioSource` seam and the contracts are what carry over; the concrete backend
+> (Windows: ASIO/WDM-KS/WASAPI · macOS: CoreAudio) is bound once the library is chosen.
+> The **latency targets and real-time-thread rules** added below are library-independent
+> and apply regardless.
+
 ## Purpose
 
 Provide a normalized stream of audio frames regardless of origin, so the
@@ -78,7 +87,7 @@ Responsibilities:
 
 Captures audio from an external sound card / audio interface input (line-in), as
 opposed to the system output mix. This is the path for capturing a hardware DJ
-mixer's output, or the master of an external DJ app, into Zalmanolator's visuals.
+mixer's output, or the master of an external DJ app, into Liveolator's visuals.
 
 Two backends behind one source, selectable per device (see "Audio I/O backends"
 below):
@@ -117,17 +126,17 @@ ASIO specifics (NAudio `AsioOut`):
   samples for the selected input channels.
 - ASIO is **exclusive** — one application owns the driver at a time. If an external
   DJ app holds the CMD STUDIO 2A's ASIO driver, Zalmanolator cannot also open it;
-  the UI must detect this and fall back to WASAPI loopback (capturing the system mix)
-  or another input. This trade-off is documented for the performer.
+  the UI must detect this and fall back to a loopback/system-mix capture or another
+  input. This trade-off is documented for the performer.
 - ASIO buffer size is driver-controlled; surface the reported latency in the UI as a
   diagnostic (doc 14 metric).
 
 The same backend abstraction serves **output** for the deck/headphone-cue path in
-doc 11. Because the user confirmed **Zalmanolator is the DJ player**, multi-channel
-ASIO **output** (master on ch 1/2, headphone cue on ch 3/4 of the CMD STUDIO 2A) is a
-**confirmed requirement**, not conditional.
+doc 11. Because the user confirmed **Liveolator is the DJ player**, multi-channel
+**output** (master on ch 1/2, headphone cue on ch 3/4 of the CMD STUDIO 2A) over the
+low-latency backend is a **confirmed requirement**, not conditional.
 
-> When Zalmanolator plays its **own** deck through an ASIO output device, the beat
+> When Liveolator plays its **own** deck through a low-latency output device, the beat
 > engine already has the deck samples directly (via `DeckAudioSource`) — no capture
 > is needed. Capture (loopback/line-in) is for audio that originates outside the app.
 
@@ -159,6 +168,41 @@ public sealed class AudioRingBuffer   // float samples, mono or interleaved
 - Overwrites oldest samples when full; capture must never block (dropping stale
   audio is correct for a live visualizer).
 
+## Low-latency targets & the real-time audio thread
+
+> Library-independent; from `docs/research/dj-gaps-keydetect-latency-automix-avsync.md`.
+> Drives the doc 00 "low-latency audio" requirement and the deck output path (doc 11).
+
+**The callback model.** The OS audio backend requests a buffer of samples on a **realtime,
+performance-sensitive callback thread**, hundreds of times per second. Each buffer must be
+fully computed within **one buffer period** or the audio glitches (xrun / under-run). For a
+256-sample buffer at 44.1 kHz that deadline is **< 5.8 ms**, every time, no exceptions.
+
+**Targets (both platforms):**
+
+- Aim for **< 10 ms** output latency; default buffer **~256–512 samples**, exposed as a
+  user setting (Mixxx ships 23–64 ms as "safe", < 10 ms for tight/timecode use).
+- Latency floor cannot go below one callback buffer period.
+- Total latency = the **sum of stacked buffer layers** (driver + backend + app), so keep
+  the chain short, not just the buffer small.
+- Backends: **Windows** ASIO / WDM-KS (good) › WASAPI (acceptable); **macOS** CoreAudio
+  (single option, behaves like a clean double-buffer). Reach them through the seam; app code
+  never sees the backend.
+
+**Hard rules for the audio callback thread (non-negotiable):**
+
+- **No memory allocation/free** (`new`/`delete`/`malloc`) on the audio thread.
+- **No locks/mutexes**, no blocking on semaphores, disk, or network.
+- **No calls into OS/3rd-party code that may block internally**, and no unbounded-time ops.
+- Cross-thread communication (UI/MIDI/`PerformanceAction` → audio) is **lock-free**:
+  pre-allocated ring buffers / atomics (see "Ring buffer" above). The dispatcher (doc 04)
+  hands actions to the audio thread via a lock-free queue; it never mutates audio state
+  under a lock.
+- Pre-allocate all buffers; size worst-case up front.
+
+These rules apply to the deck mixer/DSP (doc 11) and any per-sample work, regardless of the
+chosen audio library.
+
 ## Source selection
 
 A small `AudioSourceManager` owns the active `IAudioSource`, exposes the available
@@ -185,8 +229,8 @@ without tearing down the frame pipeline. Switching is itself a `PerformanceActio
   Lands alongside or just after the loopback MVP so real interfaces (CMD STUDIO 2A)
   are supported early.
 
-Success criteria (from the plan): Spotify/YouTube/system audio drives projectM with
-no file loaded; deck playback still works; no UI freeze during capture; an ASIO
+Success criteria (from the plan): Spotify/YouTube/system audio drives the visuals with
+no file loaded; deck playback still works; no UI freeze during capture; a low-latency
 interface can be selected as the capture/output device.
 
 ## Risks

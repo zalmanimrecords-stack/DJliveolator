@@ -1,0 +1,67 @@
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Key;
+
+namespace Liveolator.Core.Analysis;
+
+/// <summary>Combined offline analysis of one track: tempo and musical key/scale.</summary>
+public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key);
+
+/// <summary>
+/// Measures BPM and musical key/scale from mono PCM, and (via <see cref="IAudioDecoder"/>)
+/// from a file. Pure orchestration over <see cref="BpmDetector"/>, <see cref="ChromaExtractor"/>,
+/// and <see cref="KeyClassifier"/> — the heart of the Track-Analysis module (doc 16).
+/// </summary>
+public sealed class TrackAnalyzer
+{
+    /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
+    public const int AnalysisSampleRate = 44100;
+
+    private readonly BpmDetector _bpm;
+    private readonly ChromaExtractor _chroma;
+    private readonly KeyClassifier _key;
+
+    public TrackAnalyzer(
+        BpmDetector? bpmDetector = null,
+        ChromaExtractor? chromaExtractor = null,
+        KeyClassifier? keyClassifier = null)
+    {
+        _bpm = bpmDetector ?? new BpmDetector();
+        _chroma = chromaExtractor ?? new ChromaExtractor();
+        _key = keyClassifier ?? new KeyClassifier();
+    }
+
+    /// <summary>Analyzes an in-memory mono PCM buffer.</summary>
+    public TrackAnalysisResult AnalyzePcm(ReadOnlySpan<float> mono, int sampleRate)
+    {
+        if (sampleRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(sampleRate));
+
+        BpmResult bpm = _bpm.Detect(mono, sampleRate);
+        double[] chroma = _chroma.Compute(mono, sampleRate);
+        MusicalKey key = _key.Classify(chroma);
+        return new TrackAnalysisResult(bpm, key);
+    }
+
+    /// <summary>
+    /// Decodes a file to mono PCM through <paramref name="decoder"/> and analyzes it. Throws
+    /// <see cref="NotSupportedException"/> if the decoder cannot handle the file.
+    /// </summary>
+    public async Task<TrackAnalysisResult> AnalyzeAsync(
+        IAudioDecoder decoder, string filePath, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(decoder);
+        ArgumentException.ThrowIfNullOrEmpty(filePath);
+        if (!decoder.CanDecode(filePath))
+            throw new NotSupportedException($"Decoder cannot handle '{filePath}'.");
+
+        var pcm = new List<float>();
+        await foreach (ReadOnlyMemory<float> block in
+            decoder.DecodeMonoAsync(filePath, AnalysisSampleRate, cancellationToken).ConfigureAwait(false))
+        {
+            pcm.AddRange(block.ToArray());
+        }
+
+        var buffer = pcm.ToArray();
+        return AnalyzePcm(buffer, AnalysisSampleRate);
+    }
+}

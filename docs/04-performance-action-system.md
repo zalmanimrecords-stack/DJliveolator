@@ -25,11 +25,18 @@ public enum PerformanceActionKind
     // Beat
     BeatTapTempo, BeatLock, BeatUnlock, BeatHalfTempo, BeatDoubleTempo,
     BeatNudgeForward, BeatNudgeBackward, BeatResetGrid, BeatSetDownbeat,
-    // Visual
-    VisualNextPreset, VisualPreviousPreset, VisualRandomPreset, VisualLoadScene,
-    VisualTriggerPresetBank, VisualToggleOverlay, VisualSetMacro, VisualBlackout,
-    VisualToggleStrobe, VisualTransitionNow, VisualTransitionNextBeat,
-    VisualTransitionNextBar,
+    // Visual (compositor model — doc 08; no projectM presets)
+    VisualLoadScene, VisualSelectBank, VisualSetMacro,
+    VisualSetLayerSource, VisualToggleLayer, VisualSetLayerOpacity, VisualLaunchClip,
+    VisualBlackout, VisualToggleStrobe,
+    VisualTransitionNow, VisualTransitionNextBeat, VisualTransitionNextBar,
+    // Deck / DJ (doc 11) — driven only via actions
+    DeckLoadTrack, DeckPlayPause, DeckCue, DeckHotCue, DeckSetLoop, DeckSeek,
+    DeckPitch, DeckSyncLockToggle, DeckQuantizeToggle,
+    // Mixer (doc 11)
+    MixerCrossfade, MixerChannelGain, MixerEqBand, MixerFilter, MixerCueToggle,
+    // Auto-mix (doc 11) — hands-free assist
+    AutoMixToggle, AutoMixSkipToNext,
     // Playlist
     PlaylistInsertTrackNext, PlaylistMoveTrack, PlaylistRemoveFutureTrack,
     PlaylistSkipOnNextBar,
@@ -73,8 +80,14 @@ public sealed record ActionFeedbackState(
 - The dispatcher routes each `Kind` to the owning engine via small handler
   registrations (one handler per concern — transport handler, beat handler, visual
   handler, playlist handler). No giant switch in one file (global standards #2, #3).
-- Beat-quantized kinds (`...NextBeat`, `...NextBar`, `SkipOnNextBar`) are not applied
-  immediately; the handler defers them through `IBeatScheduler` (doc 03).
+- Beat-quantized kinds (`...NextBeat`, `...NextBar`, `SkipOnNextBar`, `DeckQuantizeToggle`,
+  quantized `VisualLaunchClip` / `VisualLoadScene`) are not applied immediately; the handler
+  defers them through `IBeatScheduler` (doc 03).
+- **Unified audio↔visual timing (doc 00 differentiator):** because audio handlers (sync,
+  auto-mix) and visual handlers both defer through the *same* `IBeatTimeline` (doc 03),
+  quantized audio and visual actions land on the same beat/bar grid. A single mapped control
+  can therefore trigger an audio *and* a visual action that fire together on the next
+  quantum — this is the mechanism behind "control both simultaneously."
 - UI-affecting actions are marshaled to the UI thread inside the dispatcher so
   handlers and callers stay thread-agnostic (doc 00).
 
@@ -89,7 +102,7 @@ both the Push lock button LED and the DJ Sync module `LOCK: ON` readout (doc 12)
 - Decouples input from engines: adding a controller never touches engine code
   (global standard #4).
 - Makes every action testable in isolation: a dispatcher test can assert that
-  `Dispatch(VisualNextPreset)` calls the visual engine once, with no MIDI or UI
+  `Dispatch(VisualLoadScene)` calls the visual engine once, with no MIDI or UI
   present (doc 14).
 - Enables autopilot (doc 10) and macro recording later for free — they emit the same
   actions.
@@ -103,8 +116,9 @@ both the Push lock button LED and the DJ Sync module `LOCK: ON` readout (doc 12)
 
 ## Phase
 
-Phase 4. Route `NextPreset`, `Blackout`, `TapTempo`, `LockBeat`, `NextTrack` through
-the dispatcher first (the plan's success criteria), then migrate the rest.
+Phase 4. Route `VisualLoadScene`, `VisualBlackout`, `BeatTapTempo`, `BeatLock`,
+`TransportNextTrack` through the dispatcher first (the plan's success criteria), then
+migrate the rest (deck/mixer/sync/auto-mix actions land with Phase 10, doc 11).
 
 ## Risks
 

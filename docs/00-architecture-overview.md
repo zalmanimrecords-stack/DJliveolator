@@ -47,36 +47,52 @@ every later phase proceed independently.
 | Seam | Interface | Producer | Consumer |
 |------|-----------|----------|----------|
 | Audio input | `IAudioSource` | Deck / loopback | Frame pipeline |
-| Audio frames | `IAudioFrameProvider` | Frame pipeline | projectM + beat engine |
-| Beat clock | `IBeatClock` (emits `BeatClockState`) | Beat engine | Visual + playlist + UI |
+| Audio frames | `IAudioFrameProvider` | Frame pipeline | Visual compositor + beat engine |
+| Beat clock | `IBeatClock` / `IBeatTimeline` (emits `BeatClockState`) | Beat engine (DJ-side) | Visual + playlist + UI |
 | Control | `IPerformanceActionDispatcher` | Mapping / UI / autopilot | All engines |
+| Decode (offline) | `IAudioDecoder` | (backend, TBD) | Track-Analysis module (doc 16) |
 
-## Proposed project layout
+> **The beat clock is the decoupling point for "visuals follow the DJ."** The DJ/beat
+> engine is the *producer* of `IBeatClock`; the visual engine is a *consumer*. They never
+> reference each other — only the seam — so the same clock can also come from an external
+> Ableton Link session (doc 03). This is how the product differentiator (doc 00 context,
+> "one shared beat clock") is realized without coupling modules.
 
-Live Mode is large enough to warrant its own namespace tree inside the existing
-main app project (`MilkDropVisualizer.App`), keeping one responsibility per file
-(global standard #2, #5). New top-level folder: `Live/`.
+## Project layout (Liveolator multi-project)
+
+Per the Liveolator context doc, the code is split into separate .NET projects so the
+platform-agnostic core stays free of UI and native dependencies and unit-tests without
+hardware (global standards #2, #4, #5). Each top-level **module** below maps to the
+modules described in planning.
 
 ```text
-MilkDropVisualizer.App/
-  Live/
-    Audio/            # IAudioSource implementations, ring buffer  (doc 01)
-    Frames/           # IAudioFrameProvider, AudioFrameData, FFT   (doc 02)
-    Beat/             # onset, tempo, tracker, grid, clock, tap    (doc 03)
-    Actions/          # PerformanceAction model + dispatcher        (doc 04)
-    Mapping/          # MIDI input/output, learn, profiles          (doc 05)
-    Mapping/Profiles/ # Push profile, DJ controller profile         (docs 06, 07)
-    Visual/           # VisualScene, Bank, Macro, Quantize           (doc 08)
-    Playlist/         # Now/Next/Later live queue                    (doc 09)
-    Autopilot/        # rule engine, scene pools                     (doc 10)
-    Decks/            # Deck A/B, crossfader, mixer (Phase 10)       (doc 11)
-    Persistence/      # profile + session serialization              (doc 13)
-  UI.Analog/
-    Modules/          # DJ Sync, Mappings, Scene Grid (new modules)  (doc 12)
+src/
+  Liveolator.Core/        # platform-agnostic, no UI, no native — pure C#, fully unit-tested
+    Frames/               # IAudioFrameProvider, AudioFrameData, FFT          (doc 02)
+    Beat/                 # onset, tempo, tracker, grid, IBeatClock/Timeline  (doc 03)
+    Key/                  # chroma/PCP, key classifier, Camelot               (doc 03)
+    Analysis/             # Track-Analysis: scan + BPM/key/cues, IAudioDecoder (doc 16)
+    Actions/              # PerformanceAction model + dispatcher               (doc 04)
+    Mapping/              # mapping engine, learn, profiles (device-agnostic)  (doc 05)
+    Mapping/Profiles/     # Push profile, DJ controller profile                (docs 06, 07)
+    Playlist/             # Now/Next/Later live queue + library                (doc 09)
+    Autopilot/            # rule engine, scene pools                           (doc 10)
+    VisualModel/          # VisualScene, Bank, Macro, Quantize (model only)    (doc 08)
+    Persistence/          # profile + session + analysis-cache serialization   (doc 13)
+  Liveolator.Audio/       # audio I/O binding: IAudioSource impls, IAudioDecoder, decks
+                          # output (audio library, TBD)                        (docs 01, 11)
+  Liveolator.Midi/        # RtMidi/libremidi binding: IMidiInput/IMidiOutput    (doc 05)
+  Liveolator.Visuals/     # Silk.NET/OpenGL compositor, GLSL effects, FFmpeg    (doc 08)
+  Liveolator.App/         # Avalonia UI; hosts modules, wires seams             (doc 12)
+tests/                    # xUnit over Liveolator.Core (pure logic, no native) (doc 14)
 ```
 
-Tests live in the existing test projects (`MilkDropVisualizer.App.Tests`,
-`MilkDropVisualizer.App.UI.Analog.Tests`) — see
+**Module ↔ seam wiring:** every module talks to the others *only* through the four seams
+(`IAudioSource`, `IAudioFrameProvider`, `IBeatClock`, `IPerformanceActionDispatcher`). The
+Push module (docs 05/06) and the MIDI-mapping module (doc 05) emit `PerformanceAction`s; the
+visual module (doc 08) consumes `IBeatClock`. No module references another module directly.
+
+Tests live in `tests/` over `Liveolator.Core` — see
 [14 — Testing and validation](14-testing-and-validation.md).
 
 ## Naming conventions
@@ -92,8 +108,8 @@ Tests live in the existing test projects (`MilkDropVisualizer.App.Tests`,
 
 ## Threading model
 
-Live audio capture, beat analysis, and the WPF/OpenGL render loop run on different
-threads. The design isolates them with these rules (detailed per subsystem):
+Live audio capture, beat analysis, and the Avalonia/Silk.NET (OpenGL) render loop run on
+different threads. The design isolates them with these rules (detailed per subsystem):
 
 - Capture thread writes only into a lock-free / single-producer ring buffer.
 - Beat engine reads frames on its own analysis cadence and publishes an immutable
@@ -119,9 +135,9 @@ added without changing existing behavior.
 
 ## Risks
 
-- Putting all Live code in the main app keeps interop simple but grows the project.
-  If it becomes unwieldy, the `Live/` tree can be extracted into a
-  `MilkDropVisualizer.Live` class library later — the namespace boundaries above
-  are chosen to make that extraction mechanical.
+- Keeping `Liveolator.Core` free of UI/native deps is the load-bearing rule: if a native
+  or Avalonia type ever leaks into Core, the no-hardware unit-test guarantee breaks. Core
+  references nothing platform-specific; bindings (Audio/Midi/Visuals/App) depend on Core,
+  never the reverse.
 - The seam interfaces must be stable; churning them mid-roadmap forces rework in
   every dependent phase. They are reviewed and frozen at the end of Phase 0.

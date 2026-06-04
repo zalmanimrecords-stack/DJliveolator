@@ -33,6 +33,40 @@ A cross-platform **DJ + VJ** application controlled from Push 1 + CMD STUDIO 2A:
   camera/capture**, composited in layers, beat-synced. **MilkDrop/projectM is dropped
   entirely.**
 
+## Product direction — the differentiator (2026-06-03)
+
+Liveolator is **deliberately not a maximalist pro-DJ tool.** It does not compete with
+Serato / rekordbox / Traktor on DJ feature depth. Its uniqueness is the **tight coupling
+between visuals and music, and controlling both at once.** The DJ engine exists to make
+**beat sync and mixing effortless — near-automatic — so the performer's hands and attention
+are freed to play the visuals.**
+
+Consequences that bind the rest of the design:
+
+1. **Effortless sync is a product requirement, not a feature.** One-button tempo sync that
+   handles octave (½×/2×) ambiguity transparently, with phase alignment as a separate
+   snap-to-beat control, plus opt-in **auto-mix / auto-transition** assist. The performer
+   should never *babysit* the mix.
+2. **One shared beat clock drives BOTH audio and visuals.** The Core beat engine exposes a
+   single **Ableton-Link-style timeline** `(hostTime, beatTime, tempo)` plus a **quantum**
+   for bar/phrase alignment. The DJ mix scheduler *and* the visual compositor read phase /
+   beat from this one clock, so "control both simultaneously" and "beat-synced visuals"
+   fall out by construction. Visual clip launches / parameter changes use **quantized
+   launch** (snap to next beat/bar) — the visual analogue of audio quantize. Interop with
+   **real Ableton Link** (sync to/from Ableton, Resolume, etc.) is an optional extension.
+3. **`PerformanceAction` is the seam that unifies them** — one action can beat-sync audio
+   and visuals together; every input (Push 1, CMD STUDIO 2A, UI, autopilot) feeds it.
+4. **Autopilot (doc 10) on the DJ side is a core mechanism**, not a side feature — it is
+   what frees the operator to focus on the visual performance.
+5. **Explicitly out of scope:** AI stem separation, 4 decks, pro-FX maximalism. Liveolator
+   stays **2 decks**.
+6. **In scope because it serves "easy to mix":** musical key detection + Camelot
+   harmonic-mixing hints (cheap at analysis time; lowers the skill needed to mix well).
+
+Evidence base for these decisions:
+`docs/research/dj-market-and-dsp-research.md` and
+`docs/research/dj-gaps-keydetect-latency-automix-avsync.md`.
+
 ## The visual engine — reimagined (replaces doc 08)
 
 A **texture-based layer compositor**, not a preset player:
@@ -101,10 +135,16 @@ only `IAudioSource` / the output seam.
 
 | Doc | Status for Liveolator |
 |-----|------------------------|
-| 00, 02, 03, 04, 06, 07, 09, 10, 12, 13, 14, 15 | Carry over (UI doc 12: WPF→Avalonia wording only) |
-| 01 — audio source layer | **Revise:** NAudio/ASIO → audio-lib + PortAudio/CoreAudio |
-| 05 — controller mapping | **Revise:** DryWetMidi → RtMidi/libremidi |
-| 08 — visual engine | **Replace:** projectM presets → texture/layer compositor (see above) |
-| 11 — decks | **Revise:** output routing via cross-platform audio lib |
+| 02, 06, 07, 09, 12, 13, 14, 15 | Carry over (UI doc 12: WPF→Avalonia wording only) |
+| 00-architecture-overview | **Updated** (2026-06-03): multi-project Liveolator layout, compositor seam, Avalonia/Silk.NET, `IAudioDecoder` seam |
+| 16 — track analysis & library | **New** (2026-06-03): folder scan + offline BPM/key/cues, `IAudioDecoder` seam (good first Core module) |
+| 03 — beat engine | **Updated** (2026-06-03): added Link-style shared timeline + quantum, and key detection |
+| 04 — performance actions | **Updated** (2026-06-03): visual actions → compositor model; added deck/mixer/sync/auto-mix actions + unified A/V timing |
+| 08 — visual engine | **Replaced** (2026-06-03): projectM presets → texture/layer compositor + shared-clock coupling |
+| 10 — autopilot | Carry over (now also the driver of DJ-side auto-mix, per Product direction) |
+| 11 — decks | **Updated** (2026-06-03): Liveolator/cross-platform wording; Sync Lock + Quantize committed; Auto-Mix + harmonic hint added |
+| 01 — audio source layer | **Partially revised** (2026-06-03): added latency targets + RT-thread rules, cross-platform wording. **Still pending:** NAudio types → chosen audio library (gated on the open audio-library decision) |
+| 05 — controller mapping | **Revise (pending):** DryWetMidi → RtMidi/libremidi |
 
-These revisions are queued; this context doc is the source of truth until they land.
+This context doc is the source of truth. Remaining queued revision: doc 05 (MIDI library)
+and doc 01's final backend binding (both gated on open decisions above).

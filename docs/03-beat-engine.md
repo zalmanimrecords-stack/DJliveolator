@@ -90,8 +90,71 @@ Locked tempo is retained through brief silences (drops in a song) rather than re
 ## Manual & external clock sources
 
 `BeatClockSource.Manual` lets the performer drive purely from tap/lock with no audio
-analysis. `BeatClockSource.External` is the seam for a future `IExternalClock`
-(Ableton Link / DJ-link, doc 01 future) feeding tempo/phase directly.
+analysis. `BeatClockSource.External` is the seam for an `IExternalClock`
+(Ableton Link / DJ-link, doc 01) feeding tempo/phase directly.
+
+## Shared beat clock — Link-style timeline (drives audio **and** visuals)
+
+> Per the product direction (doc 00): a **single** beat clock drives both the DJ mix and
+> the visual compositor, so "control both simultaneously" and "beat-synced visuals" hold by
+> construction. The model below follows Ableton Link's proven design.
+
+In addition to the per-beat `StateChanged` events above, the clock exposes a **continuous
+timeline** — the bijection between wall-clock host time and musical beat time at the
+current tempo (`beatTime / hostTime = tempo`). Any consumer (mix scheduler, visual
+animation, clip launch) can ask "what beat/phase are we at, at time *t*?" without waiting
+for an event, and schedule precisely against the **same** grid.
+
+```csharp
+public interface IBeatTimeline
+{
+    // Musical beat position at a given host time (monotonic across the session).
+    double BeatAtTime(long hostTimeTicks);
+    // Phase within the alignment grid (0..1) for a given quantum, in beats.
+    double PhaseAtTime(long hostTimeTicks, double quantumBeats);
+    // Host time of the next quantum boundary at/after `fromHostTimeTicks`
+    // — the basis for quantized launch (snap a change to the next beat/bar).
+    long NextBoundary(long fromHostTimeTicks, double quantumBeats);
+}
+```
+
+- **Quantum** = the alignment unit in beats (1 = beat, 4 = bar in 4/4, 8/16 = phrase).
+  Consumers sharing a quantum are phase-aligned, and alignment composes (a 4-beat boundary
+  always coincides with an 8-beat boundary).
+- **Quantized launch:** visual clip launches and parameter changes resolve their fire time
+  via `NextBoundary(...)` — the visual analogue of audio `Quantize` (this is what
+  `IBeatScheduler` resolves against; see below).
+- **External interop:** when `BeatClockSource.External` is an Ableton Link session, this
+  timeline is Link's timeline directly, so Liveolator can sync to/from Ableton, Resolume,
+  and other Link apps on stage. Internally, the same `IBeatTimeline` is used whether the
+  source is a deck, the analyzer, manual tap, or Link.
+
+## Musical key detection (analysis-time, supports harmonic mixing)
+
+> In scope per doc 00 because it makes mixing *easier* (lowers the skill needed to pick a
+> compatible next track). Computed **offline at track-analysis time**, not on the realtime
+> audio thread.
+
+```text
+mono PCM (whole track, offline)
+   ▼
+ChromaExtractor      → 12-d pitch-class profile (PCP): fold spectrum into semitone
+                       bands, sum energy across octave-spaced bands
+   ▼
+KeyClassifier        → correlate PCP against 24 major/minor key templates
+                       (Krumhansl–Schmuckler / Temperley profiles); highest match = key
+   ▼
+MusicalKey           → { Tonic, Mode (Major/Minor), CamelotCode, Confidence }
+```
+
+- **Output:** a `MusicalKey` cached on the track (doc 13), exposing the **Camelot code**
+  (1–12 + `A` minor / `B` major; e.g. C Major = `8B`, A Minor = `8A`).
+- **Harmonic-mixing rule** (pure lookup, consumed by deck loading, doc 11): a key is
+  compatible with **±1 same letter** (`8A → 7A/9A`) or **same number, switched letter**
+  (`8A ↔ 8B`).
+- **Reference implementation:** the Mixxx model — QM-DSP key detector by default, with
+  libkeyfinder-style template matching as an alternative. This is a small, well-bounded
+  algorithm; it is not on a latency-critical path.
 
 ## Quantization helper
 
