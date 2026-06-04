@@ -32,3 +32,12 @@ Thumbs.db
 # Native dependency binaries (shipped per-platform, fetched by setup scripts)
 /native/**/bin/
 /runtimes/
+
+# Local smoke-test artifacts (generated catalogs / sample media)
+/smoke-data/
+/smoke-music/
+
+# MCP smoke-test transcripts
+smoke*.jsonl
+smoke*.out
+smoke*.err

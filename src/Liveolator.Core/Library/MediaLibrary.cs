@@ -30,6 +30,19 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     public TEntry? TryGet(string path) => _byPath.TryGetValue(path, out TEntry? entry) ? entry : null;
 
     /// <summary>
+    /// Seeds the catalog from a previously-persisted set (the doc 13 cache) so a following
+    /// <see cref="ScanAsync"/> only re-analyzes files whose size/mtime changed. Replaces any
+    /// current contents; entries with duplicate paths keep the last one.
+    /// </summary>
+    public void Restore(IEnumerable<TEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        _byPath.Clear();
+        foreach (TEntry entry in entries)
+            _byPath[entry.File.Path] = entry;
+    }
+
+    /// <summary>
     /// Scans the folders and updates the catalog incrementally: unchanged files are kept as-is
     /// (not re-processed), removed files are dropped, new/changed files are (re)built.
     /// </summary>

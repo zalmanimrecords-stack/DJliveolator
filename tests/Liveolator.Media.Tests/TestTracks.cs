@@ -1,0 +1,30 @@
+using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Library;
+using Liveolator.Core.Library.Music;
+
+namespace Liveolator.Media.Tests;
+
+/// <summary>Builds in-memory <see cref="MusicTrack"/> values for persistence/export tests.</summary>
+internal static class TestTracks
+{
+    private static readonly DateTime T = new(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    public static MusicTrack Analyzed(string path, double bpm, int tonic, KeyMode mode)
+    {
+        var key = new MusicalKey(tonic, mode, Camelot.Code(tonic, mode), 0.85);
+        var cues = new TrackCues(TimeSpan.FromSeconds(2), null, null, TimeSpan.FromMinutes(3.5));
+        return new MusicTrack(
+            new ScannedFile(path, 4096, T),
+            new BpmResult(bpm, 0.9),
+            key,
+            TimeSpan.FromMinutes(4),
+            cues,
+            MediaAnalysisStatus.Ok,
+            null);
+    }
+
+    public static MusicTrack Failed(string path)
+        => new(new ScannedFile(path, 0, T), null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, "decode error");
+}

@@ -66,6 +66,26 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task Restore_SeedsCatalog_SoScanSkipsUnchangedFiles()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+
+        await library.ScanAsync(new[] { "music" });
+        MusicTrack cached = library.TryGet("a.mp3")!;
+
+        // Simulate a fresh process: a new library + decoder, restored from the persisted snapshot.
+        var freshDecoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var reloaded = new MusicLibrary(enumerator, freshDecoder);
+        reloaded.Restore(new[] { cached });
+        await reloaded.ScanAsync(new[] { "music" });
+
+        Assert.Equal(1, reloaded.Count);
+        Assert.Equal(0, freshDecoder.DecodeCalls.GetValueOrDefault("a.mp3")); // restored fingerprint → no re-decode
+    }
+
+    [Fact]
     public async Task HarmonicMatches_ReturnsCompatibleKeys_ExcludingSeed()
     {
         // C major triad (8B) and A minor triad (8A) are relative-key compatible.
