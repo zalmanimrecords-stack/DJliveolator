@@ -3,8 +3,8 @@ using Liveolator.Core.Analysis.Key;
 
 namespace Liveolator.Core.Analysis;
 
-/// <summary>Combined offline analysis of one track: tempo and musical key/scale.</summary>
-public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key);
+/// <summary>Combined offline analysis of one track: tempo, musical key/scale, duration, cues.</summary>
+public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key, TimeSpan Duration, TrackCues Cues);
 
 /// <summary>
 /// Measures BPM and musical key/scale from mono PCM, and (via <see cref="IAudioDecoder"/>)
@@ -19,15 +19,18 @@ public sealed class TrackAnalyzer
     private readonly BpmDetector _bpm;
     private readonly ChromaExtractor _chroma;
     private readonly KeyClassifier _key;
+    private readonly SilenceCueDetector _cues;
 
     public TrackAnalyzer(
         BpmDetector? bpmDetector = null,
         ChromaExtractor? chromaExtractor = null,
-        KeyClassifier? keyClassifier = null)
+        KeyClassifier? keyClassifier = null,
+        SilenceCueDetector? cueDetector = null)
     {
         _bpm = bpmDetector ?? new BpmDetector();
         _chroma = chromaExtractor ?? new ChromaExtractor();
         _key = keyClassifier ?? new KeyClassifier();
+        _cues = cueDetector ?? new SilenceCueDetector();
     }
 
     /// <summary>Analyzes an in-memory mono PCM buffer.</summary>
@@ -39,7 +42,9 @@ public sealed class TrackAnalyzer
         BpmResult bpm = _bpm.Detect(mono, sampleRate);
         double[] chroma = _chroma.Compute(mono, sampleRate);
         MusicalKey key = _key.Classify(chroma);
-        return new TrackAnalysisResult(bpm, key);
+        TrackCues cues = _cues.Detect(mono, sampleRate);
+        var duration = TimeSpan.FromSeconds((double)mono.Length / sampleRate);
+        return new TrackAnalysisResult(bpm, key, duration, cues);
     }
 
     /// <summary>

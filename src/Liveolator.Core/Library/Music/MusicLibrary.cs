@@ -31,11 +31,12 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         TrackAnalysisResult result = await _analyzer
             .AnalyzeAsync(_decoder, file.Path, cancellationToken)
             .ConfigureAwait(false);
-        return new MusicTrack(file, result.Bpm, result.Key, MediaAnalysisStatus.Ok, null);
+        MediaAnalysisStatus status = TrackStatusPolicy.For(result);
+        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null);
     }
 
     protected override MusicTrack CreateFailedEntry(ScannedFile file, string error)
-        => new(file, null, null, MediaAnalysisStatus.Failed, error);
+        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error);
 
     /// <summary>
     /// Returns successfully-analyzed tracks whose key is a harmonically-compatible mix from
@@ -47,8 +48,10 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         if (seed.Key is null)
             return Array.Empty<MusicTrack>();
 
+        // A confident key is enough for harmonic mixing even if the tempo was uncertain,
+        // so include PartiallyAnalyzed tracks — exclude only Failed (no key) and the seed.
         return All
-            .Where(t => t.Status == MediaAnalysisStatus.Ok
+            .Where(t => t.Status != MediaAnalysisStatus.Failed
                         && t.Key is not null
                         && !string.Equals(t.File.Path, seed.File.Path, StringComparison.OrdinalIgnoreCase)
                         && Camelot.IsCompatible(seed.Key.Camelot, t.Key.Camelot))

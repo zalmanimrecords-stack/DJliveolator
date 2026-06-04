@@ -4,6 +4,8 @@ namespace Liveolator.Core.Library;
 public enum MediaAnalysisStatus
 {
     Ok,
+    /// <summary>Decoded and analyzed, but tempo and/or key confidence is low.</summary>
+    PartiallyAnalyzed,
     Failed
 }
 

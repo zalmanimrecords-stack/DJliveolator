@@ -1,14 +1,17 @@
 using System.IO;
+using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 
 namespace Liveolator.Core.Library.Music;
 
-/// <summary>A catalogued music file with its offline analysis (BPM + musical key/scale).</summary>
+/// <summary>A catalogued music file with its offline analysis (BPM, key/scale, duration, cues).</summary>
 public sealed record MusicTrack(
     ScannedFile File,
     BpmResult? Bpm,
     MusicalKey? Key,
+    TimeSpan? Duration,
+    TrackCues Cues,
     MediaAnalysisStatus Status,
     string? Error) : IMediaEntry
 {

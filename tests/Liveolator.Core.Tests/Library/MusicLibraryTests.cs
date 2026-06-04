@@ -26,8 +26,9 @@ public class MusicLibraryTests
 
         Assert.Equal(2, library.Count);
         MusicTrack a = library.TryGet("a.mp3")!;
-        Assert.Equal(MediaAnalysisStatus.Ok, a.Status);
+        Assert.NotEqual(MediaAnalysisStatus.Failed, a.Status); // a beat-only click train has no key
         Assert.InRange(a.Bpm!.Bpm, 117.0, 123.0);
+        Assert.NotNull(a.Duration);
         Assert.Equal("a", a.Title);
     }
 

@@ -37,6 +37,14 @@ public class TrackAnalyzerTests
     }
 
     [Fact]
+    public void AnalyzePcm_ReportsDuration()
+    {
+        var tone = TestSignals.Sine(440, 44100, seconds: 2.0);
+        TrackAnalysisResult result = new TrackAnalyzer().AnalyzePcm(tone, 44100);
+        Assert.InRange(result.Duration.TotalSeconds, 1.99, 2.01);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_DecodesThenMeasuresBpm()
     {
         var decoder = new FakeAudioDecoder(TestSignals.ClickTrain(120, 44100, seconds: 10));
