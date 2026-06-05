@@ -1,13 +1,18 @@
 # 01 — Audio Source Layer
 
-> **Revision status (doc 00):** this doc still shows the Zalmanolator-era Windows stack
-> (NAudio types, `WasapiLoopbackCapture`, `AsioOut`). Per doc 00 the project is now
-> cross-platform and the **audio library is an OPEN DECISION** (BASS/ManagedBass vs
-> PortAudio/miniaudio). Treat the NAudio-specific types below as **placeholders**: the
-> `IAudioSource` seam and the contracts are what carry over; the concrete backend
-> (Windows: ASIO/WDM-KS/WASAPI · macOS: CoreAudio) is bound once the library is chosen.
-> The **latency targets and real-time-thread rules** added below are library-independent
-> and apply regardless.
+> **Revision status (doc 00):** the **audio library decision is RESOLVED — BASS/ManagedBass**
+> (2026-06-05), and the first realtime slice is built. The `IAudioSource` seam now lives in
+> `Liveolator.Core/Audio/`; the BASS backend (`DeckAudioSource` / `BassPlayback` / `BassAudioEngine`)
+> lives in `Liveolator.Audio/Playback/`. Treat the NAudio-specific types in the rest of this doc as
+> **historical placeholders** — the live seam shapes are those in `Liveolator.Core/Audio/` and
+> `docs/18`. Still on BASS but not yet built: ASIO/CoreAudio device selection + multi-channel cue
+> output (Phase 1b / doc 11) and system-loopback capture.
+>
+> **Built `IAudioSource` (Core):** `string Name`, `bool IsRunning`, `Start()`, `Stop()`, and
+> `event EventHandler<AudioSamplesAvailable> SamplesAvailable`, where
+> `AudioSamplesAvailable(ReadOnlyMemory<float> Interleaved, int Channels, int SampleRate)` carries
+> source-native interleaved float samples. Conversion to analysis frames is the frame pipeline's job
+> (doc 02). The **latency targets and real-time-thread rules** below are library-independent.
 
 ## Purpose
 

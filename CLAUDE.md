@@ -34,7 +34,7 @@ Windows-bound implementations. Full rationale: `docs/00-LIVEOLATOR-CONTEXT.md`.
 | Graphics / effects | **OpenGL via Silk.NET** + GLSL fragment shaders |
 | Video decode | **FFmpeg** (frame → GL texture); libVLC as alternative |
 | Camera / capture | FFmpeg (dshow on Win / avfoundation on Mac) or OpenCV |
-| Audio I/O | **OPEN DECISION — not yet chosen** (see below) |
+| Audio I/O | **BASS / ManagedBass** (realtime playback, decided 2026-06-05); offline decode = WAV managed + FFmpeg CLI |
 | MIDI | **RtMidi / libremidi** (cross-platform) |
 
 ASIO (Windows) / CoreAudio (Mac) are reached through the audio library; app code only
@@ -67,18 +67,18 @@ docs/                     # architecture & design
   button; capture its MIDI map via learn mode (don't hardcode CC numbers).
 - Autopilot override defaults to auto-resume after a configurable window (both modes
   built behind one state machine).
+- **Audio library (realtime playback) = BASS/ManagedBass** (decided 2026-06-05): decode/mix/
+  tempo/ASIO/CoreAudio out of the box; commercial license accepted for distribution. The
+  realtime seam (`IAudioSource` → frame pipeline → `AudioBeatClock`) and a first slice (play a
+  track → live BPM) are built; BASS calls are isolated behind `IBassPlayback`. See `docs/18`.
 
 ## Open decisions (decide before relevant code)
 
-1. **Audio library (realtime playback):** BASS/ManagedBass (easy for DJ:
-   decode/mix/tempo/ASIO/CoreAudio, but **commercial license required for distribution**) vs
-   PortAudio/miniaudio (open, more work). Affects `docs/01` and `docs/11`. **Offline decode**
-   (analysis only) is already resolved: WAV via a pure-managed decoder, other formats via the
-   FFmpeg CLI (`Liveolator.Audio`, doc 17) — this decision is only about realtime playback.
+- *(none currently blocking)* — the audio-library decision is resolved (see Key decisions).
 
 ## Docs to revise (still reflect the old Zalmanolator stack)
 
-- `docs/01` audio source layer (NAudio/ASIO → audio lib / CoreAudio)
+- `docs/01` audio source layer — top revised to BASS; NAudio types in the body are historical
 - `docs/05` controller mapping (DryWetMidi → RtMidi)
 - `docs/08` visual engine (**replace**: projectM → texture/layer compositor)
 - `docs/11` decks (output routing via cross-platform audio lib)

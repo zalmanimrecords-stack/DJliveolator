@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **241 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **290 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -36,8 +36,9 @@ The action-layer seam: every input source drives engines through one dispatcher.
   fails fast at construction. Handler failures are logged with action context and swallowed;
   unknown kinds log a warning, never throw.
 - **Deferred:** the concrete concern handlers land with their engines. Built so far:
-  **`BeatActionHandler`** (see Beat) and **`PlaylistActionHandler`** (see Live playlist). Pending:
-  Visual/Deck/Mixer/Transport handlers.
+  **`BeatActionHandler`** (see Beat), **`PlaylistActionHandler`** (see Live playlist), and
+  **`DeckActionHandler`** (see Realtime audio — DeckLoadTrack/DeckPlayPause/TransportStop).
+  Pending: Visual/Mixer + the rest of Deck/Transport handlers.
 
 ### ✅ Controller mapping engine — `Liveolator.Core/Mapping/` (doc 05)
 
@@ -78,10 +79,36 @@ The shared audio/visual clock foundation that needs no audio frames.
 
 - **End-to-end loop proven in tests:** `PerformanceActionDispatcher` → `BeatActionHandler` →
   `ManualBeatClock`, with feedback back through the dispatcher.
-- **Deferred:** realtime `OnsetDetectionEngine` / audio `TempoEstimator` / `BeatTracker` /
-  audio-driven `BeatClockService`. Blocker: the doc 02 audio frame pipeline, which needs an
-  `IAudioSource` (gated on the audio-library decision). Also deferred: `BeatClockSource.External`
-  (Ableton Link). Note: **offline** BPM/key analysis already exists under `Core/Analysis/`.
+- **Realtime beat clock now built:** `AudioBeatClock` (see Realtime audio) drives a live
+  `BeatClockState` from the frame pipeline using `SpectralFlux` + the existing `TempoEstimator`.
+- **Deferred:** `BeatClockSource.External` (Ableton Link), and a dedicated per-deck `BeatTracker`
+  for two-deck sync (doc 11). Note: **offline** BPM/key analysis also exists under `Core/Analysis/`.
+
+### ✅ Realtime audio chain — `Liveolator.Core/Audio/` + `Liveolator.Audio/Playback/` (docs 01/02)
+
+The live capture→analysis→clock path, plus playback driven through the action layer. The pure
+seams + composition live in Core; the native BASS backend lives in the Audio binding.
+
+| Built | File |
+|-------|------|
+| Source seam + sample batch | `IAudioSource`, `AudioSamplesAvailable` (Core) |
+| Frame pipeline seam + impl | `IAudioFrameProvider`, `AudioFrameData`, `SpectrumAnalyzer`, `AudioFramePipeline` (Core) |
+| Track-swappable source | `SwitchableAudioSource` (Core) |
+| Playback engine seam + composition | `IAudioPlaybackEngine`, `IDeckSourceFactory`, `LivePlaybackEngine` (Core) |
+| Deck transport handler | `DeckActionHandler` (Core; DeckLoadTrack/DeckPlayPause/TransportStop) |
+| **BASS realtime backend** | `BassAudioEngine`, `DeckAudioSource`, `BassPlayback`, `IBassPlayback` (Audio) |
+
+- **Decision made:** realtime audio library = **BASS/ManagedBass** (2026-06-05). All BASS calls go
+  through the internal `IBassPlayback` seam so `DeckAudioSource` unit-tests with a fake; native
+  bass is not needed in CI. `BassAudioEngine` implements `IDeckSourceFactory`.
+- `LivePlaybackEngine` wires `SwitchableAudioSource → AudioFramePipeline → AudioBeatClock` and
+  exposes the live `IBeatClock`; the deck swaps per track without breaking the clock. Proven
+  end-to-end in Core tests (synthetic click track → 120 BPM detected).
+- **App slice:** the Libraries tab plays the selected track via the dispatcher and shows the live
+  detected BPM. Live Mode is best-effort: if native BASS is absent, the app runs as a catalog
+  browser with transport hidden.
+- **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
+  system-loopback capture source, and resampling to a fixed analysis rate.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 
@@ -151,8 +178,9 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 - `Core/Dsp/` (FFT, windows), `Core/Analysis/` (offline BPM, chroma, key/Camelot, cues),
   `Core/Library/` (incremental scan, music + visual catalogs, **tag-metadata seam
   `ITrackMetadataReader` + `TrackMetadata`**), `Core/Playlist/` (`HarmonicSetBuilder`).
-  Bindings: `Liveolator.Audio` (WAV + FFmpeg-CLI decode, **+ tag metadata via
-  `AtlMetadataReader` / ATL.NET `z440.atl.core`, MIT**),
+  Bindings: `Liveolator.Audio` (WAV + FFmpeg-CLI **offline** decode, **+ tag metadata via
+  `AtlMetadataReader` / ATL.NET `z440.atl.core`, MIT**, **+ realtime BASS playback**, see
+  Realtime audio),
   `Liveolator.Platform` (file enumerator), `Liveolator.Visuals` (image/video probes only),
   `Liveolator.Media` (JSON catalog store — music snapshot **v2** carries `TrackMetadata`),
   `Liveolator.Mcp` (music-intelligence server).
@@ -177,7 +205,12 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 2. **MCP tools** exposing the new Core capabilities to agents (doc 17).
 3. Remaining concern handlers (Visual/Deck/Mixer/Transport) as their engines land.
 
-## Blocked until the audio-library decision (BASS vs PortAudio/miniaudio)
+## Audio-library decision — RESOLVED (BASS/ManagedBass, 2026-06-05)
 
-- `IAudioSource` realtime playback, decks + mixer (doc 11), the audio frame pipeline (doc 02),
-  and therefore audio-driven beat detection (doc 03 realtime half).
+The realtime audio library is decided and the first vertical slice is built: `IAudioSource`
+realtime playback, the audio frame pipeline (doc 02), and audio-driven beat detection (doc 03
+realtime half) are all landed (see Realtime audio). What still remains to build on top:
+
+- **Decks + mixer (doc 11):** two-deck playback, software mixer (crossfader/EQ/filter), hot cues,
+  loops, beatmatching, multi-channel ASIO/CoreAudio cue output. Unblocked — just not built yet.
+- **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) and ASIO device pick.
