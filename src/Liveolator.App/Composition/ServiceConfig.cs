@@ -1,4 +1,5 @@
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Live;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -37,9 +38,17 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
 
-        // --- Visual engine (doc 08): register the GL compositor + its action handler. ---
-        // Runs BEFORE WireLiveAudio so the VisualActionHandler exists when the dispatcher is built.
-        VisualActionHandler visualHandler = WireVisuals(services);
+        // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
+        // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
+        // visuals pulse on the beat" experience works with NO audio hardware. The audio-driven
+        // AudioBeatClock (registered in WireLiveAudio when BASS is present) is a separate source used
+        // for the Libraries live-BPM readout; unifying the two is a later step (doc 03).
+        var hostClock = new SystemHostClock();
+        var sharedLiveClock = new ManualBeatClock(hostClock.TicksPerSecond);
+
+        // --- Visual engine (doc 08): the GL compositor reads the shared clock and its action handler
+        // joins the one dispatcher. Runs BEFORE WireLiveAudio so the handler exists when it is built.
+        VisualActionHandler visualHandler = WireVisuals(services, sharedLiveClock);
 
         // --- Live Mode: realtime playback + beat clock (docs 01/02/03/04) ---
         // Best-effort: the BASS backend needs the native bass library at runtime. If it is
@@ -47,6 +56,7 @@ public static class ServiceConfig
         // app still runs as a catalog browser — the UI hides the transport controls.
         WireLiveAudio(services, visualHandler);
         WireCaptureSources(services);
+        WireLiveTab(services, sharedLiveClock, hostClock);
 
         // --- View-models ---
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
@@ -90,29 +100,24 @@ public static class ServiceConfig
 
     // --- Visual engine (doc 08, task 5) -----------------------------------------------------------
     // Registers the GL compositor as IVisualPerformanceEngine and returns its VisualActionHandler so
-    // WireLiveAudio can add it to the one dispatcher. This block is intentionally self-contained.
+    // WireLiveAudio can add it to the one dispatcher.
     //
     // HEADLESS-SAFE: the GL engine opens a window/GL context only inside Run(); we register it for
     // resolution but NEVER call Run() here, so the app launches headless. Launching the render window
     // is a deferred user action — see the RENDER-WINDOW SEAM note below.
     //
-    // The engine is seeded with a placeholder bank + the brightness macro (the compositor's first
-    // slice); a real scene/bank catalog from persistence (doc 13) replaces StarterBank later. It
-    // currently runs off its own ManualBeatClock; binding it to the shared live-audio IBeatClock is
-    // part of the render-window seam (the GL render thread reads the clock per frame, doc 08 §beat-sync).
-    private static VisualActionHandler WireVisuals(IServiceCollection services)
+    // The engine reads the SHARED live clock (passed in), so once the render window runs it pulses on
+    // the same beat the Live tab taps. The starter bank is empty (no GPU assets at startup); a real
+    // scene/bank catalog from persistence (doc 13) replaces it later.
+    private static VisualActionHandler WireVisuals(IServiceCollection services, ManualBeatClock sharedLiveClock)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        // Empty starter bank: no GPU assets to load at startup. LoadScene/LaunchClip degrade safely
-        // until a scene catalog is wired (doc 13). Ticks-per-second matches SystemHostClock's domain.
         var starterBank = new VisualBank("Starter", Array.Empty<VisualScene>());
-        var visualClock = new ManualBeatClock(TimeSpan.TicksPerSecond);
-
-        var visualEngine = new GlVisualPerformanceEngine(starterBank, brightnessMacro, visualClock);
+        var visualEngine = new GlVisualPerformanceEngine(starterBank, brightnessMacro, sharedLiveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -125,13 +130,40 @@ public static class ServiceConfig
         return visualHandler;
     }
 
+    // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
+    // Drives the SHARED ManualBeatClock via a BeatActionHandler, so tap/lock/nudge advance the same
+    // clock the visual engine reads. Transport (DeckPlayPause / TransportStop) routes to the real deck
+    // engine when it is registered, otherwise it is a logged no-op — the UI still emits the intent
+    // through the dispatcher (doc 04, never a direct engine call). The Live tab uses its OWN dispatcher
+    // so its handler set is independent of the audio dispatcher, but the CLOCK is shared on purpose.
+    private static void WireLiveTab(IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock)
+    {
+        services.AddSingleton<LiveViewModel>(sp =>
+        {
+            var handlers = new List<IPerformanceActionHandler>
+            {
+                new BeatActionHandler(clock, hostClock),
+            };
+
+            // Compose transport routing only when the realtime deck engine is present.
+            var engine = sp.GetService<IAudioPlaybackEngine>();
+            if (engine is not null)
+                handlers.Add(new DeckActionHandler(engine));
+
+            var dispatcher = new PerformanceActionDispatcher(
+                handlers, NullLogger<PerformanceActionDispatcher>.Instance);
+
+            return new LiveViewModel(dispatcher, clock, clock, hostClock, new DispatcherLiveBeatTimer());
+        });
+    }
+
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---
     // Registers the BASS capture engine as both the device catalog and the source factory. A single
     // engine instance backs both seams. Native bass is not required to construct the engine
     // (enumeration/creation only touch native on demand and degrade to "no devices" if it is absent),
     // so this never disables app startup.
     //
-    // SETTINGS-UI SEAM (for the Live-tab / Settings agent): the device picker should resolve
+    // SETTINGS-UI SEAM (for the Settings agent): the device picker should resolve
     // IAudioCaptureDeviceCatalog, list EnumerateCaptureDevices(), let the user choose an
     // AudioCaptureDevice, then call IAudioCaptureSourceFactory.CreateCaptureSource(device) and feed
     // the returned IAudioSource into the live pipeline (via SwitchableAudioSource.SetSource, mirroring

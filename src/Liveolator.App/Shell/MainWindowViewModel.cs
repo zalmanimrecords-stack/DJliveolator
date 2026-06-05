@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Shared;
 using ReactiveUI;
 
@@ -14,13 +15,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private TabItemViewModel _currentTab;
 
-    public MainWindowViewModel(LibrariesViewModel libraries)
+    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live)
     {
         ArgumentNullException.ThrowIfNull(libraries);
+        ArgumentNullException.ThrowIfNull(live);
 
         Tabs = new ObservableCollection<TabItemViewModel>
         {
-            new("Live", new PlaceholderViewModel("Live", "Combined performance view — coming soon.")),
+            new("Live", live),
             new("DJ", new PlaceholderViewModel("DJ", "Two-deck DJ workspace — coming soon.")),
             new("VJ", new PlaceholderViewModel("VJ", "Visual compositor — coming soon.")),
             new("Libraries", libraries),

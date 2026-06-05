@@ -1,0 +1,111 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:live="clr-namespace:Liveolator.App.Features.Live"
+             x:Class="Liveolator.App.Features.Live.LiveView"
+             x:DataType="live:LiveViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- transport bar -->
+    <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
+      <Button Grid.Column="0" Classes="accent" Content="▶ Play / Pause"
+              Command="{Binding PlayPauseCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="1" Classes="spartan" Content="■ Stop"
+              Command="{Binding StopCommand}" />
+      <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
+                 IsVisible="{Binding !IsLiveModeEnabled}"
+                 Text="Live Mode off — controls disabled" />
+    </Grid>
+
+    <!-- main: beat readout | beat controls -->
+    <Grid Row="1" ColumnDefinitions="*,300">
+
+      <!-- beat readout + pulse (the demo centrepiece) -->
+      <Border Grid.Column="0" Classes="panel">
+        <StackPanel Margin="24" Spacing="24">
+          <TextBlock Classes="section" Text="BEAT CLOCK" />
+
+          <!-- pulse indicators -->
+          <StackPanel Orientation="Horizontal" Spacing="32" HorizontalAlignment="Center" Margin="0,8">
+            <StackPanel Spacing="8" HorizontalAlignment="Center">
+              <Ellipse Width="64" Height="64" HorizontalAlignment="Center"
+                       Fill="{StaticResource Accent}"
+                       Opacity="{Binding IsBeat, Converter={x:Static live:PulseOpacityConverter.Instance}}" />
+              <TextBlock Classes="faint" HorizontalAlignment="Center" Text="BEAT" />
+            </StackPanel>
+            <StackPanel Spacing="8" HorizontalAlignment="Center">
+              <Ellipse Width="64" Height="64" HorizontalAlignment="Center"
+                       Fill="{StaticResource Red}"
+                       Opacity="{Binding IsDownbeat, Converter={x:Static live:PulseOpacityConverter.Instance}}" />
+              <TextBlock Classes="faint" HorizontalAlignment="Center" Text="DOWNBEAT" />
+            </StackPanel>
+          </StackPanel>
+
+          <!-- tempo readout -->
+          <StackPanel Spacing="2" HorizontalAlignment="Center">
+            <TextBlock Classes="mono accent" FontSize="40" HorizontalAlignment="Center"
+                       Text="{Binding Bpm}" />
+            <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
+              <TextBlock Classes="mono faint" Text="{Binding Confidence}" />
+              <TextBlock Classes="mono accent" IsVisible="{Binding IsLocked}" Text="LOCKED" />
+            </StackPanel>
+          </StackPanel>
+
+          <!-- phase + position -->
+          <StackPanel Spacing="10">
+            <TextBlock Classes="faint" Text="BEAT PHASE" />
+            <ProgressBar Minimum="0" Maximum="1" Value="{Binding BeatPhase}" Height="6" />
+            <TextBlock Classes="faint" Text="BAR PHASE" Margin="0,8,0,0" />
+            <ProgressBar Minimum="0" Maximum="1" Value="{Binding BarPhase}" Height="6" />
+            <Grid ColumnDefinitions="*,*" Margin="0,8,0,0">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <TextBlock Classes="faint" Text="BAR" />
+                <TextBlock Classes="mono" FontSize="14" Text="{Binding BarNumber}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="2">
+                <TextBlock Classes="faint" Text="BEAT #" />
+                <TextBlock Classes="mono" FontSize="14" Text="{Binding BeatCount}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- beat controls -->
+      <Border Grid.Column="1" Classes="panel" Margin="16,0,0,0">
+        <StackPanel Margin="20" Spacing="16">
+          <TextBlock Classes="section" Text="TEMPO CONTROL" />
+
+          <Button Classes="accent" HorizontalAlignment="Stretch"
+                  Content="TAP" Command="{Binding TapCommand}" />
+
+          <StackPanel Spacing="8">
+            <TextBlock Classes="faint" Text="GRID" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="spartan" Content="Lock" Command="{Binding LockCommand}" />
+              <Button Classes="spartan" Content="Unlock" Command="{Binding UnlockCommand}" />
+              <Button Classes="spartan" Content="Downbeat" Command="{Binding SetDownbeatCommand}" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Spacing="8">
+            <TextBlock Classes="faint" Text="TEMPO" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="spartan" Content="½×" Command="{Binding HalfCommand}" />
+              <Button Classes="spartan" Content="2×" Command="{Binding DoubleCommand}" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Spacing="8">
+            <TextBlock Classes="faint" Text="NUDGE" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Classes="spartan" Content="− Nudge" Command="{Binding NudgeBackwardCommand}" />
+              <Button Classes="spartan" Content="Nudge +" Command="{Binding NudgeForwardCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </Grid>
+</UserControl>

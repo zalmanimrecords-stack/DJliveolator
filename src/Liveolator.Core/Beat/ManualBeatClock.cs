@@ -7,7 +7,7 @@ namespace Liveolator.Core.Beat;
 /// <see cref="BeatClockState"/> on each change. Times are supplied by the caller, so it is fully
 /// deterministic and unit-testable.
 /// </summary>
-public sealed class ManualBeatClock : IBeatClock, IBeatClockControl
+public sealed class ManualBeatClock : IBeatClock, IBeatClockControl, IManualBeatClockDriver
 {
     private readonly long _ticksPerSecond;
     private readonly int _beatsPerBar;
