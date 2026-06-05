@@ -8,6 +8,7 @@ using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Mixer;
 using Liveolator.Platform;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -54,12 +55,21 @@ public static class ServiceConfig
         try
         {
             var engine = new LivePlaybackEngine(new BassAudioEngine(), new SystemHostClock());
+            // Software mixer (doc 11): the Core handler owns mixer state + DSP math and drives the
+            // BASS-side routing seam. Routing into live deck channels lands with the two-deck engine
+            // (next increment); the handler is wired now so UI/controllers can drive the mixer.
+            var mixer = new BassMixer();
             var dispatcher = new PerformanceActionDispatcher(
-                new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+                new IPerformanceActionHandler[]
+                {
+                    new DeckActionHandler(engine),
+                    new MixerActionHandler(mixer),
+                },
                 NullLogger<PerformanceActionDispatcher>.Instance);
 
             services.AddSingleton<IAudioPlaybackEngine>(engine);
             services.AddSingleton<IBeatClock>(engine.BeatClock);
+            services.AddSingleton<IMixer>(mixer);
             services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)

@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **290 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **322 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -36,9 +36,11 @@ The action-layer seam: every input source drives engines through one dispatcher.
   fails fast at construction. Handler failures are logged with action context and swallowed;
   unknown kinds log a warning, never throw.
 - **Deferred:** the concrete concern handlers land with their engines. Built so far:
-  **`BeatActionHandler`** (see Beat), **`PlaylistActionHandler`** (see Live playlist), and
-  **`DeckActionHandler`** (see Realtime audio — DeckLoadTrack/DeckPlayPause/TransportStop).
-  Pending: Visual/Mixer + the rest of Deck/Transport handlers.
+  **`BeatActionHandler`** (see Beat), **`PlaylistActionHandler`** (see Live playlist),
+  **`DeckActionHandler`** (see Realtime audio — DeckLoadTrack/DeckPlayPause/TransportStop, now
+  slot-addressed), and **`MixerActionHandler`** (see Software mixer —
+  Crossfade/ChannelGain/EqBand/Filter/CueToggle). Pending: Visual + the rest of Deck/Transport
+  handlers (hot-cue/loop/seek/pitch/sync).
 
 ### ✅ Controller mapping engine — `Liveolator.Core/Mapping/` (doc 05)
 
@@ -109,6 +111,36 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
   browser with transport hidden.
 - **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
   system-loopback capture source, and resampling to a fixed analysis rate.
+
+### ✅ Software mixer (first increment) — `Liveolator.Core/Mixer/` + `Liveolator.Audio/Playback/` (doc 11)
+
+The two-deck software mixer's pure model + DSP math + action handler, plus a thin BASS-side routing
+seam. Crossfader/EQ/filter math is pure and unit-tested; native FX routing into live deck channels is
+the next increment.
+
+| Built | File |
+|-------|------|
+| Immutable mixer model (2 deck slots) | `MixerState`, `DeckChannelState`, `EqBands`, `CrossfaderCurve`, `EqBand` (Core) |
+| Pure DSP math (crossfader gains, combined deck gain, RBJ biquad EQ/filter design) | `MixerMath`, `BiquadCoefficients` (Core) |
+| Realtime mixer seam | `IMixer` (Core) |
+| Dispatcher handler | `MixerActionHandler` (Core; Crossfade/ChannelGain/EqBand/Filter/CueToggle) |
+| BASS routing skeleton + per-deck native seam | `BassMixer` (`IMixer` impl), `IBassMixerChannel` (Audio) |
+
+- `MixerActionHandler` holds the authoritative `MixerState`, derives audible gains + biquad
+  coefficients via `MixerMath`, and pushes them to `IMixer` — driven only through the dispatcher.
+  Crossfader curves: Smooth (constant-power, default), Linear, Sharp. EQ = low/high shelf + mid peak;
+  single-knob filter sweeps LP below center / HP above. Coefficient designs are unit-tested for
+  bypass-at-flat, boost/cut direction, LP/HP direction, and impulse-response stability.
+- **Deck slots:** `DeckActionHandler` now addresses decks by `PerformanceAction.Slot` (A=0/B=1). The
+  existing single-deck engine is adapted to slot 0 (`SingleDeckEngineAdapter`), so the single-deck
+  path and its tests are unchanged; a two-deck engine implements the new `IMultiDeckPlaybackEngine`.
+- **App:** `ServiceConfig` wires `BassMixer` + `MixerActionHandler` into the dispatcher and registers
+  `IMixer`, so UI/controllers can drive the mixer now.
+- **Deferred (next increment):** the two-deck BASS engine + `IBassMixerChannel` BASS_FX
+  implementation (applying gain/EQ/filter to real channels), the master/cue bus mix feeding the
+  `AudioFramePipeline`, beatmatching/sync-lock/quantize, hot-cues, loops, and ASIO/CoreAudio
+  multi-channel cue output. `BassMixer` drops controls for an unregistered slot (logged, never throws)
+  until decks register their channels.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 
@@ -211,6 +243,9 @@ The realtime audio library is decided and the first vertical slice is built: `IA
 realtime playback, the audio frame pipeline (doc 02), and audio-driven beat detection (doc 03
 realtime half) are all landed (see Realtime audio). What still remains to build on top:
 
-- **Decks + mixer (doc 11):** two-deck playback, software mixer (crossfader/EQ/filter), hot cues,
-  loops, beatmatching, multi-channel ASIO/CoreAudio cue output. Unblocked — just not built yet.
+- **Decks + mixer (doc 11):** the software mixer's first increment is **built** (pure model + DSP
+  math + `MixerActionHandler` + `BassMixer` routing skeleton; decks now slot-addressed — see Software
+  mixer). Still to build: the two-deck BASS engine wiring channels into `BassMixer`, the master/cue
+  bus into the frame pipeline, hot cues, loops, beatmatching/sync, and multi-channel ASIO/CoreAudio
+  cue output.
 - **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) and ASIO device pick.
