@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Shared;
@@ -15,17 +16,18 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private TabItemViewModel _currentTab;
 
-    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live)
+    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live, DjViewModel dj)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
+        ArgumentNullException.ThrowIfNull(dj);
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
         Tabs = new ObservableCollection<TabItemViewModel>
         {
             new("LIVE", live),
-            new("DJ", new PlaceholderViewModel("DJ", "Two-deck DJ workspace — coming soon.")),
+            new("DJ", dj),
             new("VJ", new PlaceholderViewModel("VJ", "Visual compositor — coming soon.")),
             new("LIBRARIES", libraries),
             new("MAPPINGS", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),

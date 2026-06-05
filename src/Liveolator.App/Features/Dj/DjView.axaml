@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             x:Class="Liveolator.App.Features.Dj.DjView"
+             x:DataType="dj:DjViewModel">
+
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- DECK A · MIXER · DECK B (shared performance modules) -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,200,*" Margin="0,0,0,16">
+      <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
+      <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
+      <ContentControl Grid.Column="2" Content="{Binding DeckB}" />
+    </Grid>
+
+    <!-- THE SET (live Now/Next/Later queue) -->
+    <Border Grid.Row="1" Classes="panel">
+      <Grid RowDefinitions="Auto,*" Margin="16">
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,12">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="SET · NOW / NEXT / LATER" />
+          <Button Grid.Column="1" Classes="spartan" Content="Load from Library"
+                  Command="{Binding LoadFromLibraryCommand}" Margin="0,0,8,0" />
+          <Button Grid.Column="2" Classes="spartan" Content="Skip ▸"
+                  Command="{Binding SkipCommand}" />
+        </Grid>
+
+        <!-- empty hint -->
+        <TextBlock Grid.Row="1" Classes="faint" IsVisible="{Binding IsSetEmpty}"
+                   Text="Set is empty — load the scanned library, or scan folders in the LIBRARIES tab." />
+
+        <!-- the tracklist -->
+        <ScrollViewer Grid.Row="1" IsVisible="{Binding !IsSetEmpty}">
+          <ItemsControl ItemsSource="{Binding Set}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="dj:SetEntryViewModel">
+                <Border BorderBrush="{StaticResource Hair}" BorderThickness="0,0,0,1" Padding="0,7">
+                  <Grid ColumnDefinitions="64,*,Auto">
+                    <TextBlock Grid.Column="0" Classes="mono faint" Text="{Binding StateLabel}"
+                               Classes.accent="{Binding IsNow}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{Binding Title}" />
+                    <Button Grid.Column="2" Classes="key" Content="✕"
+                            Command="{Binding RemoveCommand}" IsVisible="{Binding !IsNow}" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

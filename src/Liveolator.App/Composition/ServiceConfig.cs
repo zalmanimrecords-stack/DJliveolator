@@ -1,3 +1,4 @@
+using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Shell;
@@ -12,6 +13,7 @@ using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
+using Liveolator.Core.Playlist;
 using Liveolator.Core.Visuals;
 using Liveolator.Media;
 using Liveolator.Platform;
@@ -63,6 +65,14 @@ public static class ServiceConfig
         services.AddSingleton<IMixer>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
 
+        // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
+        // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
+        // immediate scheduler until a clock-driven one lands (doc 03). The handler owns the playlist
+        // edits (insert/move/remove/skip) so the UI drives them through the one dispatcher.
+        var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), NullLogger<LivePlaylist>.Instance);
+        services.AddSingleton<ILivePlaylist>(livePlaylist);
+        var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
+
         // --- Realtime audio engine (docs 01/02/03): best-effort. The BASS backend needs the native
         // bass library at runtime; if it is absent the app still runs as a catalog browser and the
         // deck transport is simply unrouted. Registering IBeatClock here gives the Libraries tab its
@@ -83,6 +93,7 @@ public static class ServiceConfig
             new BeatActionHandler(sharedLiveClock, hostClock),
             mixerHandler,
             visualHandler,
+            playlistHandler,
         };
         if (audioEngine is not null)
             handlers.Add(new DeckActionHandler(audioEngine));
@@ -103,6 +114,14 @@ public static class ServiceConfig
             sp.GetService<IAudioPlaybackEngine>() is not null ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetService<IBeatClock>(),
             sp.GetRequiredService<IMusicCatalogStore>()));
+
+        // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
+        // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
+        services.AddSingleton<DjViewModel>(sp => new DjViewModel(
+            sp.GetRequiredService<IPerformanceActionDispatcher>(),
+            sp.GetRequiredService<ILivePlaylist>(),
+            sp.GetRequiredService<MusicLibrary>()));
+
         services.AddSingleton<MainWindowViewModel>();
 
         return services.BuildServiceProvider();
