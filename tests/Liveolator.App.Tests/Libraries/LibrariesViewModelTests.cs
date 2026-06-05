@@ -17,8 +17,13 @@ public sealed class LibrariesViewModelTests
     }
 
     private static LibrariesViewModel BuildViewModel(params string[] files)
+        => BuildViewModel(metadata: null, files);
+
+    private static LibrariesViewModel BuildViewModel(
+        IReadOnlyDictionary<string, TrackMetadata>? metadata, params string[] files)
     {
-        var library = new MusicLibrary(new FakeFileEnumerator(files), new FakeAudioDecoder());
+        ITrackMetadataReader? reader = metadata is null ? null : new FakeTrackMetadataReader(metadata);
+        var library = new MusicLibrary(new FakeFileEnumerator(files), new FakeAudioDecoder(), metadataReader: reader);
         var vm = new LibrariesViewModel(library);
         vm.AddFolder("/music");
         return vm;
@@ -48,6 +53,44 @@ public sealed class LibrariesViewModelTests
 
         vm.SearchText = "";
         Assert.Equal(2, vm.Tracks.Count);
+    }
+
+    [Fact]
+    public async Task Metadata_surfaces_artist_and_subline_and_tag_title()
+    {
+        var meta = new Dictionary<string, TrackMetadata>
+        {
+            ["/music/Alpha.wav"] = new TrackMetadata(
+                "Midnight City", "M83", "Hurry Up", null, "Electronic",
+                2011, 3, null, 320, 44100, 2, "MP3"),
+        };
+        LibrariesViewModel vm = BuildViewModel(meta, "/music/Alpha.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        TrackRowViewModel row = vm.Tracks.Single();
+        Assert.Equal("Midnight City", row.Title); // tag title wins over the "Alpha" filename
+        Assert.Equal("M83", row.Artist);
+        Assert.Contains("M83", row.SubLine);
+        Assert.Contains("320kbps", row.SubLine);
+        Assert.Equal("Hurry Up", row.Album);
+        Assert.Equal("Stereo", row.Channels);
+    }
+
+    [Fact]
+    public async Task Search_matches_on_artist()
+    {
+        var meta = new Dictionary<string, TrackMetadata>
+        {
+            ["/music/Alpha.wav"] = new TrackMetadata(null, "Deadmau5", null, null, null, null, null, null, null, null, null, null),
+            ["/music/Beta.wav"] = new TrackMetadata(null, "M83", null, null, null, null, null, null, null, null, null, null),
+        };
+        LibrariesViewModel vm = BuildViewModel(meta, "/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.SearchText = "deadmau";
+
+        Assert.Single(vm.Tracks);
+        Assert.Equal("Deadmau5", vm.Tracks[0].Artist);
     }
 
     [Fact]

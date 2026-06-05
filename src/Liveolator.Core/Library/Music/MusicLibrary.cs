@@ -16,27 +16,49 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
 
     private readonly IAudioDecoder _decoder;
     private readonly TrackAnalyzer _analyzer;
+    private readonly ITrackMetadataReader _metadataReader;
 
-    public MusicLibrary(IFileEnumerator enumerator, IAudioDecoder decoder, TrackAnalyzer? analyzer = null)
+    public MusicLibrary(
+        IFileEnumerator enumerator,
+        IAudioDecoder decoder,
+        TrackAnalyzer? analyzer = null,
+        ITrackMetadataReader? metadataReader = null)
         : base(enumerator)
     {
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
         _analyzer = analyzer ?? new TrackAnalyzer();
+        _metadataReader = metadataReader ?? NullTrackMetadataReader.Instance;
     }
 
     protected override IReadOnlySet<string> Extensions => AudioExtensions;
 
     protected override async Task<MusicTrack> CreateEntryAsync(ScannedFile file, CancellationToken cancellationToken)
     {
+        TrackMetadata? metadata = ReadMetadata(file.Path);
         TrackAnalysisResult result = await _analyzer
             .AnalyzeAsync(_decoder, file.Path, cancellationToken)
             .ConfigureAwait(false);
         MediaAnalysisStatus status = TrackStatusPolicy.For(result);
-        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null);
+        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata);
     }
 
+    // A track that fails to decode can still have readable tags, so capture metadata here too.
     protected override MusicTrack CreateFailedEntry(ScannedFile file, string error)
-        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error);
+        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error, ReadMetadata(file.Path));
+
+    // The reader contract is "never throws", but guard anyway so a misbehaving reader
+    // can never abort a scan — metadata simply degrades to null.
+    private TrackMetadata? ReadMetadata(string path)
+    {
+        try
+        {
+            return _metadataReader.Read(path);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Returns successfully-analyzed tracks whose key is a harmonically-compatible mix from

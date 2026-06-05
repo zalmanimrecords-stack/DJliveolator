@@ -37,6 +37,25 @@ public interface IAudioDecoder
 > Tests provide a fake `IAudioDecoder` that yields synthetic PCM (a click train at a known
 > BPM, a tone at a known pitch class) so BPM/key results are asserted against ground truth.
 
+## Metadata seam (tags, independent of decode)
+
+Tag/stream metadata (artist, album, genre, year, track #, bitrate, sample-rate, channels,
+codec) is read through a second narrow seam so `Core` stays free of file IO and third-party
+tag libraries — the same pattern as `IAudioDecoder`:
+
+```csharp
+public interface ITrackMetadataReader
+{
+    // Never throws: an untagged/corrupt file degrades to null (logged), never aborting a scan.
+    TrackMetadata? Read(string filePath);
+}
+```
+
+`TrackMetadata` is an all-nullable record; `MusicTrack.Title` prefers the tag title and falls
+back to the file name when untagged. Metadata is captured even for tracks whose audio fails to
+decode (tags are still useful). The concrete reader is **ATL.NET** (`z440.atl.core`, MIT — pure
+managed, cross-platform) in `Liveolator.Audio` (`AtlMetadataReader`).
+
 ## Output model
 
 ```csharp
@@ -142,6 +161,9 @@ domain over a shared, fully unit-tested scan core (all in `Liveolator.Core/Libra
 The real bindings live outside Core and stay pure/hardware-free:
 - **Decode:** `Liveolator.Audio` — `WavAudioDecoder` (managed) + `FfmpegAudioDecoder` (CLI
   subprocess, compressed formats) behind `CompositeAudioDecoder`.
+- **Metadata:** `Liveolator.Audio` — `AtlMetadataReader` (ATL.NET / `z440.atl.core`, MIT)
+  implements `ITrackMetadataReader`; injected into `MusicLibrary` so each scanned track carries
+  its tags + stream facts alongside the analysis.
 - **Filesystem + persistence:** `Liveolator.Media` — `FileSystemFileEnumerator`,
   `JsonCatalogStore` (doc 13 cache; pairs with `MediaLibrary.Restore()` for cache-seeded
   incremental scans), `PlaylistWriter`.

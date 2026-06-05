@@ -24,6 +24,7 @@ public static class ServiceConfig
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
         services.AddSingleton<IFileEnumerator, FileSystemEnumerator>();          // Liveolator.Platform
         services.AddSingleton<IAudioDecoder>(_ => new CompositeAudioDecoder());  // Liveolator.Audio
+        services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();        // Liveolator.Audio (ATL.NET tags)
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
 

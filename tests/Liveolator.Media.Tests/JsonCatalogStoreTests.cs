@@ -36,6 +36,36 @@ public class JsonCatalogStoreTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsTrackMetadata()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var meta = new TrackMetadata("Midnight City", "M83", "Hurry Up", "M83", "Electronic",
+            2011, 3, "demo", 320, 44100, 2, "MP3");
+        var track = TestTracks.Analyzed("m.wav", 128.0, tonic: 0, mode: KeyMode.Major, metadata: meta);
+
+        await store.SaveMusicAsync(new[] { track });
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+
+        Assert.Equal(meta, loaded.Single().Metadata);
+    }
+
+    [Fact]
+    public async Task Load_OlderSchemaVersion_ReturnsEmpty_AndWarns()
+    {
+        using var dir = new TempDirectory();
+        string? warning = null;
+        var store = new JsonCatalogStore(dir.Path, onWarning: w => warning = w);
+        // A pre-metadata (v1) snapshot must be discarded, not served with empty tags.
+        await File.WriteAllTextAsync(store.MusicCatalogPath, "{\"Version\":1,\"Tracks\":[]}");
+
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+
+        Assert.Empty(loaded);
+        Assert.NotNull(warning);
+    }
+
+    [Fact]
     public async Task SaveThenLoad_RoundTripsVisualAssets()
     {
         using var dir = new TempDirectory();

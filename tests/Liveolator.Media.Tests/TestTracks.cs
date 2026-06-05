@@ -12,7 +12,7 @@ internal static class TestTracks
 {
     private static readonly DateTime T = new(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
-    public static MusicTrack Analyzed(string path, double bpm, int tonic, KeyMode mode)
+    public static MusicTrack Analyzed(string path, double bpm, int tonic, KeyMode mode, TrackMetadata? metadata = null)
     {
         var key = new MusicalKey(tonic, mode, Camelot.Code(tonic, mode), 0.85);
         var cues = new TrackCues(TimeSpan.FromSeconds(2), null, null, TimeSpan.FromMinutes(3.5));
@@ -23,7 +23,8 @@ internal static class TestTracks
             TimeSpan.FromMinutes(4),
             cues,
             MediaAnalysisStatus.Ok,
-            null);
+            null,
+            metadata);
     }
 
     public static MusicTrack Failed(string path)

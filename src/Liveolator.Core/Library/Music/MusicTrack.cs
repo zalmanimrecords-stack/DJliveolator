@@ -5,7 +5,7 @@ using Liveolator.Core.Analysis.Key;
 
 namespace Liveolator.Core.Library.Music;
 
-/// <summary>A catalogued music file with its offline analysis (BPM, key/scale, duration, cues).</summary>
+/// <summary>A catalogued music file with its tag metadata and offline analysis (BPM, key/scale, duration, cues).</summary>
 public sealed record MusicTrack(
     ScannedFile File,
     BpmResult? Bpm,
@@ -13,8 +13,15 @@ public sealed record MusicTrack(
     TimeSpan? Duration,
     TrackCues Cues,
     MediaAnalysisStatus Status,
-    string? Error) : IMediaEntry
+    string? Error,
+    TrackMetadata? Metadata = null) : IMediaEntry
 {
-    /// <summary>Display title derived from the file name.</summary>
-    public string Title => Path.GetFileNameWithoutExtension(File.Path);
+    /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
+    public string Title =>
+        string.IsNullOrWhiteSpace(Metadata?.Title)
+            ? Path.GetFileNameWithoutExtension(File.Path)
+            : Metadata!.Title!;
+
+    /// <summary>Track artist from tags, or null when untagged.</summary>
+    public string? Artist => string.IsNullOrWhiteSpace(Metadata?.Artist) ? null : Metadata!.Artist;
 }

@@ -18,32 +18,34 @@
     </Grid>
 
     <!-- main: table | detail -->
-    <Grid Row="1" ColumnDefinitions="*,300">
+    <Grid Row="1" ColumnDefinitions="*,320">
 
       <!-- track table -->
       <Border Grid.Column="0" Classes="panel">
         <DockPanel Margin="12">
           <TextBlock DockPanel.Dock="Top" Classes="section" Text="Tracks" Margin="0,0,0,10" />
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,*,70,50,64,72" Margin="11,0,9,8">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,72" Margin="11,0,9,8">
             <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
-            <TextBlock Grid.Column="2" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="3" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="4" Classes="faint" Text="TIME" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="5" Classes="faint" Text="STATUS" />
+            <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
+            <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="4" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="6" Classes="faint" Text="STATUS" />
           </Grid>
           <ListBox Classes="rows"
                    ItemsSource="{Binding Tracks}"
                    SelectedItem="{Binding SelectedTrack}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
-                <Grid ColumnDefinitions="14,*,70,50,64,72" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,72" VerticalAlignment="Center">
                   <Ellipse Grid.Column="0" Width="6" Height="6" VerticalAlignment="Center"
                            Fill="{Binding Status, Converter={x:Static lib:StatusToBrushConverter.Instance}}" />
                   <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Grid.Column="2" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="3" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="4" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="5" Classes="faint" Text="{Binding StatusText}" />
+                  <TextBlock Grid.Column="2" Classes="muted" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="3" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="4" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="6" Classes="faint" Text="{Binding StatusText}" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
@@ -60,27 +62,69 @@
                      Text="Select a track to see details."
                      IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNull}}" />
 
-          <StackPanel Spacing="14"
+          <StackPanel Spacing="16"
                       IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
             <StackPanel Spacing="2">
-              <TextBlock FontSize="14" Text="{Binding SelectedTrack.Title}" />
-              <TextBlock Classes="mono faint" Text="{Binding SelectedTrack.StatusText}" />
+              <TextBlock FontSize="14" Text="{Binding SelectedTrack.Title}" TextWrapping="Wrap" />
+              <TextBlock Classes="mono faint" Text="{Binding SelectedTrack.SubLine}" TextWrapping="Wrap" />
             </StackPanel>
 
-            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" >
+            <!-- analysis facts -->
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
               <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
                 <TextBlock Classes="faint" Text="TEMPO" />
-                <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Bpm}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Bpm}" />
+                  <TextBlock Classes="mono faint" VerticalAlignment="Bottom" Text="{Binding SelectedTrack.Confidence}" />
+                </StackPanel>
               </StackPanel>
               <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
                 <TextBlock Classes="faint" Text="KEY" />
-                <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Key}" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Key}" />
+                  <TextBlock Classes="mono faint" VerticalAlignment="Bottom" Text="{Binding SelectedTrack.KeyName}" />
+                </StackPanel>
               </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,12,0,0">
+              <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,14,0,0">
                 <TextBlock Classes="faint" Text="LENGTH" />
                 <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Duration}" />
               </StackPanel>
             </Grid>
+
+            <!-- file / tag info -->
+            <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="INFO" />
+              <StackPanel Spacing="5">
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Album" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Album}" TextTrimming="CharacterEllipsis" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Genre" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Genre}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Year" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.Year}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Track #" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.TrackNo}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Sample rate" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.SampleRate}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Channels" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Channels}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Codec" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.Codec}" />
+                </Grid>
+              </StackPanel>
+            </StackPanel>
 
             <StackPanel Spacing="8">
               <TextBlock Classes="faint" Text="HARMONIC MATCHES" />

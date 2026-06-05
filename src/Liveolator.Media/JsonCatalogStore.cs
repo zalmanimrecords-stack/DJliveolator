@@ -8,7 +8,9 @@ namespace Liveolator.Media;
 /// <summary>Versioned on-disk shape of the persisted music catalog (the doc 13 / doc 16 cache).</summary>
 public sealed record MusicCatalogSnapshot(int Version, IReadOnlyList<MusicTrack> Tracks)
 {
-    public const int CurrentVersion = 1;
+    // v2 (2026-06-05): MusicTrack gained TrackMetadata (tags). An older snapshot is missing it,
+    // so it is discarded on load and re-scanned rather than served with empty metadata.
+    public const int CurrentVersion = 2;
 }
 
 /// <summary>Versioned on-disk shape of the persisted visual-media catalog (doc 13).</summary>
@@ -57,10 +59,28 @@ public sealed class JsonCatalogStore
         return SaveAsync(MusicCatalogPath, new MusicCatalogSnapshot(MusicCatalogSnapshot.CurrentVersion, tracks.ToList()), cancellationToken);
     }
 
-    /// <summary>Loads the persisted music catalog, or an empty list when none exists or it is unreadable.</summary>
+    /// <summary>
+    /// Loads the persisted music catalog, or an empty list when none exists, it is unreadable, or it
+    /// was written by an older schema version (a version mismatch triggers a clean re-scan).
+    /// </summary>
     public async Task<IReadOnlyList<MusicTrack>> LoadMusicAsync(CancellationToken cancellationToken = default)
-        => (await LoadAsync<MusicCatalogSnapshot>(MusicCatalogPath, cancellationToken).ConfigureAwait(false))?.Tracks
-           ?? Array.Empty<MusicTrack>();
+    {
+        MusicCatalogSnapshot? snapshot =
+            await LoadAsync<MusicCatalogSnapshot>(MusicCatalogPath, cancellationToken).ConfigureAwait(false);
+
+        if (snapshot is null)
+            return Array.Empty<MusicTrack>();
+
+        if (snapshot.Version != MusicCatalogSnapshot.CurrentVersion)
+        {
+            _onWarning?.Invoke(
+                $"Catalog cache at '{MusicCatalogPath}' is version {snapshot.Version} " +
+                $"(expected {MusicCatalogSnapshot.CurrentVersion}); re-analyzing from scratch.");
+            return Array.Empty<MusicTrack>();
+        }
+
+        return snapshot.Tracks;
+    }
 
     public Task SaveVisualAsync(IEnumerable<VisualAsset> assets, CancellationToken cancellationToken = default)
     {

@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
 
 namespace Liveolator.Core.Tests.Library;
@@ -43,6 +44,24 @@ internal sealed class MapAudioDecoder : IAudioDecoder
             yield return new ReadOnlyMemory<float>(pcm, offset, len);
             await Task.Yield();
         }
+    }
+}
+
+/// <summary>Metadata reader mapping path → metadata; paths in <see cref="ThrowPaths"/> throw
+/// (to prove the scan survives a misbehaving reader); unmapped paths return null.</summary>
+internal sealed class FakeTrackMetadataReader : ITrackMetadataReader
+{
+    private readonly Dictionary<string, TrackMetadata?> _byPath;
+    public HashSet<string> ThrowPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public FakeTrackMetadataReader(Dictionary<string, TrackMetadata?>? byPath = null)
+        => _byPath = byPath ?? new(StringComparer.OrdinalIgnoreCase);
+
+    public TrackMetadata? Read(string filePath)
+    {
+        if (ThrowPaths.Contains(filePath))
+            throw new InvalidOperationException($"reader blew up on '{filePath}'");
+        return _byPath.TryGetValue(filePath, out TrackMetadata? meta) ? meta : null;
     }
 }
 

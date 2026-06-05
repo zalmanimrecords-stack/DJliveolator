@@ -149,10 +149,17 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 ## Pre-existing Core (built before this status doc)
 
 - `Core/Dsp/` (FFT, windows), `Core/Analysis/` (offline BPM, chroma, key/Camelot, cues),
-  `Core/Library/` (incremental scan, music + visual catalogs), `Core/Playlist/`
-  (`HarmonicSetBuilder`). Bindings: `Liveolator.Audio` (WAV + FFmpeg-CLI decode),
+  `Core/Library/` (incremental scan, music + visual catalogs, **tag-metadata seam
+  `ITrackMetadataReader` + `TrackMetadata`**), `Core/Playlist/` (`HarmonicSetBuilder`).
+  Bindings: `Liveolator.Audio` (WAV + FFmpeg-CLI decode, **+ tag metadata via
+  `AtlMetadataReader` / ATL.NET `z440.atl.core`, MIT**),
   `Liveolator.Platform` (file enumerator), `Liveolator.Visuals` (image/video probes only),
-  `Liveolator.Media` (JSON catalog store), `Liveolator.Mcp` (music-intelligence server).
+  `Liveolator.Media` (JSON catalog store — music snapshot **v2** carries `TrackMetadata`),
+  `Liveolator.Mcp` (music-intelligence server).
+- **App Libraries tab** (`Liveolator.App/Features/Libraries`) surfaces the scanned catalog:
+  track table with an Artist column + a detail panel showing tags (artist/album/genre/year/
+  track #), stream facts (bitrate/sample-rate/channels/codec), tempo+confidence, key+name,
+  and Camelot harmonic matches.
 
 ## Cross-cutting decisions made while building the above
 

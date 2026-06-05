@@ -86,6 +86,70 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task Scan_PopulatesMetadata_AndTagTitleOverridesFilename()
+    {
+        var enumerator = new FakeFileEnumerator(File("track01.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["track01.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var meta = new TrackMetadata("Real Title", "M83", "Album", null, "Electronic", 2011, 3, null, 320, 44100, 2, "MP3");
+        var reader = new FakeTrackMetadataReader(new() { ["track01.mp3"] = meta });
+        var library = new MusicLibrary(enumerator, decoder, metadataReader: reader);
+
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack t = library.TryGet("track01.mp3")!;
+        Assert.Equal(meta, t.Metadata);
+        Assert.Equal("Real Title", t.Title);   // tag title wins over the "track01" filename
+        Assert.Equal("M83", t.Artist);
+    }
+
+    [Fact]
+    public async Task Scan_NoMetadataReader_LeavesMetadataNull_AndTitleFallsBackToFilename()
+    {
+        var enumerator = new FakeFileEnumerator(File("song.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["song.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder); // null reader → no metadata
+
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack t = library.TryGet("song.mp3")!;
+        Assert.Null(t.Metadata);
+        Assert.Equal("song", t.Title);
+        Assert.Null(t.Artist);
+    }
+
+    [Fact]
+    public async Task Scan_FailedDecode_StillCapturesMetadata()
+    {
+        var enumerator = new FakeFileEnumerator(File("bad.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["bad.mp3"] = null }); // decode throws → Failed
+        var meta = new TrackMetadata(null, "Some Artist", null, null, null, null, null, null, null, null, null, null);
+        var reader = new FakeTrackMetadataReader(new() { ["bad.mp3"] = meta });
+        var library = new MusicLibrary(enumerator, decoder, metadataReader: reader);
+
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack t = library.TryGet("bad.mp3")!;
+        Assert.Equal(MediaAnalysisStatus.Failed, t.Status);
+        Assert.Equal("Some Artist", t.Artist);  // tags survive a decode failure
+    }
+
+    [Fact]
+    public async Task Scan_MisbehavingReaderThatThrows_DoesNotAbortScan()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var reader = new FakeTrackMetadataReader();
+        reader.ThrowPaths.Add("a.mp3");
+        var library = new MusicLibrary(enumerator, decoder, metadataReader: reader);
+
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack t = library.TryGet("a.mp3")!;
+        Assert.Null(t.Metadata);                            // reader failure degrades to null
+        Assert.NotEqual(MediaAnalysisStatus.Failed, t.Status); // analysis still succeeded
+    }
+
+    [Fact]
     public async Task HarmonicMatches_ReturnsCompatibleKeys_ExcludingSeed()
     {
         // C major triad (8B) and A minor triad (8A) are relative-key compatible.

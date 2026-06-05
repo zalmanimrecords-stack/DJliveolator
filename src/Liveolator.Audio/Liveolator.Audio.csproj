@@ -10,4 +10,8 @@
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="z440.atl.core" Version="7.15.3" />
+  </ItemGroup>
+
 </Project>
