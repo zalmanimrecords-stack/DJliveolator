@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **181 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **201 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -69,6 +69,7 @@ The shared audio/visual clock foundation that needs no audio frames.
 | Output state + seam | `BeatClockState`, `TempoCandidate`, `BeatClockSource`, `IBeatClock` |
 | Link-style timeline (host-time↔beat bijection) | `IBeatTimeline`, `BeatTimeline` |
 | Quantization | `Quantize`, `IBeatScheduler` (seam), `BeatQuantizer` (resolver) |
+| Confidence-gated launch (shared audio/visual) | `QuantizedLaunch` |
 | Tap tempo (pure) | `TapTempoService` |
 | Manual clock (`BeatClockSource.Manual`) | `ManualBeatClock`, `IBeatClockControl` |
 | Host-time seam | `IHostClock`, `SystemHostClock` |
@@ -80,6 +81,28 @@ The shared audio/visual clock foundation that needs no audio frames.
   audio-driven `BeatClockService`. Blocker: the doc 02 audio frame pipeline, which needs an
   `IAudioSource` (gated on the audio-library decision). Also deferred: `BeatClockSource.External`
   (Ableton Link). Note: **offline** BPM/key analysis already exists under `Core/Analysis/`.
+
+### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
+
+The high-level scene/bank/macro vocabulary and quantized-launch logic that sits **above** the
+GPU compositor — pure data + math, no GL.
+
+| Built | File |
+|-------|------|
+| Vocabulary records | `VisualScene`, `VisualLayer`, `VisualBank`, `VisualSourceRef`, `EffectRef`, `BeatBehavior` |
+| Enums | `BlendMode`, `TransitionStyle`, `VisualSourceKind` |
+| Macro + mapping (normalized→target range) | `VisualMacro`, `MacroTarget` |
+| Engine seam | `IVisualPerformanceEngine` |
+
+- Reuses `Beat.Quantize` and `Beat.QuantizedLaunch` (the **same** clock/quantum as audio — the
+  product differentiator), so the visual quantize is not a separate mechanism.
+- `VisualBank.Scene(i)` returns null out of range (an empty pad). `VisualMacro.Resolve` clamps
+  to 0..1 then maps to `[Min,Max]`. `VisualLayer` validates opacity.
+- **Deferred:** the concrete `IVisualPerformanceEngine` (drives the GPU compositor — lives in
+  `Liveolator.Visuals`, blocked on the Silk.NET/OpenGL compositor) and a `VisualActionHandler`
+  (the dispatcher bridge), which needs the engine + a scene/bank resolution policy that the real
+  compositor will shape. Build the `VisualActionHandler` when the engine exists, mirroring
+  `BeatActionHandler`.
 
 ## Pre-existing Core (built before this status doc)
 
@@ -100,12 +123,10 @@ The shared audio/visual clock foundation that needs no audio frames.
 
 ## What is safe to build next (no blockers)
 
-1. **Visual scene model** — `Core/VisualModel/` (`VisualScene`/`Bank`/`Macro`/`Layer`,
-   quantized launch state machine). Uses `IBeatTimeline`/`BeatQuantizer`. (doc 08)
-2. **Autopilot rule engine** — `Core/Autopilot/` (show-rules state machine, override/auto-resume).
+1. **Autopilot rule engine** — `Core/Autopilot/` (show-rules state machine, override/auto-resume).
    Uses Beat + Actions. (doc 10)
-3. **Live playlist queue** — `Core/Playlist/` Now/Next/Later over the existing builder. (doc 09)
-4. **More concern handlers** for the dispatcher as their engines appear.
+2. **Live playlist queue** — `Core/Playlist/` Now/Next/Later over the existing builder. (doc 09)
+3. **More concern handlers** for the dispatcher as their engines appear.
 
 ## Blocked until the audio-library decision (BASS vs PortAudio/miniaudio)
 

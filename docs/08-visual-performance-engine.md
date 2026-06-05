@@ -7,6 +7,17 @@
 > **beat-quantized launching driven by the one shared beat clock** (doc 03). It is what
 > Push pads and autopilot actually trigger.
 
+> **✅ Status (2026-06-05): scene model BUILT in `Liveolator.Core/Visuals/`** — see
+> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested: the
+> vocabulary (`VisualScene`/`VisualLayer`/`VisualBank`/`VisualSourceRef`/`EffectRef`/
+> `BeatBehavior`, `BlendMode`/`TransitionStyle`/`VisualSourceKind`), `VisualMacro` + `MacroTarget`
+> with normalized→range resolution, the `IVisualPerformanceEngine` seam, and the shared
+> confidence-gated `Beat.QuantizedLaunch` (visuals reuse the **same** `Quantize`/clock as audio).
+> **Pending:** the concrete engine (drives the GPU compositor — `Liveolator.Visuals`, blocked on
+> the Silk.NET/OpenGL compositor) and the `VisualActionHandler` dispatcher bridge (build it like
+> `BeatActionHandler` once the engine exists). **Don't rebuild the scene/macro model or redefine
+> `Quantize`.**
+
 ## Purpose
 
 Give the performer high-level, beat-locked control of the visuals — load a scene, drive a
