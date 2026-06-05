@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **355 passing** (as of 2026-06-05). Solution-wide: **595**
-across 7 test projects (Core 355, Visuals 43, Audio 40, MIDI 27, App 70, Media 35, Integration 25).
+`tests/Liveolator.Core.Tests` — **362 passing** (as of 2026-06-05). Solution-wide: **618**
+across 7 test projects (Core 362, Visuals 43, Audio 54, MIDI 27, App 72, Media 35, Integration 25).
 
 ## Module status
 
@@ -99,6 +99,8 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 | Fixed-analysis-rate resampling | `LinearResampler` (Core/Dsp); opt-in `AudioFramePipeline(analysisSampleRate:)` |
 | Track-swappable source | `SwitchableAudioSource` (Core) |
 | Playback engine seam + composition | `IAudioPlaybackEngine`, `IDeckSourceFactory`, `LivePlaybackEngine` (Core) |
+| Master-mix → clock composition (two-deck) | `MasterMixPlaybackEngine` (Core) |
+| Two-deck engine + master source seam | `TwoDeckBassEngine`, `MasterAudioSource`, `IBassMixerBackend` (Audio) |
 | Deck transport handler | `DeckActionHandler` (Core; DeckLoadTrack/DeckPlayPause/TransportStop) |
 | **BASS realtime backend** | `BassAudioEngine`, `DeckAudioSource`, `BassPlayback`, `IBassPlayback` (Audio) |
 | Capture seams | `IAudioCaptureDeviceCatalog`, `IAudioCaptureSourceFactory`, `AudioCaptureDevice`, `CaptureSourceKind` (Core) |
@@ -165,11 +167,24 @@ the next increment.
   path and its tests are unchanged; a two-deck engine implements the new `IMultiDeckPlaybackEngine`.
 - **App:** `ServiceConfig` wires `BassMixer` + `MixerActionHandler` into the dispatcher and registers
   `IMixer`, so UI/controllers can drive the mixer now.
-- **Deferred (next increment):** the two-deck BASS engine + `IBassMixerChannel` BASS_FX
-  implementation (applying gain/EQ/filter to real channels), the master/cue bus mix feeding the
-  `AudioFramePipeline`, beatmatching/sync-lock/quantize, hot-cues, loops, and ASIO/CoreAudio
-  multi-channel cue output. `BassMixer` drops controls for an unregistered slot (logged, never throws)
-  until decks register their channels.
+- **Two-deck engine state machine + master mix → clock (built, fake-tested):** `TwoDeckBassEngine`
+  (`IMultiDeckPlaybackEngine`, Audio) loads a decoding deck stream per slot, plugs it into a BASSmix
+  master, and **registers an `IBassMixerChannel` into `BassMixer` as decks load — closing the seam
+  that was missing** (mixer gain/EQ/filter now route to a real per-deck channel). It exposes the
+  post-crossfader mix as `MasterSource` (`MasterAudioSource`), and `MasterMixPlaybackEngine` (Core)
+  feeds that single master `IAudioSource` → `AudioFramePipeline` → `AudioBeatClock`, so **the beat
+  clock follows the audible mix** (doc 11), not a switched single deck. All BASS calls sit behind the
+  internal `IBassMixerBackend` seam (mirrors `IBassPlayback`), so the load/play/stop state machine and
+  the full master-tap→clock spine unit-test with a fake — proven end-to-end (synthetic click → 120 BPM
+  through the master). +18 tests (Core `MasterMixPlaybackEngineTests` 4, Audio `TwoDeckBassEngineTests` 14).
+- **Deferred (next increment):** the native `BassMixerBackend` (BASSmix master + deck plug/pause/tap)
+  and `BassMixerChannel` (BASS_FX biquad applying gain/EQ/filter to real channels) — `TwoDeckBassEngine`'s
+  public native ctor lands with them; needs the `ManagedBass.Mix`/`ManagedBass.Fx` packages + natives
+  fetched alongside core BASS. Then: `ServiceConfig` wiring (replace the single-deck path with the
+  two-deck engine + `BassMixer` channels + `DeckActionHandler(IMultiDeckPlaybackEngine)`, headless
+  fallback preserved), the per-deck **cue** bus → output ch 3/4, beatmatching/sync-lock/quantize,
+  hot-cues, loops, and ASIO/CoreAudio multi-channel cue output. `BassMixer` still drops controls for an
+  unregistered slot (logged, never throws) until a deck registers its channel.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 
