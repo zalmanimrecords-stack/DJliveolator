@@ -1,1 +1,8 @@
+# Union-merge the living status doc so additive module sections from parallel work combine cleanly.
 docs/18-implementation-status.md merge=union
+
+# Normalize line endings. Shell scripts MUST stay LF — CRLF breaks the shebang on
+# macOS/Linux (the BASS fetch script runs there).
+* text=auto
+*.sh text eol=lf
+*.ps1 text eol=crlf

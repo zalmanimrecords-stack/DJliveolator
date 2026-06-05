@@ -113,6 +113,12 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
   44.1/48/96 kHz sources. Opt-in via the `analysisSampleRate` constructor parameter; omitted = native
   rate (original behaviour). Frames are stamped with the analysis rate and stay timestamp-continuous,
   so `AudioBeatClock` envelope-rate derivation is unchanged.
+- **Native BASS setup wired:** `scripts/fetch-bass.(ps1|sh)` fetch the per-platform un4seen BASS lib
+  into `runtimes/<rid>/native/` (git-ignored; commercial license — see `docs/01`), and the App build
+  (`CopyBassNative` target) copies it next to the output, warning when absent. `ServiceConfig.Build()`
+  + `BassAudioEngine` construction are covered by guarded tests that pass without native BASS in CI
+  (App `ServiceConfigTests`, Audio `BassAudioEngineSmokeTests`). Real sound-output + LIVE-BPM
+  verification is a documented **manual** hardware checklist (`docs/01`), not automatable here.
 - **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
   and the system-loopback capture source.
 
