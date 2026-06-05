@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **336 passing** (as of 2026-06-05). Solution-wide: **498**
-across 7 test projects (Core 336, Visuals 43, Audio 40, MIDI 27, Integration 25, App 12, Media 15).
+`tests/Liveolator.Core.Tests` — **355 passing** (as of 2026-06-05). Solution-wide: **551**
+across 7 test projects (Core 355, Visuals 43, Audio 40, MIDI 27, App 30, Media 31, Integration 25).
 
 ## Module status
 
