@@ -7,13 +7,15 @@
   <Grid RowDefinitions="Auto,*">
 
     <!-- sub-bar -->
-    <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
+    <Grid Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,0,0,12">
       <Button Grid.Column="0" Classes="spartan" Content="Add folder"
               Click="OnAddFolder" Margin="0,0,8,0" />
-      <Button Grid.Column="1" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
-      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
+      <Button Grid.Column="1" Classes="spartan" Content="Folders"
+              Click="OnShowFolders" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
+      <TextBox Grid.Column="3" Classes="spartan" Margin="12,0"
                Watermark="Search title or key…" Text="{Binding SearchText}" />
-      <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
+      <TextBlock Grid.Column="4" Classes="mono faint" VerticalAlignment="Center"
                  Text="{Binding ScanStatus}" />
     </Grid>
 

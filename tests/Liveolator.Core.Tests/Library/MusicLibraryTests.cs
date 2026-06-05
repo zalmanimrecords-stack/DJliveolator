@@ -150,6 +150,67 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task SummarizeFolders_CountsTracksAndStatusPerFolder()
+    {
+        var enumerator = new FakeFileEnumerator(
+            File("/music/rock/a.mp3"), File("/music/rock/b.mp3"), File("/music/rock/bad.mp3"),
+            File("/music/jazz/c.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["/music/rock/b.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
+            ["/music/rock/bad.mp3"] = null, // decode fails → Failed
+            ["/music/jazz/c.mp3"] = TestSignals.ClickTrain(90, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        var summaries = library.SummarizeFolders(new[] { "/music/rock", "/music/jazz" });
+
+        FolderCatalogSummary rock = summaries.Single(s => s.Folder == "/music/rock");
+        Assert.Equal(3, rock.TrackCount);
+        Assert.Equal(1, rock.Failed);
+        Assert.Equal(2, rock.Ok + rock.PartiallyAnalyzed); // click trains have no key → Ok or Partial
+
+        FolderCatalogSummary jazz = summaries.Single(s => s.Folder == "/music/jazz");
+        Assert.Equal(1, jazz.TrackCount);
+        Assert.Equal(0, jazz.Failed);
+    }
+
+    [Fact]
+    public async Task SummarizeFolders_PrefixMatchesOnlyAtPathBoundary()
+    {
+        var enumerator = new FakeFileEnumerator(
+            File("/music/rock/a.mp3"), File("/music/rockabilly/b.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["/music/rockabilly/b.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        var summaries = library.SummarizeFolders(new[] { "/music/rock" });
+
+        Assert.Equal(1, summaries.Single().TrackCount); // not 2 — rockabilly is a sibling, not a child
+    }
+
+    [Fact]
+    public async Task SummarizeFolders_EmptyFolder_YieldsZeroSummary()
+    {
+        var enumerator = new FakeFileEnumerator(File("/music/rock/a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        var summaries = library.SummarizeFolders(new[] { "/music/empty" });
+
+        FolderCatalogSummary empty = summaries.Single();
+        Assert.Equal("/music/empty", empty.Folder);
+        Assert.Equal(0, empty.TrackCount);
+    }
+
+    [Fact]
     public async Task HarmonicMatches_ReturnsCompatibleKeys_ExcludingSeed()
     {
         // C major triad (8B) and A minor triad (8A) are relative-key compatible.

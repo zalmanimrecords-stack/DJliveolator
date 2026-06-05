@@ -94,6 +94,30 @@ public sealed class LibrariesViewModelTests
     }
 
     [Fact]
+    public void AddFolder_adds_a_zero_count_status_row_immediately()
+    {
+        // BuildViewModel already adds "/music"; no scan yet.
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav");
+
+        FolderStatusViewModel row = Assert.Single(vm.FolderStatuses);
+        Assert.Equal("music", row.Name);
+        Assert.Equal("No tracks", row.TrackCountText);
+    }
+
+    [Fact]
+    public async Task Scan_populates_folder_status_counts_and_progress()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav", "/music/Gamma.wav");
+
+        await vm.ScanCommand.Execute().ToTask();
+
+        FolderStatusViewModel row = Assert.Single(vm.FolderStatuses);
+        Assert.Equal("music", row.Name);
+        Assert.StartsWith("3 tracks", row.StatusText); // issue suffixes (if any) follow the count
+        Assert.Equal(100, vm.ScanProgressValue);
+    }
+
+    [Fact]
     public async Task Selecting_a_track_rebuilds_harmonic_matches_without_error()
     {
         LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");

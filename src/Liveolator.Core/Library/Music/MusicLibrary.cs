@@ -79,4 +79,54 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                         && Camelot.IsCompatible(seed.Key.Camelot, t.Key.Camelot))
             .ToList();
     }
+
+    /// <summary>
+    /// Rolls up the current catalog per folder root: for each folder, the count of catalogued
+    /// tracks whose file lives under it and the Ok / PartiallyAnalyzed / Failed breakdown. One
+    /// summary is returned per input folder, in order; a folder with no catalogued tracks yields
+    /// an all-zero summary. Tracks outside every folder are counted in none.
+    /// </summary>
+    public IReadOnlyList<FolderCatalogSummary> SummarizeFolders(IEnumerable<string> folders)
+    {
+        ArgumentNullException.ThrowIfNull(folders);
+
+        IReadOnlyCollection<MusicTrack> all = All;
+        var summaries = new List<FolderCatalogSummary>();
+
+        foreach (string folder in folders)
+        {
+            if (string.IsNullOrWhiteSpace(folder))
+                continue;
+
+            string root = NormalizePath(folder);
+            int total = 0, ok = 0, partial = 0, failed = 0;
+
+            foreach (MusicTrack track in all)
+            {
+                if (!IsUnder(NormalizePath(track.File.Path), root))
+                    continue;
+
+                total++;
+                switch (track.Status)
+                {
+                    case MediaAnalysisStatus.Ok: ok++; break;
+                    case MediaAnalysisStatus.PartiallyAnalyzed: partial++; break;
+                    default: failed++; break;
+                }
+            }
+
+            summaries.Add(new FolderCatalogSummary(folder, total, ok, partial, failed));
+        }
+
+        return summaries;
+    }
+
+    // Canonical form for prefix comparison: forward slashes, no trailing separator.
+    private static string NormalizePath(string path) => path.Replace('\\', '/').TrimEnd('/');
+
+    // True when file path sits inside the folder root, matching only at a path boundary so
+    // "/music/rock" never absorbs "/music/rockabilly".
+    private static bool IsUnder(string filePath, string folderRoot)
+        => folderRoot.Length > 0
+           && filePath.StartsWith(folderRoot + "/", StringComparison.OrdinalIgnoreCase);
 }

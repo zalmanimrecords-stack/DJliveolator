@@ -31,6 +31,7 @@ public sealed class LibrariesViewModel : ViewModelBase
     private TrackRowViewModel? _selectedTrack;
     private string _scanStatus = "Add folders, then Scan.";
     private bool _isScanning;
+    private double _scanProgressValue;
     private string _liveBpm = "—";
 
     /// <param name="dispatcher">Action layer for playback intent; null disables Live Mode playback.</param>
@@ -72,6 +73,9 @@ public sealed class LibrariesViewModel : ViewModelBase
     public ObservableCollection<TrackRowViewModel> Tracks { get; } = new();
     public ObservableCollection<TrackRowViewModel> HarmonicMatches { get; } = new();
 
+    /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
+    public ObservableCollection<FolderStatusViewModel> FolderStatuses { get; } = new();
+
     public ReactiveCommand<Unit, Unit> ScanCommand { get; }
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -108,6 +112,13 @@ public sealed class LibrariesViewModel : ViewModelBase
     {
         get => _isScanning;
         private set => this.RaiseAndSetIfChanged(ref _isScanning, value);
+    }
+
+    /// <summary>Overall scan progress (0–100) for the folder-status window's progress bar.</summary>
+    public double ScanProgressValue
+    {
+        get => _scanProgressValue;
+        private set => this.RaiseAndSetIfChanged(ref _scanProgressValue, value);
     }
 
     /// <summary>
@@ -147,6 +158,8 @@ public sealed class LibrariesViewModel : ViewModelBase
                     ApplyFilter();
                     ScanStatus = $"{rows.Count} tracks (restored)";
                 }
+
+                RefreshFolderStatuses();
             });
         }
         catch (Exception ex)
@@ -163,20 +176,34 @@ public sealed class LibrariesViewModel : ViewModelBase
             return;
 
         Folders.Add(folder);
+        RefreshFolderStatuses(); // show the new folder immediately (0 tracks until the next scan)
         // Fire-and-forget but fully guarded: a save failure is logged to the status line, never thrown.
         _ = PersistFoldersAsync();
+    }
+
+    // Rebuilds the per-folder status rows from the current catalog. Must run on the UI scheduler
+    // (mutates an ObservableCollection); callers already marshal there.
+    private void RefreshFolderStatuses()
+    {
+        FolderStatuses.Clear();
+        foreach (FolderCatalogSummary summary in _library.SummarizeFolders(Folders.ToList()))
+            FolderStatuses.Add(new FolderStatusViewModel(summary));
     }
 
     private async Task RunScanAsync()
     {
         IsScanning = true;
+        ScanProgressValue = 0;
         // Snapshot the folder set on the calling thread so the persisted copy matches what was scanned
         // and we never read the UI-owned ObservableCollection off-thread.
         List<string> folders = Folders.ToList();
         try
         {
             var progress = new Progress<ScanProgress>(p =>
-                ScanStatus = p.Total == 0 ? "No new files." : $"Analyzing {p.Done} / {p.Total}…");
+            {
+                ScanStatus = p.Total == 0 ? "No new files." : $"Analyzing {p.Done} / {p.Total}…";
+                ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
+            });
 
             await _library.ScanAsync(folders, progress).ConfigureAwait(false);
 
@@ -194,6 +221,8 @@ public sealed class LibrariesViewModel : ViewModelBase
                 _all = rows;
                 ApplyFilter();
                 ScanStatus = $"{rows.Count} tracks";
+                ScanProgressValue = 100;
+                RefreshFolderStatuses();
             });
         }
         catch (Exception ex)

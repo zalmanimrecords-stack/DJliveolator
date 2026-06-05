@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+        x:Class="Liveolator.App.Features.Libraries.FoldersStatusWindow"
+        x:DataType="lib:LibrariesViewModel"
+        Width="520" Height="440"
+        MinWidth="420" MinHeight="280"
+        Title="Folders — update status"
+        Background="{StaticResource Bg}">
+
+  <DockPanel Margin="16" LastChildFill="True">
+
+    <!-- header: overall scan status + progress -->
+    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+      <TextBlock Classes="section" Text="SCAN FOLDERS" />
+      <TextBlock Classes="mono faint" Text="{Binding ScanStatus}" />
+      <ProgressBar Minimum="0" Maximum="100" Height="3"
+                   Value="{Binding ScanProgressValue}"
+                   IsVisible="{Binding IsScanning}" />
+    </StackPanel>
+
+    <!-- footer: actions -->
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
+      <Button Grid.Column="1" Classes="spartan" Content="Re-scan"
+              Command="{Binding ScanCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="2" Classes="spartan" Content="Close" Click="OnClose" />
+    </Grid>
+
+    <!-- folder rows -->
+    <Border Classes="panel">
+      <ScrollViewer>
+        <ItemsControl ItemsSource="{Binding FolderStatuses}" Margin="12">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="lib:FolderStatusViewModel">
+              <Grid ColumnDefinitions="*,Auto" Margin="0,7"
+                    VerticalAlignment="Center">
+                <StackPanel Grid.Column="0" Spacing="2">
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Classes="mono faint" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Classes="mono muted" VerticalAlignment="Center"
+                           Margin="12,0,0,0" Text="{Binding StatusText}" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+  </DockPanel>
+</Window>
