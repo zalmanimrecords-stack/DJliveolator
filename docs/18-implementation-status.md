@@ -93,6 +93,7 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 |-------|------|
 | Source seam + sample batch | `IAudioSource`, `AudioSamplesAvailable` (Core) |
 | Frame pipeline seam + impl | `IAudioFrameProvider`, `AudioFrameData`, `SpectrumAnalyzer`, `AudioFramePipeline` (Core) |
+| Fixed-analysis-rate resampling | `LinearResampler` (Core/Dsp); opt-in `AudioFramePipeline(analysisSampleRate:)` |
 | Track-swappable source | `SwitchableAudioSource` (Core) |
 | Playback engine seam + composition | `IAudioPlaybackEngine`, `IDeckSourceFactory`, `LivePlaybackEngine` (Core) |
 | Deck transport handler | `DeckActionHandler` (Core; DeckLoadTrack/DeckPlayPause/TransportStop) |
@@ -107,8 +108,13 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 - **App slice:** the Libraries tab plays the selected track via the dispatcher and shows the live
   detected BPM. Live Mode is best-effort: if native BASS is absent, the app runs as a catalog
   browser with transport hidden.
+- **Fixed analysis rate:** `AudioFramePipeline` optionally resamples the downmixed mono to a fixed
+  analysis rate (`LinearResampler`, Core/Dsp) before framing, so tempo analysis is consistent across
+  44.1/48/96 kHz sources. Opt-in via the `analysisSampleRate` constructor parameter; omitted = native
+  rate (original behaviour). Frames are stamped with the analysis rate and stay timestamp-continuous,
+  so `AudioBeatClock` envelope-rate derivation is unchanged.
 - **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
-  system-loopback capture source, and resampling to a fixed analysis rate.
+  and the system-loopback capture source.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

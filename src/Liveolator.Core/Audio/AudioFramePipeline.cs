@@ -1,3 +1,4 @@
+using Liveolator.Core.Dsp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -5,15 +6,24 @@ namespace Liveolator.Core.Audio;
 
 /// <summary>
 /// Orchestrates the audio frame pipeline (doc 02): subscribes to an <see cref="IAudioSource"/>,
-/// downmixes interleaved samples to mono, slices them into overlapping analysis frames, and emits
-/// an immutable <see cref="AudioFrameData"/> per frame via <see cref="SpectrumAnalyzer"/>. Pure
-/// and deterministic — fed samples, it produces frames — so it unit-tests with a fake source.
+/// downmixes interleaved samples to mono, optionally resamples to a fixed analysis rate, slices the
+/// result into overlapping analysis frames, and emits an immutable <see cref="AudioFrameData"/> per
+/// frame via <see cref="SpectrumAnalyzer"/>. Pure and deterministic — fed samples, it produces
+/// frames — so it unit-tests with a fake source.
 /// </summary>
 /// <remarks>
-/// Resampling is intentionally out of scope here: analysis runs at the source's native rate and
-/// that rate is carried on every <see cref="AudioFrameData"/>, so downstream consumers (the beat
-/// engine) stay rate-aware. A fixed-rate analysis path can be layered on later without changing
-/// this seam.
+/// <para>
+/// Resampling is <b>opt-in and back-compatible</b>. With no <c>analysisSampleRate</c> the pipeline
+/// analyses at the source's native rate and carries that rate on every <see cref="AudioFrameData"/>
+/// — the original behaviour, unchanged. When an analysis rate is supplied the downmixed mono is
+/// resampled (linear, streaming-continuous) from the source rate to that rate <i>before</i> framing,
+/// so tempo analysis is consistent across 44.1/48/96 kHz sources; <see cref="AudioFrameData.SampleRate"/>
+/// then reports the analysis rate and frame index/timestamp continuity is tracked in resampled time.
+/// </para>
+/// <para>
+/// Because timestamps remain monotonic and spaced by hop/rate in either mode, <c>AudioBeatClock</c>'s
+/// envelope-rate derivation (which reads frame timestamps) is unaffected.
+/// </para>
 /// </remarks>
 public sealed class AudioFramePipeline : IAudioFrameProvider, IDisposable
 {
@@ -21,14 +31,16 @@ public sealed class AudioFramePipeline : IAudioFrameProvider, IDisposable
     private readonly SpectrumAnalyzer _analyzer;
     private readonly int _frameSize;
     private readonly int _hop;
+    private readonly int? _analysisSampleRate; // null = analyse at the source's native rate
     private readonly ILogger _logger;
 
     private readonly object _gate = new();
     private readonly List<float> _mono = new();
+    private LinearResampler? _resampler; // created/recreated for the live source rate when resampling
     private int _consumed;          // mono samples already used as frame starts, from _mono[0]
-    private long _absoluteStart;    // absolute index of _mono[0] in the whole stream
+    private long _absoluteStart;    // absolute index of _mono[0] in the (analysis-rate) stream
     private long _frameIndex;
-    private int _sampleRate;
+    private int _sampleRate;        // the rate stamped on emitted frames (analysis rate when resampling)
     private int _lastChannels = -1; // for log-once on format change
     private int _lastRate = -1;
     private bool _disposed;
@@ -39,15 +51,19 @@ public sealed class AudioFramePipeline : IAudioFrameProvider, IDisposable
         IAudioSource source,
         SpectrumAnalyzer analyzer,
         int hop = 512,
-        ILogger<AudioFramePipeline>? logger = null)
+        ILogger<AudioFramePipeline>? logger = null,
+        int? analysisSampleRate = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
         _analyzer = analyzer ?? throw new ArgumentNullException(nameof(analyzer));
         _frameSize = analyzer.FrameSize;
         if (hop < 1 || hop > _frameSize)
             throw new ArgumentOutOfRangeException(nameof(hop), "hop must be in [1, frameSize].");
+        if (analysisSampleRate is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(analysisSampleRate), "Analysis sample rate must be positive.");
 
         _hop = hop;
+        _analysisSampleRate = analysisSampleRate;
         _logger = logger ?? NullLogger<AudioFramePipeline>.Instance;
         _source.SamplesAvailable += OnSamplesAvailable;
     }
@@ -73,10 +89,16 @@ public sealed class AudioFramePipeline : IAudioFrameProvider, IDisposable
                     "Audio frame pipeline format: {Channels} ch @ {SampleRate} Hz", e.Channels, e.SampleRate);
                 _lastChannels = e.Channels;
                 _lastRate = e.SampleRate;
+                // (Re)build the resampler for the live source rate; framing time stays continuous
+                // because _absoluteStart/_frameIndex are never reset across the change.
+                _resampler = _analysisSampleRate is int target
+                    ? new LinearResampler(e.SampleRate, target)
+                    : null;
             }
-            _sampleRate = e.SampleRate;
+            // Frames are stamped with the analysis rate when resampling, else the source rate.
+            _sampleRate = _analysisSampleRate ?? e.SampleRate;
 
-            AppendDownmixedMono(e.Interleaved.Span, e.Channels);
+            AppendAnalysisMono(e.Interleaved.Span, e.Channels);
             emitted = DrainFrames();
         }
 
@@ -91,18 +113,39 @@ public sealed class AudioFramePipeline : IAudioFrameProvider, IDisposable
             handler(this, frame);
     }
 
-    /// <summary>Average the channels of each interleaved frame into one mono sample.</summary>
-    private void AppendDownmixedMono(ReadOnlySpan<float> interleaved, int channels)
+    /// <summary>
+    /// Downmix the interleaved batch to mono, then (when an analysis rate is configured) resample it
+    /// to that rate, appending the result to the analysis buffer. Resampling happens after downmix so
+    /// it runs once per mono sample rather than per channel.
+    /// </summary>
+    private void AppendAnalysisMono(ReadOnlySpan<float> interleaved, int channels)
     {
         int frames = interleaved.Length / channels; // ignore a trailing partial frame
-        for (int f = 0; f < frames; f++)
+        if (frames == 0)
+            return;
+
+        if (_resampler is null)
         {
-            int baseIdx = f * channels;
-            float sum = 0f;
-            for (int c = 0; c < channels; c++)
-                sum += interleaved[baseIdx + c];
-            _mono.Add(sum / channels);
+            for (int f = 0; f < frames; f++)
+                _mono.Add(DownmixFrame(interleaved, f, channels));
+            return;
         }
+
+        // Resampling needs the whole batch at once to preserve streaming phase continuity.
+        var mono = new float[frames];
+        for (int f = 0; f < frames; f++)
+            mono[f] = DownmixFrame(interleaved, f, channels);
+        _mono.AddRange(_resampler.Process(mono));
+    }
+
+    /// <summary>Average the channels of one interleaved frame into a single mono sample.</summary>
+    private static float DownmixFrame(ReadOnlySpan<float> interleaved, int frame, int channels)
+    {
+        int baseIdx = frame * channels;
+        float sum = 0f;
+        for (int c = 0; c < channels; c++)
+            sum += interleaved[baseIdx + c];
+        return sum / channels;
     }
 
     /// <summary>Emit every fully-available overlapping frame, then compact the buffer.</summary>
