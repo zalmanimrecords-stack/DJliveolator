@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Liveolator.App.Features.Playlists;
 
 namespace Liveolator.App.Features.Libraries;
 
@@ -8,6 +9,7 @@ public partial class LibrariesView : UserControl
 {
     // Single live instance, so repeated "Folders" clicks focus the open window rather than stack.
     private FoldersStatusWindow? _foldersWindow;
+    private PlaylistBuilderWindow? _playlistsWindow;
 
     public LibrariesView() => InitializeComponent();
 
@@ -49,6 +51,31 @@ public partial class LibrariesView : UserControl
         var window = new FoldersStatusWindow { DataContext = vm };
         window.Closed += (_, _) => _foldersWindow = null;
         _foldersWindow = window;
+
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            window.Show(owner);
+        else
+            window.Show();
+    }
+
+    // Opens the playlist/set builder bound to the injected builder view-model. Single-instance,
+    // like the Folders window. Initializes (loads the library snapshot + saved sets) on open.
+    private void OnShowPlaylists(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LibrariesViewModel { PlaylistBuilder: { } builder })
+            return;
+
+        if (_playlistsWindow is not null)
+        {
+            _playlistsWindow.Activate();
+            return;
+        }
+
+        var window = new PlaylistBuilderWindow { DataContext = builder };
+        window.Closed += (_, _) => _playlistsWindow = null;
+        _playlistsWindow = window;
+
+        _ = builder.InitializeAsync();
 
         if (TopLevel.GetTopLevel(this) is Window owner)
             window.Show(owner);

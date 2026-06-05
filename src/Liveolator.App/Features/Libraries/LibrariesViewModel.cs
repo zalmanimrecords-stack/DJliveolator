@@ -43,12 +43,14 @@ public sealed class LibrariesViewModel : ViewModelBase
         MusicLibrary library,
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
-        IMusicCatalogStore? store = null)
+        IMusicCatalogStore? store = null,
+        Playlists.PlaylistBuilderViewModel? playlistBuilder = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _store = store;
+        PlaylistBuilder = playlistBuilder;
 
         ScanCommand = ReactiveCommand.CreateFromTask(
             RunScanAsync,
@@ -88,6 +90,9 @@ public sealed class LibrariesViewModel : ViewModelBase
 
     /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
     public ObservableCollection<FolderStatusViewModel> FolderStatuses { get; } = new();
+
+    /// <summary>The playlist/set builder opened from the "Playlists" button; null disables the button.</summary>
+    public Playlists.PlaylistBuilderViewModel? PlaylistBuilder { get; }
 
     public ReactiveCommand<Unit, Unit> ScanCommand { get; }
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }

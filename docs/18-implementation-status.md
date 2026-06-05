@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **362 passing** (as of 2026-06-05). Solution-wide: **618**
-across 7 test projects (Core 362, Visuals 43, Audio 54, MIDI 27, App 72, Media 35, Integration 25).
+`tests/Liveolator.Core.Tests` — **362 passing** (as of 2026-06-05). Solution-wide: **650**
+across 7 test projects (Core 362, Visuals 43, Audio 61, MIDI 27, App 89, Media 43, Integration 25).
 
 ## Module status
 
@@ -167,24 +167,43 @@ the next increment.
   path and its tests are unchanged; a two-deck engine implements the new `IMultiDeckPlaybackEngine`.
 - **App:** `ServiceConfig` wires `BassMixer` + `MixerActionHandler` into the dispatcher and registers
   `IMixer`, so UI/controllers can drive the mixer now.
-- **Two-deck engine state machine + master mix → clock (built, fake-tested):** `TwoDeckBassEngine`
-  (`IMultiDeckPlaybackEngine`, Audio) loads a decoding deck stream per slot, plugs it into a BASSmix
-  master, and **registers an `IBassMixerChannel` into `BassMixer` as decks load — closing the seam
-  that was missing** (mixer gain/EQ/filter now route to a real per-deck channel). It exposes the
-  post-crossfader mix as `MasterSource` (`MasterAudioSource`), and `MasterMixPlaybackEngine` (Core)
-  feeds that single master `IAudioSource` → `AudioFramePipeline` → `AudioBeatClock`, so **the beat
-  clock follows the audible mix** (doc 11), not a switched single deck. All BASS calls sit behind the
-  internal `IBassMixerBackend` seam (mirrors `IBassPlayback`), so the load/play/stop state machine and
-  the full master-tap→clock spine unit-test with a fake — proven end-to-end (synthetic click → 120 BPM
-  through the master). +18 tests (Core `MasterMixPlaybackEngineTests` 4, Audio `TwoDeckBassEngineTests` 14).
-- **Deferred (next increment):** the native `BassMixerBackend` (BASSmix master + deck plug/pause/tap)
-  and `BassMixerChannel` (BASS_FX biquad applying gain/EQ/filter to real channels) — `TwoDeckBassEngine`'s
-  public native ctor lands with them; needs the `ManagedBass.Mix`/`ManagedBass.Fx` packages + natives
-  fetched alongside core BASS. Then: `ServiceConfig` wiring (replace the single-deck path with the
-  two-deck engine + `BassMixer` channels + `DeckActionHandler(IMultiDeckPlaybackEngine)`, headless
-  fallback preserved), the per-deck **cue** bus → output ch 3/4, beatmatching/sync-lock/quantize,
-  hot-cues, loops, and ASIO/CoreAudio multi-channel cue output. `BassMixer` still drops controls for an
-  unregistered slot (logged, never throws) until a deck registers its channel.
+### ✅ Two-deck DJ engine + master mix → clock — `Liveolator.Audio/Playback/` (doc 11, increment 2)
+
+The two decks now feed one master mix, the mixer's gain/EQ/filter route to real per-deck channels, and
+the beat clock follows the audible mix — the increment that turns the routing skeleton into a real engine.
+
+| Built | File |
+|-------|------|
+| Two-deck engine (slot-addressed; registers channels into `BassMixer`) | `TwoDeckBassEngine` (`IMultiDeckPlaybackEngine`, Audio) |
+| Post-crossfader master mix exposed as a source | `MasterAudioSource` (Audio) |
+| Master-mix → frame pipeline → beat clock composition | `MasterMixPlaybackEngine` (Core) |
+| Native BASS calls behind a seam (mirrors `IBassPlayback`) | `IBassMixerBackend` + `BassMixerBackend` (Audio) |
+| Per-deck realtime gain + cascaded EQ/filter (managed DSP) | `BassMixerChannel` + `StatefulBiquad` (Audio) |
+
+- **Closes the missing seam:** `TwoDeckBassEngine.Load(slot,…)` plugs a decoding deck stream into the
+  BASSmix master and **registers an `IBassMixerChannel` into `BassMixer`**, so `MixerActionHandler`'s
+  gain/EQ/filter (computed by `MixerMath`) finally reach a real per-deck channel — before this they were
+  dropped (no channel registered).
+- **Beat clock follows the mix:** `MasterMixPlaybackEngine` feeds the single `MasterSource` →
+  `AudioFramePipeline` → `AudioBeatClock`, so analysis sees the post-crossfader signal (doc 11), not a
+  switched single deck. Proven end-to-end in tests (synthetic click through the master → 120 BPM).
+- **EQ/filter are applied in managed DSP, not BASS_FX:** `BassMixerChannel` runs the Core
+  `BiquadCoefficients` via `StatefulBiquad` (per-audio-channel Direct-Form-I state) inside the deck's
+  BASS DSP callback — keeping Core's mixer math authoritative and the sample processing unit-testable.
+  So only **`ManagedBass.Mix`** is needed (no `ManagedBass.Fx`).
+- **Testability:** all BASS interop sits behind `IBassMixerBackend`; the load/play/stop state machine,
+  channel registration, master-tap→clock spine, and the biquad/gain processing all unit-test with fakes —
+  native bass/bassmix is not in CI (the native `BassMixerBackend` is verified manually, like `BassPlayback`).
+  +25 tests (Core `MasterMixPlaybackEngineTests` 4; Audio `TwoDeckBassEngineTests` 14, `BassMixerChannelTests` 7).
+- **App-wired (`ServiceConfig`):** the single-deck path is replaced by `TwoDeckBassEngine(mixer)` registered
+  as `IMultiDeckPlaybackEngine`, with `MasterMixPlaybackEngine`'s clock registered as `IBeatClock` and
+  `DeckActionHandler(IMultiDeckPlaybackEngine)` driving both decks. **Headless fallback preserved:** if
+  native bass/bassmix is absent the realtime services are simply not registered and the app runs as a
+  catalog browser (the Libraries tab's Load→A/B enable off dispatcher feedback, so deck B lights up now).
+- **Deferred (next increment):** native `BassMixerBackend` **runtime** verification needs the `bassmix`
+  native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
+  ch 3/4; beatmatching/sync-lock/quantize; hot-cues; loops; and ASIO/CoreAudio multi-channel cue output.
+  `SetCue` currently latches the PFL flag only. `BassMixer` still drops controls for an unregistered slot.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

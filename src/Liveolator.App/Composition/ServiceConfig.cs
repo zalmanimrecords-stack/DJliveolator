@@ -45,6 +45,9 @@ public static class ServiceConfig
         // restarts (doc 13). The seam lives in Core; JsonCatalogStore is the Media binding.
         services.AddSingleton<IMusicCatalogStore>(
             _ => new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
+        services.AddSingleton<IPlaylistStore>(
+            _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
@@ -117,11 +120,19 @@ public static class ServiceConfig
         // Libraries playback is gated on the realtime engine, not merely the dispatcher: without
         // native BASS there is no deck to play, so pass the dispatcher only when the engine is up
         // (keeps the Play transport hidden in catalog-browser mode).
+        // Playlist/set builder (opened from the Libraries "Playlists" button): curate from the catalog,
+        // save via IPlaylistStore, and push a set to the live queue (ILivePlaylist).
+        services.AddSingleton<PlaylistBuilderViewModel>(sp => new PlaylistBuilderViewModel(
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetRequiredService<IPlaylistStore>(),
+            sp.GetRequiredService<ILivePlaylist>()));
+
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
             sp.GetRequiredService<MusicLibrary>(),
             realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetService<IBeatClock>(),
-            sp.GetRequiredService<IMusicCatalogStore>()));
+            sp.GetRequiredService<IMusicCatalogStore>(),
+            sp.GetRequiredService<PlaylistBuilderViewModel>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
