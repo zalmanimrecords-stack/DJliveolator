@@ -158,4 +158,96 @@ public class AudioFramePipelineTests
 
         Assert.Empty(frames);
     }
+
+    // ---- Fixed analysis-rate (resampling) path ----
+
+    private const int AnalysisRate = 44_100;
+
+    private static (FakeAudioSource source, AudioFramePipeline pipeline, List<AudioFrameData> frames)
+        BuildResampling(int analysisFrameSize)
+    {
+        var source = new FakeAudioSource();
+        var pipeline = new AudioFramePipeline(
+            source, new SpectrumAnalyzer(analysisFrameSize), hop: analysisFrameSize / 4,
+            analysisSampleRate: AnalysisRate);
+        var frames = new List<AudioFrameData>();
+        pipeline.FrameAvailable += (_, f) => frames.Add(f);
+        return (source, pipeline, frames);
+    }
+
+    private static float[] SineMono(int count, double frequencyHz, int sampleRate)
+    {
+        var mono = new float[count];
+        for (int i = 0; i < count; i++)
+            mono[i] = (float)Math.Sin(2.0 * Math.PI * frequencyHz * i / sampleRate);
+        return mono;
+    }
+
+    [Fact]
+    public void AnalysisRate_IsEmittedOnEveryFrame_NotTheSourceRate()
+    {
+        var (source, _, frames) = BuildResampling(analysisFrameSize: 1024);
+
+        // Feed plenty of 96 kHz audio so the resampled buffer yields at least one frame.
+        source.Emit(SineMono(96_000, frequencyHz: 1_000, sampleRate: 96_000), channels: 1, sampleRate: 96_000);
+
+        Assert.NotEmpty(frames);
+        Assert.All(frames, f => Assert.Equal(AnalysisRate, f.SampleRate));
+    }
+
+    [Fact]
+    public void Timestamps_AreInResampledTime_AndContinuous()
+    {
+        var (source, _, frames) = BuildResampling(analysisFrameSize: 1024);
+        int hop = 1024 / 4;
+
+        source.Emit(SineMono(96_000, frequencyHz: 1_000, sampleRate: 96_000), channels: 1, sampleRate: 96_000);
+
+        Assert.True(frames.Count >= 2);
+        Assert.Equal(0.0, frames[0].TimestampSeconds, precision: 9);
+        // Frame N starts at N*hop analysis samples → N*hop/AnalysisRate seconds.
+        for (int i = 0; i < frames.Count; i++)
+        {
+            Assert.Equal(i, frames[i].FrameIndex);
+            Assert.Equal((double)(i * hop) / AnalysisRate, frames[i].TimestampSeconds, precision: 9);
+        }
+    }
+
+    [Theory]
+    [InlineData(48_000)]
+    [InlineData(96_000)]
+    public void SpectrumPeak_MatchesTheReferenceRate_AcrossSourceRates(int sourceRate)
+    {
+        const int analysisFrameSize = 2048;
+        const double toneHz = 1_000.0;
+        const int seconds = 1;
+
+        int ReferencePeak()
+        {
+            var (src, _, frames) = BuildResampling(analysisFrameSize);
+            src.Emit(SineMono(AnalysisRate * seconds, toneHz, AnalysisRate), channels: 1, sampleRate: AnalysisRate);
+            return DominantBin(frames[0].Spectrum);
+        }
+
+        var (source, _, capturedFrames) = BuildResampling(analysisFrameSize);
+        source.Emit(SineMono(sourceRate * seconds, toneHz, sourceRate), channels: 1, sampleRate: sourceRate);
+
+        int referenceBin = ReferencePeak();
+        int sourceBin = DominantBin(capturedFrames[0].Spectrum);
+
+        // After resampling to the common analysis rate the dominant bin must line up (±1 bin).
+        Assert.InRange(sourceBin, referenceBin - 1, referenceBin + 1);
+
+        // Sanity: the bin maps back to ~1 kHz at the analysis rate.
+        double binHz = (double)sourceBin * AnalysisRate / analysisFrameSize;
+        Assert.InRange(binHz, toneHz - 30, toneHz + 30);
+    }
+
+    private static int DominantBin(float[] spectrum)
+    {
+        int peak = 1; // skip DC
+        for (int i = 2; i < spectrum.Length; i++)
+            if (spectrum[i] > spectrum[peak]) peak = i;
+        return peak;
+    }
 }
