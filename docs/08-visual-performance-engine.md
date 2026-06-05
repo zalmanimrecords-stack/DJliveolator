@@ -13,10 +13,12 @@
 > `BeatBehavior`, `BlendMode`/`TransitionStyle`/`VisualSourceKind`), `VisualMacro` + `MacroTarget`
 > with normalized→range resolution, the `IVisualPerformanceEngine` seam, and the shared
 > confidence-gated `Beat.QuantizedLaunch` (visuals reuse the **same** `Quantize`/clock as audio).
-> **Pending:** the concrete engine (drives the GPU compositor — `Liveolator.Visuals`, blocked on
-> the Silk.NET/OpenGL compositor) and the `VisualActionHandler` dispatcher bridge (build it like
-> `BeatActionHandler` once the engine exists). **Don't rebuild the scene/macro model or redefine
-> `Quantize`.**
+> Also BUILT: the first GL compositor slice (`Liveolator.Visuals/Gl/`) and the
+> `VisualActionHandler` dispatcher bridge (`Liveolator.Core/Visuals/`, mirrors `BeatActionHandler`,
+> app-wired in `ServiceConfig.WireVisuals`) — see [`18`](18-implementation-status.md). **Pending:**
+> the full layer/effect chain + video/camera sources in the engine, `VisualSetLayerSource` (no action
+> payload yet), and launching the GL render window on demand. **Don't rebuild the scene/macro model,
+> redefine `Quantize`, or re-add the handler.**
 
 ## Purpose
 
