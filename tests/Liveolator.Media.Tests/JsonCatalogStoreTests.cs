@@ -1,6 +1,7 @@
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 using Xunit;
 
 namespace Liveolator.Media.Tests;
@@ -32,6 +33,45 @@ public class JsonCatalogStoreTests
         MusicTrack broken = loaded.Single(t => t.File.Path == "broken.mp3");
         Assert.Equal(MediaAnalysisStatus.Failed, broken.Status);
         Assert.Equal("decode error", broken.Error);
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsVisualAssets()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var assets = new[]
+        {
+            TestTracks.Video("clip.mp4", 1920, 1080, 12.5),
+            TestTracks.Image("logo.png", 800, 600),
+        };
+
+        await store.SaveVisualAsync(assets);
+        IReadOnlyList<VisualAsset> loaded = await store.LoadVisualAsync();
+
+        Assert.Equal(2, loaded.Count);
+        VisualAsset clip = loaded.Single(a => a.File.Path == "clip.mp4");
+        Assert.Equal(VisualMediaKind.Video, clip.Kind);
+        Assert.Equal(1920, clip.Info!.Value.Width);
+        Assert.Equal(TimeSpan.FromSeconds(12.5), clip.Info.Value.Duration);
+
+        VisualAsset image = loaded.Single(a => a.File.Path == "logo.png");
+        Assert.Equal(VisualMediaKind.Image, image.Kind);
+        Assert.Null(image.Info!.Value.Duration);
+    }
+
+    [Fact]
+    public async Task MusicAndVisualCatalogs_ArePersistedSeparately()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        await store.SaveMusicAsync(new[] { TestTracks.Analyzed("a.wav", 120, 0, KeyMode.Major) });
+        await store.SaveVisualAsync(new[] { TestTracks.Image("logo.png", 800, 600) });
+
+        Assert.NotEqual(store.MusicCatalogPath, store.VisualCatalogPath);
+        Assert.Single(await store.LoadMusicAsync());
+        Assert.Single(await store.LoadVisualAsync());
     }
 
     [Fact]

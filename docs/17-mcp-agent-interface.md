@@ -25,6 +25,8 @@ In scope (implemented):
   seed track.
 - **Playlists**: build a harmonically-coherent set from a seed (with a tempo trend) and export
   it to `.m3u8` / `.json`.
+- **Visual-asset catalog**: scan folders of images/video clips (dimensions, and video duration
+  via ffprobe), then list/query them so an agent can discover footage to pair with music.
 
 Out of scope (documented for later):
 
@@ -32,8 +34,8 @@ Out of scope (documented for later):
   `PerformanceAction` dispatcher + engines (doc 04). When those land, the dispatcher's
   serializable actions become additional MCP tools — the agent becomes another action source
   alongside Push, the DJ controller, the UI, and autopilot.
-- **Generating** visual content. Needs the visual engine (doc 08). A future phase can catalog
-  and *suggest* existing visual assets (the `VisualMediaLibrary` already exists in Core).
+- **Generating** visual content. Needs the visual engine (doc 08). The MCP server only catalogs
+  and lists *existing* visual files; choosing/creating material is left to the agent.
 
 ## Project layout
 
@@ -77,6 +79,9 @@ Other flags: `--ffmpeg PATH` (FFmpeg executable; also `LIVEOLATOR_FFMPEG_PATH`),
 | `compatible_keys(camelot)` | The Camelot keys that mix with a given code (pure theory). |
 | `build_harmonic_playlist(seedPath, length, bpmTolerance?, trend?)` | Greedy harmonic set with a tempo trend (Any/Steady/Rising/Falling). |
 | `export_playlist(trackPaths[], format, outputPath)` | Write `.m3u8` / `.json`. |
+| `scan_visual_folders(folders[], force?)` | Scan + catalog images/videos (dimensions, video duration via ffprobe). |
+| `list_visuals(kind?, minWidth?, limit?, offset?)` | Query the visual catalog. |
+| `get_visual(path)` | Metadata for one catalogued visual asset. |
 
 Each tool returns a stable DTO (`Liveolator.Mcp.Contracts`) decoupled from Core records, and
 surfaces failures as clear errors — never a silent gap (global standards #16, #23, #26).
@@ -103,7 +108,14 @@ pure pieces (WAV decode, filesystem enumeration + canonical paths, catalog round
 building, restore-then-skip). The MCP tool layer is thin orchestration over these and is verified
 by an end-to-end stdio handshake (`initialize` → `tools/list` → `tools/call`).
 
+## Persistence — visual catalog
+
+The visual catalog is cached separately (`catalog.visual.json`) from the music catalog, with the
+same atomic-write + incremental-scan behavior. Video duration is populated only when `ffprobe` is
+available (`LIVEOLATOR_FFPROBE_PATH`/PATH); images need no external tool.
+
 ## Phase
 
-Built after Track-Analysis (doc 16). Natural next steps: visual-asset cataloging/suggestion
-(doc 08 prerequisite), then performance-control tools once the dispatcher (doc 04) exists.
+Built after Track-Analysis (doc 16): music intelligence + harmonic playlists + visual-asset
+cataloging. Natural next step: performance-control tools once the dispatcher (doc 04) exists —
+the agent then becomes another `PerformanceAction` source.

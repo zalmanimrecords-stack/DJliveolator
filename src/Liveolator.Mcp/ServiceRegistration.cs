@@ -1,8 +1,10 @@
 using Liveolator.Audio;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Visual;
 using Liveolator.Media;
 using Liveolator.Mcp.Session;
+using Liveolator.Visuals;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +25,12 @@ internal static class ServiceRegistration
             onWarning: msg => sp.GetRequiredService<ILogger<JsonCatalogStore>>().LogWarning("{Warning}", msg)));
         services.AddSingleton<PlaylistWriter>();
         services.AddSingleton<LibrarySession>();
+
+        // Visual-media catalog (doc 17 Phase 3): image dimensions are pure-managed; video duration
+        // uses ffprobe, which resolves itself via LIVEOLATOR_FFPROBE_PATH/PATH (its own executable,
+        // distinct from ffmpeg) — so we let it default rather than forcing the ffmpeg path on it.
+        services.AddSingleton<IVisualMediaProbe>(_ => new CompositeVisualMediaProbe());
+        services.AddSingleton<VisualSession>();
         return services;
     }
 }

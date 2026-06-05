@@ -3,6 +3,7 @@ using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 
 namespace Liveolator.Media.Tests;
 
@@ -27,4 +28,20 @@ internal static class TestTracks
 
     public static MusicTrack Failed(string path)
         => new(new ScannedFile(path, 0, T), null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, "decode error");
+
+    public static VisualAsset Video(string path, int width, int height, double seconds)
+        => new(
+            new ScannedFile(path, 8192, T),
+            VisualMediaKind.Video,
+            new VisualMediaInfo(width, height, TimeSpan.FromSeconds(seconds)),
+            MediaAnalysisStatus.Ok,
+            null);
+
+    public static VisualAsset Image(string path, int width, int height)
+        => new(
+            new ScannedFile(path, 2048, T),
+            VisualMediaKind.Image,
+            new VisualMediaInfo(width, height, Duration: null),
+            MediaAnalysisStatus.Ok,
+            null);
 }

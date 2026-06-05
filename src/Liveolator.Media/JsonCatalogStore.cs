@@ -1,11 +1,18 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 
 namespace Liveolator.Media;
 
 /// <summary>Versioned on-disk shape of the persisted music catalog (the doc 13 / doc 16 cache).</summary>
 public sealed record MusicCatalogSnapshot(int Version, IReadOnlyList<MusicTrack> Tracks)
+{
+    public const int CurrentVersion = 1;
+}
+
+/// <summary>Versioned on-disk shape of the persisted visual-media catalog (doc 13).</summary>
+public sealed record VisualCatalogSnapshot(int Version, IReadOnlyList<VisualAsset> Assets)
 {
     public const int CurrentVersion = 1;
 }
@@ -37,42 +44,59 @@ public sealed class JsonCatalogStore
     /// <summary>Full path of the music-catalog JSON file.</summary>
     public string MusicCatalogPath => Path.Combine(_directory, "catalog.music.json");
 
+    /// <summary>Full path of the visual-media-catalog JSON file.</summary>
+    public string VisualCatalogPath => Path.Combine(_directory, "catalog.visual.json");
+
     /// <summary>Default persistence root: <c>%APPDATA%/Liveolator</c> (or the XDG/Mac equivalent).</summary>
     public static string DefaultRoot()
         => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator");
 
-    public async Task SaveMusicAsync(IEnumerable<MusicTrack> tracks, CancellationToken cancellationToken = default)
+    public Task SaveMusicAsync(IEnumerable<MusicTrack> tracks, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tracks);
-        Directory.CreateDirectory(_directory);
-
-        var snapshot = new MusicCatalogSnapshot(MusicCatalogSnapshot.CurrentVersion, tracks.ToList());
-
-        // Write to a temp file then move, so an interrupted write never corrupts the live cache.
-        string tempPath = MusicCatalogPath + ".tmp";
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, MusicCatalogPath, overwrite: true);
+        return SaveAsync(MusicCatalogPath, new MusicCatalogSnapshot(MusicCatalogSnapshot.CurrentVersion, tracks.ToList()), cancellationToken);
     }
 
-    /// <summary>Loads the persisted catalog, or an empty list when none exists or it is unreadable.</summary>
+    /// <summary>Loads the persisted music catalog, or an empty list when none exists or it is unreadable.</summary>
     public async Task<IReadOnlyList<MusicTrack>> LoadMusicAsync(CancellationToken cancellationToken = default)
+        => (await LoadAsync<MusicCatalogSnapshot>(MusicCatalogPath, cancellationToken).ConfigureAwait(false))?.Tracks
+           ?? Array.Empty<MusicTrack>();
+
+    public Task SaveVisualAsync(IEnumerable<VisualAsset> assets, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(MusicCatalogPath))
-            return Array.Empty<MusicTrack>();
+        ArgumentNullException.ThrowIfNull(assets);
+        return SaveAsync(VisualCatalogPath, new VisualCatalogSnapshot(VisualCatalogSnapshot.CurrentVersion, assets.ToList()), cancellationToken);
+    }
+
+    /// <summary>Loads the persisted visual catalog, or an empty list when none exists or it is unreadable.</summary>
+    public async Task<IReadOnlyList<VisualAsset>> LoadVisualAsync(CancellationToken cancellationToken = default)
+        => (await LoadAsync<VisualCatalogSnapshot>(VisualCatalogPath, cancellationToken).ConfigureAwait(false))?.Assets
+           ?? Array.Empty<VisualAsset>();
+
+    private async Task SaveAsync<T>(string path, T snapshot, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_directory);
+        // Write to a temp file then move, so an interrupted write never corrupts the live cache.
+        string tempPath = path + ".tmp";
+        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+        File.Move(tempPath, path, overwrite: true);
+    }
+
+    private async Task<T?> LoadAsync<T>(string path, CancellationToken cancellationToken) where T : class
+    {
+        if (!File.Exists(path))
+            return null;
 
         try
         {
-            await using var stream = new FileStream(MusicCatalogPath, FileMode.Open, FileAccess.Read);
-            MusicCatalogSnapshot? snapshot = await JsonSerializer
-                .DeserializeAsync<MusicCatalogSnapshot>(stream, SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
-            return snapshot?.Tracks ?? Array.Empty<MusicTrack>();
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read);
+            return await JsonSerializer.DeserializeAsync<T>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            _onWarning?.Invoke($"Catalog cache at '{MusicCatalogPath}' is unreadable ({ex.Message}); re-analyzing from scratch.");
-            return Array.Empty<MusicTrack>();
+            _onWarning?.Invoke($"Catalog cache at '{path}' is unreadable ({ex.Message}); re-analyzing from scratch.");
+            return null;
         }
     }
 }
