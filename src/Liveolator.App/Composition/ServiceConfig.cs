@@ -1,6 +1,7 @@
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
+using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
@@ -38,6 +39,7 @@ public static class ServiceConfig
         // absent (e.g. a dev box without the per-platform binaries), Live Mode stays off and the
         // app still runs as a catalog browser — the UI hides the transport controls.
         WireLiveAudio(services);
+        WireCaptureSources(services);
 
         // --- View-models ---
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
@@ -67,5 +69,25 @@ public static class ServiceConfig
             // Native audio unavailable — leave Live Mode services unregistered; GetService returns null.
             System.Diagnostics.Trace.TraceWarning($"Live Mode disabled: realtime audio unavailable ({ex.Message}).");
         }
+    }
+
+    // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---
+    // Registers the BASS capture engine as both the device catalog and the source factory. A single
+    // engine instance backs both seams. Native bass is not required to construct the engine
+    // (enumeration/creation only touch native on demand and degrade to "no devices" if it is absent),
+    // so this never disables app startup.
+    //
+    // SETTINGS-UI SEAM (for the Live-tab / Settings agent): the device picker should resolve
+    // IAudioCaptureDeviceCatalog, list EnumerateCaptureDevices(), let the user choose an
+    // AudioCaptureDevice, then call IAudioCaptureSourceFactory.CreateCaptureSource(device) and feed
+    // the returned IAudioSource into the live pipeline (via SwitchableAudioSource.SetSource, mirroring
+    // how the deck source is swapped). Switching source is itself a PerformanceAction (doc 04) — wire
+    // it through the dispatcher, not by calling the engine directly. This task deliberately stops at
+    // the seam and does not build the picker UI.
+    private static void WireCaptureSources(IServiceCollection services)
+    {
+        var engine = new BassCaptureEngine();
+        services.AddSingleton<IAudioCaptureDeviceCatalog>(engine);
+        services.AddSingleton<IAudioCaptureSourceFactory>(engine);
     }
 }
