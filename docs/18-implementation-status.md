@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **290 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **292 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -98,6 +98,8 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 | Playback engine seam + composition | `IAudioPlaybackEngine`, `IDeckSourceFactory`, `LivePlaybackEngine` (Core) |
 | Deck transport handler | `DeckActionHandler` (Core; DeckLoadTrack/DeckPlayPause/TransportStop) |
 | **BASS realtime backend** | `BassAudioEngine`, `DeckAudioSource`, `BassPlayback`, `IBassPlayback` (Audio) |
+| Capture seams | `IAudioCaptureDeviceCatalog`, `IAudioCaptureSourceFactory`, `AudioCaptureDevice`, `CaptureSourceKind` (Core) |
+| **BASS capture backend** | `BassCaptureEngine`, `CaptureAudioSource`, `BassCaptureBackend`, `ICaptureBackend` (Audio) |
 
 - **Decision made:** realtime audio library = **BASS/ManagedBass** (2026-06-05). All BASS calls go
   through the internal `IBassPlayback` seam so `DeckAudioSource` unit-tests with a fake; native
@@ -121,6 +123,20 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
   verification is a documented **manual** hardware checklist (`docs/01`), not automatable here.
 - **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
   and the system-loopback capture source.
+- **Capture sources (task 8, first increment):** `CaptureAudioSource` emits `AudioSamplesAvailable`
+  exactly like `DeckAudioSource`, so a system-loopback or line-input feed plugs straight into the
+  same `SwitchableAudioSource → AudioFramePipeline → AudioBeatClock` path. BASS calls are isolated
+  behind the internal `ICaptureBackend` seam (mirrors `IBassPlayback`) so the source state machine
+  unit-tests with a fake — native bass is not needed in CI. `BassCaptureEngine` implements both
+  `IAudioCaptureDeviceCatalog` (enumerate) and `IAudioCaptureSourceFactory` (create), and is
+  registered in `ServiceConfig`. **Windows:** loopback + line-in via BASS record devices (the WASAPI
+  loopback endpoint appears as a record device named "…loopback"). **macOS:** line-in works through
+  the same record path; system-loopback needs a virtual device (e.g. BlackHole) the user installs —
+  documented on `BassCaptureBackend`; swapping in the BASSWASAPI add-on later does not change Core or
+  the source state machine.
+- **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
+  resampling to a fixed analysis rate, the **Settings/Live-tab device-picker UI** (seam left in
+  `ServiceConfig.WireCaptureSources` with a note), and wiring source selection as a `PerformanceAction`.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 
@@ -243,4 +259,6 @@ realtime half) are all landed (see Realtime audio). What still remains to build 
 
 - **Decks + mixer (doc 11):** two-deck playback, software mixer (crossfader/EQ/filter), hot cues,
   loops, beatmatching, multi-channel ASIO/CoreAudio cue output. Unblocked — just not built yet.
-- **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) and ASIO device pick.
+- **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) — **first increment built**
+  (`BassCaptureEngine` + `CaptureAudioSource`, see Realtime audio). Remaining: ASIO device pick and the
+  Settings device-picker UI.
