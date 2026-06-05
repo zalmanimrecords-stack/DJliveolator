@@ -1,5 +1,14 @@
 # 10 — Autopilot Show Rules
 
+> **✅ Status (2026-06-05): BUILT in `Liveolator.Core/Autopilot/`** — see
+> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested: the rule
+> model (`AutopilotRule`/`RuleTrigger`/`TriggerKind`/`RuleCondition`/`Cooldown`), the show
+> definition (`AutopilotRuleSet`/`ScenePool`/`AutopilotOverridePolicy`/`OverrideMode`),
+> `AutopilotTickContext`, the `IAutopilotEngine` seam, and `AutopilotEngine` — triggers, condition
+> gating, per-rule cooldowns, seeded scene-pool selection, and the AutoResume/PauseUntilReenabled
+> override state machine. The host drives `Tick(...)` from the clock and calls `OnManualAction()`
+> for human actions. **Don't rebuild the rule engine or model.**
+
 ## Purpose
 
 Run an unattended visual show from rules while the performer supervises or focuses on

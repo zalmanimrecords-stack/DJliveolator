@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **214 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **232 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -122,6 +122,28 @@ subscribes to `NowChanged` and drives the underlying player.
   `NextTrackPreloader` — blocked on the audio library. The `NowChanged` seam is ready for it.
   Note `Played` history is modeled (enum) but not yet surfaced.
 
+### ✅ Autopilot rule engine — `Liveolator.Core/Autopilot/` (doc 10)
+
+Runs an unattended show from rules, emitting actions through the **same** dispatcher a human uses
+(doc 04) — so it inherits engine integration for free. Fully pure and testable.
+
+| Built | File |
+|-------|------|
+| Rule model | `AutopilotRule`, `RuleTrigger`, `TriggerKind`, `RuleCondition`, `Cooldown` |
+| Show definition | `AutopilotRuleSet`, `ScenePool`, `AutopilotOverridePolicy`, `OverrideMode` |
+| Tick inputs + seam | `AutopilotTickContext`, `IAutopilotEngine` |
+| Engine | `AutopilotEngine` |
+
+- Triggers: EveryNBeats / EveryNBars / OnDownbeat / OnTrackPosition. Conditions gate on
+  confidence / energy window / track-position window. Per-rule cooldowns prevent flicker.
+- **Controlled randomness:** scene-selecting actions draw from a curated `ScenePool` with a
+  per-scene cooldown, via a **seeded** `Random` (reproducible/deterministic shows).
+- **Override state machine:** AutoResume (suspend N bars then resume) and PauseUntilReenabled,
+  both behind one machine; `Stop()` hard-stops. A throwing rule is disabled for the session and
+  logged, never stalling the tick loop.
+- **Deferred:** nothing in Core — the host drives `Tick(...)` from the clock loop and calls
+  `OnManualAction()` for human-sourced actions.
+
 ## Pre-existing Core (built before this status doc)
 
 - `Core/Dsp/` (FFT, windows), `Core/Analysis/` (offline BPM, chroma, key/Camelot, cues),
@@ -141,9 +163,11 @@ subscribes to `NowChanged` and drives the underlying player.
 
 ## What is safe to build next (no blockers)
 
-1. **Autopilot rule engine** — `Core/Autopilot/` (show-rules state machine, override/auto-resume).
-   Uses Beat + Actions + the live playlist. (doc 10)
-2. **More concern handlers** for the dispatcher as their engines appear.
+1. **More concern handlers** for the dispatcher (Transport, Playlist) wiring existing Core engines
+   — e.g. a `PlaylistActionHandler` over `ILivePlaylist`, mirroring `BeatActionHandler`.
+2. **JSON persistence** of profiles/scenes/rule-sets under the Live root (doc 13) — pure
+   serialization over the records already built.
+3. **MCP tools** exposing the new Core capabilities to agents (doc 17).
 
 ## Blocked until the audio-library decision (BASS vs PortAudio/miniaudio)
 
