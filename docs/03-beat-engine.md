@@ -1,5 +1,17 @@
 # 03 — Beat Engine
 
+> **✅ Status (2026-06-05): clock primitives BUILT in `Liveolator.Core/Beat/`** — see
+> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested:
+> `BeatClockState`/`TempoCandidate`/`BeatClockSource`, `IBeatClock`, the Link-style
+> `IBeatTimeline`/`BeatTimeline`, `Quantize` + `IBeatScheduler` + `BeatQuantizer`,
+> `TapTempoService`, the manual clock (`ManualBeatClock` + `IBeatClockControl`,
+> `BeatClockSource.Manual`), the `IHostClock` time seam, and `BeatActionHandler` (the dispatcher
+> bridge for tap/lock/half/double/nudge/reset, doc 04). **Pending (blocked on the doc 02 audio
+> frame pipeline → audio source):** the realtime `OnsetDetectionEngine`/`TempoEstimator`/
+> `BeatTracker` and an audio-driven `BeatClockService`; also `BeatClockSource.External` (Ableton
+> Link). Offline BPM/key analysis already lives in `Core/Analysis/`. **Don't rebuild the timeline,
+> quantizer, tap tempo, or manual clock.**
+
 ## Purpose
 
 Replace the current simple bass-energy detector with a performance-grade beat clock

@@ -1,5 +1,14 @@
 # 04 — Performance Action System
 
+> **✅ Status (2026-06-05): BUILT in `Liveolator.Core/Actions/`** — see
+> [`18-implementation-status.md`](18-implementation-status.md). The full model
+> (`PerformanceAction`/`Kind`/`ActionInputMode`), the dispatcher (`PerformanceActionDispatcher`
+> with handler-registration routing, no giant switch), the handler seam
+> (`IPerformanceActionHandler` + base), feedback (`ActionFeedbackState`/`Changed`), and the
+> UI-marshaling seam are implemented and tested. **`BeatActionHandler` is the first real
+> handler** (doc 03). Pending: Transport/Visual/Deck/Mixer/Playlist handlers, which land with
+> their engines. **Do not rebuild the dispatcher or the model.**
+
 ## Purpose
 
 One command model for every source of intent — UI, Push, DJ controllers, keyboard,

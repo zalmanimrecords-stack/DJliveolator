@@ -87,6 +87,9 @@ docs/                     # architecture & design
 
 ## Working notes
 
+- **Build status — read before building:** `docs/18-implementation-status.md` is the living
+  map of what is already implemented in `Liveolator.Core` (Actions/doc 04, Mapping+MIDI
+  I/O/doc 05, Beat clock primitives/doc 03). Check it first to avoid rebuilding existing seams.
 - Core logic is pure C# (no UI, no native) so it unit-tests under xUnit without
   hardware — preserve that boundary.
 - Existing Zalmanolator algorithms worth porting: FFT/spectrum (`AudioAnalyzer`), BPM
