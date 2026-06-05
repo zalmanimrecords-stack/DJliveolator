@@ -25,6 +25,7 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     private readonly IManualBeatClockDriver? _clockDriver;
     private readonly IHostClock? _hostClock;
     private readonly ILiveBeatTimer? _timer;
+    private readonly IVisualStage? _visualStage;
 
     private string _bpm = "—";
     private string _confidence = "—";
@@ -42,18 +43,21 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// <param name="clockDriver">The manual clock's render-loop pump; null disables smooth advance.</param>
     /// <param name="hostClock">Monotonic host time used to stamp each pump tick.</param>
     /// <param name="timer">Render-loop seam driving <paramref name="clockDriver"/>; null disables it.</param>
+    /// <param name="visualStage">Launches the GL visuals window on demand; null hides the control.</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
         IManualBeatClockDriver? clockDriver = null,
         IHostClock? hostClock = null,
-        ILiveBeatTimer? timer = null)
+        ILiveBeatTimer? timer = null,
+        IVisualStage? visualStage = null)
     {
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _clockDriver = clockDriver;
         _hostClock = hostClock;
         _timer = timer;
+        _visualStage = visualStage;
 
         TapCommand = MakeBeatCommand(PerformanceActionKind.BeatTapTempo);
         LockCommand = MakeBeatCommand(PerformanceActionKind.BeatLock);
@@ -66,6 +70,10 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
 
         PlayPauseCommand = MakeBeatCommand(PerformanceActionKind.DeckPlayPause);
         StopCommand = MakeBeatCommand(PerformanceActionKind.TransportStop);
+
+        ShowVisualsCommand = ReactiveCommand.Create(
+            () => _visualStage?.Show(),
+            Observable.Return(_visualStage is not null));
 
         if (_beatClock is not null)
         {
@@ -90,9 +98,13 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> SetDownbeatCommand { get; }
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
+    public ReactiveCommand<Unit, Unit> ShowVisualsCommand { get; }
 
     /// <summary>True when intent can be emitted (the action layer is wired). The UI disables controls otherwise.</summary>
     public bool IsLiveModeEnabled => _dispatcher is not null;
+
+    /// <summary>True when a visuals window can be launched (drives the "Show Visuals" button's visibility).</summary>
+    public bool CanShowVisuals => _visualStage is not null;
 
     /// <summary>Current tempo, e.g. "128.0 BPM", or "—" before the first tap establishes one.</summary>
     public string Bpm

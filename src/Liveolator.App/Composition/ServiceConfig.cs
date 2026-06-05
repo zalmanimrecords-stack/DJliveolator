@@ -116,18 +116,49 @@ public static class ServiceConfig
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        var starterBank = new VisualBank("Starter", Array.Empty<VisualScene>());
-        var visualEngine = new GlVisualPerformanceEngine(starterBank, brightnessMacro, sharedLiveClock);
+        var visualEngine = new GlVisualPerformanceEngine(BuildStarterBank(), brightnessMacro, sharedLiveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
         services.AddSingleton(visualHandler);
 
-        // RENDER-WINDOW SEAM (deferred): a "show visuals" PerformanceAction (or UI command) should
-        // start visualEngine.Run() on a dedicated STA/render thread. Do NOT call it during composition
-        // — Run() blocks and needs a display, which would crash headless/CI startup.
+        // RENDER-WINDOW SEAM: the GL render loop blocks and needs a display, so it runs on a dedicated
+        // background thread, launched on demand from the Live tab's "Show Visuals" command — never
+        // during composition (that would crash headless/CI). The engine reads the shared clock, so the
+        // window pulses on the same beat the Live tab taps.
+        services.AddSingleton<IVisualStage>(
+            new VisualStage(() => visualEngine.Run("Liveolator Visuals"), NullLogger<VisualStage>.Instance));
 
         return visualHandler;
+    }
+
+    // The compositor's first slice needs a renderable image layer. Generate a placeholder image and
+    // wrap it in a one-scene bank; on any failure fall back to an empty bank (Show Visuals then logs
+    // and no-ops rather than crashing startup). A real scene catalog from persistence (doc 13) replaces this.
+    private static VisualBank BuildStarterBank()
+    {
+        try
+        {
+            string imagePath = StarterImage.EnsureCreated();
+            var layer = new VisualLayer(
+                name: "Starter",
+                source: new VisualSourceRef(VisualSourceKind.Image, imagePath),
+                effects: Array.Empty<EffectRef>(),
+                blend: BlendMode.Normal,
+                opacity: 1.0);
+            var scene = new VisualScene(
+                name: "Starter",
+                layers: new[] { layer },
+                macroValues: new Dictionary<string, double>(),
+                transition: TransitionStyle.Cut,
+                beatBehavior: BeatBehavior.None);
+            return new VisualBank("Starter", new[] { scene });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Starter visual image unavailable ({ex.Message}); visuals window disabled.");
+            return new VisualBank("Starter", Array.Empty<VisualScene>());
+        }
     }
 
     // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
@@ -153,7 +184,9 @@ public static class ServiceConfig
             var dispatcher = new PerformanceActionDispatcher(
                 handlers, NullLogger<PerformanceActionDispatcher>.Instance);
 
-            return new LiveViewModel(dispatcher, clock, clock, hostClock, new DispatcherLiveBeatTimer());
+            return new LiveViewModel(
+                dispatcher, clock, clock, hostClock, new DispatcherLiveBeatTimer(),
+                sp.GetService<IVisualStage>());
         });
     }
 

@@ -103,6 +103,12 @@
               <Button Classes="spartan" Content="Nudge +" Command="{Binding NudgeForwardCommand}" />
             </StackPanel>
           </StackPanel>
+
+          <StackPanel Spacing="8" IsVisible="{Binding CanShowVisuals}">
+            <TextBlock Classes="faint" Text="VISUALS" />
+            <Button Classes="accent" HorizontalAlignment="Stretch"
+                    Content="◉ Show Visuals" Command="{Binding ShowVisualsCommand}" />
+          </StackPanel>
         </StackPanel>
       </Border>
 
