@@ -207,9 +207,36 @@ for image decode.
   so `Run()` is **manually** verified — steps in `Liveolator.Visuals/CLAUDE.md`.
 - **Deferred (grow into `GlVisualPerformanceEngine`, not replace it):** the full layer/effect chain
   + blend modes, video + camera sources, quantized scene/clip launching via `IBeatScheduler`,
-  transitions/strobe — all currently logged no-ops. **Not yet app-wired:** `ServiceConfig` is
-  untouched; the engine reaches the dispatcher only once a `VisualActionHandler` exists (build it
-  mirroring `BeatActionHandler`).
+  transitions/strobe — all currently logged no-ops.
+
+### ✅ Visual action handler — dispatcher → visual engine bridge — `Liveolator.Core/Visuals/` (doc 04/08)
+
+`VisualActionHandler` mirrors `BeatActionHandler`: it owns the `Visual*` action kinds, drives one
+`IVisualPerformanceEngine`, and reports feedback (active scene pad, blackout/strobe latch, bank
+select) so a Push/UI surface can follow it. Pure Core — unit-tested against a `FakeVisualPerformanceEngine`,
+no GL.
+
+| Handled kind | Engine call |
+|--------------|-------------|
+| `VisualLoadScene` | `LoadScene(ActiveBank.Scene(slot), Immediate)` (out-of-range slot logs + no-ops) |
+| `VisualSelectBank` | `SelectBank(slot)` |
+| `VisualSetMacro` | `SetMacro(Argument, Value)` (missing name logs + no-ops) |
+| `VisualToggleLayer` / `VisualSetLayerOpacity` | `ToggleLayer(slot)` / `SetLayerOpacity(slot, Value)` |
+| `VisualLaunchClip` | `LaunchClip(slot, Argument, Immediate)` (missing clip id logs + no-ops) |
+| `VisualBlackout` / `VisualToggleStrobe` | `Blackout`/`Strobe` bool latch held by the handler, fed back |
+| `VisualTransitionNow` / `NextBeat` / `NextBar` | `Transition(style, Quantize.Immediate/NextBeat/NextBar)` |
+
+- **Quantized transitions** map the action kind to the shared `Quantize` quantum and let the engine
+  resolve the fire time against the one shared beat clock via `Beat.QuantizedLaunch` — the handler
+  does not double-resolve timing.
+- **Deferred:** `VisualSetLayerSource` is **not** claimed — the `PerformanceAction` record carries
+  only `Slot`/`Value`/`Argument` and cannot express a `VisualSourceRef`. Claim it once the action
+  payload (or an `Argument`-keyed source registry) exists; the engine seam is already in place.
+- **App-wired (`ServiceConfig.WireVisuals`):** the `GlVisualPerformanceEngine` is registered as
+  `IVisualPerformanceEngine` and the handler joins the one dispatcher. **Headless-safe:** `Run()` is
+  never called at composition — launching the render window is a deferred user action (the
+  `RENDER-WINDOW SEAM` note). The engine runs off its own `ManualBeatClock`; binding it to the live
+  audio clock is part of that seam.
 
 ### ✅ Live playlist queue — `Liveolator.Core/Playlist/` (doc 09)
 

@@ -5,6 +5,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Visuals;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -53,5 +54,15 @@ public sealed class ServiceConfigTests
             Assert.Null(engine);
             Assert.NotNull(provider.GetService<LibrariesViewModel>());
         }
+    }
+
+    [Fact]
+    public void Build_RegistersVisualEngine_Headless_WithoutRunningTheRenderWindow()
+    {
+        // The GL engine must be resolvable for later on-demand rendering, but composing the provider
+        // must NOT open a window/GL context (Run() is never called here) — the app launches headless.
+        using var provider = (ServiceProvider)ServiceConfig.Build();
+
+        Assert.NotNull(provider.GetService<IVisualPerformanceEngine>());
     }
 }

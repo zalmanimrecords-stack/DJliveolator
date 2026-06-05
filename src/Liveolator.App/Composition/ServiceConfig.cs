@@ -10,7 +10,9 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Visuals;
 using Liveolator.Platform;
+using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -35,11 +37,15 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
 
+        // --- Visual engine (doc 08): register the GL compositor + its action handler. ---
+        // Runs BEFORE WireLiveAudio so the VisualActionHandler exists when the dispatcher is built.
+        VisualActionHandler visualHandler = WireVisuals(services);
+
         // --- Live Mode: realtime playback + beat clock (docs 01/02/03/04) ---
         // Best-effort: the BASS backend needs the native bass library at runtime. If it is
         // absent (e.g. a dev box without the per-platform binaries), Live Mode stays off and the
         // app still runs as a catalog browser — the UI hides the transport controls.
-        WireLiveAudio(services);
+        WireLiveAudio(services, visualHandler);
         WireCaptureSources(services);
 
         // --- View-models ---
@@ -52,7 +58,7 @@ public static class ServiceConfig
         return services.BuildServiceProvider();
     }
 
-    private static void WireLiveAudio(IServiceCollection services)
+    private static void WireLiveAudio(IServiceCollection services, VisualActionHandler visualHandler)
     {
         try
         {
@@ -66,6 +72,7 @@ public static class ServiceConfig
                 {
                     new DeckActionHandler(engine),
                     new MixerActionHandler(mixer),
+                    visualHandler, // doc 08 — visual engine joins the one dispatcher (task 5)
                 },
                 NullLogger<PerformanceActionDispatcher>.Instance);
 
@@ -79,6 +86,43 @@ public static class ServiceConfig
             // Native audio unavailable — leave Live Mode services unregistered; GetService returns null.
             System.Diagnostics.Trace.TraceWarning($"Live Mode disabled: realtime audio unavailable ({ex.Message}).");
         }
+    }
+
+    // --- Visual engine (doc 08, task 5) -----------------------------------------------------------
+    // Registers the GL compositor as IVisualPerformanceEngine and returns its VisualActionHandler so
+    // WireLiveAudio can add it to the one dispatcher. This block is intentionally self-contained.
+    //
+    // HEADLESS-SAFE: the GL engine opens a window/GL context only inside Run(); we register it for
+    // resolution but NEVER call Run() here, so the app launches headless. Launching the render window
+    // is a deferred user action — see the RENDER-WINDOW SEAM note below.
+    //
+    // The engine is seeded with a placeholder bank + the brightness macro (the compositor's first
+    // slice); a real scene/bank catalog from persistence (doc 13) replaces StarterBank later. It
+    // currently runs off its own ManualBeatClock; binding it to the shared live-audio IBeatClock is
+    // part of the render-window seam (the GL render thread reads the clock per frame, doc 08 §beat-sync).
+    private static VisualActionHandler WireVisuals(IServiceCollection services)
+    {
+        var brightnessMacro = new VisualMacro(
+            GlVisualPerformanceEngine.BrightnessMacro,
+            min: 0.0, max: 1.0, @default: 1.0,
+            target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
+
+        // Empty starter bank: no GPU assets to load at startup. LoadScene/LaunchClip degrade safely
+        // until a scene catalog is wired (doc 13). Ticks-per-second matches SystemHostClock's domain.
+        var starterBank = new VisualBank("Starter", Array.Empty<VisualScene>());
+        var visualClock = new ManualBeatClock(TimeSpan.TicksPerSecond);
+
+        var visualEngine = new GlVisualPerformanceEngine(starterBank, brightnessMacro, visualClock);
+        var visualHandler = new VisualActionHandler(visualEngine);
+
+        services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
+        services.AddSingleton(visualHandler);
+
+        // RENDER-WINDOW SEAM (deferred): a "show visuals" PerformanceAction (or UI command) should
+        // start visualEngine.Run() on a dedicated STA/render thread. Do NOT call it during composition
+        // — Run() blocks and needs a display, which would crash headless/CI startup.
+
+        return visualHandler;
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---
