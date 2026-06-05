@@ -22,9 +22,9 @@ public sealed class ServerConfig
     public ServerMode Mode { get; init; } = ServerMode.Stdio;
     public int Port { get; init; } = 5174;
 
-    /// <summary>Directory holding the FFmpeg shared libraries, or null to let the OS resolve them
-    /// (also settable via <c>LIVEOLATOR_FFMPEG_DIR</c>).</summary>
-    public string? FfmpegDirectory { get; init; }
+    /// <summary>Path to (or bare name of) the FFmpeg executable, or null to use
+    /// <c>LIVEOLATOR_FFMPEG_PATH</c>/PATH.</summary>
+    public string? FfmpegPath { get; init; }
 
     /// <summary>Catalog-cache directory, or null for the default app-data root.</summary>
     public string? DataDirectory { get; init; }
@@ -35,7 +35,7 @@ public sealed class ServerConfig
 
         var mode = ServerMode.Stdio;
         int port = 5174;
-        string? ffmpegDir = Environment.GetEnvironmentVariable(FfmpegOptions.EnvironmentVariable);
+        string? ffmpegPath = Environment.GetEnvironmentVariable(FfmpegOptions.EnvironmentVariable);
         string? dataDir = Environment.GetEnvironmentVariable("LIVEOLATOR_DATA");
 
         for (int i = 0; i < args.Length; i++)
@@ -51,14 +51,14 @@ public sealed class ServerConfig
                 case "--port":
                     port = RequireInt(args, ref i, "--port");
                     break;
-                case "--ffmpeg-dir":
-                    ffmpegDir = RequireValue(args, ref i, "--ffmpeg-dir");
+                case "--ffmpeg":
+                    ffmpegPath = RequireValue(args, ref i, "--ffmpeg");
                     break;
                 case "--data":
                     dataDir = RequireValue(args, ref i, "--data");
                     break;
                 default:
-                    throw new ArgumentException($"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--ffmpeg-dir DIR] [--data DIR].");
+                    throw new ArgumentException($"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--ffmpeg PATH] [--data DIR].");
             }
         }
 
@@ -66,7 +66,7 @@ public sealed class ServerConfig
         {
             Mode = mode,
             Port = port,
-            FfmpegDirectory = string.IsNullOrWhiteSpace(ffmpegDir) ? null : ffmpegDir,
+            FfmpegPath = string.IsNullOrWhiteSpace(ffmpegPath) ? null : ffmpegPath,
             DataDirectory = string.IsNullOrWhiteSpace(dataDir) ? null : dataDir,
         };
     }

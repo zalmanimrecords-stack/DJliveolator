@@ -60,7 +60,9 @@ public sealed class FileSystemFileEnumerator : IFileEnumerator
         try
         {
             var info = new FileInfo(path);
-            return new ScannedFile(path, info.Length, info.LastWriteTimeUtc);
+            // FullName is canonical (consistent separators), so the same file always yields the same
+            // catalog key regardless of how the scanned folder was spelled — keeping the cache stable.
+            return new ScannedFile(info.FullName, info.Length, info.LastWriteTimeUtc);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

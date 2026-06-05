@@ -14,7 +14,7 @@ internal static class ServiceRegistration
     public static IServiceCollection AddLiveolatorMusicServices(this IServiceCollection services, ServerConfig config)
     {
         services.AddSingleton(config);
-        services.AddSingleton(_ => new FfmpegOptions(config.FfmpegDirectory));
+        services.AddSingleton(_ => new FfmpegOptions(config.FfmpegPath));
         services.AddSingleton<IAudioDecoder>(sp => new CompositeAudioDecoder(sp.GetRequiredService<FfmpegOptions>()));
         services.AddSingleton<IFileEnumerator, FileSystemFileEnumerator>();
         services.AddSingleton(new TrackAnalyzer());

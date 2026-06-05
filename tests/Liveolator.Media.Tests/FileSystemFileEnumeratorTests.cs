@@ -39,6 +39,21 @@ public class FileSystemFileEnumeratorTests
     }
 
     [Fact]
+    public void Enumerate_EmitsCanonicalFullPaths_RegardlessOfFolderSpelling()
+    {
+        using var dir = new TempDirectory();
+        dir.Touch("a.wav");
+        // A folder argument with a redundant "." segment must still yield a canonical key,
+        // so the same file never gets two spellings in the catalog (incremental-cache stability).
+        string quirky = Path.Combine(dir.Path, ".");
+
+        ScannedFile file = _enumerator.Enumerate(new[] { quirky }, AudioExt).Single();
+
+        Assert.True(Path.IsPathFullyQualified(file.Path));
+        Assert.Equal(Path.GetFullPath(file.Path), file.Path);
+    }
+
+    [Fact]
     public void Enumerate_SkipsMissingFolders_WithoutThrowing()
     {
         using var dir = new TempDirectory();

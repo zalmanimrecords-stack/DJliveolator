@@ -46,7 +46,9 @@ sees the platform-agnostic `IAudioSource` seam.
 src/Liveolator.Core/      # platform-agnostic: seams, beat engine, actions, mapping,
                           # playlist, autopilot, visual scene model (no UI, no native)
 src/Liveolator.App/       # Avalonia UI
-src/Liveolator.Audio/     # audio I/O binding
+src/Liveolator.Audio/     # audio I/O binding + offline decode (Wav managed / FFmpeg CLI)
+src/Liveolator.Media/     # filesystem enumerator + JSON catalog cache (doc 13)
+src/Liveolator.Mcp/       # MCP server: music-intelligence tools for external AI agents (doc 17)
 src/Liveolator.Midi/      # MIDI binding
 src/Liveolator.Visuals/   # Silk.NET/OpenGL compositor + shaders + FFmpeg decode
 tests/                    # xUnit tests for Core (pure logic, no native)
@@ -68,9 +70,11 @@ docs/                     # architecture & design
 
 ## Open decisions (decide before relevant code)
 
-1. **Audio library:** BASS/ManagedBass (easy for DJ: decode/mix/tempo/ASIO/CoreAudio,
-   but **commercial license required for distribution**) vs PortAudio/miniaudio (open,
-   more work). Affects `docs/01` and `docs/11`.
+1. **Audio library (realtime playback):** BASS/ManagedBass (easy for DJ:
+   decode/mix/tempo/ASIO/CoreAudio, but **commercial license required for distribution**) vs
+   PortAudio/miniaudio (open, more work). Affects `docs/01` and `docs/11`. **Offline decode**
+   (analysis only) is already resolved: WAV via a pure-managed decoder, other formats via the
+   FFmpeg CLI (`Liveolator.Audio`, doc 17) — this decision is only about realtime playback.
 
 ## Docs to revise (still reflect the old Zalmanolator stack)
 

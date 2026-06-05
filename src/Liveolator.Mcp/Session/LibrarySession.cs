@@ -45,8 +45,11 @@ public sealed class LibrarySession
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
             foreach (string folder in folders)
-                if (!string.IsNullOrWhiteSpace(folder))
-                    _folders.Add(folder.Trim());
+            {
+                string? canonical = Canonicalize(folder);
+                if (canonical is not null)
+                    _folders.Add(canonical);
+            }
 
             if (_folders.Count == 0)
                 throw new ArgumentException("No folders to scan. Pass at least one folder path.", nameof(folders));
@@ -119,14 +122,31 @@ public sealed class LibrarySession
         {
             _library.Restore(cached);
             foreach (string folder in cached
-                         .Select(t => Path.GetDirectoryName(t.File.Path))
-                         .Where(d => !string.IsNullOrEmpty(d))
+                         .Select(t => Canonicalize(Path.GetDirectoryName(t.File.Path)))
+                         .Where(d => d is not null)
                          .Select(d => d!)
                          .Distinct(StringComparer.OrdinalIgnoreCase))
                 _folders.Add(folder);
             _logger.LogInformation("Loaded {Count} tracks from catalog cache at {Path}.", cached.Count, _store.MusicCatalogPath);
         }
         _loaded = true;
+    }
+
+    /// <summary>Normalizes a folder path to its canonical absolute form so differently-spelled
+    /// paths (separators, relative segments) collapse to one identity. Returns null for blanks
+    /// or paths the OS rejects.</summary>
+    private static string? Canonicalize(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+            return null;
+        try
+        {
+            return Path.GetFullPath(folder.Trim());
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
     }
 
     private ScanSummary BuildSummary(int processed, long elapsedMs)
