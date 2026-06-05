@@ -1,5 +1,6 @@
 using Liveolator.Core.Audio;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -43,12 +44,19 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// <param name="mixer">The realtime mixer to register deck channels into (must address both decks).</param>
     /// <param name="sampleRate">Master mix output rate (Hz).</param>
     /// <param name="channels">Master mix channel count (2 = stereo).</param>
+    /// <param name="loggerFactory">Optional logger factory.</param>
+    /// <param name="audioSettings">
+    /// The user's persisted output choice (device + buffer, doc 12); null = the system default device
+    /// and default buffer. Applied when the backend opens BASS.
+    /// </param>
     public TwoDeckBassEngine(
-        BassMixer mixer, int sampleRate = 48_000, int channels = 2, ILoggerFactory? loggerFactory = null)
+        BassMixer mixer, int sampleRate = 48_000, int channels = 2,
+        ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null)
         : this(
             new BassMixerBackend(
                 sampleRate, channels,
-                (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>()),
+                (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>(),
+                audioSettings),
             mixer, loggerFactory)
     {
     }

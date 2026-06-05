@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Liveolator.Core.Settings;
 using ManagedBass;
 using ManagedBass.Mix;
 using Microsoft.Extensions.Logging;
@@ -28,7 +29,8 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     /// <summary>A plugged deck's managed processor and the DSP delegate kept alive for BASS.</summary>
     private sealed record DeckDsp(BassMixerChannel Channel, DSPProcedure Procedure);
 
-    public BassMixerBackend(int sampleRate = 48_000, int channels = 2, ILogger? logger = null)
+    public BassMixerBackend(
+        int sampleRate = 48_000, int channels = 2, ILogger? logger = null, AudioSettings? audioSettings = null)
     {
         if (sampleRate <= 0) throw new ArgumentOutOfRangeException(nameof(sampleRate));
         if (channels <= 0) throw new ArgumentOutOfRangeException(nameof(channels));
@@ -36,9 +38,30 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _channels = channels;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        if (!Bass.Init() && Bass.LastError != Errors.Already)
-            throw new BassPlaybackException($"Bass.Init failed: {Bass.LastError}");
+        InitOutput(BassInitOptions.From(audioSettings));
     }
+
+    // Applies the user's persisted output choice (doc 12) before opening BASS: the playback buffer is a
+    // global config BASS reads at device-open time, so set it first, then open the chosen device. A
+    // stale saved device (since unplugged) must not disable all audio — fall back to the system default.
+    private void InitOutput(BassInitOptions options)
+    {
+        Bass.PlaybackBufferLength = options.BufferMilliseconds;
+
+        if (TryInitDevice(options.DeviceIndex))
+            return;
+
+        Errors firstError = Bass.LastError;
+        if (options.DeviceIndex == BassInitOptions.DefaultDevice || !TryInitDevice(BassInitOptions.DefaultDevice))
+            throw new BassPlaybackException($"Bass.Init failed: {firstError}");
+
+        _logger.LogWarning(
+            "BASS output device {Device} unavailable ({Error}); using the system default instead.",
+            options.DeviceIndex, firstError);
+    }
+
+    // BASS treats a re-init of an already-open device as success for our purposes (Errors.Already).
+    private static bool TryInitDevice(int device) => Bass.Init(device) || Bass.LastError == Errors.Already;
 
     public MasterMixInfo CreateMaster()
     {

@@ -18,6 +18,7 @@ using Liveolator.Core.Mapping;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
 using Liveolator.Media;
 using Liveolator.Midi;
@@ -38,6 +39,14 @@ public static class ServiceConfig
     public static IServiceProvider Build()
     {
         var services = new ServiceCollection();
+
+        // --- Persisted preferences (doc 12) ---
+        // Loaded once up-front because the realtime engine needs the chosen output device + buffer
+        // BEFORE it opens BASS. Blocking is acceptable in the composition root at startup (one small JSON
+        // file) and the load is tolerant: a missing/corrupt file yields AppSettings.Default. The same
+        // store instance is registered below so the Settings tab reads/writes the very same file.
+        var settingsStore = new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        AppSettings appSettings = settingsStore.LoadAsync().GetAwaiter().GetResult();
 
         // --- Track-analysis / music-library module (doc 16) ---
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
@@ -90,7 +99,7 @@ public static class ServiceConfig
         // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout (a separate source from the shared manual clock — unifying them is doc 03).
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer);
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio);
         MasterMixPlaybackEngine? masterMix =
             deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
         bool realtimeUp = deckEngine is not null;
@@ -159,12 +168,12 @@ public static class ServiceConfig
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
-        // headless), and the choice is saved to settings.json. Applying it to the running audio/MIDI
-        // engines (output device + buffer re-init, opening the chosen controller) is the next increment.
+        // headless), and the choice is saved to settings.json. The audio output device + buffer are now
+        // applied at startup (loaded above, threaded into the realtime engine); opening the chosen MIDI
+        // controller into the dispatcher is the remaining increment (needs the mapper pipeline composed).
         services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
         services.AddSingleton<IMidiDeviceProvider>(new RtMidiDeviceProvider());
-        services.AddSingleton<ISettingsStore>(
-            new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        services.AddSingleton<ISettingsStore>(settingsStore);
         services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
             sp.GetRequiredService<IAudioOutputDeviceCatalog>(),
             sp.GetRequiredService<IAudioCaptureDeviceCatalog>(),
@@ -182,11 +191,11 @@ public static class ServiceConfig
     // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when
     // the native bass/bassmix libraries are absent (e.g. CI / a dev box without the per-platform
     // binaries). Never throws for that case — the app falls back to the catalog browser.
-    private static TwoDeckBassEngine? TryBuildDeckEngine(BassMixer mixer)
+    private static TwoDeckBassEngine? TryBuildDeckEngine(BassMixer mixer, AudioSettings audioSettings)
     {
         try
         {
-            return new TwoDeckBassEngine(mixer);
+            return new TwoDeckBassEngine(mixer, audioSettings: audioSettings);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {

@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **370 passing** (as of 2026-06-05). Solution-wide: **677**
-across 7 test projects (Core 370, Visuals 43, Audio 61, MIDI 27, App 102, Media 49, Integration 25).
+`tests/Liveolator.Core.Tests` — **370 passing** (as of 2026-06-05). Solution-wide: **697**
+across 7 test projects (Core 370, Visuals 43, Audio 70, MIDI 27, App 113, Media 49, Integration 25).
 
 ## Module status
 
@@ -229,10 +229,18 @@ seams are pure Core; enumeration is a thin native binding; the UI logic is unit-
   (its first use) — `RtMidiDeviceProvider` is registered as `IMidiDeviceProvider`. Headless-safe: enumeration
   degrades to empty when native bass/rtmidi is absent. +21 tests (Core `AppSettingsTests` 8, Media
   `JsonSettingsStoreTests` 6, App `SettingsViewModelTests` 7).
-- **Deferred (next increment):** **applying** the choice to the running engines — re-initialising BASS on the
-  selected output device + buffer (`BassMixerBackend`/`BassPlayback` currently use `Bass.Init` defaults), and
-  opening the chosen MIDI controller into `MidiControllerRouter` so the hardware actually drives the
-  dispatcher. Persisted capture-source selection (the `WireCaptureSources` SETTINGS-UI seam) is also still open.
+- **Output device + buffer now applied at startup:** `ServiceConfig.Build()` loads `AppSettings` once
+  (tolerant; blocking is fine in the composition root) and threads `Audio` into `TwoDeckBassEngine` →
+  `BassMixerBackend`, which opens the chosen BASS device and sets the playback buffer before init. The
+  `AudioSettings`→BASS mapping is the pure, unit-tested `BassInitOptions` (device-index string → BASS index,
+  buffer clamp; null/blank/"0"/stale → default device); a saved device that is gone **falls back to the
+  system default** rather than disabling all audio. Native init still verified manually. +5 Audio tests
+  (`BassInitOptionsTests`).
+- **Deferred (next increment):** opening the chosen **MIDI controller** into `MidiControllerRouter` so the
+  hardware drives the dispatcher (needs the `ControllerMapper`+profile pipeline composed in `ServiceConfig`,
+  not yet wired). **Runtime** re-init on a device change (the current apply is at startup only) and applying
+  the buffer/device to `BassPlayback` (the legacy single-deck path) are also open. Persisted capture-source
+  selection (the `WireCaptureSources` SETTINGS-UI seam) remains open.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 
