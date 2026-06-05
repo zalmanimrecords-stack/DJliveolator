@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:pl="clr-namespace:Liveolator.App.Features.Playlists"
         xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+        xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
         x:Class="Liveolator.App.Features.Playlists.PlaylistBuilderWindow"
         x:DataType="pl:PlaylistBuilderViewModel"
         Width="860" Height="600"
@@ -49,6 +50,23 @@
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
                 <Grid ColumnDefinitions="*,46,40" VerticalAlignment="Center">
+                  <Grid.ContextFlyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
+                      <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
+                                IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
+                        <MenuItem.ItemContainerTheme>
+                          <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                                        BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Header}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                          </ControlTheme>
+                        </MenuItem.ItemContainerTheme>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Grid.ContextFlyout>
                   <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
                   <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="2" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
@@ -73,6 +91,23 @@
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="pl:PlaylistTrackViewModel">
                 <Grid ColumnDefinitions="*,46,40" VerticalAlignment="Center">
+                  <Grid.ContextFlyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
+                      <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
+                                IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
+                        <MenuItem.ItemContainerTheme>
+                          <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                                        BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Header}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                          </ControlTheme>
+                        </MenuItem.ItemContainerTheme>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Grid.ContextFlyout>
                   <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
                   <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="2" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />

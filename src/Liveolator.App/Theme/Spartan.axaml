@@ -63,12 +63,17 @@
     <Setter Property="FontFamily" Value="Consolas, 'JetBrains Mono', monospace" />
   </Style>
 
-  <!-- reusable panel surface -->
+  <!-- reusable panel surface — subtle top-down gradient + rounded corners -->
   <Style Selector="Border.panel">
-    <Setter Property="Background" Value="{StaticResource S1}" />
+    <Setter Property="Background">
+      <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#161C28" Offset="0" />
+        <GradientStop Color="#0F141D" Offset="1" />
+      </LinearGradientBrush>
+    </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="CornerRadius" Value="16" />
   </Style>
 
   <!-- small round icon button (e.g. the deck "..." menu) -->

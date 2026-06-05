@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              x:Class="Liveolator.App.Features.Dj.DjView"
              x:DataType="dj:DjViewModel">
 
@@ -35,6 +36,23 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="dj:SetEntryViewModel">
                 <Border BorderBrush="{StaticResource Hair}" BorderThickness="0,0,0,1" Padding="0,7">
+                  <Border.ContextFlyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
+                      <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
+                                IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
+                        <MenuItem.ItemContainerTheme>
+                          <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                                        BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Header}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                          </ControlTheme>
+                        </MenuItem.ItemContainerTheme>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Border.ContextFlyout>
                   <Grid ColumnDefinitions="64,*,Auto">
                     <TextBlock Grid.Column="0" Classes="mono faint" Text="{Binding StateLabel}"
                                Classes.accent="{Binding IsNow}" VerticalAlignment="Center" />

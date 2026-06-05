@@ -88,10 +88,15 @@ public sealed class Knob : Control
         var trackPen = new Pen(TrackBrush, arcStroke) { LineCap = PenLineCap.Round };
         context.DrawGeometry(null, trackPen, Arc(centre, arcRadius, StartAngle, StartAngle + SweepAngle));
 
-        // value arc
+        // value arc — a soft wide glow behind a crisp arc
         double angle = StartAngle + (SweepAngle * value);
         if (value > 0.004)
         {
+            if (on)
+            {
+                var glowPen = new Pen(Halo(arc, 0.22), arcStroke * 2.4) { LineCap = PenLineCap.Round };
+                context.DrawGeometry(null, glowPen, Arc(centre, arcRadius, StartAngle, angle));
+            }
             var valuePen = new Pen(arc, arcStroke) { LineCap = PenLineCap.Round };
             context.DrawGeometry(null, valuePen, Arc(centre, arcRadius, StartAngle, angle));
         }
