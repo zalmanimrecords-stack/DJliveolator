@@ -47,6 +47,16 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         Playing.Remove(deckHandle);
     }
 
+    public Dictionary<int, double> PositionFraction { get; } = new();
+    public Dictionary<int, double> Rate { get; } = new();
+
+    public double GetDeckPositionFraction(int deckHandle)
+        => PositionFraction.TryGetValue(deckHandle, out double f) ? f : 0.0;
+
+    public void SetDeckPositionFraction(int deckHandle, double fraction) => PositionFraction[deckHandle] = fraction;
+
+    public void SetDeckRate(int deckHandle, double rateMultiplier) => Rate[deckHandle] = rateMultiplier;
+
     public void StartMaster(Action<float[]> onMasterSamples)
     {
         _masterTap = onMasterSamples;

@@ -26,8 +26,9 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     private Action<float[]>? _masterTap;
     private bool _disposed;
 
-    /// <summary>A plugged deck's managed processor and the DSP delegate kept alive for BASS.</summary>
-    private sealed record DeckDsp(BassMixerChannel Channel, DSPProcedure Procedure);
+    /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, and its
+    /// original sample rate (so a pitch/rate change is expressed relative to the track's natural rate).</summary>
+    private sealed record DeckDsp(BassMixerChannel Channel, DSPProcedure Procedure, float OriginalFrequency);
 
     public BassMixerBackend(
         int sampleRate = 48_000, int channels = 2, ILogger? logger = null, AudioSettings? audioSettings = null)
@@ -96,8 +97,39 @@ internal sealed class BassMixerBackend : IBassMixerBackend
             throw new BassPlaybackException($"ChannelSetDSP (deck) failed: {Bass.LastError}");
         }
 
-        _decks[deckHandle] = new DeckDsp(channel, procedure);
+        // Remember the deck's natural sample rate so SetDeckRate can express pitch as a multiple of it.
+        Bass.ChannelGetAttribute(deckHandle, ChannelAttribute.Frequency, out float originalFrequency);
+        _decks[deckHandle] = new DeckDsp(channel, procedure, originalFrequency);
         return channel;
+    }
+
+    public double GetDeckPositionFraction(int deckHandle)
+    {
+        // Mixer source channels report position through BassMix, in the same byte unit as the length.
+        long position = BassMix.ChannelGetPosition(deckHandle);
+        long length = Bass.ChannelGetLength(deckHandle);
+        return position > 0 && length > 0 ? (double)position / length : 0.0;
+    }
+
+    public void SetDeckPositionFraction(int deckHandle, double fraction)
+    {
+        long length = Bass.ChannelGetLength(deckHandle);
+        if (length <= 0)
+            return;
+        long target = (long)(Math.Clamp(fraction, 0.0, 1.0) * length);
+        if (!BassMix.ChannelSetPosition(deckHandle, target))
+            _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+    }
+
+    public void SetDeckRate(int deckHandle, double rateMultiplier)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck) || deck.OriginalFrequency <= 0)
+            return;
+        // Vinyl-style pitch: scale the playback frequency (tempo and pitch move together, like a DJ
+        // pitch fader). Tempo-without-pitch would need BASS_FX; this increment keeps it BASS_FX-free.
+        double frequency = deck.OriginalFrequency * rateMultiplier;
+        if (!Bass.ChannelSetAttribute(deckHandle, ChannelAttribute.Frequency, (float)frequency))
+            _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
     }
 
     public void SetDeckPlaying(int deckHandle, bool playing)

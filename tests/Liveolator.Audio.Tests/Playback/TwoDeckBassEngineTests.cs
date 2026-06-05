@@ -164,6 +164,170 @@ public class TwoDeckBassEngineTests
         Assert.True(backend.Disposed);
     }
 
+    // --- Transport: seek / pitch / cue / sync / quantize ---
+
+    [Fact]
+    public void Seek_Absolute_SetsBackendPositionFraction()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+
+        engine.Seek(0, 0.4, relative: false);
+
+        Assert.Equal(0.4, backend.PositionFraction[100], 6);
+    }
+
+    [Fact]
+    public void Seek_Relative_AddsToCurrentAndClamps()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.PositionFraction[100] = 0.9;
+
+        engine.Seek(0, 0.5, relative: true); // 0.9 + 0.5 -> clamp 1.0
+
+        Assert.Equal(1.0, backend.PositionFraction[100], 6);
+    }
+
+    [Fact]
+    public void Seek_NothingLoaded_IsNoOp()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+
+        engine.Seek(0, 0.5, relative: false);
+
+        Assert.Empty(backend.PositionFraction);
+    }
+
+    [Fact]
+    public void Pitch_Center_IsOriginalRate_AndEndsMapToPlusMinus8Percent()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100, seeded at centre on load
+
+        Assert.Equal(1.0, backend.Rate[100], 6); // centre applied at load
+
+        engine.SetPitch(0, 1.0, relative: false);
+        Assert.Equal(1.08, backend.Rate[100], 6);
+
+        engine.SetPitch(0, 0.0, relative: false);
+        Assert.Equal(0.92, backend.Rate[100], 6);
+
+        Assert.Equal(0.0, engine.PitchPosition(0), 6);
+    }
+
+    [Fact]
+    public void Pitch_PersistsAcrossLoad_AndReappliesToNewTrack()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");          // handle 100
+        engine.SetPitch(0, 1.0, relative: false); // top of range
+
+        engine.Load(0, @"C:\b.wav");          // handle 101 — pitch fader stays put
+
+        Assert.Equal(1.0, engine.PitchPosition(0), 6);
+        Assert.Equal(1.08, backend.Rate[101], 6);
+    }
+
+    [Fact]
+    public void Cue_JumpsToStartAndPauses()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        engine.PlayPause(0);
+        backend.PositionFraction[100] = 0.7;
+
+        engine.Cue(0);
+
+        Assert.Equal(0.0, backend.PositionFraction[100], 6);
+        Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void SyncLock_And_Quantize_AreStoredPerSlot()
+    {
+        using var engine = NewEngine(out _, out _);
+
+        engine.SetSyncLock(1, true);
+        engine.SetQuantize(0, true);
+
+        Assert.True(engine.IsSyncLocked(1));
+        Assert.False(engine.IsSyncLocked(0));
+        Assert.True(engine.IsQuantizeEnabled(0));
+        Assert.False(engine.IsQuantizeEnabled(1));
+    }
+
+    [Fact]
+    public void Position_ReadsBackend_ZeroWhenNothingLoaded()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        Assert.Equal(0.0, engine.Position(0), 6);
+
+        engine.Load(0, @"C:\a.wav");
+        backend.PositionFraction[100] = 0.33;
+        Assert.Equal(0.33, engine.Position(0), 6);
+    }
+
+    [Fact]
+    public void HotCue_FirstPressSetsAtCurrentPosition_SecondPressJumpsToIt()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        backend.PositionFraction[100] = 0.42;
+
+        engine.HotCue(0, 2);                 // set cue 2 at 0.42
+        Assert.True(engine.IsHotCueSet(0, 2));
+
+        backend.PositionFraction[100] = 0.9; // playhead moved on
+        engine.HotCue(0, 2);                 // jump back to 0.42
+
+        Assert.Equal(0.42, backend.PositionFraction[100], 6);
+    }
+
+    [Fact]
+    public void HotCue_IsPerSlotAndPerIndex()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.HotCue(0, 1);
+
+        Assert.True(engine.IsHotCueSet(0, 1));
+        Assert.False(engine.IsHotCueSet(0, 2));
+        Assert.False(engine.IsHotCueSet(1, 1));
+    }
+
+    [Fact]
+    public void HotCue_ClearedWhenTrackReloads()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.HotCue(0, 0);
+        Assert.True(engine.IsHotCueSet(0, 0));
+
+        engine.Load(0, @"C:\b.wav");
+
+        Assert.False(engine.IsHotCueSet(0, 0));
+    }
+
+    [Fact]
+    public void HotCue_NothingLoaded_IsNoOp()
+    {
+        using var engine = NewEngine(out _, out _);
+
+        engine.HotCue(0, 0);
+
+        Assert.False(engine.IsHotCueSet(0, 0));
+    }
+
+    [Fact]
+    public void HotCue_IndexOutOfRange_Throws()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.HotCue(0, engine.HotCueCount));
+    }
+
     [Fact]
     public void MasterMix_FeedsBeatClock_EndToEnd()
     {

@@ -26,12 +26,32 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// <summary>Number of addressable deck slots (A = 0, B = 1).</summary>
     public const int Decks = MixerState.DeckCount;
 
+    /// <summary>Pitch fader half-range: normalized position 0/1 maps to ∓8% of the original tempo.</summary>
+    private const double PitchRangePercent = 0.08;
+
+    /// <summary>Normalized pitch position with no tempo change (the fader centre).</summary>
+    private const double PitchCenter = 0.5;
+
+    /// <summary>Hot-cue slots per deck (a row of pads).</summary>
+    private const int HotCuesPerDeck = 8;
+
     private readonly IBassMixerBackend _backend;
     private readonly BassMixer _mixer;
     private readonly ILogger _logger;
     private readonly object _gate = new();
     private readonly MasterAudioSource _master;
     private readonly LoadedDeck?[] _decks = new LoadedDeck?[Decks];
+
+    // Per-slot transport state that persists across track loads (a DJ keeps the pitch fader and the
+    // sync/quantize toggles where they were set when swapping tracks). Position is read live from the
+    // backend, so it is not stored here.
+    private readonly double[] _pitchPosition = new double[Decks];
+    private readonly bool[] _syncLocked = new bool[Decks];
+    private readonly bool[] _quantize = new bool[Decks];
+
+    // Hot-cue memory per deck: a position fraction per pad, null = unset. Belongs to the loaded track,
+    // so it is cleared when the slot unloads.
+    private readonly double?[][] _hotCues = new double?[Decks][];
     private bool _disposed;
 
     /// <summary>A deck currently plugged into the mix: its BASS handle, FX control, and play state.</summary>
@@ -74,6 +94,9 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
                 $"Mixer addresses {mixer.DeckCount} deck(s); the two-deck engine needs {Decks}.", nameof(mixer));
 
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TwoDeckBassEngine>();
+        Array.Fill(_pitchPosition, PitchCenter);
+        for (int slot = 0; slot < Decks; slot++)
+            _hotCues[slot] = new double?[HotCuesPerDeck];
 
         MasterMixInfo info = _backend.CreateMaster();
         _master = new MasterAudioSource(info.Channels, info.SampleRate);
@@ -110,6 +133,8 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
                 IBassMixerChannel channel = _backend.PlugDeck(handle);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
+                // Re-apply the slot's pitch fader to the new track so swapping decks keeps the tempo set.
+                _backend.SetDeckRate(handle, RateFor(_pitchPosition[slot]));
                 _logger.LogInformation("Loaded deck slot {Slot} <- {Track}", slot, trackPath);
             }
             catch (Exception ex)
@@ -149,7 +174,123 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         }
     }
 
-    // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel.
+    public double Position(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+            return _decks[slot] is { } deck ? _backend.GetDeckPositionFraction(deck.Handle) : 0.0;
+    }
+
+    public void Seek(int slot, double position, bool relative)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return; // nothing loaded — no playhead to move
+            double target = relative
+                ? Math.Clamp(_backend.GetDeckPositionFraction(deck.Handle) + position, 0.0, 1.0)
+                : Math.Clamp(position, 0.0, 1.0);
+            _backend.SetDeckPositionFraction(deck.Handle, target);
+        }
+    }
+
+    public double PitchPosition(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _pitchPosition[slot];
+    }
+
+    public void SetPitch(int slot, double value, bool relative)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            double next = Math.Clamp(relative ? _pitchPosition[slot] + value : value, 0.0, 1.0);
+            _pitchPosition[slot] = next;
+            if (_decks[slot] is { } deck)
+                _backend.SetDeckRate(deck.Handle, RateFor(next));
+        }
+    }
+
+    public void Cue(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return;
+            // Jump to the cue point (the track start in this increment — settable cue points are a later
+            // increment) and pause there, the standard "back to cue" behaviour.
+            _backend.SetDeckPositionFraction(deck.Handle, 0.0);
+            _backend.SetDeckPlaying(deck.Handle, false);
+            _decks[slot] = deck with { Playing = false };
+        }
+    }
+
+    public bool IsSyncLocked(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _syncLocked[slot];
+    }
+
+    public void SetSyncLock(int slot, bool enabled)
+    {
+        ValidateSlot(slot);
+        lock (_gate) _syncLocked[slot] = enabled;
+        // The latch + feedback are live so the UI/controller LED follows; the actual beatmatching
+        // (matching this deck's tempo + phase to the master grid) is a later increment (doc 11).
+        if (enabled)
+            _logger.LogInformation("Deck slot {Slot} sync-lock armed; beatmatching is not yet implemented.", slot);
+    }
+
+    public bool IsQuantizeEnabled(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _quantize[slot];
+    }
+
+    public void SetQuantize(int slot, bool enabled)
+    {
+        ValidateSlot(slot);
+        lock (_gate) _quantize[slot] = enabled;
+        // Quantize-on-beat-grid for cue/loop actions is a later increment; the flag is held + fed back.
+        if (enabled)
+            _logger.LogInformation("Deck slot {Slot} quantize armed; beat-grid quantize is not yet implemented.", slot);
+    }
+
+    public int HotCueCount => HotCuesPerDeck;
+
+    public bool IsHotCueSet(int slot, int cueIndex)
+    {
+        ValidateSlot(slot);
+        if (cueIndex < 0 || cueIndex >= HotCuesPerDeck)
+            return false;
+        lock (_gate) return _hotCues[slot][cueIndex].HasValue;
+    }
+
+    public void HotCue(int slot, int cueIndex)
+    {
+        ValidateSlot(slot);
+        if (cueIndex < 0 || cueIndex >= HotCuesPerDeck)
+            throw new ArgumentOutOfRangeException(nameof(cueIndex), cueIndex, "Hot-cue index is out of range.");
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return; // nothing loaded — no position to store or jump to
+            if (_hotCues[slot][cueIndex] is { } position)
+                _backend.SetDeckPositionFraction(deck.Handle, position); // jump to the stored cue
+            else
+                _hotCues[slot][cueIndex] = _backend.GetDeckPositionFraction(deck.Handle); // set at current position
+        }
+    }
+
+    // Maps a normalized pitch position (0..1, 0.5 = centre) to a playback-rate multiplier within ±range.
+    private static double RateFor(double normalizedPosition)
+        => 1.0 + (Math.Clamp(normalizedPosition, 0.0, 1.0) - PitchCenter) * 2.0 * PitchRangePercent;
+
+    // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel and the
+    // track-specific hot-cues (a new track gets fresh cues).
     private void UnloadSlot(int slot)
     {
         if (_decks[slot] is not { } deck)
@@ -157,6 +298,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _backend.UnplugDeck(deck.Handle);
         _mixer.SetChannel(slot, null);
         _decks[slot] = null;
+        Array.Clear(_hotCues[slot]);
     }
 
     public void Dispose()

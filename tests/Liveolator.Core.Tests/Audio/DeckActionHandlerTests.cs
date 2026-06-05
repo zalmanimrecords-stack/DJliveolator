@@ -96,11 +96,28 @@ public class DeckActionHandlerTests
     private sealed class FakeMultiDeckEngine : IMultiDeckPlaybackEngine
     {
         private readonly bool[] _playing;
+        private readonly bool[] _sync;
+        private readonly bool[] _quantize;
+        private readonly double[] _position;
+        private readonly double[] _pitch;
+
         public List<(int Slot, string Path)> Loaded { get; } = new();
         public List<int> PlayPaused { get; } = new();
         public List<int> Stopped { get; } = new();
+        public List<(int Slot, double Position, bool Relative)> Seeks { get; } = new();
+        public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
+        public List<int> Cues { get; } = new();
 
-        public FakeMultiDeckEngine(int deckCount = 2) => _playing = new bool[deckCount];
+        public FakeMultiDeckEngine(int deckCount = 2)
+        {
+            _playing = new bool[deckCount];
+            _sync = new bool[deckCount];
+            _quantize = new bool[deckCount];
+            _position = new double[deckCount];
+            _pitch = new double[deckCount];
+            for (int i = 0; i < deckCount; i++)
+                _pitch[i] = 0.5; // center = original tempo
+        }
 
         public int DeckCount => _playing.Length;
         public bool IsPlaying(int slot) => _playing[slot];
@@ -109,6 +126,41 @@ public class DeckActionHandlerTests
         public void Load(int slot, string trackPath) => Loaded.Add((slot, trackPath));
         public void PlayPause(int slot) => PlayPaused.Add(slot);
         public void Stop(int slot) => Stopped.Add(slot);
+
+        public double Position(int slot) => _position[slot];
+        public void Seek(int slot, double position, bool relative)
+        {
+            Seeks.Add((slot, position, relative));
+            _position[slot] = relative ? Math.Clamp(_position[slot] + position, 0, 1) : Math.Clamp(position, 0, 1);
+        }
+
+        public double PitchPosition(int slot) => _pitch[slot];
+        public void SetPitch(int slot, double value, bool relative)
+        {
+            Pitches.Add((slot, value, relative));
+            _pitch[slot] = relative ? Math.Clamp(_pitch[slot] + value, 0, 1) : Math.Clamp(value, 0, 1);
+        }
+
+        public void Cue(int slot)
+        {
+            Cues.Add(slot);
+            _position[slot] = 0;
+        }
+
+        public bool IsSyncLocked(int slot) => _sync[slot];
+        public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
+        public bool IsQuantizeEnabled(int slot) => _quantize[slot];
+        public void SetQuantize(int slot, bool enabled) => _quantize[slot] = enabled;
+
+        public int HotCueCount => 8;
+        public List<(int Slot, int Index)> HotCues { get; } = new();
+        private readonly HashSet<(int, int)> _setCues = new();
+        public bool IsHotCueSet(int slot, int cueIndex) => _setCues.Contains((slot, cueIndex));
+        public void HotCue(int slot, int cueIndex)
+        {
+            HotCues.Add((slot, cueIndex));
+            _setCues.Add((slot, cueIndex));
+        }
     }
 
     [Fact]
@@ -153,5 +205,159 @@ public class DeckActionHandlerTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => handler.Handle(
             new PerformanceAction(PerformanceActionKind.DeckPlayPause, Slot: 1)));
+    }
+
+    // --- Transport: seek / pitch / cue / sync / quantize ---
+
+    [Fact]
+    public void HandledKinds_IncludeTransportControls()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckSeek, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckPitch, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckCue, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckSyncLockToggle, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckQuantizeToggle, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void Seek_Absolute_PassesPositionToSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSeek, ActionInputMode.Absolute, Value: 0.25, Slot: 1));
+
+        Assert.Equal((1, 0.25, false), Assert.Single(engine.Seeks));
+    }
+
+    [Fact]
+    public void Seek_Relative_FlagsTheDelta()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSeek, ActionInputMode.Relative, Value: -0.1, Slot: 0));
+
+        Assert.Equal((0, -0.1, true), Assert.Single(engine.Seeks));
+    }
+
+    [Fact]
+    public void Pitch_RoutesToSlot_WithRelativeFlag()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitch, ActionInputMode.Absolute, Value: 0.6, Slot: 1));
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitch, ActionInputMode.Relative, Value: 0.02, Slot: 1));
+
+        Assert.Equal(2, engine.Pitches.Count);
+        Assert.Equal((1, 0.6, false), engine.Pitches[0]);
+        Assert.Equal((1, 0.02, true), engine.Pitches[1]);
+    }
+
+    [Fact]
+    public void Cue_JumpsTheRequestedSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckCue, Slot: 1));
+
+        Assert.Equal(1, Assert.Single(engine.Cues));
+    }
+
+    [Fact]
+    public void SyncLockToggle_FlipsPerSlot_AndReportsFeedback()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
+        Assert.True(engine.IsSyncLocked(1));
+        Assert.False(engine.IsSyncLocked(0));
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot: 1).IsActive);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
+        Assert.False(engine.IsSyncLocked(1));
+    }
+
+    [Fact]
+    public void QuantizeToggle_FlipsPerSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckQuantizeToggle, Slot: 0));
+
+        Assert.True(engine.IsQuantizeEnabled(0));
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckQuantizeToggle, slot: 0).IsActive);
+    }
+
+    [Fact]
+    public void PitchFeedback_ReflectsNormalizedPosition()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitch, ActionInputMode.Absolute, Value: 0.7, Slot: 0));
+
+        Assert.Equal(0.7, handler.GetFeedback(PerformanceActionKind.DeckPitch, slot: 0).Value, precision: 3);
+    }
+
+    [Fact]
+    public void HotCue_RoutesIndexFromArgumentToSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "3", Slot: 1));
+
+        Assert.Equal((1, 3), Assert.Single(engine.HotCues));
+    }
+
+    [Fact]
+    public void HotCue_WithoutIndexArgument_Throws()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Throws<ArgumentException>(
+            () => handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Slot: 0)));
+    }
+
+    [Fact]
+    public void HotCue_IndexOutOfRange_Throws()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine()); // 8 cues -> valid 0..7
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "8", Slot: 0)));
+    }
+
+    [Fact]
+    public void HotCue_IsInHandledKinds()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckHotCue, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void TransportControls_RaiseFeedbackThroughDispatcher()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var dispatcher = new PerformanceActionDispatcher(
+            new[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
+
+        dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
+
+        Assert.True(dispatcher.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot: 1).IsActive);
     }
 }

@@ -30,6 +30,15 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Unplug a deck from the mix and free its stream.</summary>
     void UnplugDeck(int deckHandle);
 
+    /// <summary>The deck's current playback position as a 0..1 fraction of its length (0 if unknown).</summary>
+    double GetDeckPositionFraction(int deckHandle);
+
+    /// <summary>Seek the deck to a 0..1 fraction of its length (the caller clamps to range).</summary>
+    void SetDeckPositionFraction(int deckHandle, double fraction);
+
+    /// <summary>Set the deck's playback rate as a multiplier of its original sample rate (1.0 = original).</summary>
+    void SetDeckRate(int deckHandle, double rateMultiplier);
+
     /// <summary>Start the master output and arm the tap that delivers mixed samples to the frame pipeline.</summary>
     void StartMaster(Action<float[]> onMasterSamples);
 }

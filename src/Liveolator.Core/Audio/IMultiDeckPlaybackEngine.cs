@@ -23,4 +23,54 @@ public interface IMultiDeckPlaybackEngine
 
     /// <summary>Stop the deck slot (keeps its loaded track).</summary>
     void Stop(int slot);
+
+    // --- Transport (doc 11): position scrub, pitch/tempo, cue, and per-deck sync/quantize toggles.
+    // Driven via DeckSeek/DeckPitch/DeckCue/DeckSyncLockToggle/DeckQuantizeToggle actions, never directly.
+
+    /// <summary>Current playback position as a normalized 0..1 fraction of the track (0 if nothing loaded).</summary>
+    double Position(int slot);
+
+    /// <summary>
+    /// Move the playhead. When <paramref name="relative"/> is false, <paramref name="position"/> is an
+    /// absolute 0..1 fraction; when true it is a signed delta added to the current position. The engine
+    /// clamps the result to 0..1. No-op if nothing is loaded.
+    /// </summary>
+    void Seek(int slot, double position, bool relative);
+
+    /// <summary>Normalized pitch position 0..1 where 0.5 = original tempo (the engine owns the % range).</summary>
+    double PitchPosition(int slot);
+
+    /// <summary>
+    /// Adjust the deck's pitch/tempo. An absolute <paramref name="value"/> is a 0..1 position
+    /// (0.5 = no change); a relative value is a signed delta. The engine maps the normalized position
+    /// to its tempo range.
+    /// </summary>
+    void SetPitch(int slot, double value, bool relative);
+
+    /// <summary>Jump the playhead to the deck's cue point (defaults to the track start) and pause there.</summary>
+    void Cue(int slot);
+
+    /// <summary>True while the deck is sync-locked (beatmatched) to the master tempo.</summary>
+    bool IsSyncLocked(int slot);
+
+    /// <summary>Enable or disable sync-lock for the deck.</summary>
+    void SetSyncLock(int slot, bool enabled);
+
+    /// <summary>True while the deck quantizes cue/loop actions to the beat grid.</summary>
+    bool IsQuantizeEnabled(int slot);
+
+    /// <summary>Enable or disable beat-quantize for the deck.</summary>
+    void SetQuantize(int slot, bool enabled);
+
+    /// <summary>Number of hot-cue slots per deck (valid <see cref="HotCue"/> indices are 0..count-1).</summary>
+    int HotCueCount { get; }
+
+    /// <summary>True if the deck's hot-cue at <paramref name="cueIndex"/> is set for the loaded track.</summary>
+    bool IsHotCueSet(int slot, int cueIndex);
+
+    /// <summary>
+    /// Trigger a hot-cue: set it at the current position if unset, otherwise jump the playhead to it.
+    /// Hot-cues belong to the loaded track and are cleared when a new track loads.
+    /// </summary>
+    void HotCue(int slot, int cueIndex);
 }

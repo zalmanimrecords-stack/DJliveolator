@@ -35,6 +35,34 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
         _engine.Stop();
     }
 
+    // The legacy single-deck engine (IAudioPlaybackEngine) supports only load/play/stop — it has no
+    // position/pitch/cue/sync surface. These adapt to no-ops with neutral readings so the slot-aware
+    // DeckActionHandler runs one code path; the two-deck BASS engine is the path that implements them.
+    public double Position(int slot) { EnsureSlot(slot); return 0; }
+
+    public void Seek(int slot, double position, bool relative) => EnsureSlot(slot);
+
+    public double PitchPosition(int slot) { EnsureSlot(slot); return 0.5; }
+
+    public void SetPitch(int slot, double value, bool relative) => EnsureSlot(slot);
+
+    public void Cue(int slot) => EnsureSlot(slot);
+
+    public bool IsSyncLocked(int slot) { EnsureSlot(slot); return false; }
+
+    public void SetSyncLock(int slot, bool enabled) => EnsureSlot(slot);
+
+    public bool IsQuantizeEnabled(int slot) { EnsureSlot(slot); return false; }
+
+    public void SetQuantize(int slot, bool enabled) => EnsureSlot(slot);
+
+    // The legacy single-deck engine has no hot-cue memory; report zero slots so any index is rejected.
+    public int HotCueCount => 0;
+
+    public bool IsHotCueSet(int slot, int cueIndex) { EnsureSlot(slot); return false; }
+
+    public void HotCue(int slot, int cueIndex) => EnsureSlot(slot);
+
     private void EnsureSlot(int slot)
     {
         if (slot != 0)

@@ -2,7 +2,7 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-05**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-06**.
 
 ## How to read this
 
@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **370 passing** (as of 2026-06-05). Solution-wide: **697**
-across 7 test projects (Core 370, Visuals 43, Audio 70, MIDI 27, App 113, Media 49, Integration 25).
+`tests/Liveolator.Core.Tests` — **389 passing** (as of 2026-06-06). Solution-wide: **734**
+across 7 test projects (Core 389, Visuals 43, Audio 89, MIDI 27, App 113, Media 49, Integration 25).
 
 ## Module status
 
@@ -38,10 +38,12 @@ The action-layer seam: every input source drives engines through one dispatcher.
   unknown kinds log a warning, never throw.
 - **Deferred:** the concrete concern handlers land with their engines. Built so far:
   **`BeatActionHandler`** (see Beat), **`PlaylistActionHandler`** (see Live playlist),
-  **`DeckActionHandler`** (see Realtime audio — DeckLoadTrack/DeckPlayPause/TransportStop, now
-  slot-addressed), and **`MixerActionHandler`** (see Software mixer —
-  Crossfade/ChannelGain/EqBand/Filter/CueToggle). Pending: Visual + the rest of Deck/Transport
-  handlers (hot-cue/loop/seek/pitch/sync).
+  **`VisualActionHandler`** (see Visual action handler), **`DeckActionHandler`** (see Realtime audio —
+  load/play-pause/stop **+ seek/pitch/cue/sync-lock/quantize**, slot-addressed), and
+  **`MixerActionHandler`** (see Software mixer — Crossfade/ChannelGain/EqBand/Filter/CueToggle).
+  Pending Deck kind: **loop** only — `DeckSetLoop` needs a per-deck **runtime BPM** to convert a beat
+  length to a time region (the engine gets only a path at `Load`); hot-cues are done (cue index rides in
+  `Argument`).
 
 ### ✅ Controller mapping engine — `Liveolator.Core/Mapping/` (doc 05)
 
@@ -101,7 +103,7 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 | Playback engine seam + composition | `IAudioPlaybackEngine`, `IDeckSourceFactory`, `LivePlaybackEngine` (Core) |
 | Master-mix → clock composition (two-deck) | `MasterMixPlaybackEngine` (Core) |
 | Two-deck engine + master source seam | `TwoDeckBassEngine`, `MasterAudioSource`, `IBassMixerBackend` (Audio) |
-| Deck transport handler | `DeckActionHandler` (Core; DeckLoadTrack/DeckPlayPause/TransportStop) |
+| Deck transport handler | `DeckActionHandler` (Core; load/play-pause/stop + seek/pitch/cue/sync-lock/quantize/hot-cue) |
 | **BASS realtime backend** | `BassAudioEngine`, `DeckAudioSource`, `BassPlayback`, `IBassPlayback` (Audio) |
 | Capture seams | `IAudioCaptureDeviceCatalog`, `IAudioCaptureSourceFactory`, `AudioCaptureDevice`, `CaptureSourceKind` (Core) |
 | **BASS capture backend** | `BassCaptureEngine`, `CaptureAudioSource`, `BassCaptureBackend`, `ICaptureBackend` (Audio) |
@@ -191,10 +193,22 @@ the beat clock follows the audible mix — the increment that turns the routing 
   `BiquadCoefficients` via `StatefulBiquad` (per-audio-channel Direct-Form-I state) inside the deck's
   BASS DSP callback — keeping Core's mixer math authoritative and the sample processing unit-testable.
   So only **`ManagedBass.Mix`** is needed (no `ManagedBass.Fx`).
-- **Testability:** all BASS interop sits behind `IBassMixerBackend`; the load/play/stop state machine,
-  channel registration, master-tap→clock spine, and the biquad/gain processing all unit-test with fakes —
-  native bass/bassmix is not in CI (the native `BassMixerBackend` is verified manually, like `BassPlayback`).
-  +25 tests (Core `MasterMixPlaybackEngineTests` 4; Audio `TwoDeckBassEngineTests` 14, `BassMixerChannelTests` 7).
+- **Transport added (seek/pitch/cue/sync-lock/quantize/hot-cue):** `IMultiDeckPlaybackEngine` gained per-slot
+  `Position`/`Seek`, `PitchPosition`/`SetPitch`, `Cue`, `SyncLock`/`Quantize` toggles, and hot-cues
+  (`HotCueCount`, `IsHotCueSet`, `HotCue`) — all routed by `DeckActionHandler` (with value/active feedback; the
+  hot-cue index rides in the action `Argument`). `TwoDeckBassEngine` implements them over three new
+  `IBassMixerBackend` calls — `GetDeckPositionFraction`/`SetDeckPositionFraction` (via `BassMix.Channel*Position`)
+  and `SetDeckRate` (vinyl-style **pitch = playback-rate**; tempo+pitch move together, so still no `ManagedBass.Fx`).
+  The pitch fader and the sync/quantize toggles are **per-slot state that persists across track loads** (the
+  rate is re-applied to the newly loaded deck); **hot-cues (8/deck) belong to the loaded track and clear on
+  reload** — first press sets at the current position, next press jumps to it. Sync-lock and quantize are
+  **honest latches** today — the flag + LED feedback are live, but the actual beatmatching / beat-grid quantize
+  is a later increment (logged when armed). `Cue` jumps to the track start (settable cue points later) and pauses.
+- **Testability:** all BASS interop sits behind `IBassMixerBackend`; the load/play/stop state machine, the new
+  transport (seek/pitch/cue/sync/quantize/hot-cue), channel registration, master-tap→clock spine, and the
+  biquad/gain processing all unit-test with fakes — native bass/bassmix is not in CI (the native
+  `BassMixerBackend` is verified manually, like `BassPlayback`). +26 tests across these increments
+  (Core `DeckActionHandlerTests` +13, Audio `TwoDeckBassEngineTests` +13).
 - **App-wired (`ServiceConfig`):** the single-deck path is replaced by `TwoDeckBassEngine(mixer)` registered
   as `IMultiDeckPlaybackEngine`, with `MasterMixPlaybackEngine`'s clock registered as `IBeatClock` and
   `DeckActionHandler(IMultiDeckPlaybackEngine)` driving both decks. **Headless fallback preserved:** if
@@ -202,8 +216,42 @@ the beat clock follows the audible mix — the increment that turns the routing 
   catalog browser (the Libraries tab's Load→A/B enable off dispatcher feedback, so deck B lights up now).
 - **Deferred (next increment):** native `BassMixerBackend` **runtime** verification needs the `bassmix`
   native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
-  ch 3/4; beatmatching/sync-lock/quantize; hot-cues; loops; and ASIO/CoreAudio multi-channel cue output.
-  `SetCue` currently latches the PFL flag only. `BassMixer` still drops controls for an unregistered slot.
+  ch 3/4; the real **beatmatching** behind sync-lock + **beat-grid quantize** (the toggles latch + feed back
+  now); **loops** (`DeckSetLoop` needs a per-deck runtime BPM to turn a beat length into a time region — the
+  engine only gets a path at `Load`; the analyzed BPM lives in the catalog, so the enabler is threading it onto
+  the deck, e.g. a `SetDeckTempo` seam fed at load); settable/named cue points + hot-cue clear; per-pad hot-cue
+  LED feedback (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
+  `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The new deck transport is reachable via the
+  dispatcher but **not yet surfaced in the Live-tab DeckView UI** (cue/pitch/sync/hot-cue controls there are
+  still disabled — a separate UI increment). `SetCue` (mixer
+  PFL) still latches the flag only; `BassMixer` still drops controls for an unregistered slot.
+
+### ✅ Deck waveform — data foundation — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` (doc 11)
+
+The track-overview waveform the decks draw, built **data-first**: a pure peak model + reducer in Core, an
+offline decode→peaks provider in the Audio binding. The UI render + playhead wiring is the next increment.
+
+| Built | File |
+|-------|------|
+| Immutable overview (0..1 peaks, width-independent) | `WaveformOverview` (Core) |
+| Pure reducer (mono PCM → N max-abs buckets; transients preserved, clamped, upsamples) | `WaveformBuilder` (Core) |
+| Provider seam | `IWaveformProvider` (Core) |
+| Decode→reduce provider over the offline `IAudioDecoder` | `DecodedWaveformProvider` (Audio) |
+
+- `WaveformBuilder` takes **max-abs per bucket** (not an average) so transients survive the downsample;
+  amplitudes clamp to 0..1 and every bucket is filled even when buckets > samples. Pure — unit-tested with
+  synthetic arrays.
+- `DecodedWaveformProvider` decodes to mono at a low **overview sample rate** (`DefaultOverviewSampleRate`
+  8 kHz — fidelity is wasted on a strip), accumulates, then reduces via `WaveformBuilder`. Failures
+  **degrade, never throw**: an undecodable/failing/empty track returns `WaveformOverview.Empty` so the deck
+  falls back to its placeholder; cancellation propagates. Tested with a fake decoder (no FFmpeg/BASS).
+  +12 tests (Core `WaveformBuilderTests` 6, Audio `DecodedWaveformProviderTests` 6).
+- **Deferred (next increment — the render + playhead):** register `IWaveformProvider` →
+  `DecodedWaveformProvider` in `ServiceConfig`; on deck load (`DeckLoadTrack`), fetch the overview
+  off-thread and expose it on the deck VM; make `WaveformStrip` (`Liveolator.App/Controls`) **data-driven**
+  (render real peaks, fall back to its decorative bars when none) with a **playhead** overlay driven by the
+  deck `Position` feedback (already emitted by `DeckActionHandler`). These touch the Live-tab DeckView files
+  currently owned by parallel UI work, so they are intentionally held until that settles.
 
 ### ✅ Settings — audio output / buffer / MIDI device selection — `Liveolator.App/Features/Settings/` (doc 12)
 
