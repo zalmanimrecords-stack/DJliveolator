@@ -1,36 +1,60 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Live.Modules.MixerView"
              x:DataType="m:MixerViewModel">
 
   <Border Classes="panel">
     <StackPanel Margin="16" Spacing="14">
-      <TextBlock Classes="section" Text="MIXER" />
 
-      <!-- per-channel gain faders + static VU placeholders -->
-      <Grid ColumnDefinitions="*,*">
-        <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center" Margin="0,0,18,0">
-          <Slider Orientation="Vertical" Height="130" Minimum="0" Maximum="1"
-                  Value="{Binding ChannelGainA.Value}" IsEnabled="{Binding ChannelGainA.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="A" />
+      <!-- title + LINK (LINK has no backend yet) -->
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Column="1" Classes="section" HorizontalAlignment="Center"
+                   VerticalAlignment="Center" Text="MIXER" />
+        <Button Grid.Column="2" Classes="spartan" Content="LINK" FontSize="9" IsEnabled="False" />
+      </Grid>
+
+      <!-- channel faders A | dB scale | B -->
+      <Grid ColumnDefinitions="*,Auto,*">
+
+        <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center">
+          <TextBlock Classes="accent" HorizontalAlignment="Center" Text="A" />
+          <controls:Fader Width="28" Height="150" HorizontalAlignment="Center"
+                          Value="{Binding ChannelGainA.Value}" IsEnabled="{Binding ChannelGainA.IsEnabled}" />
+          <Button Classes="key" Classes.on="{Binding IsCueA}" Content="CUE" Command="{Binding CueACommand}" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Center">
-          <Slider Orientation="Vertical" Height="130" Minimum="0" Maximum="1"
-                  Value="{Binding ChannelGainB.Value}" IsEnabled="{Binding ChannelGainB.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="B" />
+
+        <!-- shared dB tick scale -->
+        <Grid Grid.Column="1" Width="34" Height="150" Margin="6,22,6,0"
+              RowDefinitions="*,*,*,*,*,*,*,*,*,*">
+          <TextBlock Grid.Row="0" Classes="tick" HorizontalAlignment="Center" Text="+6" />
+          <TextBlock Grid.Row="1" Classes="tick" HorizontalAlignment="Center" Text="+3" />
+          <TextBlock Grid.Row="2" Classes="tick" HorizontalAlignment="Center" Text="0" />
+          <TextBlock Grid.Row="3" Classes="tick" HorizontalAlignment="Center" Text="−3" />
+          <TextBlock Grid.Row="4" Classes="tick" HorizontalAlignment="Center" Text="−6" />
+          <TextBlock Grid.Row="5" Classes="tick" HorizontalAlignment="Center" Text="−10" />
+          <TextBlock Grid.Row="6" Classes="tick" HorizontalAlignment="Center" Text="−15" />
+          <TextBlock Grid.Row="7" Classes="tick" HorizontalAlignment="Center" Text="−20" />
+          <TextBlock Grid.Row="8" Classes="tick" HorizontalAlignment="Center" Text="−30" />
+          <TextBlock Grid.Row="9" Classes="tick" HorizontalAlignment="Center" Text="−∞" />
+        </Grid>
+
+        <StackPanel Grid.Column="2" Spacing="8" HorizontalAlignment="Center">
+          <TextBlock Classes="accent" HorizontalAlignment="Center" Text="B" />
+          <controls:Fader Width="28" Height="150" HorizontalAlignment="Center"
+                          Value="{Binding ChannelGainB.Value}" IsEnabled="{Binding ChannelGainB.IsEnabled}" />
+          <Button Classes="key" Classes.on="{Binding IsCueB}" Content="CUE" Command="{Binding CueBCommand}" />
         </StackPanel>
       </Grid>
 
       <!-- crossfader -->
-      <StackPanel Spacing="6">
-        <Slider Minimum="0" Maximum="1" Value="{Binding Crossfader.Value}"
-                IsEnabled="{Binding Crossfader.IsEnabled}" />
-        <Grid ColumnDefinitions="*,*">
-          <TextBlock Classes="faint" Text="A" />
-          <TextBlock Grid.Column="1" Classes="faint" HorizontalAlignment="Right" Text="B" />
-        </Grid>
-      </StackPanel>
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+        <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
+        <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="24"
+                        Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
+        <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
+      </Grid>
     </StackPanel>
   </Border>
 </UserControl>

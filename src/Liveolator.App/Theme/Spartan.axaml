@@ -1,10 +1,39 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Liveolator.App.Controls">
 
   <!-- ============================================================
-       Spartan design line — near-monochrome, one accent, hairlines.
-       Color/brush tokens live in App.axaml (Application.Resources).
+       Performance design line — deep navy, one blue accent, rounded
+       panels, rotary knobs + dB faders. Color/brush tokens live in
+       App.axaml (Application.Resources).
        ============================================================ -->
+
+  <!-- rotary knob + linear fader default brushes (themed from the tokens) -->
+  <Style Selector="controls|Knob">
+    <Setter Property="ArcBrush" Value="{StaticResource Accent}" />
+    <Setter Property="TrackBrush" Value="{StaticResource S4}" />
+    <Setter Property="CapBrush" Value="{StaticResource S2}" />
+    <Setter Property="PointerBrush" Value="{StaticResource Text}" />
+  </Style>
+  <Style Selector="controls|Knob:disabled">
+    <Setter Property="ArcBrush" Value="{StaticResource S4}" />
+    <Setter Property="Opacity" Value="0.7" />
+  </Style>
+  <Style Selector="controls|Fader">
+    <Setter Property="FillBrush" Value="{StaticResource Accent}" />
+    <Setter Property="TrackBrush" Value="{StaticResource S4}" />
+    <Setter Property="ThumbBrush" Value="{StaticResource Text}" />
+  </Style>
+  <Style Selector="controls|Fader:disabled">
+    <Setter Property="Opacity" Value="0.6" />
+  </Style>
+
+  <!-- dB / range tick label beside faders and under knobs -->
+  <Style Selector="TextBlock.tick">
+    <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    <Setter Property="FontFamily" Value="Consolas, 'JetBrains Mono', monospace" />
+    <Setter Property="FontSize" Value="9" />
+  </Style>
 
   <Style Selector="Window">
     <Setter Property="Background" Value="{StaticResource Bg}" />
@@ -39,7 +68,21 @@
     <Setter Property="Background" Value="{StaticResource S1}" />
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="12" />
+  </Style>
+
+  <!-- small round icon button (e.g. the deck "..." menu) -->
+  <Style Selector="Button.icon">
+    <Setter Property="Background" Value="{StaticResource S3}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="18" />
+    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
   </Style>
 
   <!-- ============ tab strip (ListBox.tabs) ============ -->
@@ -118,16 +161,16 @@
 
   <!-- ============ buttons ============ -->
   <Style Selector="Button.spartan">
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{StaticResource S3}" />
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Foreground" Value="{StaticResource Dim}" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
   </Style>
   <Style Selector="Button.spartan:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource S3}" />
+    <Setter Property="Background" Value="{StaticResource S4}" />
     <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
     <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
   </Style>
@@ -135,7 +178,7 @@
     <Setter Property="Background" Value="{StaticResource Accent}" />
     <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
     <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
   </Style>
@@ -151,18 +194,18 @@
 
   <!-- ============ key (beat keys / transport / hot-cues) ============ -->
   <Style Selector="Button.key">
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{StaticResource S3}" />
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Foreground" Value="{StaticResource Dim}" />
-    <Setter Property="Padding" Value="8,7" />
+    <Setter Property="Padding" Value="8,9" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
   </Style>
   <Style Selector="Button.key:pointerover /template/ ContentPresenter">
-    <Setter Property="Background" Value="{StaticResource S3}" />
+    <Setter Property="Background" Value="{StaticResource S4}" />
     <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
   </Style>
   <!-- active toggle: the single accent carries the on-state (paired with text, never color-only) -->
@@ -177,10 +220,10 @@
 
   <!-- ============ scene pad (8×8 grid cell) ============ -->
   <Style Selector="Button.pad">
-    <Setter Property="Background" Value="{StaticResource Bg}" />
+    <Setter Property="Background" Value="{StaticResource S2}" />
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="6" />
     <Setter Property="Height" Value="22" />
     <Setter Property="MinHeight" Value="22" />
     <Setter Property="Padding" Value="0" />

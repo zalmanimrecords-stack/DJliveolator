@@ -1,4 +1,6 @@
+using System.Reactive;
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using ReactiveUI;
@@ -18,6 +20,8 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private const double DefaultGain = 1.0;
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
+    private bool _isCueA;
+    private bool _isCueB;
     private bool _disposed;
 
     public MixerViewModel(IPerformanceActionDispatcher? dispatcher = null)
@@ -37,8 +41,16 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
             "B", Seed(PerformanceActionKind.MixerChannelGain, slot: 1, DefaultGain),
             enabled ? v => Emit(PerformanceActionKind.MixerChannelGain, v, slot: 1) : null);
 
+        IObservable<bool> canCue = Observable.Return(enabled);
+        CueACommand = ReactiveCommand.Create(() => EmitCue(slot: 0), canCue);
+        CueBCommand = ReactiveCommand.Create(() => EmitCue(slot: 1), canCue);
+
         if (_dispatcher is not null)
+        {
+            _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
+            _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
             _dispatcher.FeedbackChanged += OnFeedback;
+        }
     }
 
     /// <summary>True when the mixer handler is wired; the UI disables the faders otherwise.</summary>
@@ -47,6 +59,23 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel Crossfader { get; }
     public ContinuousControlViewModel ChannelGainA { get; }
     public ContinuousControlViewModel ChannelGainB { get; }
+
+    /// <summary>Headphone-cue toggles per deck (MixerCueToggle — a ready handler).</summary>
+    public ReactiveCommand<Unit, Unit> CueACommand { get; }
+    public ReactiveCommand<Unit, Unit> CueBCommand { get; }
+
+    /// <summary>True while deck A/B is routed to the headphone cue bus (from dispatcher feedback).</summary>
+    public bool IsCueA
+    {
+        get => _isCueA;
+        private set => this.RaiseAndSetIfChanged(ref _isCueA, value);
+    }
+
+    public bool IsCueB
+    {
+        get => _isCueB;
+        private set => this.RaiseAndSetIfChanged(ref _isCueB, value);
+    }
 
     public void Dispose()
     {
@@ -66,6 +95,9 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private void Emit(PerformanceActionKind kind, double value, int slot)
         => _dispatcher?.Dispatch(new PerformanceAction(kind, ActionInputMode.Absolute, Value: value, Slot: slot));
 
+    private void EmitCue(int slot)
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerCueToggle, Slot: slot));
+
     private void OnFeedback(object? sender, ActionFeedbackChanged e)
         => RxApp.MainThreadScheduler.Schedule(() =>
         {
@@ -79,6 +111,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.MixerChannelGain when e.Slot == 1:
                     ChannelGainB.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerCueToggle when e.Slot == 0:
+                    IsCueA = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerCueToggle when e.Slot == 1:
+                    IsCueB = e.State.IsActive;
                     break;
             }
         });

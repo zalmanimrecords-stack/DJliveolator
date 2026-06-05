@@ -15,6 +15,10 @@
     <!-- Realtime playback backend (doc 01). Managed P/Invoke; the native bass library ships
          per-platform via runtimes/ and is fetched by setup scripts (see .gitignore). -->
     <PackageReference Include="ManagedBass" Version="3.1.1" />
+    <!-- Two-deck software mixer (doc 11): BASSmix master channel. EQ/filter run as managed DSP from
+         the Core BiquadCoefficients (BassMixerChannel), so BASS_FX is not needed. The native bassmix
+         library is fetched per-platform alongside core bass (see scripts/fetch-bass). -->
+    <PackageReference Include="ManagedBass.Mix" Version="3.1.1" />
   </ItemGroup>
 
   <ItemGroup>

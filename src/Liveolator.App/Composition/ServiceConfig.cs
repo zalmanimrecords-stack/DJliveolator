@@ -73,15 +73,23 @@ public static class ServiceConfig
         services.AddSingleton<ILivePlaylist>(livePlaylist);
         var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
 
-        // --- Realtime audio engine (docs 01/02/03): best-effort. The BASS backend needs the native
-        // bass library at runtime; if it is absent the app still runs as a catalog browser and the
-        // deck transport is simply unrouted. Registering IBeatClock here gives the Libraries tab its
+        // --- Realtime audio engine (docs 01/02/11): best-effort two-deck DJ engine. The BASSmix backend
+        // needs the native bass + bassmix libraries at runtime; if they are absent the app still runs as a
+        // catalog browser and the deck transport is simply unrouted. The two decks feed ONE master mix and
+        // the beat clock is driven off that master (MasterMixPlaybackEngine), so it follows the audible
+        // post-crossfader signal (doc 11) rather than a single switched deck. Registering
+        // IMultiDeckPlaybackEngine lets the deck handler address both decks AND lets the two-deck engine
+        // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
+        // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout (a separate source from the shared manual clock — unifying them is doc 03).
-        LivePlaybackEngine? audioEngine = TryBuildAudioEngine();
-        if (audioEngine is not null)
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer);
+        MasterMixPlaybackEngine? masterMix =
+            deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
+        bool realtimeUp = deckEngine is not null;
+        if (realtimeUp)
         {
-            services.AddSingleton<IAudioPlaybackEngine>(audioEngine);
-            services.AddSingleton<IBeatClock>(audioEngine.BeatClock);
+            services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
+            services.AddSingleton<IBeatClock>(masterMix!.BeatClock);
         }
 
         // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
@@ -95,8 +103,8 @@ public static class ServiceConfig
             visualHandler,
             playlistHandler,
         };
-        if (audioEngine is not null)
-            handlers.Add(new DeckActionHandler(audioEngine));
+        if (realtimeUp)
+            handlers.Add(new DeckActionHandler(deckEngine!));
 
         var dispatcher = new PerformanceActionDispatcher(
             handlers, NullLogger<PerformanceActionDispatcher>.Instance);
@@ -111,7 +119,7 @@ public static class ServiceConfig
         // (keeps the Play transport hidden in catalog-browser mode).
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
             sp.GetRequiredService<MusicLibrary>(),
-            sp.GetService<IAudioPlaybackEngine>() is not null ? sp.GetService<IPerformanceActionDispatcher>() : null,
+            realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetService<IBeatClock>(),
             sp.GetRequiredService<IMusicCatalogStore>()));
 
@@ -127,13 +135,14 @@ public static class ServiceConfig
         return services.BuildServiceProvider();
     }
 
-    // Builds the realtime BASS playback engine, or null when the native bass library is absent
-    // (e.g. CI / a dev box without the per-platform binaries). Never throws for that case.
-    private static LivePlaybackEngine? TryBuildAudioEngine()
+    // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when
+    // the native bass/bassmix libraries are absent (e.g. CI / a dev box without the per-platform
+    // binaries). Never throws for that case — the app falls back to the catalog browser.
+    private static TwoDeckBassEngine? TryBuildDeckEngine(BassMixer mixer)
     {
         try
         {
-            return new LivePlaybackEngine(new BassAudioEngine(), new SystemHostClock());
+            return new TwoDeckBassEngine(mixer);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {

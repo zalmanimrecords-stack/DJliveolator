@@ -37,8 +37,25 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     private sealed record LoadedDeck(int Handle, IBassMixerChannel Channel, bool Playing);
 
     /// <summary>
-    /// Constructs the engine over a backend seam. Internal so tests inject a fake; the public native
-    /// entry point (constructing a real BASSmix/BASS_FX <c>BassMixerBackend</c>) lands with that backend.
+    /// Public entry point: builds a real BASSmix backend and registers its per-deck channels into
+    /// <paramref name="mixer"/>. The App composes one engine and disposes it on shutdown.
+    /// </summary>
+    /// <param name="mixer">The realtime mixer to register deck channels into (must address both decks).</param>
+    /// <param name="sampleRate">Master mix output rate (Hz).</param>
+    /// <param name="channels">Master mix channel count (2 = stereo).</param>
+    public TwoDeckBassEngine(
+        BassMixer mixer, int sampleRate = 48_000, int channels = 2, ILoggerFactory? loggerFactory = null)
+        : this(
+            new BassMixerBackend(
+                sampleRate, channels,
+                (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>()),
+            mixer, loggerFactory)
+    {
+    }
+
+    /// <summary>
+    /// Constructs the engine over a backend seam. Internal so tests inject a fake; the public ctor
+    /// above wires the real BASSmix <see cref="BassMixerBackend"/>.
     /// </summary>
     internal TwoDeckBassEngine(IBassMixerBackend backend, BassMixer mixer, ILoggerFactory? loggerFactory = null)
     {

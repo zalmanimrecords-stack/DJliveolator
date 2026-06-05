@@ -1,4 +1,6 @@
 using System.Reactive.Concurrency;
+using System.Reactive.Threading.Tasks;
+using System.Threading.Tasks;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
@@ -69,5 +71,33 @@ public sealed class MixerViewModelTests
 
         Assert.Equal(0.9, vm.Crossfader.Value);
         Assert.Empty(dispatcher.Dispatched); // echoed feedback must not loop
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task Cue_EmitsMixerCueToggle_ForItsSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        await (slot == 0 ? vm.CueACommand : vm.CueBCommand).Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerCueToggle, action.Kind);
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public void Cue_LatchesFromFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerCueToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        Assert.False(vm.IsCueA);
+        Assert.True(vm.IsCueB);
     }
 }

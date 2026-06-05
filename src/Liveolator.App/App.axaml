@@ -9,19 +9,19 @@
   </Application.DataTemplates>
 
   <Application.Resources>
-    <!-- Spartan design tokens (mirrors design/mockups/live-mode-clean.html) -->
-    <Color x:Key="BgColor">#0D0D0E</Color>
-    <Color x:Key="S1Color">#151517</Color>
-    <Color x:Key="S2Color">#1C1C1F</Color>
-    <Color x:Key="S3Color">#232327</Color>
-    <Color x:Key="S4Color">#2C2C31</Color>
-    <Color x:Key="HairColor">#2A2A2E</Color>
-    <Color x:Key="TextColor">#E7E5E0</Color>
-    <Color x:Key="DimColor">#8C8C92</Color>
-    <Color x:Key="FaintColor">#56565C</Color>
-    <Color x:Key="AccentColor">#D99A3C</Color>
-    <Color x:Key="AccentInkColor">#1A1206</Color>
-    <Color x:Key="RedColor">#CF5340</Color>
+    <!-- Design tokens — blue / deep-navy performance line (rotary knobs, dB faders, one blue accent) -->
+    <Color x:Key="BgColor">#0A0D13</Color>
+    <Color x:Key="S1Color">#121723</Color>   <!-- module surface -->
+    <Color x:Key="S2Color">#0C1017</Color>   <!-- inset / well (waveform, meters) -->
+    <Color x:Key="S3Color">#1A2130</Color>   <!-- control -->
+    <Color x:Key="S4Color">#26303F</Color>   <!-- control hover / knob track -->
+    <Color x:Key="HairColor">#232B38</Color> <!-- the single border color -->
+    <Color x:Key="TextColor">#E7ECF3</Color>
+    <Color x:Key="DimColor">#8B95A7</Color>
+    <Color x:Key="FaintColor">#5A6573</Color>
+    <Color x:Key="AccentColor">#2F80F6</Color>   <!-- the one accent — active / signal -->
+    <Color x:Key="AccentInkColor">#FFFFFF</Color>
+    <Color x:Key="RedColor">#E5544A</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
     <SolidColorBrush x:Key="S1" Color="{StaticResource S1Color}" />

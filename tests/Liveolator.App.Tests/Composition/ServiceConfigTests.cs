@@ -81,10 +81,11 @@ public sealed class ServiceConfigTests
         using var provider = (ServiceProvider)ServiceConfig.Build();
 
         var beatClock = provider.GetService<IBeatClock>();
-        var engine = provider.GetService<IAudioPlaybackEngine>();
+        var engine = provider.GetService<IMultiDeckPlaybackEngine>();
 
-        // The realtime audio services are all-or-nothing: the engine and its audio beat clock are
-        // registered together, or (native BASS missing) neither is. The catalog browser works either way.
+        // The realtime audio services are all-or-nothing: the two-deck engine and the master-mix beat
+        // clock are registered together, or (native BASS/bassmix missing) neither is. The catalog browser
+        // works either way.
         if (engine is not null)
             Assert.NotNull(beatClock);
         else
