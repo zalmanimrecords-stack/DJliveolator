@@ -9,7 +9,7 @@ namespace Liveolator.Audio.Playback;
 /// and hands out <see cref="IAudioSource"/> decks for files. The App composes one engine and
 /// disposes it on shutdown; the underlying BASS device is freed then.
 /// </summary>
-public sealed class BassAudioEngine : IDisposable
+public sealed class BassAudioEngine : IDeckSourceFactory, IDisposable
 {
     private readonly BassPlayback _bass;
     private readonly ILoggerFactory _loggerFactory;
