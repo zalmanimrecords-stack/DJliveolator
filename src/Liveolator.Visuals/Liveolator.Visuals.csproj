@@ -8,6 +8,26 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- The GL buffer/texture uploads pin managed arrays and pass raw pointers to Silk.NET. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- GL compositor (doc 08). Silk.NET = cross-platform GL bindings + GLFW windowing/context;
+         the native GLFW + GL drivers come from the OS / GPU at runtime (needs a display). -->
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Windowing" Version="2.21.0" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" Version="2.21.0" />
+    <!-- Still-image decode to RGBA pixels for the layer texture. SkiaSharp is managed +
+         cross-platform and already in the dependency graph (Avalonia.Skia uses it). -->
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <!-- Mandatory-logging standard: abstractions only, concrete providers wired by the host. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Liveolator.Visuals.Tests" />
+  </ItemGroup>
 
 </Project>
