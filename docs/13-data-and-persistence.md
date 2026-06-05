@@ -35,20 +35,32 @@ shareable.
 | `LivePerformanceSession` | — | active source, loaded profiles, queue, active bank |
 | `AutopilotRuleSet` | 10 | rules + scene pool + seed |
 
-## Storage layout (proposed)
+## Storage layout
+
+Rooted at the per-user app-data folder (`%APPDATA%/Liveolator` on Windows, the Mac/XDG
+equivalent elsewhere — see `JsonCatalogStore.DefaultRoot`):
 
 ```text
-%LOCALAPPDATA%/MilkDropVisualizer/
-  settings.json                 # existing global settings (unchanged)
+<app-data>/Liveolator/
+  catalog.music.json            # music catalog cache (JsonCatalogStore, regenerable)
+  catalog.visual.json           # visual-media catalog cache (JsonCatalogStore, regenerable)
   live/
-    mappings/<name>.json        # ControllerMappingProfile / Push / DJ profiles
-    scenes/<bank>.json          # VisualBank (contains its VisualScenes)
-    macros.json                 # VisualMacro definitions
-    autopilot/<name>.json       # AutopilotRuleSet
-    sessions/<name>.json        # LivePerformanceSession (setlists/shows)
-    cache/track-analysis.json   # TrackAnalysisCache (regenerable)
-  defaults/live/                # app-shipped defaults (read-only baseline)
+    mappings/<name>.json        # ControllerMappingProfile / Push / DJ profiles      [implemented]
+    scenes/<name>.json          # VisualBank (contains its VisualScenes)             [implemented]
+    macros.json                 # VisualMacro definitions                            [implemented]
+    autopilot/<name>.json       # AutopilotRuleSet                                   [implemented]
+    sessions/<name>.json        # LivePerformanceSession (setlists/shows)            [planned]
+    cache/track-analysis.json   # TrackAnalysisCache (regenerable)                   [planned]
+  defaults/live/                # app-shipped defaults (read-only baseline)          [planned]
 ```
+
+The four `[implemented]` families are persisted by `LiveProfileStore`
+(`src/Liveolator.Media`), behind the `ILiveProfileStore` Core seam
+(`src/Liveolator.Core/Persistence`). Each file is a versioned snapshot
+(`{ "Version": N, ... }`) saved atomically (temp-then-move). Loads are tolerant: a
+missing file returns null/empty with no warning; a corrupt or older-version file returns
+null/empty **and** reports a warning, never throwing (global standards #16/#26). Profile
+names are sanitized to a flat `<safe-name>.json` so a name can never escape its folder.
 
 ## Persistence rules (from the plan)
 

@@ -279,8 +279,13 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 
 ## What is safe to build next (no blockers)
 
-1. **JSON persistence** of mapping profiles / scenes / rule-sets under the Live root (doc 13) —
-   pure serialization over the records already built.
+1. ~~**JSON persistence** of mapping profiles / scenes / rule-sets under the Live root (doc 13).~~
+   **Built** — `ILiveProfileStore` (Core seam, `Liveolator.Core/Persistence`) +
+   `LiveProfileStore` (`Liveolator.Media`) round-trip `ControllerMappingProfile`, `VisualBank`
+   (with its scenes), the `VisualMacro` set, and `AutopilotRuleSet` as versioned snapshots under
+   `live/{mappings,scenes,autopilot}/<name>.json` and `live/macros.json`. Atomic temp-then-move
+   saves; tolerant loads (null/empty + warning on corrupt/old-version, mirroring
+   `JsonCatalogStore`). DI registration deferred to the host (not yet wired in `ServiceConfig`).
 2. **MCP tools** exposing the new Core capabilities to agents (doc 17).
 3. Remaining concern handlers (Visual/Deck/Mixer/Transport) as their engines land.
 
