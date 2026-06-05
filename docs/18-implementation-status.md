@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **232 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **241 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -35,8 +35,9 @@ The action-layer seam: every input source drives engines through one dispatcher.
 - Routing is **data, via handler registration** (no giant switch); duplicate-kind ownership
   fails fast at construction. Handler failures are logged with action context and swallowed;
   unknown kinds log a warning, never throw.
-- **Deferred:** the concrete concern handlers (Transport, Visual, Deck, Mixer, Playlist) land
-  with their engines. **`BeatActionHandler` is built** (see Beat).
+- **Deferred:** the concrete concern handlers land with their engines. Built so far:
+  **`BeatActionHandler`** (see Beat) and **`PlaylistActionHandler`** (see Live playlist). Pending:
+  Visual/Deck/Mixer/Transport handlers.
 
 ### ✅ Controller mapping engine — `Liveolator.Core/Mapping/` (doc 05)
 
@@ -114,6 +115,7 @@ subscribes to `NowChanged` and drives the underlying player.
 | Queue model | `QueueEntry`, `TrackState` |
 | Seam | `ILivePlaylist` |
 | Editable queue + safe skip | `LivePlaylist` |
+| Dispatcher handler | `PlaylistActionHandler` (Insert/Move/Remove/SkipOnNextBar) |
 
 - Editing `Upcoming` (insert-next/move/remove) **never raises `NowChanged`** — playback is
   undisturbed (the doc 09 success criterion). `Now` is protected from removal; stale ids from a
@@ -163,11 +165,10 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 
 ## What is safe to build next (no blockers)
 
-1. **More concern handlers** for the dispatcher (Transport, Playlist) wiring existing Core engines
-   — e.g. a `PlaylistActionHandler` over `ILivePlaylist`, mirroring `BeatActionHandler`.
-2. **JSON persistence** of profiles/scenes/rule-sets under the Live root (doc 13) — pure
-   serialization over the records already built.
-3. **MCP tools** exposing the new Core capabilities to agents (doc 17).
+1. **JSON persistence** of mapping profiles / scenes / rule-sets under the Live root (doc 13) —
+   pure serialization over the records already built.
+2. **MCP tools** exposing the new Core capabilities to agents (doc 17).
+3. Remaining concern handlers (Visual/Deck/Mixer/Transport) as their engines land.
 
 ## Blocked until the audio-library decision (BASS vs PortAudio/miniaudio)
 
