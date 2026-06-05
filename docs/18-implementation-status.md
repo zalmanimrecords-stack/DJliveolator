@@ -16,7 +16,7 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **201 passing** (as of 2026-06-05).
+`tests/Liveolator.Core.Tests` — **214 passing** (as of 2026-06-05).
 
 ## Module status
 
@@ -104,6 +104,24 @@ GPU compositor — pure data + math, no GL.
   compositor will shape. Build the `VisualActionHandler` when the engine exists, mirroring
   `BeatActionHandler`.
 
+### ✅ Live playlist queue — `Liveolator.Core/Playlist/` (doc 09)
+
+Performance-editable Now/Next/Later queue. Pure in-memory editing logic; the audio binding
+subscribes to `NowChanged` and drives the underlying player.
+
+| Built | File |
+|-------|------|
+| Queue model | `QueueEntry`, `TrackState` |
+| Seam | `ILivePlaylist` |
+| Editable queue + safe skip | `LivePlaylist` |
+
+- Editing `Upcoming` (insert-next/move/remove) **never raises `NowChanged`** — playback is
+  undisturbed (the doc 09 success criterion). `Now` is protected from removal; stale ids from a
+  laggy UI are logged at debug and ignored. `SkipOn(...)` defers through `IBeatScheduler`.
+- **Deferred:** the audio binding over `PlaylistAudioPlayer` (GoToTrack/preload) and the
+  `NextTrackPreloader` — blocked on the audio library. The `NowChanged` seam is ready for it.
+  Note `Played` history is modeled (enum) but not yet surfaced.
+
 ## Pre-existing Core (built before this status doc)
 
 - `Core/Dsp/` (FFT, windows), `Core/Analysis/` (offline BPM, chroma, key/Camelot, cues),
@@ -124,9 +142,8 @@ GPU compositor — pure data + math, no GL.
 ## What is safe to build next (no blockers)
 
 1. **Autopilot rule engine** — `Core/Autopilot/` (show-rules state machine, override/auto-resume).
-   Uses Beat + Actions. (doc 10)
-2. **Live playlist queue** — `Core/Playlist/` Now/Next/Later over the existing builder. (doc 09)
-3. **More concern handlers** for the dispatcher as their engines appear.
+   Uses Beat + Actions + the live playlist. (doc 10)
+2. **More concern handlers** for the dispatcher as their engines appear.
 
 ## Blocked until the audio-library decision (BASS vs PortAudio/miniaudio)
 
