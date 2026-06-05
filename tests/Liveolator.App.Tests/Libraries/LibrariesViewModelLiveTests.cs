@@ -22,9 +22,18 @@ public sealed class LibrariesViewModelLiveTests
 
     private sealed class RecordingDispatcher : IPerformanceActionDispatcher
     {
+        public RecordingDispatcher(int deckCount = 1) => DeckCount = deckCount;
+
+        public int DeckCount { get; }
         public List<PerformanceAction> Dispatched { get; } = new();
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
-        public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0) => ActionFeedbackState.Unavailable;
+
+        // Mirrors DeckActionHandler.GetFeedback: a deck slot is available iff slot < DeckCount.
+        public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
+            => kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount
+                ? new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)
+                : ActionFeedbackState.Unavailable;
+
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
     }
 
@@ -91,6 +100,59 @@ public sealed class LibrariesViewModelLiveTests
 
         Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.TransportStop, dispatcher.Dispatched[0].Kind);
+    }
+
+    [Fact]
+    public async Task LoadToDeckA_DispatchesDeckLoadTrack_Slot0_WithPath_AndDoesNotPlay()
+    {
+        var dispatcher = new RecordingDispatcher(deckCount: 1);
+        var vm = BuildLiveViewModel(dispatcher, new FakeBeatClock(), "/music/Alpha.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks[0];
+
+        await vm.LoadToDeckACommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, action.Kind); // load only — no DeckPlayPause
+        Assert.Equal(0, action.Slot);
+        Assert.Contains("Alpha.wav", action.Argument);
+        Assert.Contains("Deck A", vm.LoadStatus);
+    }
+
+    [Fact]
+    public async Task LoadToDeckB_DispatchesSlot1_WhenTwoDecksAvailable()
+    {
+        var dispatcher = new RecordingDispatcher(deckCount: 2);
+        var vm = BuildLiveViewModel(dispatcher, new FakeBeatClock(), "/music/Alpha.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks[0];
+
+        await vm.LoadToDeckBCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, action.Kind);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
+    public void CanLoadToDeckB_FalseWithOneDeck_TrueWithTwoDecks()
+    {
+        var oneDeck = BuildLiveViewModel(new RecordingDispatcher(deckCount: 1), new FakeBeatClock(), "/music/A.wav");
+        var twoDeck = BuildLiveViewModel(new RecordingDispatcher(deckCount: 2), new FakeBeatClock(), "/music/A.wav");
+
+        Assert.True(oneDeck.CanLoadToDeckA);
+        Assert.False(oneDeck.CanLoadToDeckB);
+        Assert.True(twoDeck.CanLoadToDeckB);
+    }
+
+    [Fact]
+    public void CanLoadToDeck_FalseWithoutDispatcher()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator("/music/A.wav"), new FakeAudioDecoder());
+        var vm = new LibrariesViewModel(library);
+
+        Assert.False(vm.CanLoadToDeckA);
+        Assert.False(vm.CanLoadToDeckB);
     }
 
     [Fact]

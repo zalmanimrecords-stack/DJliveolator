@@ -72,13 +72,23 @@
             </StackPanel>
 
             <!-- live transport (Live Mode only) -->
-            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsLiveModeEnabled}">
-              <Button Classes="accent" Content="▶ Play" Command="{Binding PlaySelectedCommand}" />
-              <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" />
-              <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                <TextBlock Classes="faint" VerticalAlignment="Center" Text="LIVE" />
-                <TextBlock Classes="mono accent" VerticalAlignment="Center" Text="{Binding LiveBpm}" />
+            <StackPanel Spacing="8" IsVisible="{Binding IsLiveModeEnabled}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="accent" Content="▶ Play" Command="{Binding PlaySelectedCommand}" />
+                <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" />
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <TextBlock Classes="faint" VerticalAlignment="Center" Text="LIVE" />
+                  <TextBlock Classes="mono accent" VerticalAlignment="Center" Text="{Binding LiveBpm}" />
+                </StackPanel>
               </StackPanel>
+              <!-- stage the track on a deck (load only, no auto-play) -->
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="spartan" Content="Load → A" Command="{Binding LoadToDeckACommand}" />
+                <Button Classes="spartan" Content="Load → B" Command="{Binding LoadToDeckBCommand}"
+                        IsVisible="{Binding CanLoadToDeckB}" />
+              </StackPanel>
+              <TextBlock Classes="mono faint" Text="{Binding LoadStatus}"
+                         IsVisible="{Binding LoadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
 
             <!-- analysis facts -->

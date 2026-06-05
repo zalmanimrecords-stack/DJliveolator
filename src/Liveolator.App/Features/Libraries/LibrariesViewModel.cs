@@ -33,6 +33,7 @@ public sealed class LibrariesViewModel : ViewModelBase
     private bool _isScanning;
     private double _scanProgressValue;
     private string _liveBpm = "—";
+    private string _loadStatus = string.Empty;
 
     /// <param name="dispatcher">Action layer for playback intent; null disables Live Mode playback.</param>
     /// <param name="beatClock">Live beat clock to read the detected tempo from; null when Live Mode is off.</param>
@@ -59,6 +60,18 @@ public sealed class LibrariesViewModel : ViewModelBase
 
         StopCommand = ReactiveCommand.Create(Stop);
 
+        // Which deck slots are actually backed is discovered through the dispatcher feedback seam
+        // (doc 04) — no engine reference here. A slot reports available iff slot < engine.DeckCount,
+        // so "Load → B" stays disabled until a two-deck engine is wired (no silent failure).
+        CanLoadToDeckA = DeckSlotAvailable(0);
+        CanLoadToDeckB = DeckSlotAvailable(1);
+        LoadToDeckACommand = ReactiveCommand.Create(
+            () => LoadToDeck(0),
+            this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && CanLoadToDeckA));
+        LoadToDeckBCommand = ReactiveCommand.Create(
+            () => LoadToDeck(1),
+            this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && CanLoadToDeckB));
+
         if (_beatClock is not null)
         {
             UpdateLiveBpm(_beatClock.Current);
@@ -79,9 +92,22 @@ public sealed class LibrariesViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> ScanCommand { get; }
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
+    public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
+    public ReactiveCommand<Unit, Unit> LoadToDeckBCommand { get; }
 
     /// <summary>True when playback is wired (Live Mode on); the UI hides transport controls otherwise.</summary>
     public bool IsLiveModeEnabled => _dispatcher is not null;
+
+    /// <summary>True when deck slot A / B is backed by the engine (drives the Load buttons).</summary>
+    public bool CanLoadToDeckA { get; }
+    public bool CanLoadToDeckB { get; }
+
+    /// <summary>Confirmation of the last "Load → Deck" action (never a silent success).</summary>
+    public string LoadStatus
+    {
+        get => _loadStatus;
+        private set => this.RaiseAndSetIfChanged(ref _loadStatus, value);
+    }
 
     /// <summary>The live detected tempo of the playing track, or "—" before a lock.</summary>
     public string LiveBpm
@@ -302,6 +328,23 @@ public sealed class LibrariesViewModel : ViewModelBase
 
     private void Stop()
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.TransportStop));
+
+    // Stage the selected track on a deck slot (A = 0, B = 1) via the action layer — no auto-play
+    // (load ≠ play; the performer beat-matches, then brings the deck in).
+    private void LoadToDeck(int slot)
+    {
+        if (_dispatcher is null || _selectedTrack is null)
+            return;
+
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, Slot: slot, Argument: _selectedTrack.Track.File.Path));
+        LoadStatus = $"Loaded \"{_selectedTrack.Title}\" → Deck {(slot == 0 ? "A" : "B")}";
+    }
+
+    // A deck slot is loadable only if the engine backs it — discovered via the feedback seam
+    // (DeckPlayPause reports IsAvailable iff slot < engine.DeckCount). Null dispatcher ⇒ no decks.
+    private bool DeckSlotAvailable(int slot)
+        => _dispatcher?.GetFeedback(PerformanceActionKind.DeckPlayPause, slot).IsAvailable ?? false;
 
     private void OnBeatStateChanged(object? sender, BeatClockState state)
         => RxApp.MainThreadScheduler.Schedule(() => UpdateLiveBpm(state));
