@@ -14,6 +14,9 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <!-- Headless rendering harness: capture each tab to a PNG for visual parity checks vs the mockups. -->
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Skia" Version="11.2.1" />
   </ItemGroup>
 
   <ItemGroup>
