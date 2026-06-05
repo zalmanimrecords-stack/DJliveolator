@@ -132,11 +132,29 @@ GPU compositor — pure data + math, no GL.
   product differentiator), so the visual quantize is not a separate mechanism.
 - `VisualBank.Scene(i)` returns null out of range (an empty pad). `VisualMacro.Resolve` clamps
   to 0..1 then maps to `[Min,Max]`. `VisualLayer` validates opacity.
-- **Deferred:** the concrete `IVisualPerformanceEngine` (drives the GPU compositor — lives in
-  `Liveolator.Visuals`, blocked on the Silk.NET/OpenGL compositor) and a `VisualActionHandler`
-  (the dispatcher bridge), which needs the engine + a scene/bank resolution policy that the real
-  compositor will shape. Build the `VisualActionHandler` when the engine exists, mirroring
-  `BeatActionHandler`.
+
+### ✅ GL compositor — first vertical slice — `Liveolator.Visuals/Gl/` (doc 08)
+
+The first concrete `IVisualPerformanceEngine` over OpenGL: **one image-backed fullscreen layer
+with one beat-reactive brightness/strobe effect.** Silk.NET (OpenGL + GLFW windowing) + SkiaSharp
+for image decode.
+
+| Built | File |
+|-------|------|
+| Pure per-frame uniform resolution (macro + `BeatClockState` → brightness/flash/blackout) | `Gl/FrameUniforms` |
+| Still-image → RGBA8 pixels (degrades via `ImageLoadException`) | `Gl/RgbaImage`, `Gl/SkiaImageLoader`, `Gl/ImageLoadException` |
+| Fullscreen-quad GLSL program + GL renderer | `Gl/QuadShaderSource`, `Gl/QuadRenderer`, `Gl/ShaderCompilationException` |
+| Concrete engine (SetMacro/Blackout/ActiveBank/CurrentFrame pure; `Run()` opens window + renders) | `Gl/GlVisualPerformanceEngine` |
+
+- **Tested off the GPU (24 tests, green):** `FrameUniforms.Resolve` (macro mapping, confidence-gated
+  beat flash, blackout override), `RgbaImage.Validated`, `SkiaImageLoader` (decode / missing /
+  non-image), and the engine's pure state via `CurrentFrame()`. GL context creation needs a display,
+  so `Run()` is **manually** verified — steps in `Liveolator.Visuals/CLAUDE.md`.
+- **Deferred (grow into `GlVisualPerformanceEngine`, not replace it):** the full layer/effect chain
+  + blend modes, video + camera sources, quantized scene/clip launching via `IBeatScheduler`,
+  transitions/strobe — all currently logged no-ops. **Not yet app-wired:** `ServiceConfig` is
+  untouched; the engine reaches the dispatcher only once a `VisualActionHandler` exists (build it
+  mirroring `BeatActionHandler`).
 
 ### ✅ Live playlist queue — `Liveolator.Core/Playlist/` (doc 09)
 
