@@ -107,6 +107,12 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
 - **App slice:** the Libraries tab plays the selected track via the dispatcher and shows the live
   detected BPM. Live Mode is best-effort: if native BASS is absent, the app runs as a catalog
   browser with transport hidden.
+- **Native BASS setup wired:** `scripts/fetch-bass.(ps1|sh)` fetch the per-platform un4seen BASS lib
+  into `runtimes/<rid>/native/` (git-ignored; commercial license — see `docs/01`), and the App build
+  (`CopyBassNative` target) copies it next to the output, warning when absent. `ServiceConfig.Build()`
+  + `BassAudioEngine` construction are covered by guarded tests that pass without native BASS in CI
+  (App `ServiceConfigTests`, Audio `BassAudioEngineSmokeTests`). Real sound-output + LIVE-BPM
+  verification is a documented **manual** hardware checklist (`docs/01`), not automatable here.
 - **Deferred:** ASIO/CoreAudio device selection + multi-channel cue output (doc 01 Phase 1b / doc 11),
   system-loopback capture source, and resampling to a fixed analysis rate.
 

@@ -14,6 +14,65 @@
 > source-native interleaved float samples. Conversion to analysis frames is the frame pipeline's job
 > (doc 02). The **latency targets and real-time-thread rules** below are library-independent.
 
+## BASS native library & licensing (realtime playback)
+
+Realtime playback uses **BASS** via the managed **ManagedBass** P/Invoke wrapper. ManagedBass is
+a thin binding only — at runtime it loads the platform-native **BASS** library, which un4seen
+ships separately as a per-platform binary.
+
+### Licensing (must read before distribution)
+
+- **ManagedBass** (the managed wrapper) is MIT-licensed.
+- **BASS itself** (the native library, © un4seen) is **free for non-commercial use only**.
+  **Distributing Liveolator to users requires a commercial BASS license** from un4seen
+  (<https://www.un4seen.com/>). This was accepted as a project decision on 2026-06-05
+  (see `CLAUDE.md` → Key decisions and `docs/18`).
+- The native binaries are **never committed** to this repository (`.gitignore`: `/runtimes/`).
+  Each developer fetches them locally; release packaging fetches them under the held license.
+
+### Fetching the native library (developer setup)
+
+The binaries live under `runtimes/<rid>/native/` and are pulled by a cross-platform script:
+
+```bash
+# auto-detects the current platform (win-x64 / osx-x64 / osx-arm64 / linux-x64)
+pwsh ./scripts/fetch-bass.ps1          # Windows / cross-platform PowerShell
+./scripts/fetch-bass.sh                # macOS / Linux (bash)
+
+# force a specific target:
+pwsh ./scripts/fetch-bass.ps1 -Rid osx-arm64
+./scripts/fetch-bass.sh osx-arm64
+```
+
+Each script downloads the right un4seen archive (`bassNN.zip` / `-osx` / `-linux`), extracts the
+single native lib, and writes it as the canonical name ManagedBass probes for:
+
+| RID | Output | un4seen archive |
+|-----|--------|-----------------|
+| `win-x64`   | `runtimes/win-x64/native/bass.dll`     | `bass24.zip` (x64 entry) |
+| `osx-x64`   | `runtimes/osx-x64/native/libbass.dylib`  | `bass24-osx.zip` (universal dylib) |
+| `osx-arm64` | `runtimes/osx-arm64/native/libbass.dylib` | `bass24-osx.zip` (universal dylib) |
+| `linux-x64` | `runtimes/linux-x64/native/libbass.so`  | `bass24-linux.zip` (`x86_64` entry) |
+
+The App build (`Liveolator.App.csproj`, target `CopyBassNative`) copies the lib for the active RID
+next to the App output. If it is absent, the build prints a warning and `ServiceConfig.WireLiveAudio`
+disables Live Mode at runtime — the app still runs as a catalog browser. The archive version tag is
+parameterised (`-Version` / `BASS_VERSION`) so a future un4seen bump needs no code change.
+
+### Manual hardware verification checklist (Live Mode end-to-end)
+
+Automated tests cover the wiring/fallback path but **cannot prove real sound output** — that needs
+hardware and a human. After running the fetch script on a real machine, verify:
+
+- [ ] `scripts/fetch-bass.*` placed the native lib under `runtimes/<rid>/native/`.
+- [ ] `dotnet run --project src/Liveolator.App` starts and the build logs "Copied BASS native lib".
+- [ ] Live Mode is **enabled** (transport controls visible, not the catalog-only fallback).
+- [ ] Select a real track in the Libraries tab and press play → **audio comes out the speakers**.
+- [ ] Pause/stop silences output; play resumes it.
+- [ ] The **LIVE BPM** readout updates and settles near the track's true tempo within a few seconds.
+- [ ] No audio glitches/xruns at idle; UI stays responsive during playback.
+- [ ] (Phase 1b, when built) the CMD STUDIO 2A can be selected as the output/cue device.
+
 ## Purpose
 
 Provide a normalized stream of audio frames regardless of origin, so the

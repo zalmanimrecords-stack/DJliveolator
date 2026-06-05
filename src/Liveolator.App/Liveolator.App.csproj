@@ -27,4 +27,38 @@
     <ProjectReference Include="..\Liveolator.Platform\Liveolator.Platform.csproj" />
   </ItemGroup>
 
+  <!--
+    Realtime audio (BASS) needs its per-platform native library next to the App output.
+    The binaries are NOT in source control (commercial license; see docs/01); they are
+    fetched into runtimes/<rid>/native/ by scripts/fetch-bass.(ps1|sh). This target copies
+    the lib for the active RID when present, and is a silent no-op when absent — matching
+    ServiceConfig.WireLiveAudio, which disables Live Mode if native BASS is missing.
+  -->
+  <PropertyGroup>
+    <!-- RID for native-lib selection. Honour an explicit RID; otherwise infer from the OS. -->
+    <BassRid Condition="'$(BassRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">osx-arm64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</BassRid>
+    <BassNativeDir>$(MSBuildThisFileDirectory)..\..\runtimes\$(BassRid)\native\</BassNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BassNativeLib Include="$(BassNativeDir)*" Condition="Exists('$(BassNativeDir)')" />
+  </ItemGroup>
+
+  <Target Name="CopyBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(OutDir)" />
+  </Target>
+
+  <Target Name="WarnMissingBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' == ''">
+    <Message Importance="high"
+             Text="BASS native lib not found under runtimes\$(BassRid)\native\ — Live Mode will be disabled at runtime. Run scripts/fetch-bass to enable realtime audio." />
+  </Target>
+
 </Project>
