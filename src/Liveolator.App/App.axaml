@@ -39,6 +39,18 @@
     <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
     <SolidColorBrush x:Key="AccentInk" Color="{StaticResource AccentInkColor}" />
     <SolidColorBrush x:Key="Red" Color="{StaticResource RedColor}" />
+    <SolidColorBrush x:Key="Green" Color="{StaticResource GreenColor}" />
+    <SolidColorBrush x:Key="Amber" Color="{StaticResource AmberColor}" />
+    <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
+
+    <!-- Retint Fluent's accent so standard controls (buttons, selection, sliders) follow the cyan line. -->
+    <Color x:Key="SystemAccentColor">#2FD6E0</Color>
+    <Color x:Key="SystemAccentColorDark1">#26B7C0</Color>
+    <Color x:Key="SystemAccentColorDark2">#1F9CA4</Color>
+    <Color x:Key="SystemAccentColorDark3">#187C82</Color>
+    <Color x:Key="SystemAccentColorLight1">#54DEE6</Color>
+    <Color x:Key="SystemAccentColorLight2">#7BE7ED</Color>
+    <Color x:Key="SystemAccentColorLight3">#A6EFF3</Color>
   </Application.Resources>
 
   <Application.Styles>
