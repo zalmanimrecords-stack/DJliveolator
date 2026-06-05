@@ -50,14 +50,18 @@ public sealed class RtMidiOutputTests
     }
 
     [Fact]
-    public void SendSysEx_forwards_raw_bytes()
+    public void SendSysEx_forwards_payload_to_the_device()
     {
         var device = new FakeOutputDevice("Push");
-        var payload = new byte[] { 0xF0, 0x47, 0x7F, 0xF7 };
+        // A full framed SysEx as a caller would supply it (Push LCD/mode bytes, doc 06).
+        var framed = new byte[] { 0xF0, 0x47, 0x7F, 0xF7 };
+        // RtMidi.Core's SysExMessage stores the payload WITHOUT the F0/F7 framing (it re-adds them
+        // on the wire), so the device records the inner bytes — what matters is they pass through.
+        var inner = new byte[] { 0x47, 0x7F };
 
-        Output(device).SendSysEx(payload);
+        Output(device).SendSysEx(framed);
 
-        Assert.Equal(payload, device.LastSysEx);
+        Assert.Equal(inner, device.LastSysEx);
     }
 
     [Fact]
