@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **362 passing** (as of 2026-06-05). Solution-wide: **650**
-across 7 test projects (Core 362, Visuals 43, Audio 61, MIDI 27, App 89, Media 43, Integration 25).
+`tests/Liveolator.Core.Tests` — **370 passing** (as of 2026-06-05). Solution-wide: **677**
+across 7 test projects (Core 370, Visuals 43, Audio 61, MIDI 27, App 102, Media 49, Integration 25).
 
 ## Module status
 
@@ -204,6 +204,35 @@ the beat clock follows the audible mix — the increment that turns the routing 
   native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
   ch 3/4; beatmatching/sync-lock/quantize; hot-cues; loops; and ASIO/CoreAudio multi-channel cue output.
   `SetCue` currently latches the PFL flag only. `BassMixer` still drops controls for an unregistered slot.
+
+### ✅ Settings — audio output / buffer / MIDI device selection — `Liveolator.App/Features/Settings/` (doc 12)
+
+The Settings tab detects the available equipment and persists the user's audio + MIDI choices. Models and
+seams are pure Core; enumeration is a thin native binding; the UI logic is unit-tested with fakes.
+
+| Built | File |
+|-------|------|
+| Settings model (output device id + buffer; MIDI in/out names) with clamp/normalize | `AudioSettings`, `MidiSettings`, `AppSettings` (Core/Settings) |
+| Output-device picker seam + model | `IAudioOutputDeviceCatalog`, `AudioOutputDevice` (Core/Audio) |
+| Settings persistence seam + JSON store (versioned, atomic, tolerant) | `ISettingsStore` (Core) → `JsonSettingsStore` (Media, `settings.json`) |
+| BASS output-device enumeration | `BassOutputDeviceCatalog` (Audio) |
+| Detect/select/persist view-model + view | `SettingsViewModel`, `SettingsView` (App) |
+
+- **Detects** output devices (`IAudioOutputDeviceCatalog`), capture inputs (`IAudioCaptureDeviceCatalog`),
+  and MIDI input/feedback devices (`IMidiDeviceProvider`); **selects** the sound-card output, the output
+  **buffer** (latency vs. glitch-resistance, clamped to 10–200 ms), and the MIDI controller/feedback; and
+  **persists** the choice via `ISettingsStore`. A previously-selected device that is gone falls back to the
+  system default / "(none)" rather than erroring. Buffer is clamped + normalized so a hand-edited config
+  can't push an out-of-range value into the device.
+- **App-wired (`ServiceConfig`):** the three catalogs + `JsonSettingsStore` + `SettingsViewModel` are
+  registered, the SETTINGS tab now shows it, and the App project gained a reference to `Liveolator.Midi`
+  (its first use) — `RtMidiDeviceProvider` is registered as `IMidiDeviceProvider`. Headless-safe: enumeration
+  degrades to empty when native bass/rtmidi is absent. +21 tests (Core `AppSettingsTests` 8, Media
+  `JsonSettingsStoreTests` 6, App `SettingsViewModelTests` 7).
+- **Deferred (next increment):** **applying** the choice to the running engines — re-initialising BASS on the
+  selected output device + buffer (`BassMixerBackend`/`BassPlayback` currently use `Bass.Init` defaults), and
+  opening the chosen MIDI controller into `MidiControllerRouter` so the hardware actually drives the
+  dispatcher. Persisted capture-source selection (the `WireCaptureSources` SETTINGS-UI seam) is also still open.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

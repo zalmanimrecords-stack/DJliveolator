@@ -2,6 +2,8 @@ using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Playlists;
+using Liveolator.App.Features.Settings;
+using Liveolator.App.Features.Shared;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -12,11 +14,13 @@ using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Mapping;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using Liveolator.Core.Visuals;
 using Liveolator.Media;
+using Liveolator.Midi;
 using Liveolator.Platform;
 using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
@@ -118,6 +122,14 @@ public static class ServiceConfig
         WireLiveTab(services, sharedLiveClock, hostClock);
 
         // --- View-models ---
+        // Shared back-end for the per-track right-click menu (Add to Deck A/B, Add to playlist). The
+        // dispatcher is passed only when the realtime engine is up (deck items disable otherwise);
+        // add-to-playlist works regardless (store-only). One singleton drives every track row's menu.
+        services.AddSingleton<TrackContextActions>(sp => new TrackContextActions(
+            realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
+            sp.GetRequiredService<IPlaylistStore>(),
+            onStatus: w => System.Diagnostics.Trace.TraceInformation(w)));
+
         // Libraries playback is gated on the realtime engine, not merely the dispatcher: without
         // native BASS there is no deck to play, so pass the dispatcher only when the engine is up
         // (keeps the Play transport hidden in catalog-browser mode).
@@ -126,25 +138,45 @@ public static class ServiceConfig
         services.AddSingleton<PlaylistBuilderViewModel>(sp => new PlaylistBuilderViewModel(
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetRequiredService<IPlaylistStore>(),
-            sp.GetRequiredService<ILivePlaylist>()));
+            sp.GetRequiredService<ILivePlaylist>(),
+            sp.GetRequiredService<TrackContextActions>()));
 
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
             sp.GetRequiredService<MusicLibrary>(),
             realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetService<IBeatClock>(),
             sp.GetRequiredService<IMusicCatalogStore>(),
-            sp.GetRequiredService<PlaylistBuilderViewModel>()));
+            sp.GetRequiredService<PlaylistBuilderViewModel>(),
+            sp.GetRequiredService<TrackContextActions>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
         services.AddSingleton<DjViewModel>(sp => new DjViewModel(
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
             sp.GetRequiredService<ILivePlaylist>(),
-            sp.GetRequiredService<MusicLibrary>()));
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetRequiredService<TrackContextActions>()));
+
+        // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
+        // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
+        // headless), and the choice is saved to settings.json. Applying it to the running audio/MIDI
+        // engines (output device + buffer re-init, opening the chosen controller) is the next increment.
+        services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
+        services.AddSingleton<IMidiDeviceProvider>(new RtMidiDeviceProvider());
+        services.AddSingleton<ISettingsStore>(
+            new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
+            sp.GetRequiredService<IAudioOutputDeviceCatalog>(),
+            sp.GetRequiredService<IAudioCaptureDeviceCatalog>(),
+            sp.GetRequiredService<IMidiDeviceProvider>(),
+            sp.GetRequiredService<ISettingsStore>()));
 
         services.AddSingleton<MainWindowViewModel>();
 
-        return services.BuildServiceProvider();
+        ServiceProvider provider = services.BuildServiceProvider();
+        // Populate the "Add to playlist" submenu once at startup (best-effort; guarded internally).
+        _ = provider.GetRequiredService<TrackContextActions>().RefreshPlaylistsAsync();
+        return provider;
     }
 
     // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when

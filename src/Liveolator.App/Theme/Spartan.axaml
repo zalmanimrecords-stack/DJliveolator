@@ -218,6 +218,25 @@
     <Setter Property="Opacity" Value="0.4" />
   </Style>
 
+  <!-- play button: holds a blue triangle; "on" (playing) accents the border instead of filling -->
+  <Style Selector="Button.play">
+    <Setter Property="Background" Value="{StaticResource S3}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="8,9" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.play:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource S4}" />
+  </Style>
+  <Style Selector="Button.play.on">
+    <Setter Property="Background" Value="{StaticResource S4}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+
   <!-- ============ scene pad (8×8 grid cell) ============ -->
   <Style Selector="Button.pad">
     <Setter Property="Background" Value="{StaticResource S2}" />

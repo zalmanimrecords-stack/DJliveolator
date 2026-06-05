@@ -1,4 +1,5 @@
 using System.IO;
+using Liveolator.App.Features.Shared;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 
@@ -9,12 +10,16 @@ public sealed class TrackRowViewModel
 {
     private const string None = "—";
 
-    public TrackRowViewModel(MusicTrack track)
+    public TrackRowViewModel(MusicTrack track, TrackContextActions? contextActions = null)
     {
         Track = track ?? throw new ArgumentNullException(nameof(track));
+        Menu = contextActions is null ? null : new TrackMenuViewModel(track.File.Path, contextActions);
     }
 
     public MusicTrack Track { get; }
+
+    /// <summary>Right-click menu (Add to Deck A/B, Add to playlist); null when context actions weren't supplied.</summary>
+    public TrackMenuViewModel? Menu { get; }
 
     // --- table columns ---
     public string Title => Track.Title;

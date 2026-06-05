@@ -76,32 +76,64 @@ public sealed class Knob : Control
         if (size <= 0)
             return;
 
-        double stroke = Math.Max(2.5, size * 0.06);
-        double radius = (size / 2) - stroke;
-        var centre = new Point(b.Width / 2, b.Height / 2);
-        double value = Math.Clamp(Value, 0, 1);
         bool on = IsEnabled;
+        double value = Math.Clamp(Value, 0, 1);
+        var centre = new Point(b.Width / 2, b.Height / 2);
+        double arcStroke = Math.Max(2.5, size * 0.055);
+        double arcRadius = (size / 2) - (arcStroke / 2) - 1;
+        double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.06;
+        IBrush arc = on ? ArcBrush : TrackBrush;
 
-        // track (full 270° sweep)
-        var trackPen = new Pen(TrackBrush, stroke) { LineCap = PenLineCap.Round };
-        context.DrawGeometry(null, trackPen, Arc(centre, radius, StartAngle, StartAngle + SweepAngle));
+        // recessed track ring
+        var trackPen = new Pen(TrackBrush, arcStroke) { LineCap = PenLineCap.Round };
+        context.DrawGeometry(null, trackPen, Arc(centre, arcRadius, StartAngle, StartAngle + SweepAngle));
 
         // value arc
-        if (value > 0.001)
+        double angle = StartAngle + (SweepAngle * value);
+        if (value > 0.004)
         {
-            var valuePen = new Pen(on ? ArcBrush : TrackBrush, stroke) { LineCap = PenLineCap.Round };
-            context.DrawGeometry(null, valuePen, Arc(centre, radius, StartAngle, StartAngle + (SweepAngle * value)));
+            var valuePen = new Pen(arc, arcStroke) { LineCap = PenLineCap.Round };
+            context.DrawGeometry(null, valuePen, Arc(centre, arcRadius, StartAngle, angle));
         }
 
-        // centre cap
-        context.DrawEllipse(CapBrush, null, centre, radius * 0.62, radius * 0.62);
+        // knob body — radial gradient for a soft 3-D cap, with a hairline rim
+        var body = new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.5, 0.36, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.5, 0.30, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.75, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.75, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromRgb(0x20, 0x2A, 0x3A), 0.0),
+                new GradientStop(Color.FromRgb(0x12, 0x18, 0x22), 0.72),
+                new GradientStop(Color.FromRgb(0x0B, 0x0F, 0x16), 1.0),
+            },
+        };
+        context.DrawEllipse(body, new Pen(TrackBrush, 1), centre, bodyRadius, bodyRadius);
 
-        // pointer
-        double angle = StartAngle + (SweepAngle * value);
-        var inner = PointOnCircle(centre, radius * 0.30, angle);
-        var outer = PointOnCircle(centre, radius * 0.90, angle);
-        var pointerPen = new Pen(on ? PointerBrush : TrackBrush, Math.Max(2, stroke * 0.8)) { LineCap = PenLineCap.Round };
-        context.DrawLine(pointerPen, inner, outer);
+        // glow dot at the value position (halo + core), then a short pointer tick on the body
+        if (on)
+        {
+            Point dot = PointOnCircle(centre, arcRadius, angle);
+            context.DrawEllipse(Halo(arc, 0.35), null, dot, arcStroke * 1.6, arcStroke * 1.6);
+            context.DrawEllipse(arc, null, dot, arcStroke * 0.7, arcStroke * 0.7);
+        }
+
+        var tickInner = PointOnCircle(centre, bodyRadius * 0.36, angle);
+        var tickOuter = PointOnCircle(centre, bodyRadius * 0.86, angle);
+        var pointerPen = new Pen(on ? PointerBrush : TrackBrush, Math.Max(2, arcStroke * 0.7)) { LineCap = PenLineCap.Round };
+        context.DrawLine(pointerPen, tickInner, tickOuter);
+    }
+
+    private static IBrush Halo(IBrush source, double opacity)
+    {
+        if (source is ISolidColorBrush s)
+        {
+            Color c = s.Color;
+            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), c.R, c.G, c.B));
+        }
+        return source;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

@@ -27,6 +27,7 @@
     <ProjectReference Include="..\Liveolator.Media\Liveolator.Media.csproj" />
     <ProjectReference Include="..\Liveolator.Platform\Liveolator.Platform.csproj" />
     <ProjectReference Include="..\Liveolator.Visuals\Liveolator.Visuals.csproj" />
+    <ProjectReference Include="..\Liveolator.Midi\Liveolator.Midi.csproj" />
   </ItemGroup>
 
   <!--

@@ -23,16 +23,19 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly ILivePlaylist? _playlist;
     private readonly MusicLibrary? _library;
+    private readonly Shared.TrackContextActions? _contextActions;
     private bool _disposed;
 
     public DjViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         ILivePlaylist? playlist = null,
-        MusicLibrary? library = null)
+        MusicLibrary? library = null,
+        Shared.TrackContextActions? contextActions = null)
     {
         _dispatcher = dispatcher;
         _playlist = playlist;
         _library = library;
+        _contextActions = contextActions;
 
         DeckA = new DeckViewModel(slot: 0, dispatcher);
         DeckB = new DeckViewModel(slot: 1, dispatcher);
@@ -133,7 +136,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             }
         : null;
 
-        return new SetEntryViewModel(entry, title, remove);
+        return new SetEntryViewModel(entry, title, remove, _contextActions);
     }
 
     private Dictionary<string, string> BuildTitleLookup()

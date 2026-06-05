@@ -25,6 +25,7 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
     private readonly MusicLibrary _library;
     private readonly IPlaylistStore _store;
     private readonly ILivePlaylist? _livePlaylist;
+    private readonly Shared.TrackContextActions? _contextActions;
     private readonly HarmonicSetBuilder _setBuilder = new();
     private List<TrackRowViewModel> _allLibrary = new();
 
@@ -35,11 +36,16 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
     private PlaylistTrackViewModel? _selectedCurrent;
     private string _status = string.Empty;
 
-    public PlaylistBuilderViewModel(MusicLibrary library, IPlaylistStore store, ILivePlaylist? livePlaylist = null)
+    public PlaylistBuilderViewModel(
+        MusicLibrary library,
+        IPlaylistStore store,
+        ILivePlaylist? livePlaylist = null,
+        Shared.TrackContextActions? contextActions = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _livePlaylist = livePlaylist;
+        _contextActions = contextActions;
 
         var hasName = this.WhenAnyValue(x => x.Name).Select(n => !string.IsNullOrWhiteSpace(n));
         var hasSaved = this.WhenAnyValue(x => x.SelectedSaved).Select(s => !string.IsNullOrWhiteSpace(s));
@@ -122,7 +128,7 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
     {
         _allLibrary = _library.All
             .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-            .Select(t => new TrackRowViewModel(t))
+            .Select(t => new TrackRowViewModel(t, _contextActions))
             .ToList();
         ApplyLibraryFilter();
         await RefreshSavedAsync(cancellationToken).ConfigureAwait(false);
@@ -143,7 +149,7 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
         string path = row.Track.File.Path;
         if (Current.Any(e => string.Equals(e.Path, path, StringComparison.OrdinalIgnoreCase)))
             return; // dedupe — a set holds each track once
-        Current.Add(PlaylistTrackViewModel.From(path, row.Track));
+        Current.Add(PlaylistTrackViewModel.From(path, row.Track, _contextActions));
     }
 
     private void RemoveSelectedCurrent()
@@ -181,7 +187,7 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
 
         Current.Clear();
         foreach (SetEntry entry in set.Entries)
-            Current.Add(PlaylistTrackViewModel.From(entry.Track.File.Path, entry.Track));
+            Current.Add(PlaylistTrackViewModel.From(entry.Track.File.Path, entry.Track, _contextActions));
         Status = $"Auto-filled {Current.Count} tracks from \"{seedRow.Title}\".";
     }
 
@@ -255,7 +261,7 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
 
         Current.Clear();
         foreach (string path in playlist.TrackPaths)
-            Current.Add(PlaylistTrackViewModel.From(path, byPath.GetValueOrDefault(path)));
+            Current.Add(PlaylistTrackViewModel.From(path, byPath.GetValueOrDefault(path), _contextActions));
 
         Name = playlist.Name;
         SelectedCurrent = null;
@@ -270,6 +276,10 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
             foreach (string name in names)
                 SavedPlaylists.Add(name);
         });
+
+        // Keep the shared right-click "Add to playlist" submenu in sync with new/removed sets.
+        if (_contextActions is not null)
+            await _contextActions.RefreshPlaylistsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void ApplyLibraryFilter()

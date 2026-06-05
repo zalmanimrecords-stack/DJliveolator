@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using ReactiveUI;
 
@@ -16,11 +17,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private TabItemViewModel _currentTab;
 
-    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live, DjViewModel dj)
+    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live, DjViewModel dj, SettingsViewModel settings)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
+        ArgumentNullException.ThrowIfNull(settings);
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -31,7 +33,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("VJ", new PlaceholderViewModel("VJ", "Visual compositor — coming soon.")),
             new("LIBRARIES", libraries),
             new("MAPPINGS", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),
-            new("SETTINGS", new PlaceholderViewModel("Settings", "Preferences — coming soon.")),
+            new("SETTINGS", settings),
         };
 
         // Open the Live tab — the full performance surface (mock-faithful) is the app's centrepiece.

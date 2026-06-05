@@ -26,6 +26,7 @@ public sealed class LibrariesViewModel : ViewModelBase
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IBeatClock? _beatClock;
     private readonly IMusicCatalogStore? _store;
+    private readonly Shared.TrackContextActions? _contextActions;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private TrackRowViewModel? _selectedTrack;
@@ -44,12 +45,14 @@ public sealed class LibrariesViewModel : ViewModelBase
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
         IMusicCatalogStore? store = null,
-        Playlists.PlaylistBuilderViewModel? playlistBuilder = null)
+        Playlists.PlaylistBuilderViewModel? playlistBuilder = null,
+        Shared.TrackContextActions? contextActions = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _store = store;
+        _contextActions = contextActions;
         PlaylistBuilder = playlistBuilder;
 
         ScanCommand = ReactiveCommand.CreateFromTask(
@@ -173,7 +176,7 @@ public sealed class LibrariesViewModel : ViewModelBase
                 _library.Restore(cached);
                 rows = _library.All
                     .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-                    .Select(t => new TrackRowViewModel(t))
+                    .Select(t => new TrackRowViewModel(t, _contextActions))
                     .ToList();
             }
 
@@ -240,7 +243,7 @@ public sealed class LibrariesViewModel : ViewModelBase
 
             List<TrackRowViewModel> rows = _library.All
                 .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(t => new TrackRowViewModel(t))
+                .Select(t => new TrackRowViewModel(t, _contextActions))
                 .ToList();
 
             // Persist the fresh catalog + the folders that produced it, so the next run restores them.
@@ -317,7 +320,7 @@ public sealed class LibrariesViewModel : ViewModelBase
 
         foreach (MusicTrack match in _library.HarmonicMatches(_selectedTrack.Track)
                      .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase))
-            HarmonicMatches.Add(new TrackRowViewModel(match));
+            HarmonicMatches.Add(new TrackRowViewModel(match, _contextActions));
     }
 
     // Load + play the selected track via the action layer (doc 04) — the UI never touches the engine.

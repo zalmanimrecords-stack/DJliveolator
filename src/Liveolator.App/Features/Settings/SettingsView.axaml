@@ -1,0 +1,73 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:settings="clr-namespace:Liveolator.App.Features.Settings"
+             xmlns:audio="clr-namespace:Liveolator.Core.Audio;assembly=Liveolator.Core"
+             x:Class="Liveolator.App.Features.Settings.SettingsView"
+             x:DataType="settings:SettingsViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="24" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+
+      <TextBlock Classes="section" Text="AUDIO OUTPUT" />
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Sound card / output device" />
+            <ComboBox ItemsSource="{Binding OutputDevices}"
+                      SelectedItem="{Binding SelectedOutputDevice}"
+                      HorizontalAlignment="Stretch">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="audio:AudioOutputDevice">
+                  <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Output buffer (ms) — lower = less latency, higher = safer" />
+            <ComboBox ItemsSource="{Binding BufferOptions}"
+                      SelectedItem="{Binding SelectedBufferMs}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Classes="section" Text="MIDI CONTROLLERS" />
+      <Border Classes="panel">
+        <StackPanel Spacing="12">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Controller input (Push / CMD STUDIO 2A)" />
+            <ComboBox ItemsSource="{Binding MidiInputDevices}"
+                      SelectedItem="{Binding SelectedMidiInput}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Feedback output (LEDs)" />
+            <ComboBox ItemsSource="{Binding MidiOutputDevices}"
+                      SelectedItem="{Binding SelectedMidiOutput}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Classes="section" Text="DETECTED INPUTS" />
+      <Border Classes="panel">
+        <ItemsControl ItemsSource="{Binding CaptureDevices}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="audio:AudioCaptureDevice">
+              <TextBlock Classes="faint" Text="{Binding Name}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <StackPanel Orientation="Horizontal" Spacing="12">
+        <Button Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
+        <Button Content="Save" Command="{Binding SaveCommand}" />
+      </StackPanel>
+
+      <TextBlock Classes="faint" Text="{Binding Status}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

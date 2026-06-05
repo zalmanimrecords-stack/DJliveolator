@@ -58,15 +58,20 @@ public sealed class Fader : Control
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
 
+    private static readonly IBrush CapBody = new SolidColorBrush(Color.FromRgb(0x23, 0x2D, 0x3D));
+    private static readonly IBrush CapRim = new SolidColorBrush(Color.FromRgb(0x33, 0x3F, 0x52));
+    private const int TickCount = 9;
+
     public override void Render(DrawingContext context)
     {
         Rect b = Bounds;
         double value = Math.Clamp(Value, 0, 1);
         bool on = IsEnabled;
         IBrush fill = on ? FillBrush : TrackBrush;
-        IBrush thumb = on ? ThumbBrush : TrackBrush;
+        IBrush centreLine = on ? FillBrush : TrackBrush;
         const double trackWidth = 4;
-        const double pad = 8;
+        const double pad = 10;
+        var tickPen = new Pen(TrackBrush, 1.5) { LineCap = PenLineCap.Round };
 
         if (Orientation == Orientation.Vertical)
         {
@@ -74,13 +79,23 @@ public sealed class Fader : Control
             double top = pad, bottom = b.Height - pad;
             double len = Math.Max(1, bottom - top);
             double thumbY = bottom - (value * len);
-            var trackPen = new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round };
-            context.DrawLine(trackPen, new Point(cx, top), new Point(cx, bottom));
-            var fillPen = new Pen(fill, trackWidth) { LineCap = PenLineCap.Round };
-            context.DrawLine(fillPen, new Point(cx, thumbY), new Point(cx, bottom));
-            double capW = Math.Min(b.Width, 26);
-            var cap = new Rect(cx - (capW / 2), thumbY - 6, capW, 12);
-            context.DrawRectangle(thumb, null, cap, 3, 3);
+
+            // dB tick marks flanking the track
+            for (int i = 0; i < TickCount; i++)
+            {
+                double y = top + (len * i / (TickCount - 1));
+                context.DrawLine(tickPen, new Point(cx - 11, y), new Point(cx - 6, y));
+                context.DrawLine(tickPen, new Point(cx + 6, y), new Point(cx + 11, y));
+            }
+
+            context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, top), new Point(cx, bottom));
+            context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, thumbY), new Point(cx, bottom));
+
+            double capW = Math.Min(b.Width, 30);
+            var cap = new Rect(cx - (capW / 2), thumbY - 8, capW, 16);
+            context.DrawRectangle(CapBody, new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
+                new Point(cap.Left + 4, thumbY), new Point(cap.Right - 4, thumbY));
         }
         else
         {
@@ -88,13 +103,15 @@ public sealed class Fader : Control
             double left = pad, right = b.Width - pad;
             double len = Math.Max(1, right - left);
             double thumbX = left + (value * len);
-            var trackPen = new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round };
-            context.DrawLine(trackPen, new Point(left, cy), new Point(right, cy));
-            var fillPen = new Pen(fill, trackWidth) { LineCap = PenLineCap.Round };
-            context.DrawLine(fillPen, new Point(left, cy), new Point(thumbX, cy));
-            double capH = Math.Min(b.Height, 26);
-            var cap = new Rect(thumbX - 6, cy - (capH / 2), 12, capH);
-            context.DrawRectangle(thumb, null, cap, 3, 3);
+
+            context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(right, cy));
+            context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(thumbX, cy));
+
+            double capH = Math.Min(b.Height, 30);
+            var cap = new Rect(thumbX - 8, cy - (capH / 2), 16, capH);
+            context.DrawRectangle(CapBody, new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
+                new Point(thumbX, cap.Top + 4), new Point(thumbX, cap.Bottom - 4));
         }
     }
 
