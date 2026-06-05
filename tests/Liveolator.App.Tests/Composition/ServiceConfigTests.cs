@@ -1,6 +1,7 @@
 using System;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Live;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
@@ -26,6 +27,19 @@ public sealed class ServiceConfigTests
         // The catalog/library is the always-on baseline, independent of native audio.
         Assert.NotNull(provider.GetService<MusicLibrary>());
         Assert.NotNull(provider.GetService<LibrariesViewModel>());
+    }
+
+    [Fact]
+    public void Build_AlwaysProvidesTheLiveTab_EvenWithoutNativeAudio()
+    {
+        using var provider = (ServiceProvider)ServiceConfig.Build();
+
+        // The Live tab runs on a pure-managed ManualBeatClock, so it must resolve and be wired for
+        // intent (its own dispatcher) whether or not realtime BASS audio is present.
+        var live = provider.GetService<LiveViewModel>();
+        Assert.NotNull(live);
+        Assert.True(live!.IsLiveModeEnabled);
+        live.Dispose();
     }
 
     [Fact]

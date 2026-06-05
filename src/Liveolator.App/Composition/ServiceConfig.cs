@@ -1,4 +1,5 @@
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Live;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -41,6 +42,7 @@ public static class ServiceConfig
         // app still runs as a catalog browser — the UI hides the transport controls.
         WireLiveAudio(services);
         WireCaptureSources(services);
+        WireLiveTab(services);
 
         // --- View-models ---
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
@@ -50,6 +52,38 @@ public static class ServiceConfig
         services.AddSingleton<MainWindowViewModel>();
 
         return services.BuildServiceProvider();
+    }
+
+    // --- Live tab: manual beat clock, demonstrable with NO audio hardware (docs 03/04/12) ---
+    // ADDITIVE, self-contained, and independent of WireLiveAudio on purpose: the manual clock and its
+    // BeatActionHandler are pure-managed (no native BASS), so the Live tab's tap-tempo, lock, nudge and
+    // beat/downbeat pulse work even when realtime audio is unavailable. Transport (DeckPlayPause /
+    // TransportStop) is routed to the real deck engine when it is registered, and otherwise becomes a
+    // logged no-op — the UI still emits the intent through the dispatcher (doc 04, never a direct call).
+    // The Live tab uses its OWN dispatcher + clock so it does not collide with the audio-driven
+    // IBeatClock / IPerformanceActionDispatcher that WireLiveAudio registers for the rest of the app.
+    private static void WireLiveTab(IServiceCollection services)
+    {
+        services.AddSingleton<LiveViewModel>(sp =>
+        {
+            var hostClock = new SystemHostClock();
+            var clock = new ManualBeatClock(hostClock.TicksPerSecond);
+
+            var handlers = new List<IPerformanceActionHandler>
+            {
+                new BeatActionHandler(clock, hostClock),
+            };
+
+            // Compose transport routing only when the realtime deck engine is present.
+            var engine = sp.GetService<IAudioPlaybackEngine>();
+            if (engine is not null)
+                handlers.Add(new DeckActionHandler(engine));
+
+            var dispatcher = new PerformanceActionDispatcher(
+                handlers, NullLogger<PerformanceActionDispatcher>.Instance);
+
+            return new LiveViewModel(dispatcher, clock, clock, hostClock, new DispatcherLiveBeatTimer());
+        });
     }
 
     private static void WireLiveAudio(IServiceCollection services)
