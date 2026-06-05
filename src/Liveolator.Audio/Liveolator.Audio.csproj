@@ -12,6 +12,13 @@
 
   <ItemGroup>
     <PackageReference Include="z440.atl.core" Version="7.15.3" />
+    <!-- Realtime playback backend (doc 01). Managed P/Invoke; the native bass library ships
+         per-platform via runtimes/ and is fetched by setup scripts (see .gitignore). -->
+    <PackageReference Include="ManagedBass" Version="3.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Liveolator.Audio.Tests" />
   </ItemGroup>
 
 </Project>
