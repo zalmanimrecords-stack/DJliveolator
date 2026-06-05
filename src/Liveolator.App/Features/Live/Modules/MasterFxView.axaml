@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.MasterFxView"
+             x:DataType="m:MasterFxViewModel">
+
+  <Border Classes="panel">
+    <StackPanel Margin="16" Spacing="18">
+      <TextBlock Classes="section" Text="MASTER · FX" />
+
+      <!-- Master / Swing knobs (disabled — no action kind yet) -->
+      <Grid ColumnDefinitions="*,*">
+        <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center" Margin="0,0,16,0">
+          <Slider Orientation="Vertical" Height="90" Minimum="0" Maximum="1"
+                  Value="{Binding Master.Value}" IsEnabled="{Binding Master.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MASTER" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Center">
+          <Slider Orientation="Vertical" Height="90" Minimum="0" Maximum="1"
+                  Value="{Binding Swing.Value}" IsEnabled="{Binding Swing.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="SWING" />
+        </StackPanel>
+      </Grid>
+
+      <!-- Strobe / Blackout -->
+      <Grid ColumnDefinitions="*,*">
+        <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsStrobe}" Content="STROBE"
+                Command="{Binding StrobeCommand}" Margin="0,0,8,0" />
+        <Button Grid.Column="1" Classes="key" Classes.on="{Binding IsBlackout}" Content="BLACKOUT"
+                Command="{Binding BlackoutCommand}" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

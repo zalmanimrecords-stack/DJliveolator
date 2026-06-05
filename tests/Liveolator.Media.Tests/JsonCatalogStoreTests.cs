@@ -130,6 +130,58 @@ public class JsonCatalogStoreTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsScanFolders()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var folders = new[] { @"C:\Music\House", @"C:\Music\Techno" };
+
+        await store.SaveScanFoldersAsync(folders);
+        IReadOnlyList<string> loaded = await store.LoadScanFoldersAsync();
+
+        Assert.Equal(folders, loaded);
+    }
+
+    [Fact]
+    public async Task LoadScanFolders_WhenNoneExist_ReturnsEmpty()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        IReadOnlyList<string> loaded = await store.LoadScanFoldersAsync();
+
+        Assert.Empty(loaded);
+    }
+
+    [Fact]
+    public async Task LoadScanFolders_CorruptFile_ReturnsEmpty_AndWarns()
+    {
+        using var dir = new TempDirectory();
+        string? warning = null;
+        var store = new JsonCatalogStore(dir.Path, onWarning: w => warning = w);
+        await File.WriteAllTextAsync(store.ScanFoldersPath, "{ not valid json");
+
+        IReadOnlyList<string> loaded = await store.LoadScanFoldersAsync();
+
+        Assert.Empty(loaded);
+        Assert.NotNull(warning); // a bad file never silently loses the user's folders
+    }
+
+    [Fact]
+    public async Task ScanFolders_ArePersistedSeparatelyFromTheCatalog()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        await store.SaveMusicAsync(new[] { TestTracks.Analyzed("a.wav", 120, 0, KeyMode.Major) });
+        await store.SaveScanFoldersAsync(new[] { @"C:\Music" });
+
+        Assert.NotEqual(store.MusicCatalogPath, store.ScanFoldersPath);
+        Assert.Single(await store.LoadMusicAsync());
+        Assert.Single(await store.LoadScanFoldersAsync());
+    }
+
+    [Fact]
     public async Task Save_IsAtomic_NoLeftoverTempFile()
     {
         using var dir = new TempDirectory();

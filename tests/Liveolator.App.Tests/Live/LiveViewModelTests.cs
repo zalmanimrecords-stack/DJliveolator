@@ -11,10 +11,10 @@ using Xunit;
 namespace Liveolator.App.Tests.Live;
 
 /// <summary>
-/// Verifies the Live tab view-model: every control emits the right <see cref="PerformanceAction"/>
-/// through the dispatcher (never a direct engine call), the readout follows the beat clock, and the
-/// render-loop timer pumps the manual clock so phase/pulse advance between taps. Logic is tested with
-/// a fake dispatcher, a fake timer, and the real <see cref="ManualBeatClock"/>.
+/// Verifies the Live tab composition root: it exposes the performance modules, owns the render-loop
+/// timer that pumps the shared <see cref="ManualBeatClock"/> (so phase/pulse advance between taps), and
+/// stays safe when no services are wired. Per-control emission is covered by the module test files
+/// (Beat / Deck / Mixer / SceneGrid / MasterFx / MacroEncoders).
 /// </summary>
 public sealed class LiveViewModelTests
 {
@@ -30,17 +30,6 @@ public sealed class LiveViewModelTests
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0) => ActionFeedbackState.Unavailable;
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
-    }
-
-    private sealed class FakeBeatClock : IBeatClock
-    {
-        public BeatClockState Current { get; private set; } = BeatClockState.Idle;
-        public event EventHandler<BeatClockState>? StateChanged;
-        public void Publish(BeatClockState state)
-        {
-            Current = state;
-            StateChanged?.Invoke(this, state);
-        }
     }
 
     private sealed class FakeLiveBeatTimer : ILiveBeatTimer
@@ -75,52 +64,19 @@ public sealed class LiveViewModelTests
         Assert.True(vm.IsLiveModeEnabled);
     }
 
-    [Theory]
-    [InlineData(nameof(LiveViewModel.TapCommand), PerformanceActionKind.BeatTapTempo)]
-    [InlineData(nameof(LiveViewModel.LockCommand), PerformanceActionKind.BeatLock)]
-    [InlineData(nameof(LiveViewModel.UnlockCommand), PerformanceActionKind.BeatUnlock)]
-    [InlineData(nameof(LiveViewModel.HalfCommand), PerformanceActionKind.BeatHalfTempo)]
-    [InlineData(nameof(LiveViewModel.DoubleCommand), PerformanceActionKind.BeatDoubleTempo)]
-    [InlineData(nameof(LiveViewModel.NudgeForwardCommand), PerformanceActionKind.BeatNudgeForward)]
-    [InlineData(nameof(LiveViewModel.NudgeBackwardCommand), PerformanceActionKind.BeatNudgeBackward)]
-    [InlineData(nameof(LiveViewModel.SetDownbeatCommand), PerformanceActionKind.BeatSetDownbeat)]
-    [InlineData(nameof(LiveViewModel.PlayPauseCommand), PerformanceActionKind.DeckPlayPause)]
-    [InlineData(nameof(LiveViewModel.StopCommand), PerformanceActionKind.TransportStop)]
-    public async Task Command_EmitsExpectedActionKind(string commandName, PerformanceActionKind expected)
-    {
-        var dispatcher = new RecordingDispatcher();
-        var vm = new LiveViewModel(dispatcher);
-
-        var command = (ReactiveUI.ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit>)
-            typeof(LiveViewModel).GetProperty(commandName)!.GetValue(vm)!;
-        await command.Execute().ToTask();
-
-        Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(expected, dispatcher.Dispatched[0].Kind);
-    }
-
     [Fact]
-    public void Readout_UpdatesFromBeatClockState()
+    public void ExposesAllPerformanceModules()
     {
-        var clock = new FakeBeatClock();
-        var vm = new LiveViewModel(new RecordingDispatcher(), clock);
+        var vm = new LiveViewModel(new RecordingDispatcher());
 
-        Assert.Equal("—", vm.Bpm);
-
-        clock.Publish(new BeatClockState(
-            Bpm: 128.0, Confidence: 0.9, BeatPhase: 0.5, BarPhase: 0.25,
-            BeatCount: 7, BarNumber: 1, IsBeat: true, IsDownbeat: false,
-            IsLocked: true, Source: BeatClockSource.Manual, Candidates: Array.Empty<TempoCandidate>()));
-
-        Assert.Contains("128", vm.Bpm);
-        Assert.Contains("90", vm.Confidence);
-        Assert.True(vm.IsLocked);
-        Assert.Equal(0.5, vm.BeatPhase);
-        Assert.Equal(0.25, vm.BarPhase);
-        Assert.Equal(7, vm.BeatCount);
-        Assert.Equal(1, vm.BarNumber);
-        Assert.True(vm.IsBeat);
-        Assert.False(vm.IsDownbeat);
+        Assert.NotNull(vm.ProgramOut);
+        Assert.NotNull(vm.Beat);
+        Assert.Equal("A", vm.DeckA.DeckId);
+        Assert.Equal("B", vm.DeckB.DeckId);
+        Assert.NotNull(vm.Mixer);
+        Assert.NotNull(vm.SceneGrid);
+        Assert.NotNull(vm.MasterFx);
+        Assert.NotNull(vm.MacroEncoders);
     }
 
     [Fact]
@@ -137,12 +93,11 @@ public sealed class LiveViewModelTests
     }
 
     [Fact]
-    public async Task TimerTick_AdvancesManualClock_SoPhaseMovesBetweenTaps()
+    public async Task TimerTick_AdvancesManualClock_SoBeatPhaseMovesBetweenTaps()
     {
         var host = new StubHostClock { TicksPerSecond = 1000 };
         var clock = new ManualBeatClock(host.TicksPerSecond);
         var timer = new FakeLiveBeatTimer();
-        var dispatcher = new RecordingDispatcher();
 
         // The dispatcher routes tap actions to the real clock so the VM emits, not calls, intent.
         var routed = new PerformanceActionDispatcher(
@@ -152,19 +107,19 @@ public sealed class LiveViewModelTests
 
         // Two taps 500ms apart establish 120 BPM (one beat = 500 ticks at 1000 t/s).
         host.NowTicks = 0;
-        await vm.TapCommand.Execute().ToTask();
+        await vm.Beat.TapCommand.Execute().ToTask();
         host.NowTicks = 500;
-        await vm.TapCommand.Execute().ToTask();
+        await vm.Beat.TapCommand.Execute().ToTask();
 
-        Assert.Contains("120", vm.Bpm);
-        double phaseAtTap = vm.BeatPhase;
+        Assert.Contains("120", vm.Beat.Bpm);
+        double phaseAtTap = vm.Beat.BeatPhase;
 
         // A render-loop tick a quarter-beat later must advance the phase with no further tap.
         host.NowTicks = 625;
         timer.FireTick();
 
-        Assert.NotEqual(phaseAtTap, vm.BeatPhase);
-        Assert.Equal(0.25, vm.BeatPhase, precision: 3);
+        Assert.NotEqual(phaseAtTap, vm.Beat.BeatPhase);
+        Assert.Equal(0.25, vm.Beat.BeatPhase, precision: 3);
     }
 
     [Fact]
@@ -173,7 +128,7 @@ public sealed class LiveViewModelTests
         var vm = new LiveViewModel();
 
         Assert.False(vm.IsLiveModeEnabled);
-        Assert.Equal("—", vm.Bpm);
+        Assert.Equal("—", vm.Beat.Bpm);
         // Disposing a degraded VM (no timer/clock) must also be safe.
         vm.Dispose();
     }

@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.ProgramOutView"
+             x:DataType="m:ProgramOutViewModel">
+
+  <Border Background="#0A0A0B" BorderBrush="{StaticResource Hair}" BorderThickness="1"
+          CornerRadius="2" MinHeight="220">
+    <Grid Margin="16">
+      <!-- top row: program-out summary + (static) REC -->
+      <Grid VerticalAlignment="Top" ColumnDefinitions="*,Auto">
+        <TextBlock Classes="faint" Text="{Binding ResolutionLabel}" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Ellipse Width="7" Height="7" Fill="{StaticResource Red}" Opacity="0.4" />
+          <TextBlock Classes="mono faint" Text="REC —" />
+        </StackPanel>
+      </Grid>
+
+      <!-- centre: launch the GL visuals window -->
+      <Button Classes="accent" HorizontalAlignment="Center" VerticalAlignment="Center"
+              Content="◉ Show Visuals" Command="{Binding ShowVisualsCommand}"
+              IsVisible="{Binding CanShowVisuals}" />
+      <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Classes="faint"
+                 IsVisible="{Binding !CanShowVisuals}" Text="visuals unavailable" />
+
+      <!-- bottom: static layer indicators (no live layer state yet) -->
+      <StackPanel VerticalAlignment="Bottom" Orientation="Horizontal" Spacing="14">
+        <TextBlock Classes="mono faint" Text="Clip" />
+        <TextBlock Classes="mono faint" Text="Kaleido" />
+        <TextBlock Classes="mono faint" Text="Camera" />
+        <TextBlock Classes="mono faint" Text="Echo" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

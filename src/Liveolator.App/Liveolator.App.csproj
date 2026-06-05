@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
     <ProjectReference Include="..\Liveolator.Audio\Liveolator.Audio.csproj" />
+    <ProjectReference Include="..\Liveolator.Media\Liveolator.Media.csproj" />
     <ProjectReference Include="..\Liveolator.Platform\Liveolator.Platform.csproj" />
     <ProjectReference Include="..\Liveolator.Visuals\Liveolator.Visuals.csproj" />
   </ItemGroup>

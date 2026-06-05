@@ -20,18 +20,20 @@ public sealed class MainWindowViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
 
+        // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
+        // other spartan micro-labels. The placeholder page headings keep their proper case.
         Tabs = new ObservableCollection<TabItemViewModel>
         {
-            new("Live", live),
+            new("LIVE", live),
             new("DJ", new PlaceholderViewModel("DJ", "Two-deck DJ workspace — coming soon.")),
             new("VJ", new PlaceholderViewModel("VJ", "Visual compositor — coming soon.")),
-            new("Libraries", libraries),
-            new("Mappings", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),
-            new("Settings", new PlaceholderViewModel("Settings", "Preferences — coming soon.")),
+            new("LIBRARIES", libraries),
+            new("MAPPINGS", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),
+            new("SETTINGS", new PlaceholderViewModel("Settings", "Preferences — coming soon.")),
         };
 
-        // Open the wired Libraries tab so the running app shows a real module end-to-end.
-        _currentTab = Tabs[3];
+        // Open the Live tab — the full performance surface (mock-faithful) is the app's centrepiece.
+        _currentTab = Tabs[0];
     }
 
     public ObservableCollection<TabItemViewModel> Tabs { get; }

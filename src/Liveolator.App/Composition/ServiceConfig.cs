@@ -11,7 +11,9 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Persistence;
 using Liveolator.Core.Visuals;
+using Liveolator.Media;
 using Liveolator.Platform;
 using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,6 +39,10 @@ public static class ServiceConfig
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();        // Liveolator.Audio (ATL.NET tags)
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
+        // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
+        // restarts (doc 13). The seam lives in Core; JsonCatalogStore is the Media binding.
+        services.AddSingleton<IMusicCatalogStore>(
+            _ => new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
@@ -47,54 +53,73 @@ public static class ServiceConfig
         var sharedLiveClock = new ManualBeatClock(hostClock.TicksPerSecond);
 
         // --- Visual engine (doc 08): the GL compositor reads the shared clock and its action handler
-        // joins the one dispatcher. Runs BEFORE WireLiveAudio so the handler exists when it is built.
+        // joins the one dispatcher. Runs first so the handler exists when the dispatcher is composed.
         VisualActionHandler visualHandler = WireVisuals(services, sharedLiveClock);
 
-        // --- Live Mode: realtime playback + beat clock (docs 01/02/03/04) ---
-        // Best-effort: the BASS backend needs the native bass library at runtime. If it is
-        // absent (e.g. a dev box without the per-platform binaries), Live Mode stays off and the
-        // app still runs as a catalog browser — the UI hides the transport controls.
-        WireLiveAudio(services, visualHandler);
+        // --- Software mixer (doc 11): pure-constructable with NO native dependency — BassMixer is a
+        // routing skeleton that logs+drops calls for slots whose deck channel is not registered yet.
+        // So the mixer model + DSP math drive from the UI headless; native FX routing lands later.
+        var mixer = new BassMixer();
+        services.AddSingleton<IMixer>(mixer);
+        var mixerHandler = new MixerActionHandler(mixer);
+
+        // --- Realtime audio engine (docs 01/02/03): best-effort. The BASS backend needs the native
+        // bass library at runtime; if it is absent the app still runs as a catalog browser and the
+        // deck transport is simply unrouted. Registering IBeatClock here gives the Libraries tab its
+        // live-BPM readout (a separate source from the shared manual clock — unifying them is doc 03).
+        LivePlaybackEngine? audioEngine = TryBuildAudioEngine();
+        if (audioEngine is not null)
+        {
+            services.AddSingleton<IAudioPlaybackEngine>(audioEngine);
+            services.AddSingleton<IBeatClock>(audioEngine.BeatClock);
+        }
+
+        // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
+        // engines through this single instance, so handler state never diverges (doc 12, one source of
+        // truth). Beat + mixer + visual handlers are always present (all pure-managed); the deck
+        // transport handler joins only when the realtime engine is up.
+        var handlers = new List<IPerformanceActionHandler>
+        {
+            new BeatActionHandler(sharedLiveClock, hostClock),
+            mixerHandler,
+            visualHandler,
+        };
+        if (audioEngine is not null)
+            handlers.Add(new DeckActionHandler(audioEngine));
+
+        var dispatcher = new PerformanceActionDispatcher(
+            handlers, NullLogger<PerformanceActionDispatcher>.Instance);
+        services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
+
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
 
         // --- View-models ---
+        // Libraries playback is gated on the realtime engine, not merely the dispatcher: without
+        // native BASS there is no deck to play, so pass the dispatcher only when the engine is up
+        // (keeps the Play transport hidden in catalog-browser mode).
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
             sp.GetRequiredService<MusicLibrary>(),
-            sp.GetService<IPerformanceActionDispatcher>(),
-            sp.GetService<IBeatClock>()));
+            sp.GetService<IAudioPlaybackEngine>() is not null ? sp.GetService<IPerformanceActionDispatcher>() : null,
+            sp.GetService<IBeatClock>(),
+            sp.GetRequiredService<IMusicCatalogStore>()));
         services.AddSingleton<MainWindowViewModel>();
 
         return services.BuildServiceProvider();
     }
 
-    private static void WireLiveAudio(IServiceCollection services, VisualActionHandler visualHandler)
+    // Builds the realtime BASS playback engine, or null when the native bass library is absent
+    // (e.g. CI / a dev box without the per-platform binaries). Never throws for that case.
+    private static LivePlaybackEngine? TryBuildAudioEngine()
     {
         try
         {
-            var engine = new LivePlaybackEngine(new BassAudioEngine(), new SystemHostClock());
-            // Software mixer (doc 11): the Core handler owns mixer state + DSP math and drives the
-            // BASS-side routing seam. Routing into live deck channels lands with the two-deck engine
-            // (next increment); the handler is wired now so UI/controllers can drive the mixer.
-            var mixer = new BassMixer();
-            var dispatcher = new PerformanceActionDispatcher(
-                new IPerformanceActionHandler[]
-                {
-                    new DeckActionHandler(engine),
-                    new MixerActionHandler(mixer),
-                    visualHandler, // doc 08 — visual engine joins the one dispatcher (task 5)
-                },
-                NullLogger<PerformanceActionDispatcher>.Instance);
-
-            services.AddSingleton<IAudioPlaybackEngine>(engine);
-            services.AddSingleton<IBeatClock>(engine.BeatClock);
-            services.AddSingleton<IMixer>(mixer);
-            services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
+            return new LivePlaybackEngine(new BassAudioEngine(), new SystemHostClock());
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
-            // Native audio unavailable — leave Live Mode services unregistered; GetService returns null.
-            System.Diagnostics.Trace.TraceWarning($"Live Mode disabled: realtime audio unavailable ({ex.Message}).");
+            System.Diagnostics.Trace.TraceWarning($"Realtime audio disabled: {ex.Message}.");
+            return null;
         }
     }
 
@@ -162,32 +187,16 @@ public static class ServiceConfig
     }
 
     // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
-    // Drives the SHARED ManualBeatClock via a BeatActionHandler, so tap/lock/nudge advance the same
-    // clock the visual engine reads. Transport (DeckPlayPause / TransportStop) routes to the real deck
-    // engine when it is registered, otherwise it is a logged no-op — the UI still emits the intent
-    // through the dispatcher (doc 04, never a direct engine call). The Live tab uses its OWN dispatcher
-    // so its handler set is independent of the audio dispatcher, but the CLOCK is shared on purpose.
+    // Drives the SHARED ManualBeatClock and routes every control through the SINGLE dispatcher composed
+    // in Build(), so the Live UI reaches the beat, mixer and visual handlers (and deck transport when
+    // the realtime engine is up) — never a direct engine call (doc 04). The clock is shared on purpose:
+    // tap/lock/nudge advance the same clock the visual engine reads.
     private static void WireLiveTab(IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock)
     {
-        services.AddSingleton<LiveViewModel>(sp =>
-        {
-            var handlers = new List<IPerformanceActionHandler>
-            {
-                new BeatActionHandler(clock, hostClock),
-            };
-
-            // Compose transport routing only when the realtime deck engine is present.
-            var engine = sp.GetService<IAudioPlaybackEngine>();
-            if (engine is not null)
-                handlers.Add(new DeckActionHandler(engine));
-
-            var dispatcher = new PerformanceActionDispatcher(
-                handlers, NullLogger<PerformanceActionDispatcher>.Instance);
-
-            return new LiveViewModel(
-                dispatcher, clock, clock, hostClock, new DispatcherLiveBeatTimer(),
-                sp.GetService<IVisualStage>());
-        });
+        services.AddSingleton<LiveViewModel>(sp => new LiveViewModel(
+            sp.GetRequiredService<IPerformanceActionDispatcher>(),
+            clock, clock, hostClock, new DispatcherLiveBeatTimer(),
+            sp.GetService<IVisualStage>()));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---

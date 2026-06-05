@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.SceneGridView"
+             x:DataType="m:SceneGridViewModel">
+
+  <Border Classes="panel">
+    <StackPanel Margin="16" Spacing="12">
+      <TextBlock Classes="section" Text="VISUAL SCENES · MIRRORS PUSH PADS" />
+
+      <!-- bank switcher -->
+      <ListBox Classes="tabs" ItemsSource="{Binding Banks}"
+               SelectedIndex="{Binding SelectedBankIndex}" IsEnabled="{Binding IsEnabled}" />
+
+      <!-- 8×8 scene grid -->
+      <ItemsControl ItemsSource="{Binding Pads}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <UniformGrid Columns="8" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="m:ScenePadViewModel">
+            <Button Classes="pad" Classes.has="{Binding IsLoaded}" Classes.on="{Binding IsActive}"
+                    Command="{Binding LaunchCommand}" Margin="3" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </Border>
+</UserControl>

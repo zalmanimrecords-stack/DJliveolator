@@ -1,0 +1,80 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.DeckView"
+             x:DataType="m:DeckViewModel">
+
+  <Border Classes="panel">
+    <StackPanel Margin="16" Spacing="12">
+
+      <!-- header -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="2">
+          <TextBlock FontSize="13" Text="{Binding Title}" />
+          <TextBlock Classes="mono faint" Text="{Binding Meta}" />
+        </StackPanel>
+        <Border Grid.Column="1" Width="22" Height="22" BorderBrush="{StaticResource Hair}"
+                BorderThickness="1" CornerRadius="2">
+          <TextBlock Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     FontSize="11" Text="{Binding DeckId}" />
+        </Border>
+      </Grid>
+
+      <!-- waveform placeholder (no live waveform backend yet) -->
+      <Border Height="44" Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}"
+              BorderThickness="1" CornerRadius="2">
+        <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Text="waveform — coming soon" />
+      </Border>
+
+      <!-- hot cues (disabled — no handler yet) -->
+      <UniformGrid Columns="4" Margin="0">
+        <Button Classes="key" Content="1" IsEnabled="{Binding CanHotCue}" Margin="0,0,4,0" />
+        <Button Classes="key" Content="2" IsEnabled="{Binding CanHotCue}" Margin="0,0,4,0" />
+        <Button Classes="key" Content="3" IsEnabled="{Binding CanHotCue}" Margin="0,0,4,0" />
+        <Button Classes="key" Content="4" IsEnabled="{Binding CanHotCue}" />
+      </UniformGrid>
+
+      <!-- transport -->
+      <UniformGrid Columns="4">
+        <Button Classes="key" Content="Cue" IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
+        <Button Classes="key" Classes.on="{Binding IsPlaying}" Content="▶"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0" />
+        <Button Classes="key" Content="Loop" IsEnabled="{Binding CanLoop}" Margin="0,0,4,0" />
+        <Button Classes="key" Content="Sync" IsEnabled="{Binding CanSync}" />
+      </UniformGrid>
+
+      <!-- EQ + filter knobs, with the (disabled) pitch fader on the right -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="14" HorizontalAlignment="Center">
+          <StackPanel Spacing="6" HorizontalAlignment="Center">
+            <Slider Classes="knob" Orientation="Vertical" Height="84" Minimum="0" Maximum="1"
+                    Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
+            <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
+          </StackPanel>
+          <StackPanel Spacing="6" HorizontalAlignment="Center">
+            <Slider Classes="knob" Orientation="Vertical" Height="84" Minimum="0" Maximum="1"
+                    Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
+            <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
+          </StackPanel>
+          <StackPanel Spacing="6" HorizontalAlignment="Center">
+            <Slider Classes="knob" Orientation="Vertical" Height="84" Minimum="0" Maximum="1"
+                    Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
+            <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
+          </StackPanel>
+          <StackPanel Spacing="6" HorizontalAlignment="Center">
+            <Slider Classes="knob" Orientation="Vertical" Height="84" Minimum="0" Maximum="1"
+                    Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
+            <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Center">
+          <Slider Orientation="Vertical" Height="84" Minimum="0" Maximum="1"
+                  Value="{Binding Pitch.Value}" IsEnabled="{Binding Pitch.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="PITCH" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

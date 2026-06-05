@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.MixerView"
+             x:DataType="m:MixerViewModel">
+
+  <Border Classes="panel">
+    <StackPanel Margin="16" Spacing="14">
+      <TextBlock Classes="section" Text="MIXER" />
+
+      <!-- per-channel gain faders + static VU placeholders -->
+      <Grid ColumnDefinitions="*,*">
+        <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center" Margin="0,0,18,0">
+          <Slider Orientation="Vertical" Height="130" Minimum="0" Maximum="1"
+                  Value="{Binding ChannelGainA.Value}" IsEnabled="{Binding ChannelGainA.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="A" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Center">
+          <Slider Orientation="Vertical" Height="130" Minimum="0" Maximum="1"
+                  Value="{Binding ChannelGainB.Value}" IsEnabled="{Binding ChannelGainB.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="B" />
+        </StackPanel>
+      </Grid>
+
+      <!-- crossfader -->
+      <StackPanel Spacing="6">
+        <Slider Minimum="0" Maximum="1" Value="{Binding Crossfader.Value}"
+                IsEnabled="{Binding Crossfader.IsEnabled}" />
+        <Grid ColumnDefinitions="*,*">
+          <TextBlock Classes="faint" Text="A" />
+          <TextBlock Grid.Column="1" Classes="faint" HorizontalAlignment="Right" Text="B" />
+        </Grid>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+</UserControl>

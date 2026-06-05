@@ -29,7 +29,7 @@ public sealed class LiveViewModelVisualsTests
     public void CanShowVisuals_IsFalse_WhenNoStageWired()
     {
         var vm = new LiveViewModel();
-        Assert.False(vm.CanShowVisuals);
+        Assert.False(vm.ProgramOut.CanShowVisuals);
     }
 
     [Fact]
@@ -38,8 +38,8 @@ public sealed class LiveViewModelVisualsTests
         var stage = new FakeVisualStage();
         var vm = new LiveViewModel(visualStage: stage);
 
-        Assert.True(vm.CanShowVisuals);
-        await vm.ShowVisualsCommand.Execute().ToTask();
+        Assert.True(vm.ProgramOut.CanShowVisuals);
+        await vm.ProgramOut.ShowVisualsCommand.Execute().ToTask();
 
         Assert.Equal(1, stage.ShowCount);
         Assert.True(stage.IsShown);

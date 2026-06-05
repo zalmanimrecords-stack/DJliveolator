@@ -16,8 +16,8 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **355 passing** (as of 2026-06-05). Solution-wide: **551**
-across 7 test projects (Core 355, Visuals 43, Audio 40, MIDI 27, App 30, Media 31, Integration 25).
+`tests/Liveolator.Core.Tests` — **355 passing** (as of 2026-06-05). Solution-wide: **595**
+across 7 test projects (Core 355, Visuals 43, Audio 40, MIDI 27, App 70, Media 35, Integration 25).
 
 ## Module status
 
@@ -238,6 +238,34 @@ no GL.
   `RENDER-WINDOW SEAM` note). The engine runs off its own `ManualBeatClock`; binding it to the live
   audio clock is part of that seam.
 
+### ✅ Live tab — full performance surface — `Liveolator.App/Features/Live/` (doc 12, the mock)
+
+The Live tab now renders the whole `design/mockups/live-mode-clean.html` layout as composed module
+view-models under `Features/Live/Modules/`, each driving the engines only through the dispatcher (doc 04).
+
+| Module | View-model | Wired action(s) |
+|--------|------------|-----------------|
+| Program Out | `ProgramOutViewModel` | Show Visuals (`IVisualStage`); preview/REC/layers static |
+| Beat Engine | `BeatEngineViewModel` | Tap / Lock-toggle / ½× / 2× / Set / Nudge± / **Reset**; Auto disabled |
+| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/sync/hot-cue/pitch disabled |
+| Mixer | `MixerViewModel` | `MixerCrossfade`, `MixerChannelGain` (A/B); VU static |
+| Scene Grid | `SceneGridViewModel` + `ScenePadViewModel` | 8×8 `VisualLoadScene`, bank `VisualSelectBank`; pad state from feedback |
+| Master / FX | `MasterFxViewModel` | `VisualToggleStrobe`, `VisualBlackout`; Master/Swing disabled |
+| Push Encoders | `MacroEncodersViewModel` + `ContinuousControlViewModel` | 8× `VisualSetMacro` |
+
+- **One dispatcher (architecture change):** `ServiceConfig.Build()` now composes a **single**
+  `IPerformanceActionDispatcher` (Beat + Mixer + Visual handlers always; Deck transport when the BASS
+  engine is up) registered unconditionally, replacing the previous two-dispatcher split. The Live tab and
+  Libraries tab share it, so handler state never diverges (doc 12, one source of truth). Libraries playback
+  stays gated on `IAudioPlaybackEngine` (no dead Play button headless). `IMixer`/`MixerActionHandler` are
+  now wired headless (no native needed — `BassMixer` drops calls for unregistered slots).
+- **Feedback-driven UI:** sliders/pads/toggles seed from `GetFeedback` and follow `FeedbackChanged`;
+  `ContinuousControlViewModel.SetFromFeedback` updates the bound control without re-emitting (no loop).
+- **Disabled + labeled** controls match the mock for capabilities with no Core handler yet (doc 18):
+  Auto, deck cue/loop/sync/hot-cues/pitch, Master-gain/Swing, VU levels, waveforms, footer telemetry.
+- Default landing tab switched to **Live**. App tests: 70 (module emission + feedback + the one-dispatcher
+  composition). Real render verified manually — the GL window + live audio still need hardware.
+
 ### ✅ Live playlist queue — `Liveolator.Core/Playlist/` (doc 09)
 
 Performance-editable Now/Next/Later queue. Pure in-memory editing logic; the audio binding
@@ -293,7 +321,10 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
 - **App Libraries tab** (`Liveolator.App/Features/Libraries`) surfaces the scanned catalog:
   track table with an Artist column + a detail panel showing tags (artist/album/genre/year/
   track #), stream facts (bitrate/sample-rate/channels/codec), tempo+confidence, key+name,
-  and Camelot harmonic matches.
+  and Camelot harmonic matches. **State persists across runs:** the tab restores the scan
+  folders + analyzed catalog at startup (`LibrariesViewModel.InitializeAsync`) and saves both
+  after every scan / folder add, via the `IMusicCatalogStore` Core seam wired in `ServiceConfig`
+  to `JsonCatalogStore` (`%APPDATA%/Liveolator/{catalog.music.json,scan-folders.json}`).
 
 ## Cross-cutting decisions made while building the above
 

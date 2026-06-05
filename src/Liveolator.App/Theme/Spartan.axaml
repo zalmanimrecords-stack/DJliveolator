@@ -68,7 +68,10 @@
                 BorderBrush="Transparent"
                 BorderThickness="0,0,0,2"
                 Padding="16,10,16,12">
-          <ContentPresenter Content="{TemplateBinding Content}" />
+          <!-- forward ContentTemplate so the ListBox.ItemTemplate (the tab Title) is used,
+               not the global ViewLocator (which would look for a non-existent TabItemView) -->
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}" />
         </Border>
       </ControlTemplate>
     </Setter>
@@ -99,6 +102,7 @@
                 BorderBrush="Transparent"
                 BorderThickness="2,0,0,0">
           <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
                             Padding="9,7" />
         </Border>
       </ControlTemplate>
@@ -143,6 +147,56 @@
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="2" />
     <Setter Property="Foreground" Value="{StaticResource Text}" />
+  </Style>
+
+  <!-- ============ key (beat keys / transport / hot-cues) ============ -->
+  <Style Selector="Button.key">
+    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Padding" Value="8,7" />
+    <Setter Property="FontSize" Value="10" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.key:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{StaticResource S3}" />
+    <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
+  </Style>
+  <!-- active toggle: the single accent carries the on-state (paired with text, never color-only) -->
+  <Style Selector="Button.key.on">
+    <Setter Property="Background" Value="{StaticResource Accent}" />
+    <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+  <Style Selector="Button.key:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
+  <!-- ============ scene pad (8×8 grid cell) ============ -->
+  <Style Selector="Button.pad">
+    <Setter Property="Background" Value="{StaticResource Bg}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="Height" Value="22" />
+    <Setter Property="MinHeight" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <!-- loaded cell (has a scene) -->
+  <Style Selector="Button.pad.has">
+    <Setter Property="Background" Value="{StaticResource S2}" />
+  </Style>
+  <!-- active scene -->
+  <Style Selector="Button.pad.on">
+    <Setter Property="Background" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+  </Style>
+  <Style Selector="Button.pad:disabled">
+    <Setter Property="Opacity" Value="0.5" />
   </Style>
 
 </Styles>

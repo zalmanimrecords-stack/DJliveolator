@@ -42,8 +42,9 @@ equivalent elsewhere — see `JsonCatalogStore.DefaultRoot`):
 
 ```text
 <app-data>/Liveolator/
-  catalog.music.json            # music catalog cache (JsonCatalogStore, regenerable)
+  catalog.music.json            # music catalog cache (JsonCatalogStore, regenerable)        [implemented]
   catalog.visual.json           # visual-media catalog cache (JsonCatalogStore, regenerable)
+  scan-folders.json             # scan-folder roots the user added (JsonCatalogStore)        [implemented]
   live/
     mappings/<name>.json        # ControllerMappingProfile / Push / DJ profiles      [implemented]
     scenes/<name>.json          # VisualBank (contains its VisualScenes)             [implemented]

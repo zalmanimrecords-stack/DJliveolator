@@ -7,6 +7,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Persistence;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Libraries;
@@ -24,6 +25,7 @@ public sealed class LibrariesViewModel : ViewModelBase
     private readonly MusicLibrary _library;
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IBeatClock? _beatClock;
+    private readonly IMusicCatalogStore? _store;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private TrackRowViewModel? _selectedTrack;
@@ -33,14 +35,18 @@ public sealed class LibrariesViewModel : ViewModelBase
 
     /// <param name="dispatcher">Action layer for playback intent; null disables Live Mode playback.</param>
     /// <param name="beatClock">Live beat clock to read the detected tempo from; null when Live Mode is off.</param>
+    /// <param name="store">Persists the catalog + scan folders across runs; null disables persistence
+    /// (the tab still works in-memory for the session).</param>
     public LibrariesViewModel(
         MusicLibrary library,
         IPerformanceActionDispatcher? dispatcher = null,
-        IBeatClock? beatClock = null)
+        IBeatClock? beatClock = null,
+        IMusicCatalogStore? store = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
+        _store = store;
 
         ScanCommand = ReactiveCommand.CreateFromTask(
             RunScanAsync,
@@ -104,27 +110,83 @@ public sealed class LibrariesViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _isScanning, value);
     }
 
-    /// <summary>Adds a folder root to scan (no-op if blank or already present).</summary>
+    /// <summary>
+    /// Restores the previously-persisted state (scan folders + analyzed catalog) so the app opens
+    /// where the last run left off. Called once at startup. A persistence failure degrades to an
+    /// empty session with a surfaced status — it never blocks the app (global standards #16/#26).
+    /// </summary>
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_store is null)
+            return;
+
+        try
+        {
+            IReadOnlyList<string> folders = await _store.LoadScanFoldersAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<MusicTrack> cached = await _store.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+
+            List<TrackRowViewModel>? rows = null;
+            if (cached.Count > 0)
+            {
+                _library.Restore(cached);
+                rows = _library.All
+                    .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
+                    .Select(t => new TrackRowViewModel(t))
+                    .ToList();
+            }
+
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                foreach (string folder in folders)
+                    if (!Folders.Contains(folder))
+                        Folders.Add(folder);
+
+                if (rows is not null)
+                {
+                    _all = rows;
+                    ApplyFilter();
+                    ScanStatus = $"{rows.Count} tracks (restored)";
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not restore saved library: {ex.Message}");
+        }
+    }
+
+    /// <summary>Adds a folder root to scan (no-op if blank or already present), persisting the
+    /// updated set so it survives a restart even before the next scan.</summary>
     public void AddFolder(string folder)
     {
-        if (!string.IsNullOrWhiteSpace(folder) && !Folders.Contains(folder))
-            Folders.Add(folder);
+        if (string.IsNullOrWhiteSpace(folder) || Folders.Contains(folder))
+            return;
+
+        Folders.Add(folder);
+        // Fire-and-forget but fully guarded: a save failure is logged to the status line, never thrown.
+        _ = PersistFoldersAsync();
     }
 
     private async Task RunScanAsync()
     {
         IsScanning = true;
+        // Snapshot the folder set on the calling thread so the persisted copy matches what was scanned
+        // and we never read the UI-owned ObservableCollection off-thread.
+        List<string> folders = Folders.ToList();
         try
         {
             var progress = new Progress<ScanProgress>(p =>
                 ScanStatus = p.Total == 0 ? "No new files." : $"Analyzing {p.Done} / {p.Total}…");
 
-            await _library.ScanAsync(Folders.ToList(), progress).ConfigureAwait(false);
+            await _library.ScanAsync(folders, progress).ConfigureAwait(false);
 
             List<TrackRowViewModel> rows = _library.All
                 .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
                 .Select(t => new TrackRowViewModel(t))
                 .ToList();
+
+            // Persist the fresh catalog + the folders that produced it, so the next run restores them.
+            await PersistCatalogAsync(folders).ConfigureAwait(false);
 
             // Collection mutations must happen on the UI scheduler (immediate in tests).
             RxApp.MainThreadScheduler.Schedule(() =>
@@ -141,6 +203,40 @@ public sealed class LibrariesViewModel : ViewModelBase
         finally
         {
             RxApp.MainThreadScheduler.Schedule(() => IsScanning = false);
+        }
+    }
+
+    // Saves the analyzed catalog and the scan folders. Guarded: a persistence failure surfaces on the
+    // status line but never aborts a completed scan (the in-memory results are still shown).
+    private async Task PersistCatalogAsync(IReadOnlyList<string> folders)
+    {
+        if (_store is null)
+            return;
+
+        try
+        {
+            await _store.SaveMusicAsync(_library.All).ConfigureAwait(false);
+            await _store.SaveScanFoldersAsync(folders).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Scan done; saving the catalog failed: {ex.Message}");
+        }
+    }
+
+    // Persists just the folder set (after an add). Guarded so a save failure is never silent or fatal.
+    private async Task PersistFoldersAsync()
+    {
+        if (_store is null)
+            return;
+
+        try
+        {
+            await _store.SaveScanFoldersAsync(Folders.ToList()).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not save folders: {ex.Message}");
         }
     }
 

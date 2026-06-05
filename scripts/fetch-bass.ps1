@@ -68,7 +68,7 @@ Write-Host "  source : $url"
 Write-Host "  target : $destFile"
 
 if (Test-Path $destFile) {
-    Write-Host "  already present — skipping download. Delete it to re-fetch."
+    Write-Host "  already present - skipping download. Delete it to re-fetch."
     exit 0
 }
 
