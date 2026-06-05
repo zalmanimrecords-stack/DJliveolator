@@ -6,4 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Abstractions only: keeps Core pure managed (no UI, no native) while satisfying the
+         mandatory-logging standard. Concrete providers are wired up in the host projects. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
 </Project>
