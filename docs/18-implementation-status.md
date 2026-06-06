@@ -62,11 +62,38 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
 | Input routing (learn-aware) | `MidiControllerRouter` |
 | Auto-select profile by device name | `MidiProfileSelector` |
 | Action feedback → LED output | `MidiFeedbackPublisher` |
+| Live composition (router+mapper+feedback over one opened device) | `MidiInputPipeline` |
+| CMD STUDIO 2A default profile (learn-overridable) | `Mapping/Profiles/CmdStudio2AProfile` |
 
-- **Deferred:** the **native MIDI implementation** of `IMidiInput`/`IMidiOutput`/
-  `IMidiDeviceProvider` (a `Liveolator.Midi` project). Blocker: needs the MIDI library +
-  hardware; not unit-testable. **Decision:** RtMidi/libremidi (per root `CLAUDE.md`) — note
-  doc 05's body still names DryWetMidi and is pending revision; the seams above don't care.
+- **Native MIDI implementation built** — `Liveolator.Midi` (`RtMidiDeviceProvider` etc., RtMidi.Core,
+  per root `CLAUDE.md`); native is isolated behind `IRtMidiDeviceManager` so translation/lookup
+  unit-test with fakes (doc 05 body still names DryWetMidi — historical; the seams don't care).
+- **Hardware now drives the dispatcher (this increment):** `MidiInputPipeline` (Core, pure) composes
+  `MidiControllerRouter → ControllerMapper →` the one `IPerformanceActionDispatcher` over an opened
+  `IMidiInput`, auto-selecting a profile via `MidiProfileSelector` and (when a feedback output is
+  present) wiring `MidiFeedbackPublisher` back out. The Core seam `IMidiDeviceProvider` gained
+  `OpenInput`/`OpenOutput` (already implemented by `RtMidiDeviceProvider`) so the App opens a device
+  through the seam without touching RtMidi types. `CmdStudio2AProfile.Default` maps the controller's
+  transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncLockToggle`), crossfader + per-deck gain
+  (`MixerCrossfade`/`MixerChannelGain`), 3-band EQ (`MixerEqBand` Low/Mid/High) + filter
+  (`MixerFilter`), and jog nudge (`BeatNudgeForward`) to the existing kinds — Deck A = channel 0/slot
+  0, Deck B = channel 1/slot 1. **The CC/note numbers are documented defaults, not gospel:** every
+  binding is a plain `ControllerBinding` that `MidiLearnSession` can re-capture, and
+  `MappingConflictDetector` proves the default layout is collision-free. +23 tests (Core
+  `CmdStudio2AProfileTests` 11 + `MidiInputPipelineTests` 7; App `MidiInputWiringTests` 5 — graceful
+  degradation with a fake provider). **Real-hardware behaviour is a documented MANUAL checklist**
+  (`Liveolator.Midi/CLAUDE.md`), not automatable in CI.
+- **App-wired (`ServiceConfig.WireMidiInput`):** the composition root opens the SETTINGS-chosen
+  controller (`AppSettings.Midi`) via the shared `RtMidiDeviceProvider` and registers the resulting
+  `MidiInputPipeline` so DI disposes it (closing the device) at shutdown. **Degrades gracefully**
+  (global standards #16/#26): no controller selected, no matching device, or a native open failure all
+  log + leave the app running WITHOUT MIDI — never throw at startup. The Settings tab reuses the same
+  provider instance.
+- **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
+  `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists — wiring it in is next); runtime
+  re-open on a Settings device change (currently applied at startup only); the Push 1 profile + SysEx
+  LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
+  chart (until then the defaults are learn-overridable best-effort).
 
 ### ✅ Beat engine primitives — `Liveolator.Core/Beat/` (doc 03)
 
@@ -336,6 +363,12 @@ seams are pure Core; enumeration is a thin native binding; the UI logic is unit-
   Feeding the capture `SwitchableAudioSource` into the analysis/beat pipeline (so a selected loopback/line-in
   actually drives the live BPM/visuals) and modelling source selection as a `PerformanceAction` are the
   remaining capture increments.
+- **MIDI controller now opened into the dispatcher** (see Controller mapping engine — `WireMidiInput`
+  composes `MidiInputPipeline` over the SETTINGS-chosen device; degrades gracefully when it is
+  absent). **Still deferred:** **runtime** re-init on a device change (the current apply is at startup
+  only — re-plugging or changing the controller in Settings needs an app restart), and applying the
+  buffer/device to `BassPlayback` (the legacy single-deck path). Persisted capture-source selection
+  (the `WireCaptureSources` SETTINGS-UI seam) remains open.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

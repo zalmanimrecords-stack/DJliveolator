@@ -52,6 +52,9 @@ public sealed class SettingsViewModelTests
         public List<string> Outputs { get; set; } = new() { "Ableton Push" };
         public IReadOnlyList<string> GetInputDeviceNames() => Inputs;
         public IReadOnlyList<string> GetOutputDeviceNames() => Outputs;
+        // The Settings VM only enumerates; opening devices is the composition root's job (not exercised here).
+        public IMidiInput? OpenInput(string deviceName) => null;
+        public IMidiOutput? OpenOutput(string deviceName) => null;
     }
 
     private sealed class FakeSettingsStore : ISettingsStore
