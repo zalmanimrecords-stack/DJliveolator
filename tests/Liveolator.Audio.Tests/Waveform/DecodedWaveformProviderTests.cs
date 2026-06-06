@@ -67,6 +67,29 @@ public sealed class DecodedWaveformProviderTests
     }
 
     [Fact]
+    public async Task GetOverview_ReportsDuration_FromSampleCountAndOverviewRate()
+    {
+        // 12 mono samples at 6 kHz = 0.002 s — the deck uses this to place the beat grid.
+        var decoder = new FakeDecoder(new[] { new float[12] });
+        var provider = new DecodedWaveformProvider(decoder, overviewSampleRate: 6_000);
+
+        WaveformOverview overview = await provider.GetOverviewAsync("track.flac", bucketCount: 2);
+
+        Assert.Equal(12.0 / 6_000, overview.DurationSeconds, 6);
+    }
+
+    [Fact]
+    public async Task GetOverview_EmptyTrack_HasNoDuration()
+    {
+        var provider = new DecodedWaveformProvider(new FakeDecoder(Array.Empty<float[]>()));
+
+        WaveformOverview overview = await provider.GetOverviewAsync("track.flac", bucketCount: 4);
+
+        Assert.True(overview.IsEmpty);
+        Assert.Equal(0, overview.DurationSeconds);
+    }
+
+    [Fact]
     public async Task GetOverview_DecodesAtTheOverviewSampleRate()
     {
         var decoder = new FakeDecoder(new[] { new[] { 0.5f } });

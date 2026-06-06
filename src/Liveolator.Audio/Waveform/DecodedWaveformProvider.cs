@@ -61,7 +61,12 @@ public sealed class DecodedWaveformProvider : IWaveformProvider
                 Append(samples, block);
             }
 
-            return WaveformBuilder.Build(CollectionsMarshal.AsSpan(samples), bucketCount);
+            WaveformOverview overview = WaveformBuilder.Build(CollectionsMarshal.AsSpan(samples), bucketCount);
+            // Duration from the mono sample count at the (known) overview rate, so the deck can place a
+            // beat-grid overlay without a second decode. Empty overviews stay Empty (no duration).
+            return overview.IsEmpty
+                ? overview
+                : overview with { DurationSeconds = (double)samples.Count / _overviewSampleRate };
         }
         catch (OperationCanceledException)
         {

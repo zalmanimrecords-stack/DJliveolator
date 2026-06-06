@@ -15,28 +15,36 @@ namespace Liveolator.App.Features.Live.Modules;
 
 /// <summary>
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
-/// Wired now: Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>), the 3-band EQ
-/// (<see cref="PerformanceActionKind.MixerEqBand"/>), the single-knob filter
-/// (<see cref="PerformanceActionKind.MixerFilter"/>), and the track <see cref="Waveform"/> overview +
-/// playhead — all through the dispatcher (doc 04). The deck learns its loaded track from
-/// <see cref="PerformanceActionKind.DeckLoadTrack"/> feedback (which carries the path) and renders the
-/// waveform via <see cref="IWaveformProvider"/>. Sync Lock (tempo match, doc 11) is wired through
-/// <see cref="PerformanceActionKind.DeckSyncLockToggle"/>; Cue/Loop/hot-cues/pitch are not yet surfaced
-/// in this view (a later UI increment) and stay disabled.
+/// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
+/// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), Sync Lock
+/// (<see cref="PerformanceActionKind.DeckSyncLockToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
+/// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
+/// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
+/// <see cref="PerformanceActionKind.DeckLoadTrack"/> feedback (path + analyzed BPM), renders the
+/// <see cref="Waveform"/> overview via <see cref="IWaveformProvider"/>, and derives a <see cref="BeatGrid"/>
+/// from the BPM and the decoded duration. Toggle controls follow their handler feedback (the LED model).
 /// </summary>
 public sealed class DeckViewModel : ViewModelBase, IDisposable
 {
     /// <summary>Overview resolution — plenty of buckets for the strip; the control samples to its width.</summary>
     private const int WaveformBuckets = 1_000;
 
+    /// <summary>Hot-cue pad count shown on the deck (the mock's 1·2·3·4 row).</summary>
+    private const int HotCueCount = 4;
+
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IWaveformProvider? _waveformProvider;
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isSyncLocked;
+    private bool _isLooping;
     private string _title = "No track loaded";
     private IReadOnlyList<float>? _waveform;
+    private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
+    private double _trackBpm;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -50,17 +58,56 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _waveformProvider = waveformProvider;
         DeckId = slot == 0 ? "A" : "B";
         bool enabled = dispatcher is not null;
+        IObservable<bool> canEmit = Observable.Return(enabled);
 
         PlayPauseCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause, Slot: slot)),
-            Observable.Return(enabled));
+            canEmit);
+
+        // Cue = jump to the cue point / track start (momentary, doc 11). No active latch — it's a jump.
+        CueCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckCue, Slot: slot)),
+            canEmit);
+
+        // Loop toggle. The engine handler is being built in parallel; the VM emits the action and follows
+        // the DeckSetLoop active-state feedback (the LED model) exactly like Sync, so it lights up once the
+        // engine reports a loop is active. Value carries a default loop length in beats (doc 11).
+        LoopCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: DefaultLoopBeats, Slot: slot)),
+            canEmit);
+        _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
         // Sync Lock = tempo match (beatmatch by BPM, doc 11). The toggle's active state follows the
         // handler's DeckSyncLockToggle feedback (the LED model), seeded from the current engine state.
         SyncCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: slot)),
-            Observable.Return(enabled));
+            canEmit);
         _isSyncLocked = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot).IsActive ?? false;
+
+        // Click-to-seek: the strip computes the clicked 0..1 fraction and passes it here; we emit an
+        // absolute DeckSeek for this slot. The fraction is clamped at the seam (defence against a bad value).
+        SeekCommand = ReactiveCommand.Create<double>(fraction =>
+        {
+            if (double.IsNaN(fraction) || double.IsInfinity(fraction))
+                return;
+            double clamped = Math.Clamp(fraction, 0.0, 1.0);
+            _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSeek, ActionInputMode.Absolute, Value: clamped, Slot: slot));
+        }, canEmit);
+
+        var hotCues = new HotCuePadViewModel[HotCueCount];
+        for (int index = 0; index < HotCueCount; index++)
+        {
+            int cueIndex = index; // capture per-pad
+            hotCues[index] = new HotCuePadViewModel(
+                cueIndex,
+                enabled
+                    ? () => _dispatcher?.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.DeckHotCue, Slot: slot, Argument: cueIndex.ToString()))
+                    : null);
+        }
+        HotCues = hotCues;
 
         EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, enabled ? v => EmitEq("High", v) : null);
         EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity, enabled ? v => EmitEq("Mid", v) : null);
@@ -69,8 +116,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             "Flt", Seed(PerformanceActionKind.MixerFilter, FilterCentre),
             enabled ? v => Emit(PerformanceActionKind.MixerFilter, v) : null);
 
-        // Disabled-but-labeled: not surfaced in this view yet (doc 18). A null callback disables the control.
-        Pitch = new ContinuousControlViewModel("Pitch", PitchCentre, onUserChanged: null);
+        // Pitch fader: absolute 0..1 (0.5 = no pitch change); follows DeckPitch feedback like the filter.
+        Pitch = new ContinuousControlViewModel(
+            "Pitch", Seed(PerformanceActionKind.DeckPitch, PitchCentre),
+            enabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
 
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged += OnFeedback;
@@ -80,6 +129,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double EqBands_Unity = 0.5;
     private const double FilterCentre = 0.5;
     private const double PitchCentre = 0.5;
+
+    /// <summary>Default loop length emitted by the LOOP button, in beats (a 1-bar loop in 4/4).</summary>
+    private const double DefaultLoopBeats = 4.0;
 
     /// <summary>Deck label, "A" or "B".</summary>
     public string DeckId { get; }
@@ -99,6 +151,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _waveform;
         private set => this.RaiseAndSetIfChanged(ref _waveform, value);
+    }
+
+    /// <summary>
+    /// Beat-line positions as 0..1 track fractions for the strip's grid overlay, derived from the loaded
+    /// track's BPM and decoded duration. Empty when either is unknown (the strip then draws no grid).
+    /// </summary>
+    public IReadOnlyList<double> BeatGrid
+    {
+        get => _beatGrid;
+        private set => this.RaiseAndSetIfChanged(ref _beatGrid, value);
     }
 
     /// <summary>
@@ -130,20 +192,34 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _isSyncLocked, value);
     }
 
+    /// <summary>True while this deck has an active loop (drives the LOOP key's active state), from feedback.</summary>
+    public bool IsLooping
+    {
+        get => _isLooping;
+        private set => this.RaiseAndSetIfChanged(ref _isLooping, value);
+    }
+
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
+    public ReactiveCommand<Unit, Unit> CueCommand { get; }
+    public ReactiveCommand<Unit, Unit> LoopCommand { get; }
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+
+    /// <summary>Click-to-seek: invoked by the waveform strip with the clicked 0..1 fraction.</summary>
+    public ReactiveCommand<double, Unit> SeekCommand { get; }
+
+    /// <summary>The four hot-cue pads (the mock's 1·2·3·4 row).</summary>
+    public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
+
     public ContinuousControlViewModel EqHigh { get; }
     public ContinuousControlViewModel EqMid { get; }
     public ContinuousControlViewModel EqLow { get; }
     public ContinuousControlViewModel Filter { get; }
     public ContinuousControlViewModel Pitch { get; }
 
-    /// <summary>Cue/Loop/Hot-cues are not surfaced in this view yet — disabled (doc 18).</summary>
-    public bool CanCue => false;
-    public bool CanLoop => false;
-    public bool CanHotCue => false;
-
-    /// <summary>Sync Lock is drivable whenever the deck engine backs this view (tempo match, doc 11).</summary>
+    /// <summary>Cue/Loop/Hot-cues/Sync are drivable whenever a deck engine backs this view (doc 11).</summary>
+    public bool CanCue => IsEnabled;
+    public bool CanLoop => IsEnabled;
+    public bool CanHotCue => IsEnabled;
     public bool CanSync => IsEnabled;
 
     public void Dispose()
@@ -181,28 +257,55 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.MixerFilter:
                     Filter.SetFromFeedback(e.State.Value);
                     break;
+                case PerformanceActionKind.DeckPitch:
+                    Pitch.SetFromFeedback(e.State.Value);
+                    break;
                 case PerformanceActionKind.DeckPlayPause:
                     IsPlaying = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckSyncLockToggle:
                     IsSyncLocked = e.State.IsActive;
                     break;
+                case PerformanceActionKind.DeckSetLoop:
+                    IsLooping = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckHotCue:
+                    UpdateHotCue(e.State);
+                    break;
                 case PerformanceActionKind.DeckSeek when e.State.IsAvailable:
                     Progress = e.State.Value; // playhead follows seek/cue position
                     break;
                 case PerformanceActionKind.DeckLoadTrack when !string.IsNullOrEmpty(e.State.Argument):
-                    OnTrackLoaded(e.State.Argument!);
+                    OnTrackLoaded(e.State.Argument!, e.State.Value);
                     break;
             }
         });
     }
 
-    private void OnTrackLoaded(string trackPath)
+    // The hot-cue index rides in the feedback Argument (the deck is addressed by slot); update only the
+    // matching pad's lit state. A missing/unparseable index is ignored — never throw on a feedback echo.
+    private void UpdateHotCue(ActionFeedbackState state)
+    {
+        if (!int.TryParse(state.Argument, out int index) || index < 0 || index >= HotCues.Count)
+            return;
+        HotCues[index].IsSet = state.IsActive;
+    }
+
+    private void OnTrackLoaded(string trackPath, double bpm)
     {
         Title = Path.GetFileNameWithoutExtension(trackPath);
         Progress = 0;
-        Waveform = null; // show the placeholder while the new overview decodes
+        Waveform = null;          // show the placeholder while the new overview decodes
+        BeatGrid = Array.Empty<double>();
+        _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
+        ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
         LoadWaveform(trackPath);
+    }
+
+    private void ClearHotCues()
+    {
+        foreach (HotCuePadViewModel pad in HotCues)
+            pad.IsSet = false;
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick
@@ -221,8 +324,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         {
             WaveformOverview overview = await Task.Run(
                 () => _waveformProvider.GetOverviewAsync(trackPath, WaveformBuckets, cts.Token), cts.Token);
-            if (!cts.IsCancellationRequested)
-                Waveform = overview.IsEmpty ? null : overview.Peaks;
+            if (cts.IsCancellationRequested)
+                return;
+            Waveform = overview.IsEmpty ? null : overview.Peaks;
+            // The grid needs both the BPM (from the load) and the decoded duration (from the overview).
+            BeatGrid = overview.IsEmpty
+                ? Array.Empty<double>()
+                : BeatGridCalculator.BeatFractions(_trackBpm, overview.DurationSeconds);
         }
         catch (OperationCanceledException)
         {
@@ -231,6 +339,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         catch (Exception)
         {
             Waveform = null; // belt-and-braces around the await boundary
+            BeatGrid = Array.Empty<double>();
         }
     }
 }
