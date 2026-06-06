@@ -6,7 +6,10 @@
              x:Class="Liveolator.App.Features.Dj.DjView"
              x:DataType="dj:DjViewModel">
 
-  <Grid RowDefinitions="Auto,Auto,*">
+  <!-- Scrollable so the SET panel below the (tall) waveforms + decks/mixer is never clipped on a short
+       window — the decks/mixer have fixed min-heights, so the page can exceed the viewport. -->
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <Grid RowDefinitions="Auto,Auto,Auto">
 
     <!-- WAVEFORMS — two rows above the decks; the amber kick band shows each track's kick transients
          so the downbeats line up by eye for sync. Click a strip to seek that deck. -->
@@ -119,4 +122,5 @@
       </Grid>
     </Border>
   </Grid>
+  </ScrollViewer>
 </UserControl>

@@ -37,6 +37,16 @@
           <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.AudioOutputName}" />
         </StackPanel>
 
+        <!-- CPU / memory of the running app -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    IsVisible="{Binding Status.HasMetrics}">
+          <TextBlock Classes="mono faint" Text="CPU" />
+          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.CpuText}" />
+          <TextBlock Classes="mono faint" Text="RAM" Margin="8,0,0,0" />
+          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.MemoryText}" />
+        </StackPanel>
+
         <!-- MIDI connectivity + activity -->
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <TextBlock Classes="mono faint" Text="MIDI" />

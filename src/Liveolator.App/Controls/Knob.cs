@@ -85,22 +85,79 @@ public sealed class Knob : Control
 
     public override void Render(DrawingContext context)
     {
-        Rect b = Bounds;
-        double size = Math.Min(b.Width, b.Height);
+        Rect bounds = Bounds;
+        double size = Math.Min(bounds.Width, bounds.Height);
         if (size <= 0)
             return;
 
         bool on = IsEnabled;
         double value = Math.Clamp(Value, 0, 1);
-        var centre = new Point(b.Width / 2, b.Height / 2);
+        var centre = new Point(bounds.Width / 2, bounds.Height / 2);
         double arcStroke = Math.Max(2.5, size * 0.055);
         double arcRadius = (size / 2) - (arcStroke / 2) - 1;
         double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.06;
         IBrush arc = on ? ArcBrush : TrackBrush;
 
-        // soft cast shadow under the cap — a radial dark→clear ellipse nudged down so the knob reads as
-        // a physical cap floating above the panel. DrawingContext has no blur filter, so the radial
-        // falloff fakes the penumbra.
+        DrawCastShadow(context, centre, bodyRadius, size);
+        DrawTrackChannel(context, centre, arcRadius, arcStroke);
+
+        double angle = StartAngle + (SweepAngle * value);
+        if (value > 0.004)
+        {
+            if (on)
+            {
+                context.DrawGeometry(null, new Pen(Halo(arc, 0.22), arcStroke * 2.4)
+                    { LineCap = PenLineCap.Round }, Arc(centre, arcRadius, StartAngle, angle));
+            }
+
+            context.DrawGeometry(null, new Pen(arc, arcStroke)
+                { LineCap = PenLineCap.Round }, Arc(centre, arcRadius, StartAngle, angle));
+        }
+
+        double detentAngle = StartAngle + (SweepAngle * Math.Clamp(DefaultValue, 0, 1));
+        context.DrawLine(new Pen(Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round },
+            PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
+            PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
+
+        DrawCap(context, centre, bodyRadius, size, on);
+        DrawKnurling(context, centre, bodyRadius, size);
+
+        if (on)
+        {
+            Point dot = PointOnCircle(centre, arcRadius, angle);
+            context.DrawEllipse(Halo(arc, 0.35), null, dot, arcStroke * 1.6, arcStroke * 1.6);
+            context.DrawEllipse(arc, null, dot, arcStroke * 0.7, arcStroke * 0.7);
+        }
+
+        Point tickInner = PointOnCircle(centre, bodyRadius * 0.36, angle);
+        Point tickOuter = PointOnCircle(centre, bodyRadius * 0.86, angle);
+        IBrush pointer = on ? PointerBrush : TrackBrush;
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0xD0, 0x02, 0x04, 0x08)),
+            Math.Max(3.2, arcStroke * 1.05)) { LineCap = PenLineCap.Round }, tickInner, tickOuter);
+        Point highlightOffset = PointerHighlightOffset(angle);
+        context.DrawLine(new Pen(Halo(pointer, 0.42), Math.Max(1, arcStroke * 0.35))
+            { LineCap = PenLineCap.Round }, tickInner + highlightOffset, tickOuter + highlightOffset);
+        context.DrawLine(new Pen(pointer, Math.Max(1.5, arcStroke * 0.55))
+            { LineCap = PenLineCap.Round }, tickInner, tickOuter);
+    }
+
+    private void DrawTrackChannel(DrawingContext context, Point centre, double radius, double stroke)
+    {
+        StreamGeometry track = Arc(centre, radius, StartAngle, StartAngle + SweepAngle);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(0xB8, 0x02, 0x05, 0x0A)),
+            stroke + 4.5) { LineCap = PenLineCap.Round }, track);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromRgb(0x3B, 0x47, 0x58)),
+            stroke + 1.8) { LineCap = PenLineCap.Round }, Arc(new Point(centre.X - 0.45, centre.Y - 0.65),
+                radius, StartAngle, StartAngle + SweepAngle));
+        context.DrawGeometry(null, new Pen(TrackBrush, stroke) { LineCap = PenLineCap.Round }, track);
+        context.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(0x72, 0x00, 0x02, 0x06)),
+            Math.Max(1, stroke * 0.34)) { LineCap = PenLineCap.Round }, Arc(new Point(centre.X + 0.4, centre.Y + 0.55),
+                radius, StartAngle, StartAngle + SweepAngle));
+    }
+
+    private static void DrawCastShadow(DrawingContext context, Point centre, double bodyRadius, double size)
+    {
+        // WHY: radial falloff substitutes for a blurred contact shadow in DrawingContext.
         var castShadow = new RadialGradientBrush
         {
             Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
@@ -109,72 +166,56 @@ public sealed class Knob : Control
             RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromArgb(0x66, 0, 0, 0), 0.58),
-                new GradientStop(Color.FromArgb(0x00, 0, 0, 0), 1.0),
+                new GradientStop(Color.FromArgb(0x78, 0, 0, 0), 0.54),
+                new GradientStop(Color.FromArgb(0x20, 0, 0, 0), 0.78),
+                new GradientStop(Color.FromArgb(0x00, 0, 0, 0), 1),
             },
         };
-        double shadowRadius = bodyRadius * 1.18;
-        context.DrawEllipse(castShadow, null, new Point(centre.X, centre.Y + size * 0.055), shadowRadius, shadowRadius);
+        double shadowRadius = bodyRadius * 1.22;
+        context.DrawEllipse(castShadow, null, new Point(centre.X, centre.Y + size * 0.06), shadowRadius, shadowRadius);
 
-        // recessed track ring
-        var trackPen = new Pen(TrackBrush, arcStroke) { LineCap = PenLineCap.Round };
-        context.DrawGeometry(null, trackPen, Arc(centre, arcRadius, StartAngle, StartAngle + SweepAngle));
+        // WHY: the dark ring is ambient occlusion where the cap nearly meets the panel.
+        context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x82, 0x00, 0x02, 0x06)),
+            Math.Max(2, size * 0.045)), centre, bodyRadius * 1.07, bodyRadius * 1.07);
+    }
 
-        // value arc — a soft wide glow behind a crisp arc
-        double angle = StartAngle + (SweepAngle * value);
-        if (value > 0.004)
-        {
-            if (on)
-            {
-                var glowPen = new Pen(Halo(arc, 0.22), arcStroke * 2.4) { LineCap = PenLineCap.Round };
-                context.DrawGeometry(null, glowPen, Arc(centre, arcRadius, StartAngle, angle));
-            }
-            var valuePen = new Pen(arc, arcStroke) { LineCap = PenLineCap.Round };
-            context.DrawGeometry(null, valuePen, Arc(centre, arcRadius, StartAngle, angle));
-        }
-
-        // unity / home mark — a faint notch across the track at DefaultValue so "flat" is findable at a glance
-        double detentAngle = StartAngle + (SweepAngle * Math.Clamp(DefaultValue, 0, 1));
-        var detentPen = new Pen(Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round };
-        context.DrawLine(detentPen,
-            PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
-            PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
-
-        // knob body — radial gradient for a soft 3-D cap with the light pooled toward the top, drawn
-        // with no outline so the bevel rim below can own the edge.
+    private void DrawCap(DrawingContext context, Point centre, double radius, double size, bool on)
+    {
+        context.DrawEllipse(CapBrush, null, centre, radius, radius);
         var body = new RadialGradientBrush
         {
-            Center = new RelativePoint(0.5, 0.34, RelativeUnit.Relative),
-            GradientOrigin = new RelativePoint(0.5, 0.26, RelativeUnit.Relative),
-            RadiusX = new RelativeScalar(0.78, RelativeUnit.Relative),
-            RadiusY = new RelativeScalar(0.78, RelativeUnit.Relative),
+            Center = new RelativePoint(0.43, 0.39, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.28, 0.2, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.86, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.86, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromRgb(0x27, 0x33, 0x46), 0.0),
-                new GradientStop(Color.FromRgb(0x15, 0x1C, 0x28), 0.62),
-                new GradientStop(Color.FromRgb(0x09, 0x0C, 0x12), 1.0),
+                new GradientStop(Color.FromArgb(0xEA, 0x3D, 0x49, 0x5A), 0),
+                new GradientStop(Color.FromArgb(0xE8, 0x20, 0x29, 0x36), 0.34),
+                new GradientStop(Color.FromArgb(0xF2, 0x0B, 0x0F, 0x16), 0.72),
+                new GradientStop(Color.FromArgb(0xE8, 0x1B, 0x24, 0x31), 0.91),
+                new GradientStop(Color.FromArgb(0xF8, 0x06, 0x08, 0x0C), 1),
             },
         };
-        context.DrawEllipse(body, null, centre, bodyRadius, bodyRadius);
+        context.DrawEllipse(body, null, centre, radius, radius);
 
-        // bevel rim — a vertical light→dark stroke so the cap edge catches light at the top and falls
-        // into shadow at the bottom, reading as a turned rim rather than a flat hairline.
         var rim = new LinearGradientBrush
         {
-            StartPoint = new RelativePoint(0.5, 0.0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0.5, 1.0, RelativeUnit.Relative),
+            StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromRgb(0x3A, 0x46, 0x5A), 0.0),
-                new GradientStop(Color.FromRgb(0x12, 0x18, 0x22), 0.5),
-                new GradientStop(Color.FromRgb(0x05, 0x07, 0x0B), 1.0),
+                new GradientStop(Color.FromRgb(0x68, 0x76, 0x88), 0),
+                new GradientStop(Color.FromRgb(0x2B, 0x36, 0x45), 0.22),
+                new GradientStop(Color.FromRgb(0x0C, 0x11, 0x19), 0.58),
+                new GradientStop(Color.FromRgb(0x02, 0x04, 0x08), 1),
             },
         };
-        context.DrawEllipse(null, new Pen(rim, Math.Max(1.0, size * 0.03)), centre, bodyRadius, bodyRadius);
+        context.DrawEllipse(null, new Pen(rim, Math.Max(1.4, size * 0.04)), centre, radius, radius);
+        context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x02, 0x06)),
+            Math.Max(1, size * 0.018)), centre, radius * 0.89, radius * 0.89);
 
-        // specular highlight — a soft light pool near the top of the cap for a subtle gloss; brighter
-        // when enabled so a disabled knob stays matte.
-        var spec = new RadialGradientBrush
+        var topLight = new RadialGradientBrush
         {
             Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
             GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
@@ -182,34 +223,59 @@ public sealed class Knob : Control
             RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromArgb(on ? (byte)0x3A : (byte)0x20, 0xE6, 0xEE, 0xF8), 0.0),
-                new GradientStop(Color.FromArgb(0x00, 0xE6, 0xEE, 0xF8), 1.0),
+                new GradientStop(Color.FromArgb(on ? (byte)0x42 : (byte)0x25, 0xE7, 0xEE, 0xF7), 0),
+                new GradientStop(Color.FromArgb(0x00, 0xE7, 0xEE, 0xF7), 1),
             },
         };
-        context.DrawEllipse(spec, null,
-            new Point(centre.X, centre.Y - bodyRadius * 0.36), bodyRadius * 0.66, bodyRadius * 0.44);
+        context.DrawEllipse(topLight, null, new Point(centre.X - radius * 0.22, centre.Y - radius * 0.38),
+            radius * 0.72, radius * 0.43);
 
-        // glow dot at the value position (halo + core), then a short pointer tick on the body
-        if (on)
+        var bounce = new LinearGradientBrush
         {
-            Point dot = PointOnCircle(centre, arcRadius, angle);
-            context.DrawEllipse(Halo(arc, 0.35), null, dot, arcStroke * 1.6, arcStroke * 1.6);
-            context.DrawEllipse(arc, null, dot, arcStroke * 0.7, arcStroke * 0.7);
-        }
+            StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0x00, 0x78, 0x8A, 0xA2), 0),
+                new GradientStop(Color.FromArgb(0x2C, 0x78, 0x8A, 0xA2), 1),
+            },
+        };
+        context.DrawEllipse(bounce, null, new Point(centre.X, centre.Y + radius * 0.47),
+            radius * 0.68, radius * 0.27);
+    }
 
-        var tickInner = PointOnCircle(centre, bodyRadius * 0.36, angle);
-        var tickOuter = PointOnCircle(centre, bodyRadius * 0.86, angle);
-        var pointerPen = new Pen(on ? PointerBrush : TrackBrush, Math.Max(2, arcStroke * 0.7)) { LineCap = PenLineCap.Round };
-        context.DrawLine(pointerPen, tickInner, tickOuter);
+    private static void DrawKnurling(DrawingContext context, Point centre, double radius, double size)
+    {
+        double inner = radius * 0.84;
+        double outer = radius * 0.98;
+        double width = Math.Max(0.55, size * 0.012);
+        var darkPen = new Pen(new SolidColorBrush(Color.FromArgb(0x90, 0x00, 0x02, 0x06)), width);
+        var lightPen = new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0x9B, 0xA8, 0xB8)), width);
+
+        for (int i = 0; i < 28; i++)
+        {
+            double angle = i * (360.0 / 28);
+            context.DrawLine(darkPen, PointOnCircle(centre, inner, angle + 1.2),
+                PointOnCircle(centre, outer, angle + 1.2));
+            context.DrawLine(lightPen, PointOnCircle(centre, inner, angle - 0.8),
+                PointOnCircle(centre, outer, angle - 0.8));
+        }
+    }
+
+    private static Point PointerHighlightOffset(double angleDegrees)
+    {
+        double angle = angleDegrees * Math.PI / 180.0;
+        return new Point(Math.Sin(angle) * 0.75, -Math.Cos(angle) * 0.75);
     }
 
     private static IBrush Halo(IBrush source, double opacity)
     {
-        if (source is ISolidColorBrush s)
+        if (source is ISolidColorBrush solid)
         {
-            Color c = s.Color;
-            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), c.R, c.G, c.B));
+            Color color = solid.Color;
+            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
         }
+
         return source;
     }
 
@@ -274,21 +340,21 @@ public sealed class Knob : Control
 
     private static Point PointOnCircle(Point centre, double radius, double angleDegrees)
     {
-        double a = angleDegrees * Math.PI / 180.0;
-        return new Point(centre.X + (radius * Math.Cos(a)), centre.Y + (radius * Math.Sin(a)));
+        double angle = angleDegrees * Math.PI / 180.0;
+        return new Point(centre.X + (radius * Math.Cos(angle)), centre.Y + (radius * Math.Sin(angle)));
     }
 
     private static StreamGeometry Arc(Point centre, double radius, double startDegrees, double endDegrees)
     {
         var geometry = new StreamGeometry();
-        using (StreamGeometryContext ctx = geometry.Open())
+        using (StreamGeometryContext context = geometry.Open())
         {
             Point start = PointOnCircle(centre, radius, startDegrees);
             Point end = PointOnCircle(centre, radius, endDegrees);
             bool largeArc = (endDegrees - startDegrees) > 180.0;
-            ctx.BeginFigure(start, isFilled: false);
-            ctx.ArcTo(end, new Size(radius, radius), rotationAngle: 0, isLargeArc: largeArc, SweepDirection.Clockwise);
-            ctx.EndFigure(false);
+            context.BeginFigure(start, isFilled: false);
+            context.ArcTo(end, new Size(radius, radius), rotationAngle: 0, isLargeArc: largeArc, SweepDirection.Clockwise);
+            context.EndFigure(false);
         }
         return geometry;
     }

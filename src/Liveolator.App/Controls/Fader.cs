@@ -18,6 +18,7 @@ public sealed class Fader : Control
     private const double KeyStep = 0.05;
     /// <summary>Holding Shift slows the drag by this factor for precise level/crossfade trims.</summary>
     private const double FineDragFactor = 5.0;
+    private const int TickCount = 9;
 
     public static readonly StyledProperty<double> ValueProperty =
         AvaloniaProperty.Register<Fader, double>(
@@ -39,6 +40,9 @@ public sealed class Fader : Control
 
     public static readonly StyledProperty<IBrush> ThumbBrushProperty =
         AvaloniaProperty.Register<Fader, IBrush>(nameof(ThumbBrush), new SolidColorBrush(Color.FromRgb(0xE8, 0xEE, 0xF6)));
+
+    private static readonly IBrush SlotBrush = new SolidColorBrush(Color.FromRgb(0x05, 0x08, 0x0D));
+    private static readonly IBrush CapRim = new SolidColorBrush(Color.FromRgb(0x33, 0x3F, 0x52));
 
     private bool _dragging;
     private double _dragStart;
@@ -65,67 +69,157 @@ public sealed class Fader : Control
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
 
-    private static readonly IBrush SlotBrush = new SolidColorBrush(Color.FromRgb(0x07, 0x0A, 0x0F));
-    private static readonly IBrush CapRim = new SolidColorBrush(Color.FromRgb(0x33, 0x3F, 0x52));
-    private const int TickCount = 9;
-
     public override void Render(DrawingContext context)
     {
-        Rect b = Bounds;
+        Rect bounds = Bounds;
         double value = Math.Clamp(Value, 0, 1);
         bool on = IsEnabled;
         IBrush fill = on ? FillBrush : TrackBrush;
         IBrush centreLine = on ? FillBrush : TrackBrush;
         const double trackWidth = 4;
         const double pad = 10;
-        var tickPen = new Pen(TrackBrush, 1.5) { LineCap = PenLineCap.Round };
 
         if (Orientation == Orientation.Vertical)
         {
-            double cx = b.Width / 2;
-            double top = pad, bottom = b.Height - pad;
-            double len = Math.Max(1, bottom - top);
-            double thumbY = bottom - (value * len);
+            double cx = bounds.Width / 2;
+            double top = pad;
+            double bottom = bounds.Height - pad;
+            double length = Math.Max(1, bottom - top);
+            double thumbY = bottom - (value * length);
 
-            // dB tick marks flanking the track
-            for (int i = 0; i < TickCount; i++)
-            {
-                double y = top + (len * i / (TickCount - 1));
-                context.DrawLine(tickPen, new Point(cx - 11, y), new Point(cx - 6, y));
-                context.DrawLine(tickPen, new Point(cx + 6, y), new Point(cx + 11, y));
-            }
+            DrawVerticalTicks(context, cx, top, length);
+            DrawSlot(context, new Point(cx, top), new Point(cx, bottom), trackWidth, vertical: true);
+            DrawIlluminatedFill(context, new Point(cx, thumbY), new Point(cx, bottom), fill, trackWidth);
 
-            context.DrawLine(new Pen(SlotBrush, trackWidth + 5) { LineCap = PenLineCap.Round }, new Point(cx, top), new Point(cx, bottom));
-            context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, top), new Point(cx, bottom));
-            context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, thumbY), new Point(cx, bottom));
-
-            double capW = Math.Min(b.Width, 30);
-            var cap = new Rect(cx - (capW / 2), thumbY - 8, capW, 16);
-            context.DrawRectangle(CapGradient(), new Pen(CapRim, 1), cap, 4, 4);
-            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0xD7, 0xE0, 0xEA)), 1),
-                new Point(cap.Left + 4, cap.Top + 3), new Point(cap.Right - 4, cap.Top + 3));
-            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
-                new Point(cap.Left + 4, thumbY), new Point(cap.Right - 4, thumbY));
+            double capWidth = Math.Min(bounds.Width, 30);
+            var cap = new Rect(cx - (capWidth / 2), thumbY - 8, capWidth, 16);
+            DrawCapShadow(context, cap, vertical: true);
+            DrawCap(context, cap, centreLine, vertical: true);
         }
         else
         {
-            double cy = b.Height / 2;
-            double left = pad, right = b.Width - pad;
-            double len = Math.Max(1, right - left);
-            double thumbX = left + (value * len);
+            double cy = bounds.Height / 2;
+            double left = pad;
+            double right = bounds.Width - pad;
+            double length = Math.Max(1, right - left);
+            double thumbX = left + (value * length);
 
-            context.DrawLine(new Pen(SlotBrush, trackWidth + 5) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(right, cy));
-            context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(right, cy));
-            context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(thumbX, cy));
+            DrawHorizontalTicks(context, cy, left, length);
+            DrawSlot(context, new Point(left, cy), new Point(right, cy), trackWidth, vertical: false);
+            DrawIlluminatedFill(context, new Point(left, cy), new Point(thumbX, cy), fill, trackWidth);
 
-            double capH = Math.Min(b.Height, 30);
-            var cap = new Rect(thumbX - 8, cy - (capH / 2), 16, capH);
-            context.DrawRectangle(CapGradient(), new Pen(CapRim, 1), cap, 4, 4);
-            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0xD7, 0xE0, 0xEA)), 1),
-                new Point(cap.Left + 3, cap.Top + 4), new Point(cap.Left + 3, cap.Bottom - 4));
-            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
-                new Point(thumbX, cap.Top + 4), new Point(thumbX, cap.Bottom - 4));
+            double capHeight = Math.Min(bounds.Height, 30);
+            var cap = new Rect(thumbX - 8, cy - (capHeight / 2), 16, capHeight);
+            DrawCapShadow(context, cap, vertical: false);
+            DrawCap(context, cap, centreLine, vertical: false);
         }
+    }
+
+    private void DrawSlot(DrawingContext context, Point start, Point end, double width, bool vertical)
+    {
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0xA8, 0, 0, 0)), width + 8)
+            { LineCap = PenLineCap.Round }, start, end);
+
+        Point litOffset = vertical ? new Point(-1.1, 0) : new Point(0, -1.1);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x72, 0x70, 0x7E, 0x90)), width + 4)
+            { LineCap = PenLineCap.Round }, start + litOffset, end + litOffset);
+        context.DrawLine(new Pen(SlotBrush, width + 3) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(TrackBrush, width) { LineCap = PenLineCap.Round }, start, end);
+
+        Point shadowOffset = vertical ? new Point(1, 0) : new Point(0, 1);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x8C, 0, 0, 0)), 1.2)
+            { LineCap = PenLineCap.Round }, start + shadowOffset, end + shadowOffset);
+    }
+
+    private static void DrawIlluminatedFill(
+        DrawingContext context,
+        Point start,
+        Point end,
+        IBrush fill,
+        double width)
+    {
+        context.DrawLine(new Pen(Halo(fill, 0.2), width * 2.8) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(Halo(fill, 0.42), width * 1.6) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(fill, width) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(Halo(fill, 0.7), 1) { LineCap = PenLineCap.Round },
+            start + new Point(-0.55, -0.55), end + new Point(-0.55, -0.55));
+    }
+
+    private static void DrawVerticalTicks(DrawingContext context, double cx, double top, double length)
+    {
+        for (int i = 0; i < TickCount; i++)
+        {
+            double y = top + (length * i / (TickCount - 1));
+            DrawEngravedLine(context, new Point(cx - 12, y), new Point(cx - 6.5, y));
+            DrawEngravedLine(context, new Point(cx + 6.5, y), new Point(cx + 12, y));
+        }
+    }
+
+    private static void DrawHorizontalTicks(DrawingContext context, double cy, double left, double length)
+    {
+        for (int i = 0; i < TickCount; i++)
+        {
+            double x = left + (length * i / (TickCount - 1));
+            DrawEngravedLine(context, new Point(x, cy - 12), new Point(x, cy - 6.5));
+            DrawEngravedLine(context, new Point(x, cy + 6.5), new Point(x, cy + 12));
+        }
+    }
+
+    private static void DrawEngravedLine(DrawingContext context, Point start, Point end)
+    {
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0x01, 0x03, 0x07)), 1.5)
+            { LineCap = PenLineCap.Round }, start + new Point(0.6, 0.7), end + new Point(0.6, 0.7));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x7C, 0x83, 0x91, 0xA2)), 1)
+            { LineCap = PenLineCap.Round }, start, end);
+    }
+
+    private static void DrawCapShadow(DrawingContext context, Rect cap, bool vertical)
+    {
+        // WHY: stepped silhouettes fake the cap-to-slot contact shadow without blur.
+        Point offset = vertical ? new Point(0, 2.5) : new Point(2.5, 1);
+        var broad = new Rect(cap.X - 3 + offset.X, cap.Y - 3 + offset.Y, cap.Width + 6, cap.Height + 6);
+        var tight = new Rect(cap.X - 1 + offset.X, cap.Y - 1 + offset.Y, cap.Width + 2, cap.Height + 2);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), null, broad, 6, 6);
+        context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x68, 0, 0, 0)), null, tight, 5, 5);
+    }
+
+    private void DrawCap(DrawingContext context, Rect cap, IBrush centreLine, bool vertical)
+    {
+        context.DrawRectangle(ThumbBrush, null, cap, 4, 4);
+        context.DrawRectangle(CapGradient(), new Pen(CapRim, 1.2), cap, 4, 4);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x74, 0xE4, 0xEB, 0xF3)), 1),
+            new Point(cap.Left + 4, cap.Top + 2.5), new Point(cap.Right - 4, cap.Top + 2.5));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x9A, 0x03, 0x06, 0x0B)), 1),
+            new Point(cap.Left + 2.5, cap.Bottom - 2), new Point(cap.Right - 2.5, cap.Bottom - 2));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x5C, 0xA8, 0xB4, 0xC2)), 1),
+            new Point(cap.Left + 2, cap.Top + 4), new Point(cap.Left + 2, cap.Bottom - 4));
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x90, 0x02, 0x04, 0x08)), 1.2),
+            new Point(cap.Right - 2, cap.Top + 4), new Point(cap.Right - 2, cap.Bottom - 4));
+
+        if (vertical)
+        {
+            double y = cap.Center.Y;
+            DrawGripGroove(context, new Point(cap.Left + 4, y - 3), new Point(cap.Right - 4, y - 3));
+            DrawGripGroove(context, new Point(cap.Left + 4, y + 3), new Point(cap.Right - 4, y + 3));
+            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
+                new Point(cap.Left + 4, y), new Point(cap.Right - 4, y));
+        }
+        else
+        {
+            double x = cap.Center.X;
+            DrawGripGroove(context, new Point(x - 3, cap.Top + 4), new Point(x - 3, cap.Bottom - 4));
+            DrawGripGroove(context, new Point(x + 3, cap.Top + 4), new Point(x + 3, cap.Bottom - 4));
+            context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
+                new Point(x, cap.Top + 4), new Point(x, cap.Bottom - 4));
+        }
+    }
+
+    private static void DrawGripGroove(DrawingContext context, Point start, Point end)
+    {
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0x02, 0x04, 0x08)), 1.4)
+            { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x54, 0xA1, 0xAD, 0xBC)), 0.8)
+            { LineCap = PenLineCap.Round }, start + new Point(-0.5, -0.5), end + new Point(-0.5, -0.5));
     }
 
     private static IBrush CapGradient()
@@ -135,11 +229,24 @@ public sealed class Fader : Control
             EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromRgb(0x3B, 0x47, 0x58), 0),
-                new GradientStop(Color.FromRgb(0x20, 0x29, 0x36), 0.48),
-                new GradientStop(Color.FromRgb(0x10, 0x15, 0x1D), 1),
+                new GradientStop(Color.FromArgb(0xF0, 0x55, 0x62, 0x73), 0),
+                new GradientStop(Color.FromArgb(0xF2, 0x34, 0x3E, 0x4D), 0.2),
+                new GradientStop(Color.FromArgb(0xF6, 0x1B, 0x23, 0x2E), 0.58),
+                new GradientStop(Color.FromArgb(0xFA, 0x0B, 0x10, 0x17), 0.82),
+                new GradientStop(Color.FromArgb(0xF0, 0x21, 0x2A, 0x36), 1),
             },
         };
+
+    private static IBrush Halo(IBrush source, double opacity)
+    {
+        if (source is ISolidColorBrush solid)
+        {
+            Color color = solid.Color;
+            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
+        }
+
+        return source;
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

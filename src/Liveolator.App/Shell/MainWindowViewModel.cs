@@ -61,4 +61,23 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _currentTab;
         set => this.RaiseAndSetIfChanged(ref _currentTab, value);
     }
+
+    /// <summary>Move to the next tab, wrapping from the last back to the first (Tab key).</summary>
+    public void SelectNextTab() => StepTab(+1);
+
+    /// <summary>Move to the previous tab, wrapping from the first to the last (Shift+Tab).</summary>
+    public void SelectPreviousTab() => StepTab(-1);
+
+    private void StepTab(int direction)
+    {
+        if (Tabs.Count == 0)
+        {
+            return;
+        }
+
+        int current = Tabs.IndexOf(CurrentTab);
+        // Modular step that stays non-negative for either direction (+1 forward, -1 back).
+        int next = ((current + direction) % Tabs.Count + Tabs.Count) % Tabs.Count;
+        CurrentTab = Tabs[next];
+    }
 }
