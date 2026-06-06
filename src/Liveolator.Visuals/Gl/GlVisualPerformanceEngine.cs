@@ -10,17 +10,21 @@ using Silk.NET.Windowing;
 namespace Liveolator.Visuals.Gl;
 
 /// <summary>
-/// First concrete <see cref="IVisualPerformanceEngine"/> over the OpenGL compositor — the single
-/// vertical slice of doc 08: one image-backed fullscreen layer with one beat-reactive brightness
-/// effect. Macro values, blackout, and bank selection are pure, observable state (so they unit-test
-/// off the GPU via <see cref="CurrentFrame"/>); <see cref="Run"/> opens a window, creates the GL
-/// context + <see cref="QuadRenderer"/>, and renders <see cref="CurrentFrame"/> each frame against
-/// the shared <see cref="IBeatClock"/>.
+/// First concrete <see cref="IVisualPerformanceEngine"/> over the OpenGL compositor (doc 08). Macro
+/// values, blackout, and bank selection are pure, observable state (so they unit-test off the GPU via
+/// <see cref="CurrentFrame"/> / <see cref="CurrentComposition"/>); <see cref="Run"/> opens a window,
+/// creates the GL context + <see cref="LayeredQuadRenderer"/>, and renders the active scene's layer
+/// stack each frame against the shared <see cref="IBeatClock"/>.
 ///
-/// Deferred to later phases (structured to grow into this class, not replace it): the full
-/// layer/effect chain + blend modes, video and camera sources, quantized scene/clip launching via
-/// <see cref="IBeatScheduler"/>, transitions, and the <c>VisualActionHandler</c> dispatcher bridge.
-/// Those operations log and no-op here rather than failing the build or the render loop.
+/// Now composites the active scene's full layer stack with per-layer blend modes + opacity
+/// (<see cref="LayeredQuadRenderer"/>); a single image layer reproduces the original single-layer
+/// behaviour. The beat clock is the shared live clock supplied at construction, so visuals react to
+/// the same music the DJ side drives (the RENDER-WINDOW SEAM clock half — doc 18).
+///
+/// Still deferred (structured to grow into this class, not replace it): video and camera layer
+/// sources (they resolve as non-renderable and are skipped), quantized scene/clip launching via
+/// <see cref="IBeatScheduler"/>, and transitions. Those operations log and no-op here rather than
+/// failing the build or the render loop.
 /// </summary>
 public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDisposable
 {
@@ -71,6 +75,14 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         return FrameUniforms.Resolve(_brightnessMacro, normalized, _beatClock.Current, _flashStrength, _blackout);
     }
 
+    /// <summary>
+    /// The active scene's layers resolved to their composite order, blend mode, opacity, and
+    /// renderability (image layers render; video/camera are deferred → non-renderable). Pure — lets
+    /// the scene→layer mapping unit-test off the GPU. The renderer draws the renderable subset.
+    /// </summary>
+    public IReadOnlyList<ResolvedLayer> CurrentComposition()
+        => SceneComposition.Resolve(ActiveScene());
+
     public void SetMacro(string name, double value)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -113,20 +125,19 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         => LogDeferred(nameof(Transition));
 
     /// <summary>
-    /// Opens a window, creates the GL context, loads the first image layer of
-    /// <see cref="ActiveBank"/>, and renders until the window closes. Requires a display — this is
-    /// the manually-verified entry point (see Visuals CLAUDE/test notes); it has no headless path.
+    /// Opens a window, creates the GL context, loads the active scene's renderable (image) layers in
+    /// composite order, and renders the blended layer stack until the window closes. Requires a
+    /// display — this is the manually-verified entry point (see Visuals CLAUDE/test notes); it has no
+    /// headless path.
     /// </summary>
     /// <param name="title">Window title.</param>
     /// <param name="width">Initial window width in pixels.</param>
     /// <param name="height">Initial window height in pixels.</param>
     public void Run(string title = "Liveolator Visuals", int width = 1280, int height = 720)
     {
-        VisualSourceRef? source = FirstImageSource();
-        if (source is null)
-            throw new InvalidOperationException("The active bank has no image layer to render in this slice.");
-
-        RgbaImage image = _imageLoader.Load(source.Reference);
+        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers = LoadRenderableLayers();
+        if (layers.Count == 0)
+            throw new InvalidOperationException("The active scene has no renderable image layer to render.");
 
         var options = WindowOptions.Default with
         {
@@ -141,15 +152,17 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
 
         using IWindow window = Window.Create(options);
         GL? gl = null;
-        QuadRenderer? renderer = null;
+        LayeredQuadRenderer? renderer = null;
 
         window.Load += () =>
         {
             try
             {
                 gl = GL.GetApi(window);
-                renderer = new QuadRenderer(gl, image, NullLogger<QuadRenderer>.Instance);
-                _logger.LogInformation("Visual compositor window loaded ({Width}x{Height}).", width, height);
+                renderer = new LayeredQuadRenderer(gl, layers, NullLogger<LayeredQuadRenderer>.Instance);
+                _logger.LogInformation(
+                    "Visual compositor window loaded ({Width}x{Height}, {Layers} layer(s)).",
+                    width, height, renderer.LayerCount);
             }
             catch (Exception ex)
             {
@@ -187,20 +200,31 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         // The window/renderer are owned for the lifetime of Run(); nothing persists after it returns.
     }
 
-    private VisualSourceRef? FirstImageSource()
-    {
-        // The slice renders the first scene's first image layer; richer scene/bank resolution
-        // arrives with LoadScene + the VisualActionHandler.
-        VisualScene? scene = _activeBank.Scenes.Count > 0 ? _activeBank.Scenes[0] : null;
-        if (scene is null)
-            return null;
+    // The active scene; richer scene/bank selection arrives with LoadScene + the VisualActionHandler.
+    private VisualScene? ActiveScene()
+        => _activeBank.Scenes.Count > 0 ? _activeBank.Scenes[0] : null;
 
-        foreach (VisualLayer layer in scene.Layers)
+    // Decodes every renderable (image) layer of the active scene in composite order. A layer whose
+    // image fails to decode is dropped with a warning (doc 08 — a missing asset degrades that layer,
+    // it does not crash the show); video/camera layers are non-renderable and skipped silently.
+    private IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> LoadRenderableLayers()
+    {
+        var loaded = new List<(ResolvedLayer, RgbaImage)>();
+        foreach (ResolvedLayer layer in SceneComposition.RenderableLayers(ActiveScene()))
         {
-            if (layer.Source.Kind == VisualSourceKind.Image)
-                return layer.Source;
+            try
+            {
+                RgbaImage image = _imageLoader.Load(layer.Source.Reference);
+                loaded.Add((layer, image));
+            }
+            catch (ImageLoadException ex)
+            {
+                _logger.LogWarning(
+                    ex, "Layer '{Layer}' image '{Reference}' could not be loaded; skipping that layer.",
+                    layer.Name, layer.Source.Reference);
+            }
         }
-        return null;
+        return loaded;
     }
 
     private void LogDeferred(string operation)

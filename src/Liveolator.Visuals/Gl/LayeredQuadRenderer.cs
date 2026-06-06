@@ -1,3 +1,4 @@
+using Liveolator.Core.Visuals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Silk.NET.OpenGL;
@@ -5,16 +6,20 @@ using Silk.NET.OpenGL;
 namespace Liveolator.Visuals.Gl;
 
 /// <summary>
-/// The minimal GPU primitive of the compositor slice: a single fullscreen textured quad drawn
-/// through <see cref="QuadShaderSource"/> with one beat-reactive brightness effect. Owns its GL
-/// objects (program, VAO/VBO, texture) and disposes them. Requires a current GL context — it is
-/// created and driven only from the render thread (doc 08). Multi-layer/blend-chain, video and
-/// camera sources are deferred; they grow by adding more renderers/textures above this one.
+/// The multi-layer GPU compositor (doc 08 — a scene is a real layer stack). Grows from
+/// <see cref="QuadRenderer"/>: one shared fullscreen-quad program + VAO, one texture per layer, drawn
+/// bottom→top with each layer's <see cref="BlendModeGl"/> and per-layer opacity. With a single image
+/// layer it reproduces the original single-layer slice (base layer drawn opaque, no blending).
+///
+/// Owns its GL objects and disposes them. Requires a current GL context — created and driven only
+/// from the render thread (doc 08). A layer whose texture failed to build is skipped (logged) so one
+/// bad asset degrades that layer instead of crashing the show (doc 08 error handling). Overlay blend
+/// is non-separable and degrades to <see cref="BlendMode.Normal"/> with a warning.
 /// </summary>
-public sealed class QuadRenderer : IDisposable
+public sealed class LayeredQuadRenderer : IDisposable
 {
     // Fullscreen quad as two triangles: clip-space xy + texture uv. V is flipped (1 - y) because the
-    // image is decoded top-row-first while GL texture space is bottom-up.
+    // image is decoded top-row-first while GL texture space is bottom-up. Matches QuadRenderer.
     private static readonly float[] QuadVertices =
     {
         // x      y      u     v
@@ -28,32 +33,44 @@ public sealed class QuadRenderer : IDisposable
     };
 
     private readonly GL _gl;
-    private readonly ILogger<QuadRenderer> _logger;
+    private readonly ILogger<LayeredQuadRenderer> _logger;
+    private readonly IReadOnlyList<LayerTexture> _layers;
 
     private uint _program;
     private uint _vao;
     private uint _vbo;
-    private uint _texture;
 
     private int _uBrightness;
     private int _uBeatFlash;
     private int _uBlackout;
+    private int _uOpacity;
     private bool _disposed;
 
-    public QuadRenderer(GL gl, RgbaImage image, ILogger<QuadRenderer>? logger = null)
+    /// <param name="layers">
+    /// The renderable layers in composite order (bottom→top), each paired with its decoded image. The
+    /// first is the opaque base; the rest blend over it. Must contain at least one layer.
+    /// </param>
+    public LayeredQuadRenderer(
+        GL gl,
+        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers,
+        ILogger<LayeredQuadRenderer>? logger = null)
     {
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
-        ArgumentNullException.ThrowIfNull(image);
-        _logger = logger ?? NullLogger<QuadRenderer>.Instance;
+        ArgumentNullException.ThrowIfNull(layers);
+        if (layers.Count == 0)
+            throw new ArgumentException("At least one layer is required to render.", nameof(layers));
+        _logger = logger ?? NullLogger<LayeredQuadRenderer>.Instance;
 
-        image.Validated();
         _program = BuildProgram();
         CacheUniformLocations();
         BuildQuad();
-        _texture = BuildTexture(image);
+        _layers = BuildLayerTextures(layers);
     }
 
-    /// <summary>Clears and draws the quad for one frame using the resolved uniforms.</summary>
+    /// <summary>The number of layers whose textures were built and will be drawn.</summary>
+    public int LayerCount => _layers.Count;
+
+    /// <summary>Clears and draws the layer stack bottom→top for one frame using the resolved uniforms.</summary>
     public void Render(FrameUniforms uniforms)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -65,19 +82,38 @@ public sealed class QuadRenderer : IDisposable
         _gl.Uniform1(_uBrightness, uniforms.Brightness);
         _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
         _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
-
         _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture2D, _texture);
-
         _gl.BindVertexArray(_vao);
-        _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+
+        for (int i = 0; i < _layers.Count; i++)
+        {
+            LayerTexture layer = _layers[i];
+
+            // The base layer paints over the cleared frame opaquely; layers above blend over it.
+            if (i == 0)
+            {
+                _gl.Disable(EnableCap.Blend);
+            }
+            else
+            {
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendEquation(layer.Blend.Equation);
+                _gl.BlendFunc(layer.Blend.SourceFactor, layer.Blend.DestFactor);
+            }
+
+            _gl.Uniform1(_uOpacity, (float)layer.Opacity);
+            _gl.BindTexture(TextureTarget.Texture2D, layer.Texture);
+            _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+        }
+
+        _gl.Disable(EnableCap.Blend);
         _gl.BindVertexArray(0);
     }
 
     private uint BuildProgram()
     {
-        uint vertex = CompileShader(ShaderType.VertexShader, QuadShaderSource.Vertex);
-        uint fragment = CompileShader(ShaderType.FragmentShader, QuadShaderSource.Fragment);
+        uint vertex = CompileShader(ShaderType.VertexShader, LayeredQuadShaderSource.Vertex);
+        uint fragment = CompileShader(ShaderType.FragmentShader, LayeredQuadShaderSource.Fragment);
 
         uint program = _gl.CreateProgram();
         _gl.AttachShader(program, vertex);
@@ -91,10 +127,9 @@ public sealed class QuadRenderer : IDisposable
             _gl.DeleteProgram(program);
             _gl.DeleteShader(vertex);
             _gl.DeleteShader(fragment);
-            throw new ShaderCompilationException($"Quad program failed to link: {log}");
+            throw new ShaderCompilationException($"Layered quad program failed to link: {log}");
         }
 
-        // Shaders are linked into the program; the standalone objects are no longer needed.
         _gl.DetachShader(program, vertex);
         _gl.DetachShader(program, fragment);
         _gl.DeleteShader(vertex);
@@ -123,11 +158,11 @@ public sealed class QuadRenderer : IDisposable
         _uBrightness = _gl.GetUniformLocation(_program, "uBrightness");
         _uBeatFlash = _gl.GetUniformLocation(_program, "uBeatFlash");
         _uBlackout = _gl.GetUniformLocation(_program, "uBlackout");
+        _uOpacity = _gl.GetUniformLocation(_program, "uOpacity");
 
-        // The texture sampler is fixed to unit 0 for the single-layer slice.
+        // The sampler is fixed to unit 0; every layer binds its texture to that unit before its draw.
         _gl.UseProgram(_program);
-        int uTexture = _gl.GetUniformLocation(_program, "uTexture");
-        _gl.Uniform1(uTexture, 0);
+        _gl.Uniform1(_gl.GetUniformLocation(_program, "uTexture"), 0);
     }
 
     private unsafe void BuildQuad()
@@ -155,8 +190,35 @@ public sealed class QuadRenderer : IDisposable
         _gl.BindVertexArray(0);
     }
 
+    private IReadOnlyList<LayerTexture> BuildLayerTextures(
+        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers)
+    {
+        var built = new List<LayerTexture>(layers.Count);
+        foreach ((ResolvedLayer layer, RgbaImage image) in layers)
+        {
+            BlendMode blendMode = layer.Blend;
+            if (!BlendModeGl.TryResolve(blendMode, out BlendModeGl blend))
+            {
+                // Overlay is non-separable; rendering it with a wrong factor set would be worse than
+                // degrading. Fall back to Normal and tell the operator (doc 08 — never crash the show).
+                _logger.LogWarning(
+                    "Layer '{Layer}' uses blend mode {Blend} which has no fixed-function GL mapping; rendering as Normal.",
+                    layer.Name, blendMode);
+                blend = BlendModeGl.Resolve(BlendMode.Normal);
+            }
+
+            uint texture = BuildTexture(image);
+            built.Add(new LayerTexture(texture, blend, layer.Opacity));
+        }
+
+        // The base layer must exist; BuildTexture validates each image and throws on a bad buffer,
+        // so a fully-empty stack here is a programming error the ctor guard already prevents.
+        return built;
+    }
+
     private unsafe uint BuildTexture(RgbaImage image)
     {
+        image.Validated();
         uint texture = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, texture);
 
@@ -191,7 +253,11 @@ public sealed class QuadRenderer : IDisposable
 
         try
         {
-            if (_texture != 0) _gl.DeleteTexture(_texture);
+            foreach (LayerTexture layer in _layers)
+            {
+                if (layer.Texture != 0)
+                    _gl.DeleteTexture(layer.Texture);
+            }
             if (_vbo != 0) _gl.DeleteBuffer(_vbo);
             if (_vao != 0) _gl.DeleteVertexArray(_vao);
             if (_program != 0) _gl.DeleteProgram(_program);
@@ -199,7 +265,10 @@ public sealed class QuadRenderer : IDisposable
         catch (Exception ex)
         {
             // GL teardown failures must not mask the original error path; log and move on.
-            _logger.LogWarning(ex, "Failed to release GL resources for the quad renderer.");
+            _logger.LogWarning(ex, "Failed to release GL resources for the layered quad renderer.");
         }
     }
+
+    // One uploaded layer: its texture handle, the resolved GL blend state, and its opacity uniform.
+    private readonly record struct LayerTexture(uint Texture, BlendModeGl Blend, double Opacity);
 }

@@ -321,26 +321,33 @@ GPU compositor — pure data + math, no GL.
 - `VisualBank.Scene(i)` returns null out of range (an empty pad). `VisualMacro.Resolve` clamps
   to 0..1 then maps to `[Min,Max]`. `VisualLayer` validates opacity.
 
-### ✅ GL compositor — first vertical slice — `Liveolator.Visuals/Gl/` (doc 08)
+### ✅ GL compositor — multi-layer + blend + live-clock — `Liveolator.Visuals/Gl/` (doc 08)
 
-The first concrete `IVisualPerformanceEngine` over OpenGL: **one image-backed fullscreen layer
-with one beat-reactive brightness/strobe effect.** Silk.NET (OpenGL + GLFW windowing) + SkiaSharp
-for image decode.
+The concrete `IVisualPerformanceEngine` over OpenGL: the active scene's **full layer stack**
+composited with per-layer **blend modes + opacity**, beat-reactive off the **shared live clock**.
+Silk.NET (OpenGL + GLFW windowing) + SkiaSharp for image decode.
 
 | Built | File |
 |-------|------|
 | Pure per-frame uniform resolution (macro + `BeatClockState` → brightness/flash/blackout) | `Gl/FrameUniforms` |
 | Still-image → RGBA8 pixels (degrades via `ImageLoadException`) | `Gl/RgbaImage`, `Gl/SkiaImageLoader`, `Gl/ImageLoadException` |
-| Fullscreen-quad GLSL program + GL renderer | `Gl/QuadShaderSource`, `Gl/QuadRenderer`, `Gl/ShaderCompilationException` |
-| Concrete engine (SetMacro/Blackout/ActiveBank/CurrentFrame pure; `Run()` opens window + renders) | `Gl/GlVisualPerformanceEngine` |
+| Pure scene→layer resolution (order/blend/opacity/renderability) | `Gl/SceneComposition`, `Gl/ResolvedLayer` |
+| Pure `BlendMode` → premultiplied-alpha GL blend factors (Overlay degrades to Normal) | `Gl/BlendModeGl` |
+| Pure live-clock selection (audio-driven master clock else manual tap clock) | `Gl/LiveClockSelector` |
+| Fullscreen-quad GLSL program + multi-layer GL renderer | `Gl/LayeredQuadShaderSource`, `Gl/LayeredQuadRenderer`, `Gl/ShaderCompilationException` |
+| Concrete engine (SetMacro/Blackout/ActiveBank/CurrentFrame/CurrentComposition pure; `Run()` opens window + renders the layer stack) | `Gl/GlVisualPerformanceEngine` |
 
-- **Tested off the GPU (24 tests, green):** `FrameUniforms.Resolve` (macro mapping, confidence-gated
+- **Tested off the GPU (63 tests, green):** `FrameUniforms.Resolve` (macro mapping, confidence-gated
   beat flash, blackout override), `RgbaImage.Validated`, `SkiaImageLoader` (decode / missing /
-  non-image), and the engine's pure state via `CurrentFrame()`. GL context creation needs a display,
-  so `Run()` is **manually** verified — steps in `Liveolator.Visuals/CLAUDE.md`.
-- **Deferred (grow into `GlVisualPerformanceEngine`, not replace it):** the full layer/effect chain
-  + blend modes, video + camera sources, quantized scene/clip launching via `IBeatScheduler`,
-  transitions/strobe — all currently logged no-ops.
+  non-image), `SceneComposition` (order/blend/opacity carry-over, image-only renderability),
+  `BlendModeGl` (separable-mode factors, Overlay rejected), `LiveClockSelector` (audio-preferred /
+  manual-fallback), and the engine's pure state via `CurrentFrame()` / `CurrentComposition()`. GL
+  context creation needs a display, so `Run()` is **manually** verified — steps in
+  `Liveolator.Visuals/CLAUDE.md`.
+- **Deferred (grow into `GlVisualPerformanceEngine`, not replace it):** video + camera layer sources
+  (resolve as non-renderable and are skipped today), quantized scene/clip launching via
+  `IBeatScheduler`, transitions/strobe, and the per-layer effect chain — all currently logged no-ops.
+  `Overlay` blend awaits a framebuffer read-back path (degrades to Normal for now).
 
 ### ✅ Visual action handler — dispatcher → visual engine bridge — `Liveolator.Core/Visuals/` (doc 04/08)
 
@@ -367,9 +374,12 @@ no GL.
   payload (or an `Argument`-keyed source registry) exists; the engine seam is already in place.
 - **App-wired (`ServiceConfig.WireVisuals`):** the `GlVisualPerformanceEngine` is registered as
   `IVisualPerformanceEngine` and the handler joins the one dispatcher. **Headless-safe:** `Run()` is
-  never called at composition — launching the render window is a deferred user action (the
-  `RENDER-WINDOW SEAM` note). The engine runs off its own `ManualBeatClock`; binding it to the live
-  audio clock is part of that seam.
+  never called at composition — launching the render window is a deferred user action via
+  `IVisualStage` (the `RENDER-WINDOW SEAM` note). The engine binds to the `LiveClockSelector`-chosen
+  clock: the audio-driven master clock when the realtime BASS engine is up (visuals lock to the
+  audible signal), else the shared manual tap clock (headless) — closing the clock half of the seam.
+  The realtime engine is now constructed *before* `WireVisuals` so its master clock is available to
+  the selector.
 
 ### ✅ Live tab — full performance surface — `Liveolator.App/Features/Live/` (doc 12, the mock)
 

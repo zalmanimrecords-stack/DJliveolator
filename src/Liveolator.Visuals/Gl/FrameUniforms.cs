@@ -7,7 +7,7 @@ namespace Liveolator.Visuals.Gl;
 /// The per-frame inputs the fragment shader needs, resolved from the current macro values and the
 /// shared <see cref="BeatClockState"/> (doc 08 — "per-frame reactive parameters"). This is pure
 /// math with no GL, so the macro→uniform mapping and the beat-flash response are unit-testable off
-/// the GPU; <see cref="QuadRenderer"/> just pushes these values into the program each frame.
+/// the GPU; <see cref="LayeredQuadRenderer"/> just pushes these values into the program each frame.
 /// </summary>
 /// <param name="Brightness">Base brightness multiplier the "brightness" macro drives (>= 0).</param>
 /// <param name="BeatFlash">

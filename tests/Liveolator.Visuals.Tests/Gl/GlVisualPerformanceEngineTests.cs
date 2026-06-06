@@ -121,4 +121,56 @@ public sealed class GlVisualPerformanceEngineTests
     public void Constructor_rejects_negative_flash_strength()
         => Assert.Throws<ArgumentOutOfRangeException>(
             () => new GlVisualPerformanceEngine(BankWithImage(), Brightness(), new FakeBeatClock(), flashStrength: -1));
+
+    [Fact]
+    public void CurrentComposition_resolves_the_single_image_layer_as_renderable()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+
+        IReadOnlyList<ResolvedLayer> layers = engine.CurrentComposition();
+
+        Assert.Single(layers);
+        Assert.Equal("base", layers[0].Name);
+        Assert.True(layers[0].Renderable);
+        Assert.Equal(BlendMode.Normal, layers[0].Blend);
+    }
+
+    [Fact]
+    public void CurrentComposition_resolves_a_multi_layer_scene_in_order_with_blend_and_opacity()
+    {
+        VisualBank bank = BankWithLayers(
+            ("base", VisualSourceKind.Image, BlendMode.Normal, 1.0),
+            ("glow", VisualSourceKind.Image, BlendMode.Add, 0.4),
+            ("clip", VisualSourceKind.VideoClip, BlendMode.Screen, 1.0));
+        var engine = new GlVisualPerformanceEngine(bank, Brightness(), new FakeBeatClock());
+
+        IReadOnlyList<ResolvedLayer> layers = engine.CurrentComposition();
+
+        Assert.Equal(3, layers.Count);
+        Assert.Equal(BlendMode.Add, layers[1].Blend);
+        Assert.Equal(0.4, layers[1].Opacity);
+        // The video layer is carried in the composition but flagged non-renderable (deferred source).
+        Assert.False(layers[2].Renderable);
+        Assert.True(layers[0].Renderable);
+    }
+
+    private static VisualBank BankWithLayers(
+        params (string Name, VisualSourceKind Kind, BlendMode Blend, double Opacity)[] specs)
+    {
+        var layers = specs
+            .Select(s => new VisualLayer(
+                s.Name,
+                new VisualSourceRef(s.Kind, s.Name + ".src"),
+                Array.Empty<EffectRef>(),
+                s.Blend,
+                s.Opacity))
+            .ToArray();
+        var scene = new VisualScene(
+            "scene-multi",
+            layers,
+            new Dictionary<string, double>(),
+            TransitionStyle.Cut,
+            BeatBehavior.None);
+        return new VisualBank("bank-multi", new[] { scene });
+    }
 }
