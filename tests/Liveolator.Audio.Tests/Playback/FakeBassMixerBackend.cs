@@ -86,6 +86,15 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         MasterStarts++;
     }
 
+    public List<BassInitOptions> Reinits { get; } = new();
+    public bool ReinitResult { get; set; } = true;
+
+    public bool ReinitOutput(BassInitOptions options)
+    {
+        Reinits.Add(options);
+        return ReinitResult;
+    }
+
     public void Dispose() => Disposed = true;
 
     /// <summary>Simulate BASSmix delivering mixed samples to the armed master tap.</summary>

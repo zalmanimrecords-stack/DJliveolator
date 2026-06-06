@@ -311,11 +311,31 @@ seams are pure Core; enumeration is a thin native binding; the UI logic is unit-
   buffer clamp; null/blank/"0"/stale → default device); a saved device that is gone **falls back to the
   system default** rather than disabling all audio. Native init still verified manually. +5 Audio tests
   (`BassInitOptionsTests`).
+- **Runtime device re-init (now built):** saving a device/buffer change re-opens the output **without an
+  app restart** via the pure `AudioReinitCoordinator` (Core) → `IAudioEngineReinitializer` seam →
+  `BassAudioEngineReinitializer`/`TwoDeckBassEngine.ReinitializeOutput` → `BassMixerBackend.ReinitOutput`
+  (native: re-inits the device, re-routes the live mixer via `Bass.ChannelSetDevice`, verified manually).
+  The coordinator only re-opens when the device or buffer actually changed (reuses `BassInitOptions`), and
+  **rolls back to the last working device** + logs if the re-open fails — never leaves the app silently
+  without audio. The Settings tab surfaces the outcome in `Status`. +6 Core `AudioReinitCoordinatorTests`,
+  +2 Audio `TwoDeckBassEngineTests`.
+- **Persisted capture-source selection (now built):** `AudioSettings` gained a tolerant
+  `CaptureDeviceId`+`CaptureSource` pair (folded to "no capture" when half-written/blank; trimmed);
+  `JsonSettingsStore` round-trips it as **optional** snapshot fields so an older version-1 config without
+  them still loads. The Settings tab shows a capture-source picker (led by a "(none)" sentinel) and applies
+  the choice through the existing `WireCaptureSources` factory via the Core `ICaptureSourceController`
+  (`CaptureSourceController` creates+starts the source and routes it into a stable `SwitchableAudioSource`,
+  disposing the prior source; a failed open keeps the current source). Wired as a `PerformanceAction` was
+  **not** chosen — there is no live capture consumer in the pipeline yet, so source selection goes through
+  the factory seam directly (the action route can be added once a live-capture engine consumes the switch).
+  +9 Core (`AppSettingsTests` capture cases + `CaptureSourceControllerTests`), +2 Media
+  `JsonSettingsStoreTests`, +9 App `SettingsViewModelTests`.
 - **Deferred (next increment):** opening the chosen **MIDI controller** into `MidiControllerRouter` so the
   hardware drives the dispatcher (needs the `ControllerMapper`+profile pipeline composed in `ServiceConfig`,
-  not yet wired). **Runtime** re-init on a device change (the current apply is at startup only) and applying
-  the buffer/device to `BassPlayback` (the legacy single-deck path) are also open. Persisted capture-source
-  selection (the `WireCaptureSources` SETTINGS-UI seam) remains open.
+  not yet wired). Applying the buffer/device to `BassPlayback` (the legacy single-deck path) is still open.
+  Feeding the capture `SwitchableAudioSource` into the analysis/beat pipeline (so a selected loopback/line-in
+  actually drives the live BPM/visuals) and modelling source selection as a `PerformanceAction` are the
+  remaining capture increments.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

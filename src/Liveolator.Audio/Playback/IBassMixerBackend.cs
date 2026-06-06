@@ -57,6 +57,13 @@ internal interface IBassMixerBackend : IDisposable
 
     /// <summary>Start the master output and arm the tap that delivers mixed samples to the frame pipeline.</summary>
     void StartMaster(Action<float[]> onMasterSamples);
+
+    /// <summary>
+    /// Re-open the output on a new device / buffer at runtime (doc 12 Settings re-init). Returns true if
+    /// the requested (or a safe fallback) device is now open; false if the re-open failed. Must not throw
+    /// for an expected device error — return false so the coordinator can roll back (global #16/#26).
+    /// </summary>
+    bool ReinitOutput(BassInitOptions options);
 }
 
 /// <summary>Output format of the master mix channel reported by BASS.</summary>

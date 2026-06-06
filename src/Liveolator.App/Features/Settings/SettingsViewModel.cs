@@ -19,14 +19,21 @@ namespace Liveolator.App.Features.Settings;
 /// <remarks>
 /// Selections are stored as device <b>ids/names</b> (not live handles), so they round-trip through the
 /// settings file and survive re-plugging. A previously-selected device that is no longer present falls
-/// back to the system default / "(none)" rather than erroring. Applying these to a running audio engine
-/// (re-init on the chosen device + buffer) is the next increment — this tab owns detection + persistence.
+/// back to the system default / "(none)" rather than erroring. On save the chosen output device + buffer
+/// are applied to the running engine at runtime via <see cref="AudioReinitCoordinator"/> (re-open without
+/// a restart, rolling back on failure), and the capture source is applied via
+/// <see cref="ICaptureSourceController"/>; both are optional (null in catalog-browser mode with no
+/// realtime engine), so the tab still detects + persists headless.
 /// </remarks>
 public sealed class SettingsViewModel : ViewModelBase
 {
     /// <summary>Sentinel for "use the platform default output device" (persists as a null id).</summary>
     public static AudioOutputDevice SystemDefaultOutput { get; } =
         new(Id: "", Name: "System default", IsDefault: true);
+
+    /// <summary>Sentinel capture entry for "no live capture source" (persists as a null id + kind).</summary>
+    public static AudioCaptureDevice NoCaptureSource { get; } =
+        new(Id: "", Name: "(none)", Kind: CaptureSourceKind.LineInput, IsDefault: false);
 
     /// <summary>Sentinel list entry for "no MIDI device selected" (persists as a null name).</summary>
     public const string NoDevice = "(none)";
@@ -37,9 +44,12 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IAudioCaptureDeviceCatalog _captures;
     private readonly IMidiDeviceProvider _midi;
     private readonly ISettingsStore _store;
+    private readonly AudioReinitCoordinator? _audioReinit;
+    private readonly ICaptureSourceController? _captureController;
 
     private AudioOutputDevice? _selectedOutputDevice;
     private int _selectedBufferMs = AudioSettings.DefaultBufferMs;
+    private AudioCaptureDevice? _selectedCaptureDevice;
     private string _selectedMidiInput = NoDevice;
     private string _selectedMidiOutput = NoDevice;
     private string _status = string.Empty;
@@ -48,12 +58,16 @@ public sealed class SettingsViewModel : ViewModelBase
         IAudioOutputDeviceCatalog outputs,
         IAudioCaptureDeviceCatalog captures,
         IMidiDeviceProvider midi,
-        ISettingsStore store)
+        ISettingsStore store,
+        AudioReinitCoordinator? audioReinit = null,
+        ICaptureSourceController? captureController = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
         _midi = midi ?? throw new ArgumentNullException(nameof(midi));
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _audioReinit = audioReinit;
+        _captureController = captureController;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
@@ -67,7 +81,7 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Output devices to pick from, led by the <see cref="SystemDefaultOutput"/> sentinel.</summary>
     public ObservableCollection<AudioOutputDevice> OutputDevices { get; } = new();
 
-    /// <summary>Detected capture endpoints (informational; capture-source selection is a later seam).</summary>
+    /// <summary>Selectable capture sources, led by the <see cref="NoCaptureSource"/> "(none)" sentinel.</summary>
     public ObservableCollection<AudioCaptureDevice> CaptureDevices { get; } = new();
 
     /// <summary>MIDI input device names, led by the <see cref="NoDevice"/> sentinel.</summary>
@@ -89,6 +103,12 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         get => _selectedBufferMs;
         set => this.RaiseAndSetIfChanged(ref _selectedBufferMs, value);
+    }
+
+    public AudioCaptureDevice? SelectedCaptureDevice
+    {
+        get => _selectedCaptureDevice;
+        set => this.RaiseAndSetIfChanged(ref _selectedCaptureDevice, value);
     }
 
     public string SelectedMidiInput
@@ -125,6 +145,7 @@ public sealed class SettingsViewModel : ViewModelBase
     public void RefreshDevices()
     {
         AudioOutputDevice? previousOutput = SelectedOutputDevice;
+        AudioCaptureDevice? previousCapture = SelectedCaptureDevice;
         string previousMidiIn = SelectedMidiInput;
         string previousMidiOut = SelectedMidiOutput;
 
@@ -134,6 +155,7 @@ public sealed class SettingsViewModel : ViewModelBase
             OutputDevices.Add(device);
 
         CaptureDevices.Clear();
+        CaptureDevices.Add(NoCaptureSource);
         foreach (AudioCaptureDevice device in _captures.EnumerateCaptureDevices())
             CaptureDevices.Add(device);
 
@@ -142,6 +164,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
         // Keep the prior selection if it still exists; otherwise fall back to the safe default.
         SelectedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == previousOutput?.Id) ?? SystemDefaultOutput;
+        SelectedCaptureDevice = MatchCapture(previousCapture);
         SelectedMidiInput = MidiInputDevices.Contains(previousMidiIn) ? previousMidiIn : NoDevice;
         SelectedMidiOutput = MidiOutputDevices.Contains(previousMidiOut) ? previousMidiOut : NoDevice;
 
@@ -149,16 +172,24 @@ public sealed class SettingsViewModel : ViewModelBase
                + $"{MidiInputDevices.Count - 1} MIDI input(s).";
     }
 
-    /// <summary>Persists the current selections as normalized <see cref="AppSettings"/>.</summary>
+    /// <summary>
+    /// Persists the current selections as normalized <see cref="AppSettings"/>, then applies the audio
+    /// output device/buffer to the running engine at runtime (re-init, rolling back on failure) and the
+    /// chosen capture source, surfacing the outcome in <see cref="Status"/>.
+    /// </summary>
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
+        bool captureSelected = SelectedCaptureDevice is { } cap && !string.IsNullOrEmpty(cap.Id);
+        var audio = new AudioSettings
+        {
+            OutputDeviceId = string.IsNullOrEmpty(SelectedOutputDevice?.Id) ? null : SelectedOutputDevice!.Id,
+            BufferMilliseconds = SelectedBufferMs,
+            CaptureDeviceId = captureSelected ? SelectedCaptureDevice!.Id : null,
+            CaptureSource = captureSelected ? SelectedCaptureDevice!.Kind : null,
+        };
         var settings = new AppSettings
         {
-            Audio = new AudioSettings
-            {
-                OutputDeviceId = string.IsNullOrEmpty(SelectedOutputDevice?.Id) ? null : SelectedOutputDevice!.Id,
-                BufferMilliseconds = SelectedBufferMs,
-            },
+            Audio = audio,
             Midi = new MidiSettings
             {
                 ControllerInputName = SelectedMidiInput == NoDevice ? null : SelectedMidiInput,
@@ -167,13 +198,50 @@ public sealed class SettingsViewModel : ViewModelBase
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
-        Status = "Settings saved.";
+        Status = ApplyToRunningEngine(settings.Audio.Normalized());
+    }
+
+    // Applies the saved audio choice to the live engine (when present) and reports a performer-facing
+    // status. Re-init/capture are optional seams — in catalog-browser mode (no realtime engine) the
+    // choice is saved for next launch only.
+    private string ApplyToRunningEngine(AudioSettings audio)
+    {
+        if (_audioReinit is null && _captureController is null)
+            return "Settings saved (applied on next launch).";
+
+        var parts = new List<string> { "Settings saved." };
+
+        if (_audioReinit is not null)
+        {
+            AudioReinitResult result = _audioReinit.Apply(audio);
+            parts.Add(result switch
+            {
+                AudioReinitResult.Reinitialized => "Audio device re-initialised.",
+                AudioReinitResult.RolledBack => "Audio device change failed — kept the previous device.",
+                _ => string.Empty, // NoChange: nothing to report
+            });
+        }
+
+        if (_captureController is not null)
+        {
+            AudioCaptureDevice? device =
+                SelectedCaptureDevice is { } d && !string.IsNullOrEmpty(d.Id) ? d : null;
+            if (!_captureController.SelectCaptureSource(device))
+                parts.Add("Capture source could not be opened.");
+        }
+
+        return string.Join(" ", parts.Where(p => !string.IsNullOrEmpty(p)));
     }
 
     private void ApplySettings(AppSettings settings)
     {
         SelectedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == settings.Audio.OutputDeviceId)
             ?? SystemDefaultOutput;
+
+        // A persisted capture device that is gone (unplugged) falls back to "(none)" rather than erroring.
+        SelectedCaptureDevice = string.IsNullOrEmpty(settings.Audio.CaptureDeviceId)
+            ? NoCaptureSource
+            : CaptureDevices.FirstOrDefault(d => d.Id == settings.Audio.CaptureDeviceId) ?? NoCaptureSource;
 
         // A persisted buffer may not be one of the presets (older config / hand-edit) — make it selectable.
         int buffer = settings.Audio.BufferMilliseconds;
@@ -185,6 +253,15 @@ public sealed class SettingsViewModel : ViewModelBase
             ? input : NoDevice;
         SelectedMidiOutput = settings.Midi.FeedbackOutputName is { } output && MidiOutputDevices.Contains(output)
             ? output : NoDevice;
+    }
+
+    // Re-matches the prior capture selection after a re-enumeration: the "(none)" sentinel stays
+    // "(none)", an existing device by id is kept, and a vanished device falls back to "(none)".
+    private AudioCaptureDevice MatchCapture(AudioCaptureDevice? previous)
+    {
+        if (previous is null || string.IsNullOrEmpty(previous.Id))
+            return NoCaptureSource;
+        return CaptureDevices.FirstOrDefault(d => d.Id == previous.Id) ?? NoCaptureSource;
     }
 
     private static void FillMidi(ObservableCollection<string> target, IReadOnlyList<string> names)

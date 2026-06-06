@@ -1,16 +1,22 @@
+using Liveolator.Core.Audio;
+
 namespace Liveolator.Core.Settings;
 
 /// <summary>
-/// User-chosen realtime audio output settings (doc 01): which sound-card output device drives the
-/// master mix, and the output buffer length that trades latency against glitch-resistance. Pure data
-/// the App persists and the audio binding applies when it initialises BASS — Core defines the model so
-/// the Settings UI and the binding agree on one contract and it unit-tests with no native code.
+/// User-chosen realtime audio settings (doc 01): which sound-card output device drives the master mix,
+/// the output buffer length that trades latency against glitch-resistance, and the optional capture
+/// source (system-loopback / line-in) fed into the live pipeline. Pure data the App persists and the
+/// audio binding applies when it initialises BASS — Core defines the model so the Settings UI and the
+/// binding agree on one contract and it unit-tests with no native code.
 /// </summary>
 /// <remarks>
-/// <see cref="OutputDeviceId"/> is the backend-opaque id of an <see cref="Audio.AudioOutputDevice"/>
+/// <see cref="OutputDeviceId"/> is the backend-opaque id of an <see cref="AudioOutputDevice"/>
 /// (null = the platform default device). <see cref="BufferMilliseconds"/> is clamped by
 /// <see cref="Normalized"/> into <see cref="MinBufferMs"/>..<see cref="MaxBufferMs"/> so a stale or
 /// hand-edited config can never push an out-of-range value into the audio device.
+/// <see cref="CaptureDeviceId"/> + <see cref="CaptureSource"/> are the persisted capture-source choice
+/// (null id = no capture source selected); both are folded together so a half-written config (an id with
+/// no kind, or a kind with no id) normalizes to "no capture" rather than an inconsistent selection.
 /// </remarks>
 public sealed record AudioSettings
 {
@@ -37,10 +43,34 @@ public sealed record AudioSettings
     /// <summary>Requested output buffer length in milliseconds (see <see cref="Normalized"/>).</summary>
     public int BufferMilliseconds { get; init; } = DefaultBufferMs;
 
-    /// <summary>The defaults: platform-default device, <see cref="DefaultBufferMs"/> buffer.</summary>
+    /// <summary>
+    /// Backend-opaque capture device id (an <see cref="AudioCaptureDevice.Id"/>), or null when no
+    /// capture source is selected. Blank ids fold to null via <see cref="Normalized"/>.
+    /// </summary>
+    public string? CaptureDeviceId { get; init; }
+
+    /// <summary>
+    /// The kind of the selected capture source (loopback / line-in), or null when none is selected.
+    /// Folded together with <see cref="CaptureDeviceId"/> so the pair is always internally consistent.
+    /// </summary>
+    public CaptureSourceKind? CaptureSource { get; init; }
+
+    /// <summary>The defaults: platform-default device, <see cref="DefaultBufferMs"/> buffer, no capture.</summary>
     public static AudioSettings Default { get; } = new();
 
-    /// <summary>Returns a copy with <see cref="BufferMilliseconds"/> clamped to the supported range.</summary>
+    /// <summary>
+    /// Returns a copy with <see cref="BufferMilliseconds"/> clamped to the supported range and the
+    /// capture-source choice folded to a consistent state: a blank id, or an id without a kind, or a
+    /// kind without an id, all normalize to "no capture source".
+    /// </summary>
     public AudioSettings Normalized()
-        => this with { BufferMilliseconds = Math.Clamp(BufferMilliseconds, MinBufferMs, MaxBufferMs) };
+    {
+        bool hasCapture = !string.IsNullOrWhiteSpace(CaptureDeviceId) && CaptureSource is not null;
+        return this with
+        {
+            BufferMilliseconds = Math.Clamp(BufferMilliseconds, MinBufferMs, MaxBufferMs),
+            CaptureDeviceId = hasCapture ? CaptureDeviceId!.Trim() : null,
+            CaptureSource = hasCapture ? CaptureSource : null,
+        };
+    }
 }

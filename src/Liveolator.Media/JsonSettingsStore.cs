@@ -1,16 +1,24 @@
 using System.Text.Json;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 
 namespace Liveolator.Media;
 
-/// <summary>Versioned on-disk shape of the application settings (a single <c>settings.json</c>).</summary>
+/// <summary>
+/// Versioned on-disk shape of the application settings (a single <c>settings.json</c>). New optional
+/// fields (e.g. the capture-source choice) are added as nullable so an older file that omits them still
+/// deserializes — the version stays at <see cref="CurrentVersion"/> as long as the additions are
+/// backward-compatible (a missing field reads as null), preserving existing configs (global #20/#22).
+/// </summary>
 public sealed record SettingsSnapshot(
     int Version,
     string? OutputDeviceId,
     int BufferMilliseconds,
     string? MidiControllerInputName,
-    string? MidiFeedbackOutputName)
+    string? MidiFeedbackOutputName,
+    string? CaptureDeviceId = null,
+    CaptureSourceKind? CaptureSource = null)
 {
     public const int CurrentVersion = 1;
 }
@@ -74,6 +82,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             {
                 OutputDeviceId = snapshot.OutputDeviceId,
                 BufferMilliseconds = snapshot.BufferMilliseconds,
+                CaptureDeviceId = snapshot.CaptureDeviceId,
+                CaptureSource = snapshot.CaptureSource,
             },
             Midi = new MidiSettings
             {
@@ -95,7 +105,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Audio.OutputDeviceId,
             normalized.Audio.BufferMilliseconds,
             normalized.Midi.ControllerInputName,
-            normalized.Midi.FeedbackOutputName);
+            normalized.Midi.FeedbackOutputName,
+            normalized.Audio.CaptureDeviceId,
+            normalized.Audio.CaptureSource);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

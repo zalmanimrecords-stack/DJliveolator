@@ -149,6 +149,34 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     // BASS treats a re-init of an already-open device as success for our purposes (Errors.Already).
     private static bool TryInitDevice(int device) => Bass.Init(device) || Bass.LastError == Errors.Already;
 
+    public bool ReinitOutput(BassInitOptions options)
+    {
+        if (_disposed)
+            return false;
+
+        // Buffer length is a global BASS config; set it before opening the device so the new device
+        // picks it up. (An already-running device keeps its buffer until re-opened — acceptable here.)
+        Bass.PlaybackBufferLength = options.BufferMilliseconds;
+
+        if (!TryInitDevice(options.DeviceIndex))
+        {
+            _logger.LogWarning("BASS re-init of device {Device} failed: {Error}", options.DeviceIndex, Bass.LastError);
+            return false;
+        }
+
+        // Re-route the live mixer (and thus every plugged deck) to the freshly opened device, then make
+        // it the current device so subsequent calls target it. Channels keep playing across the move.
+        if (_mixer != 0 && !Bass.ChannelSetDevice(_mixer, options.DeviceIndex))
+        {
+            _logger.LogWarning("Routing the master mix to device {Device} failed: {Error}",
+                options.DeviceIndex, Bass.LastError);
+            return false;
+        }
+
+        Bass.CurrentDevice = options.DeviceIndex;
+        return true;
+    }
+
     public MasterMixInfo CreateMaster()
     {
         // A mixer stream that does not auto-stop when all sources pause/end (decks come and go).
