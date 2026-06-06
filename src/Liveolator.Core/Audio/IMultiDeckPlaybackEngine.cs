@@ -12,6 +12,14 @@ public interface IMultiDeckPlaybackEngine
     /// <summary>Number of addressable deck slots.</summary>
     int DeckCount { get; }
 
+    /// <summary>
+    /// Raised when a deck slot's track reaches its end during playback (doc 11/22 A4). The event arg is
+    /// the slot index. The live-queue audio binding listens for this to auto-advance (or stop when the
+    /// queue is dry). Raised off the audio binding's end-of-stream signal, so handlers must be tolerant
+    /// of the calling thread; a single-deck engine adapts it to slot 0.
+    /// </summary>
+    event EventHandler<int>? DeckEnded;
+
     /// <summary>True while the given deck slot is playing.</summary>
     bool IsPlaying(int slot);
 

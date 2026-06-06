@@ -55,6 +55,14 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Remove the deck's active loop so playback continues past the former region.</summary>
     void ClearDeckLoop(int deckHandle);
 
+    /// <summary>
+    /// Arm a one-shot end-of-stream callback on the deck (BASS_SYNC_END), invoked when the stream
+    /// reaches its end during playback (doc 11/22 A4). Replaces any prior end callback on the deck;
+    /// freeing/unplugging the deck drops it. The callback fires on the BASS sync thread, so the engine
+    /// keeps it short (mark stopped + raise its event).
+    /// </summary>
+    void SetDeckEndCallback(int deckHandle, Action onEnded);
+
     /// <summary>Start the master output and arm the tap that delivers mixed samples to the frame pipeline.</summary>
     void StartMaster(Action<float[]> onMasterSamples);
 

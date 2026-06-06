@@ -299,6 +299,55 @@ public class TwoDeckBassEngineTests
         Assert.False(engine.IsPlaying(0));
     }
 
+    // --- End-of-track handling (A4: deck end -> DeckEnded event) ---
+
+    [Fact]
+    public void DeckEnd_RaisesDeckEnded_AndMarksSlotStopped()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        engine.PlayPause(0);
+        Assert.True(engine.IsPlaying(0));
+
+        int? endedSlot = null;
+        engine.DeckEnded += (_, slot) => endedSlot = slot;
+
+        backend.EmitDeckEnd(100); // the stream ran out
+
+        Assert.Equal(0, endedSlot);
+        Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void DeckEnd_OfReplacedDeck_IsIgnored()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        engine.Load(0, @"C:\b.wav"); // handle 101 replaces it
+
+        int raises = 0;
+        engine.DeckEnded += (_, _) => raises++;
+
+        backend.EmitDeckEnd(100); // a stale end from the replaced stream
+
+        Assert.Equal(0, raises); // ignored — slot now holds handle 101
+    }
+
+    [Fact]
+    public void DeckEnd_IsPerSlot()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        engine.Load(1, @"C:\b.wav"); // handle 101
+
+        var endedSlots = new System.Collections.Generic.List<int>();
+        engine.DeckEnded += (_, slot) => endedSlots.Add(slot);
+
+        backend.EmitDeckEnd(101);
+
+        Assert.Equal(new[] { 1 }, endedSlots);
+    }
+
     [Fact]
     public void Cue_TempCueClearedOnReload()
     {

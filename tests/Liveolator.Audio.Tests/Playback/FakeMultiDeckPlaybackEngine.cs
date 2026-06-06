@@ -29,6 +29,11 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
 
     public int DeckCount { get; }
 
+    public event EventHandler<int>? DeckEnded;
+
+    /// <summary>Simulate the bound deck's track running out, so the binding's auto-advance path runs.</summary>
+    public void RaiseDeckEnded(int slot) => DeckEnded?.Invoke(this, slot);
+
     public bool IsPlaying(int slot) => _playing[slot];
 
     public void Load(int slot, string trackPath)

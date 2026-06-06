@@ -45,6 +45,9 @@ public sealed class PlaylistAudioPlayer : IDisposable
         _logger = logger ?? NullLogger<PlaylistAudioPlayer>.Instance;
 
         _playlist.NowChanged += OnNowChanged;
+        // End-of-track auto-advance (A4): when the bound deck's track ends, tell the queue so it advances
+        // (or stops when dry). The queue then raises NowChanged, which drives the next load via OnNowChanged.
+        _engine.DeckEnded += OnDeckEnded;
 
         // Pick up a track that is already Now (the queue may have been loaded before binding).
         if (_playlist.Now is { } current)
@@ -52,6 +55,24 @@ public sealed class PlaylistAudioPlayer : IDisposable
     }
 
     private void OnNowChanged(object? sender, QueueEntry? now) => GoToTrack(now);
+
+    // The deck reached the end of its track. Only the slot this player drives advances the queue; an end
+    // on another deck (slot) is ignored. Tolerant: a queue-advance failure is logged, never thrown back
+    // onto the engine's end-of-stream thread (global standards #16/#26).
+    private void OnDeckEnded(object? sender, int slot)
+    {
+        if (slot != _slot)
+            return;
+
+        try
+        {
+            _playlist.NotifyTrackEnded();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Auto-advance after deck {Slot} ended failed.", _slot);
+        }
+    }
 
     // Drives the engine to the given Now track. Tolerant: a failed load/play is logged and dropped so
     // the queue keeps advancing. A null Now (queue exhausted) stops the deck without an error.
@@ -90,5 +111,6 @@ public sealed class PlaylistAudioPlayer : IDisposable
             return;
         _disposed = true;
         _playlist.NowChanged -= OnNowChanged;
+        _engine.DeckEnded -= OnDeckEnded;
     }
 }

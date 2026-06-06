@@ -149,6 +149,9 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _backend.StartMaster(_master.Emit);
     }
 
+    /// <inheritdoc />
+    public event EventHandler<int>? DeckEnded;
+
     /// <summary>The post-crossfader master mix; feed this to a <see cref="MasterMixPlaybackEngine"/>.</summary>
     public IAudioSource MasterSource => _master;
 
@@ -201,6 +204,9 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
                 // Restore the track's persisted hot cues (A3). Tolerant: a missing/unreadable store
                 // leaves the slot with the fresh (empty) cue bank UnloadSlot cleared — never a throw.
                 LoadPersistedHotCues(slot, handle, trackPath);
+                // Arm end-of-track handling (A4): when this stream runs out, mark the slot stopped and
+                // raise DeckEnded so the live queue can auto-advance (or stop when dry).
+                _backend.SetDeckEndCallback(handle, () => OnDeckEnded(slot, handle));
                 _logger.LogInformation("Loaded deck slot {Slot} <- {Track}", slot, trackPath);
             }
             catch (Exception ex)
@@ -645,6 +651,30 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _backend.ClearDeckLoop(deck.Handle);
         _loopBeats[slot] = 0.0;
         _logger.LogInformation("Deck slot {Slot} loop cleared.", slot);
+    }
+
+    // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the
+    // slot stopped under the gate, then raises DeckEnded OUTSIDE the lock so a subscriber that drives the
+    // engine back (e.g. the live-queue binding loading the next track) does not run nested under _gate.
+    // Guarded by handle so a stale callback from an already-replaced deck is ignored.
+    private void OnDeckEnded(int slot, int handle)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _decks[slot] is not { } deck || deck.Handle != handle)
+                return; // the slot was replaced/unloaded before the end fired — ignore the stale callback
+            _decks[slot] = deck with { Playing = false };
+        }
+
+        try
+        {
+            DeckEnded?.Invoke(this, slot);
+        }
+        catch (Exception ex)
+        {
+            // A misbehaving subscriber must not bubble onto the BASS sync thread (global #16/#26).
+            _logger.LogError(ex, "A DeckEnded handler threw for deck slot {Slot}.", slot);
+        }
     }
 
     // Maps a normalized pitch position (0..1, 0.5 = centre) to a playback-rate multiplier within ±range.

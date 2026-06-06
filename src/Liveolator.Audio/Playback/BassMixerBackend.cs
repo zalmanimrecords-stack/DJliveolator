@@ -92,6 +92,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // deck simply never sends to the headphones. The deck's pre-fade samples are scaled by the
         // cued-deck leg gain and pushed here from the deck DSP callback when the deck is cue-enabled.
         public int CuePush { get; set; }
+
+        // End-of-stream sync (A4): the registered BASS_SYNC_END handle and its callback (kept alive for
+        // BASS). 0 sync handle = no end callback armed.
+        public int EndSync { get; set; }
+        public SyncProcedure? EndProcedure { get; set; }
     }
 
     public BassMixerBackend(
@@ -430,6 +435,32 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
             deck.LoopSync = 0;
             deck.LoopProcedure = null;
             deck.LoopStartBytes = 0;
+        }
+    }
+
+    public void SetDeckEndCallback(int deckHandle, Action onEnded)
+    {
+        ArgumentNullException.ThrowIfNull(onEnded);
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            return;
+
+        // Replace any prior end sync on this deck so a reused handle never fires twice.
+        if (deck.EndSync != 0)
+        {
+            BassMix.ChannelRemoveSync(deckHandle, deck.EndSync);
+            deck.EndSync = 0;
+            deck.EndProcedure = null;
+        }
+
+        // BASS_SYNC_END fires once when the decoding deck stream reaches its end. Mixtime so it fires on
+        // the mixer's pull thread the moment the stream runs out. The callback is kept short — the engine
+        // marks the slot stopped and raises its DeckEnded event; the queue advance happens off that.
+        deck.EndProcedure = (handle, channel, data, user) => onEnded();
+        deck.EndSync = BassMix.ChannelSetSync(deckHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
+        if (deck.EndSync == 0)
+        {
+            deck.EndProcedure = null;
+            _logger.LogWarning("Arming end-of-stream sync on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
         }
     }
 
