@@ -15,16 +15,30 @@ namespace Liveolator.Audio.Playback;
 /// the state machine and the channel DSP are tested with fakes, and real audio is verified manually
 /// (doc 11 checklist), mirroring <see cref="BassPlayback"/>.
 /// </summary>
-internal sealed class BassMixerBackend : IBassMixerBackend
+/// <remarks>
+/// Headphone cue (PFL): when the user has chosen a separate cue output device, the backend opens a
+/// second BASS device for it (the CMD STUDIO 2A's channels 3/4) and exposes <see cref="ICueOutput"/>
+/// so <see cref="BassMixer"/> can push the Core-computed cue/master output gains. The summed cued-deck
+/// (pre-fade) signal feeding the headphones comes from per-deck cue sends, which need the deck
+/// plumbing (<see cref="PlugDeck"/>) the deck-loops branch owns — see the integration note. Until
+/// those land the cue output carries the master leg only; the gains for both legs are stored here.
+/// The master fed to both the analysis tap and the cue leg is the post-limiter signal (see
+/// <see cref="OnMasterDsp"/>).
+/// </remarks>
+internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 {
     private readonly int _sampleRate;
     private readonly int _channels;
     private readonly ILogger _logger;
     private readonly Dictionary<int, DeckDsp> _decks = new();
+    private readonly int _cueDeviceIndex;
 
     private int _mixer;
+    private int _cueMixer;                  // 0 until a cue output device is opened
+    private int _cueMasterPush;             // push stream feeding the master leg into the cue mixer
     private DSPProcedure? _masterDsp;       // kept alive: BASS holds an unmanaged pointer to it
     private Action<float[]>? _masterTap;
+    private volatile float _masterLegGain;  // master-into-headphones gain (equal-power, level-scaled)
     private bool _disposed;
 
     // ── master-limiter region (Gap #5) ──────────────────────────────────────────────────────────
@@ -35,9 +49,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     // RT-thread allocation fix (doc 01: "no allocation on the audio thread"): the DSP callbacks used to
     // `new float[]` every buffer. These reusable scratch buffers are pre-sized from the BASS playback
     // buffer length and reused in place; they only ever grow (logged) if BASS hands a larger block than
-    // the worst case we sized for, which should not happen in steady state.
+    // the worst case we sized for, which should not happen in steady state. _cueLegScratch holds the
+    // scaled master leg pushed to the cue mixer so that path is allocation-free too.
     private float[] _channelScratch = Array.Empty<float>();
     private float[] _masterScratch = Array.Empty<float>();
+    private float[] _cueLegScratch = Array.Empty<float>();
     // ── end master-limiter region ────────────────────────────────────────────────────────────────
 
     /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, and its
@@ -65,10 +81,31 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         worstCaseSamples = Math.Max(worstCaseSamples, sampleRate * channels / 4); // floor: ~250 ms safety
         _channelScratch = new float[worstCaseSamples];
         _masterScratch = new float[worstCaseSamples];
+        _cueLegScratch = new float[worstCaseSamples];
         // ── end master-limiter region ──
 
         InitOutput(options);
+        _cueDeviceIndex = TryInitCueDevice(options);
     }
+
+    // Open the user-chosen headphone-cue output device (doc 11) so a second BASS device backs the cue
+    // mixer. A missing/stale cue device must not disable all audio — log and run without cue.
+    private int TryInitCueDevice(BassInitOptions options)
+    {
+        if (!options.HasCueDevice || options.CueDeviceIndex == options.DeviceIndex)
+            return BassInitOptions.NoCueDevice; // no separate cue output, or it is the master device
+
+        if (TryInitDevice(options.CueDeviceIndex))
+            return options.CueDeviceIndex;
+
+        _logger.LogWarning(
+            "Headphone-cue output device {Device} unavailable ({Error}); cue output disabled.",
+            options.CueDeviceIndex, Bass.LastError);
+        return BassInitOptions.NoCueDevice;
+    }
+
+    /// <summary>True when a separate headphone-cue output device was successfully opened.</summary>
+    public bool HasCueOutput => _cueDeviceIndex >= 1;
 
     // Applies the user's persisted output choice (doc 12) before opening BASS: the playback buffer is a
     // global config BASS reads at device-open time, so set it first, then open the chosen device. A
@@ -98,7 +135,64 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _mixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
         if (_mixer == 0)
             throw new BassPlaybackException($"CreateMixerStream failed: {Bass.LastError}");
+
+        CreateCueMixerIfConfigured();
         return new MasterMixInfo(_channels, _sampleRate);
+    }
+
+    // The headphone-cue output is its own mixer stream on the cue device. The cued-deck (PFL) sends
+    // that should feed it depend on per-deck plumbing the deck-loops branch owns (see integration
+    // note); for now it carries the master leg, tapped from the master mixer and scaled by the
+    // master-into-headphones gain so the cue/master blend knob already works for monitoring.
+    private void CreateCueMixerIfConfigured()
+    {
+        if (!HasCueOutput)
+            return;
+
+        // CreateMixerStream binds to the current BASS device, so select the cue device before creating
+        // the cue mixer, then restore the master device for the rest of the master setup.
+        int masterDevice = Bass.CurrentDevice;
+        Bass.CurrentDevice = _cueDeviceIndex;
+        _cueMixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
+        if (_cueMixer == 0)
+        {
+            _logger.LogWarning("Cue mixer creation failed: {Error}; cue output disabled.", Bass.LastError);
+            Bass.CurrentDevice = masterDevice;
+            return;
+        }
+
+        // A push (STREAMPROC_PUSH) source plugged into the cue mixer carries the master leg: the
+        // master DSP pushes scaled master samples into it each buffer. Decode flag — the cue mixer
+        // pulls it, it never plays to the device itself.
+        _cueMasterPush = Bass.CreateStream(
+            _sampleRate, _channels, BassFlags.Float | BassFlags.Decode, StreamProcedureType.Push);
+        if (_cueMasterPush == 0 || !BassMix.MixerAddChannel(_cueMixer, _cueMasterPush, BassFlags.Default))
+        {
+            _logger.LogWarning("Cue master-leg push stream setup failed: {Error}; cue output disabled.", Bass.LastError);
+            Bass.StreamFree(_cueMixer);
+            _cueMixer = 0;
+            _cueMasterPush = 0;
+            Bass.CurrentDevice = masterDevice;
+            return;
+        }
+
+        if (!Bass.ChannelPlay(_cueMixer))
+            _logger.LogWarning("Bass.ChannelPlay (cue) failed: {Error}", Bass.LastError);
+
+        Bass.CurrentDevice = masterDevice;
+    }
+
+    public void SetCueOutputGains(double cueGain, double masterGain)
+    {
+        // Only the master leg is fed for now (see the class remarks / integration note): the cued-deck
+        // leg gain (cueGain) is applied where the per-deck cue sends sum, which the deck plumbing owns.
+        _masterLegGain = (float)Math.Clamp(masterGain, 0.0, 1.0);
+        if (cueGain > 0f && _cueMixer != 0)
+        {
+            _logger.LogDebug(
+                "Cue-deck leg gain {Cue} requested but per-deck cue sends are not yet wired; master leg only.",
+                cueGain);
+        }
     }
 
     public int OpenDeckStream(string filePath)
@@ -198,8 +292,9 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     }
 
     // BASS update thread: apply the master brick-wall limiter in place (Gap #5) so two summed decks
-    // never hard-clip the master, then copy the limited master to the analysis tap. Allocation-free:
-    // reuses _masterScratch instead of `new float[]` per buffer (doc 01 RT-thread rule).
+    // never hard-clip the master, write the limited master back to the device, then hand the limited
+    // master to (a) the analysis tap and (b) the headphone-cue master leg. Allocation-free on the heavy
+    // path: reuses _masterScratch instead of `new float[]` per buffer (doc 01 RT-thread rule).
     private void OnMasterDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
     {
         if (length <= 0 || buffer == IntPtr.Zero)
@@ -216,7 +311,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         // Feed the (now limited) master to the analysis tap. This hands a buffer across the
         // Action<float[]> → ReadOnlyMemory<float> seam (frame pipeline), which may retain it
         // asynchronously, so the scratch cannot be reused here — allocate as the original code did.
-        // The heavy DSP (channel filters + master limiter) is now allocation-free; only this ownership
+        // The heavy DSP (channel filters + master limiter) is allocation-free; only this ownership
         // hand-off allocates, and only when a tap is attached.
         if (_masterTap is { } tap)
         {
@@ -224,6 +319,30 @@ internal sealed class BassMixerBackend : IBassMixerBackend
             Array.Copy(_masterScratch, tapBuffer, count);
             tap(tapBuffer);
         }
+
+        // Push the (limited) master leg into the headphone-cue mixer so the DJ monitors the same signal
+        // the house hears, blended by the cue/master knob.
+        FeedCueMasterLeg(count, length);
+    }
+
+    // Push the (already limited) master samples, scaled by the master-leg gain, into the cue mixer's
+    // push source. A zero gain still pushes silence so the cue mixer's clock keeps advancing.
+    // Allocation-free: reuses _cueLegScratch (doc 01 RT-thread rule), consistent with the limiter fix.
+    private void FeedCueMasterLeg(int count, int byteLength)
+    {
+        if (_cueMasterPush == 0)
+            return;
+
+        EnsureCueLegScratch(count);
+        float gain = _masterLegGain;
+        if (gain == 0f)
+            Array.Clear(_cueLegScratch, 0, count);
+        else
+            for (int i = 0; i < count; i++)
+                _cueLegScratch[i] = _masterScratch[i] * gain;
+
+        if (Bass.StreamPutData(_cueMasterPush, _cueLegScratch, byteLength) == -1)
+            _logger.LogDebug("Cue master-leg push failed: {Error}", Bass.LastError);
     }
 
     // Grow-only capacity guards. Growth is off the steady-state path (worst-case sized up front) and is
@@ -249,6 +368,16 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _masterScratch = new float[count];
     }
 
+    private void EnsureCueLegScratch(int count)
+    {
+        if (_cueLegScratch.Length >= count)
+            return;
+        _logger.LogWarning(
+            "Cue-leg buffer ({Count}) exceeded pre-allocated scratch ({Capacity}); growing on the audio thread.",
+            count, _cueLegScratch.Length);
+        _cueLegScratch = new float[count];
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -260,6 +389,8 @@ internal sealed class BassMixerBackend : IBassMixerBackend
             Bass.StreamFree(deckHandle);
         }
         _decks.Clear();
+        if (_cueMixer != 0)
+            Bass.StreamFree(_cueMixer); // frees the plugged push source with it
         if (_mixer != 0)
             Bass.StreamFree(_mixer);
         Bass.Free();

@@ -17,7 +17,7 @@ public class MixerActionHandlerTests
     }
 
     [Fact]
-    public void HandledKinds_AreTheFiveMixerKinds()
+    public void HandledKinds_AreTheSevenMixerKinds()
     {
         MixerActionHandler handler = NewHandler(out _);
 
@@ -26,7 +26,9 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerEqBand, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerFilter, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueToggle, handler.HandledKinds);
-        Assert.Equal(5, handler.HandledKinds.Count);
+        Assert.Contains(PerformanceActionKind.MixerCueLevel, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.MixerCueMix, handler.HandledKinds);
+        Assert.Equal(7, handler.HandledKinds.Count);
     }
 
     [Fact]
@@ -131,6 +133,75 @@ public class MixerActionHandlerTests
         handler.Handle(new PerformanceAction(
             PerformanceActionKind.MixerCueToggle, ActionInputMode.Toggle, Slot: MixerState.DeckB));
         Assert.False(handler.State.Channel(MixerState.DeckB).CueEnabled);
+    }
+
+    [Fact]
+    public void CueLevel_Absolute_UpdatesStateAndPushesScaledOutputGains()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+
+        // Default cue mix is full-cue (blend cue=1, master=0); level 0.5 scales the cue leg.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueLevel, ActionInputMode.Absolute, Value: 0.5));
+
+        Assert.Equal(0.5, handler.State.CueBus.Level, Tol);
+        Assert.NotNull(mixer.CueOutputGains);
+        Assert.Equal(0.5, mixer.CueOutputGains!.Value.CueGain, 1e-6);
+        Assert.Equal(0.0, mixer.CueOutputGains!.Value.MasterGain, 1e-6);
+    }
+
+    [Fact]
+    public void CueLevel_Clamps()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueLevel, ActionInputMode.Absolute, Value: 2.0));
+
+        Assert.Equal(1.0, handler.State.CueBus.Level, Tol);
+    }
+
+    [Fact]
+    public void CueMix_Center_PushesEqualPowerOutputGains()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueMix, ActionInputMode.Absolute, Value: 0.5));
+
+        Assert.Equal(0.5, handler.State.CueBus.Mix, Tol);
+        Assert.NotNull(mixer.CueOutputGains);
+        // Level is 1.0 by default, so the output gains equal the equal-power blend.
+        Assert.Equal(Math.Sqrt(0.5), mixer.CueOutputGains!.Value.CueGain, 1e-6);
+        Assert.Equal(Math.Sqrt(0.5), mixer.CueOutputGains!.Value.MasterGain, 1e-6);
+    }
+
+    [Fact]
+    public void CueMix_Relative_AppliesDelta()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueMix, ActionInputMode.Relative, Value: 0.25));
+
+        Assert.Equal(0.25, handler.State.CueBus.Mix, Tol); // from FullCue (0) + 0.25
+    }
+
+    [Fact]
+    public void CueLevelAndMix_ReportFeedback()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueLevel, ActionInputMode.Absolute, Value: 0.7));
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerCueMix, ActionInputMode.Absolute, Value: 0.3));
+
+        ActionFeedbackState level = handler.GetFeedback(PerformanceActionKind.MixerCueLevel, slot: 0);
+        ActionFeedbackState mix = handler.GetFeedback(PerformanceActionKind.MixerCueMix, slot: 0);
+        Assert.True(level.IsAvailable);
+        Assert.Equal(0.7, level.Value, Tol);
+        Assert.True(mix.IsAvailable);
+        Assert.Equal(0.3, mix.Value, Tol);
     }
 
     [Fact]

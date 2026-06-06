@@ -103,6 +103,12 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         for (int slot = 0; slot < Decks; slot++)
             _hotCues[slot] = new double?[HotCuesPerDeck];
 
+        // The real BASSmix backend is also the headphone-cue output; route the Core mixer's cue/master
+        // output gains to it so the cue-mix knob reaches the second output. A fake backend (tests) or a
+        // future backend without cue simply skips this — the mixer then logs and drops cue-gain pushes.
+        if (_backend is ICueOutput cueOutput)
+            _mixer.SetCueOutput(cueOutput);
+
         MasterMixInfo info = _backend.CreateMaster();
         _master = new MasterAudioSource(info.Channels, info.SampleRate);
         // Arm the master tap immediately: the mix runs continuously and the beat clock is fed whenever

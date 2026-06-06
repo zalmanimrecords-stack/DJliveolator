@@ -24,4 +24,11 @@ public interface IMixer
 
     /// <summary>Route (or unroute) a deck slot to the headphone cue (PFL) bus.</summary>
     void SetCue(int slot, bool enabled);
+
+    /// <summary>
+    /// Set the headphone-cue output gains: how much of the summed cued (PFL) decks and of the master
+    /// mix to send to the cue output, already scaled by the headphone level
+    /// (see <see cref="CueMixMath.HeadphoneOutputGains"/>).
+    /// </summary>
+    void SetCueOutputGains(double cueGain, double masterGain);
 }

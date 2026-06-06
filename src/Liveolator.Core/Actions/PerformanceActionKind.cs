@@ -60,6 +60,8 @@ public enum PerformanceActionKind
     MixerEqBand,
     MixerFilter,
     MixerCueToggle,
+    MixerCueLevel,
+    MixerCueMix,
 
     // Auto-mix (doc 11) — hands-free assist
     AutoMixToggle,
