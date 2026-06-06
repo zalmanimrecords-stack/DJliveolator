@@ -5,6 +5,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -19,6 +20,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
@@ -31,6 +33,7 @@ using Liveolator.Media;
 using Liveolator.Media.Extensions;
 using Liveolator.Midi;
 using Liveolator.Platform;
+using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -143,9 +146,17 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
-        // restarts (doc 13). The seam lives in Core; JsonCatalogStore is the Media binding.
-        services.AddSingleton<IMusicCatalogStore>(
-            _ => new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
+        // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
+        var catalogStore = new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IMusicCatalogStore>(catalogStore);
+        services.AddSingleton<IVisualCatalogStore>(catalogStore);
+        // Visual-media library (doc 08/13, Track C C1): the same Core library + composite probe the MCP
+        // scan_visual_folders tool uses. The composite probe routes images to a pure header reader and
+        // videos to ffprobe, so the common image case needs no external tool.
+        services.AddSingleton<IVisualMediaProbe>(_ => new CompositeVisualMediaProbe());
+        services.AddSingleton<VisualMediaLibrary>(sp => new VisualMediaLibrary(
+            sp.GetRequiredService<IFileEnumerator>(), sp.GetRequiredService<IVisualMediaProbe>()));
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
@@ -289,6 +300,11 @@ public static class ServiceConfig
             sp.GetRequiredService<IMusicCatalogStore>(),
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
             sp.GetRequiredService<TrackContextActions>()));
+
+        // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
+        services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
+            sp.GetRequiredService<VisualMediaLibrary>(),
+            sp.GetRequiredService<IVisualCatalogStore>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).

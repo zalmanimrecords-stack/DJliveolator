@@ -525,6 +525,30 @@ no GL.
   The realtime engine is now constructed *before* `WireVisuals` so its master clock is available to
   the selector.
 
+### ✅ Visual library / VJ tab — asset browser — `Liveolator.App/Features/VisualLibrary/` (doc 08/13, Track C **C1**)
+
+The VJ tab now browses the **existing** visual catalog instead of a placeholder. It mirrors the music
+Libraries tab over `VisualMediaLibrary` (images + video clips), reusing the same Core scan/catalog
+infrastructure the MCP `scan_visual_folders`/`list_visuals` tools use — no duplicated scanning logic.
+
+| Built | File |
+|-------|------|
+| Pure, reusable visual-asset query (text + kind + status facets, title order) | `Core/Library/Visual/VisualAssetQuery` (`VisualAssetFilter`) |
+| Core catalog-store seam for visual assets + visual scan folders | `Core/Persistence/IVisualCatalogStore` |
+| Media binding (one `JsonCatalogStore` now implements both music + visual seams; `scan-folders.visual.json`) | `Media/JsonCatalogStore` |
+| Tab view-model: add folders, incremental scan (probe dims/duration), filter, restore, persist | `App/Features/VisualLibrary/VisualLibraryViewModel` |
+| Row VM (kind glyph, dimensions, duration, status) + filter-label converter + view | `VisualAssetRowViewModel`, `VisualFilterLabelConverter`, `VisualLibraryView.axaml` |
+
+- **Tested (Core + Media + App, all green):** `VisualAssetQuery` facet composition / text match / limit
+  clamp; `JsonCatalogStore` visual-scan-folder round-trip + corrupt-file tolerance + separate-from-music;
+  `VisualLibraryViewModel` restore, kind/status/text filtering, scan→probe→persist, per-file failure
+  isolation. No GL needed — the browser is pure VM + catalog, like the music tab.
+- **Wired (`ServiceConfig`):** `IVisualMediaProbe` = `CompositeVisualMediaProbe` (image header reader +
+  ffprobe), `VisualMediaLibrary`, `IVisualCatalogStore`, and `VisualLibraryViewModel` are registered;
+  the VJ tab hosts it (`MainWindowViewModel`) and `App.OnFrameworkInitializationCompleted` restores it
+  at startup. Thumbnails are intentionally a kind **glyph** (no decode) — image thumbnailing is a later,
+  optional step.
+
 ### ✅ Live tab — full performance surface — `Liveolator.App/Features/Live/` (doc 12, the mock)
 
 The Live tab now renders the whole `design/mockups/live-mode-clean.html` layout as composed module

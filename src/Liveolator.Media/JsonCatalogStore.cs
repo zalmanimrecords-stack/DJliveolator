@@ -33,7 +33,7 @@ public sealed record ScanFoldersSnapshot(int Version, IReadOnlyList<string> Fold
 /// empty catalog (triggering a fresh scan) and reports a warning — it never crashes the app
 /// (global standards #16, #26).
 /// </summary>
-public sealed class JsonCatalogStore : IMusicCatalogStore
+public sealed class JsonCatalogStore : IMusicCatalogStore, IVisualCatalogStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -59,6 +59,9 @@ public sealed class JsonCatalogStore : IMusicCatalogStore
 
     /// <summary>Full path of the persisted scan-folder-roots JSON file.</summary>
     public string ScanFoldersPath => Path.Combine(_directory, "scan-folders.json");
+
+    /// <summary>Full path of the persisted visual scan-folder-roots JSON file (kept separate from music).</summary>
+    public string VisualScanFoldersPath => Path.Combine(_directory, "scan-folders.visual.json");
 
     /// <summary>Full path of the persisted sample-folder designations JSON file.</summary>
     public string SampleFoldersPath => Path.Combine(_directory, "sample-folders.json");
@@ -106,6 +109,35 @@ public sealed class JsonCatalogStore : IMusicCatalogStore
     public async Task<IReadOnlyList<VisualAsset>> LoadVisualAsync(CancellationToken cancellationToken = default)
         => (await LoadAsync<VisualCatalogSnapshot>(VisualCatalogPath, cancellationToken).ConfigureAwait(false))?.Assets
            ?? Array.Empty<VisualAsset>();
+
+    public Task SaveVisualScanFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(folders);
+        return SaveAsync(VisualScanFoldersPath, new ScanFoldersSnapshot(ScanFoldersSnapshot.CurrentVersion, folders.ToList()), cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads the persisted visual scan-folder roots, or an empty list when none exist, the file is
+    /// unreadable, or it was written by an incompatible schema version (mirrors the music-scan policy).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> LoadVisualScanFoldersAsync(CancellationToken cancellationToken = default)
+    {
+        ScanFoldersSnapshot? snapshot =
+            await LoadAsync<ScanFoldersSnapshot>(VisualScanFoldersPath, cancellationToken).ConfigureAwait(false);
+
+        if (snapshot is null)
+            return Array.Empty<string>();
+
+        if (snapshot.Version != ScanFoldersSnapshot.CurrentVersion)
+        {
+            _onWarning?.Invoke(
+                $"Visual scan-folders file at '{VisualScanFoldersPath}' is version {snapshot.Version} " +
+                $"(expected {ScanFoldersSnapshot.CurrentVersion}); ignoring.");
+            return Array.Empty<string>();
+        }
+
+        return snapshot.Folders ?? Array.Empty<string>();
+    }
 
     public Task SaveScanFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default)
     {
