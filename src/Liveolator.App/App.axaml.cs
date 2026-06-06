@@ -4,6 +4,9 @@ using Avalonia.Markup.Xaml;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Shell;
+using Liveolator.App.Theme;
+using Liveolator.Core.Persistence;
+using Liveolator.Core.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Liveolator.App;
@@ -16,6 +19,11 @@ public partial class App : Application
     {
         // The composition root: this is where modules (Core services + bindings) are wired.
         IServiceProvider services = ServiceConfig.Build();
+        AppSettings settings = services.GetRequiredService<ISettingsStore>()
+            .LoadAsync().GetAwaiter().GetResult();
+        if (settings.Extensions.ActiveUiThemeId is { } themeId
+            && services.GetRequiredService<IUiThemeManager>().TryGet(themeId, out UiThemeDefinition theme))
+            UiThemeApplier.Apply(this, theme);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

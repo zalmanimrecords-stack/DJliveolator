@@ -16,8 +16,34 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **389 passing** (as of 2026-06-06). Solution-wide: **734**
-across 7 test projects (Core 389, Visuals 43, Audio 89, MIDI 27, App 113, Media 49, Integration 25).
+`tests/Liveolator.Core.Tests` — **423 passing** (as of 2026-06-06). The extension
+increment also has 53 Media, 96 Audio, 43 Visuals, and 119 App tests passing; MIDI and
+Integration counts remain 27 and 25 respectively.
+
+### ✅ Extension packages, UI themes, visual registry, and audio FX racks — first increment
+
+The managed extension spine in `docs/21-extension-system.md` is built:
+
+| Built | Area |
+|-------|------|
+| ECDSA P-256 package signatures and SHA-256 payload verification | Core + Media |
+| Atomic install registry, enable/disable/uninstall, dependency/path validation | Media |
+| Settings package controls and persisted Developer Mode/theme | App |
+| Token-only UI themes with Spartan fallback | Core + App |
+| Visual-effect descriptors, stable effect instance ids, structured macro targets | Core |
+| Isolated shader-probe process contract | Core + Visuals |
+| Deck A / Deck B / Master realtime effect racks and dispatcher actions | Core + Audio |
+| Isolated VST3 scanner client, quarantine/cache behavior, native bridge contract | Audio |
+
+- Rack processing is after deck gain/EQ/filter and on the post-mix master before output/beat
+  analysis. Rack snapshots are copy-on-write; `Process` itself takes no locks and allocates nothing.
+- Missing VST3 processors are pass-through placeholders that retain identity and saved state.
+- **Native delivery still required:** the repository does not vendor the Steinberg SDK or ship the
+  scanner, native bridge implementation, or shader-probe executables. Real VST3 processing and
+  extension-shader activation remain unavailable until those distribution artifacts are supplied.
+- **Visual compositor limitation remains:** the GL engine is still the one-layer brightness slice.
+  Package/registry contracts are ready, but multi-layer rendering and arbitrary effect chains are
+  not yet implemented.
 
 ## Module status
 

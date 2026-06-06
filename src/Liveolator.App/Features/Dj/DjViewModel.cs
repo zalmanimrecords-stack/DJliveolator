@@ -39,8 +39,8 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         _library = library;
         _contextActions = contextActions;
 
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo);
         Mixer = new MixerViewModel(dispatcher);
         Set = new ObservableCollection<SetEntryViewModel>();
 
@@ -148,5 +148,23 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             foreach (MusicTrack track in _library.All)
                 titles[track.File.Path] = track.Title; // last write wins on duplicate paths
         return titles;
+    }
+
+    // Catalog facts for a deck's loaded track — title + the BPM/key/duration a DJ mixes by, pre-formatted
+    // the same way the Libraries table shows them. Null when there is no library or no matching entry.
+    private DeckTrackInfo? ResolveTrackInfo(string trackPath)
+    {
+        if (_library is null || string.IsNullOrEmpty(trackPath))
+            return null;
+
+        MusicTrack? track = _library.All
+            .FirstOrDefault(t => string.Equals(t.File.Path, trackPath, StringComparison.OrdinalIgnoreCase));
+        if (track is null)
+            return null;
+
+        string bpm = track.Bpm is { } b ? b.Bpm.ToString("0.0") : "—";
+        string key = track.Key?.Camelot ?? "—";
+        string duration = track.Duration is { } d ? $"{(int)d.TotalMinutes}:{d.Seconds:00}" : "—";
+        return new DeckTrackInfo(track.Title, bpm, key, duration);
     }
 }

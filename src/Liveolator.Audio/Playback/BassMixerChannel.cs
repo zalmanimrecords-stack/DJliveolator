@@ -1,4 +1,5 @@
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Audio.Effects;
 
 namespace Liveolator.Audio.Playback;
 
@@ -21,9 +22,10 @@ internal sealed class BassMixerChannel : IBassMixerChannel
     private readonly StatefulBiquad _mid;
     private readonly StatefulBiquad _high;
     private readonly StatefulBiquad _filter;
+    private readonly IAudioEffectRack? _effects;
     private volatile float _gain = 1.0f;
 
-    public BassMixerChannel(int channels)
+    public BassMixerChannel(int channels, IAudioEffectRack? effects = null)
     {
         if (channels < 1)
             throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be positive.");
@@ -32,6 +34,7 @@ internal sealed class BassMixerChannel : IBassMixerChannel
         _mid = new StatefulBiquad(channels);
         _high = new StatefulBiquad(channels);
         _filter = new StatefulBiquad(channels);
+        _effects = effects;
     }
 
     /// <summary>True while this deck is routed to the headphone cue (PFL) bus.</summary>
@@ -70,6 +73,7 @@ internal sealed class BassMixerChannel : IBassMixerChannel
                 interleaved[baseIdx + c] = (float)s;
             }
         }
+        _effects?.Process(interleaved, channels);
     }
 
     private StatefulBiquad Band(EqBand band) => band switch

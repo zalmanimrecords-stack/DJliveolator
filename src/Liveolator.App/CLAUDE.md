@@ -3,8 +3,8 @@
 **Purpose:** the Avalonia UI shell, views, view-models, and the composition root.
 
 **Design source of truth:** [`docs/12`](../../docs/12-ui-modules.md) (modules/layout) +
-[`docs/19`](../../docs/19-ui-design-line.md) (**canonical visual line** — navy "analog-rack",
-cyan primary accent, multi-signal palette; mock = `design/mockups/live-mode.html`).
+[`docs/19`](../../docs/19-ui-design-line.md) (**canonical visual line** — deep-navy, **single blue
+accent** `#2F80F6`, skeuomorphic rotary knobs + dB faders; reference = the user-supplied blue DJ deck).
 
 ## Iron rules
 

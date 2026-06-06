@@ -41,6 +41,11 @@ public sealed class JsonSettingsStoreTests : IDisposable
         {
             Audio = new AudioSettings { OutputDeviceId = "bass:3", BufferMilliseconds = 25 },
             Midi = new MidiSettings { ControllerInputName = "Ableton Push", FeedbackOutputName = "Push" },
+            Extensions = new ExtensionSettings
+            {
+                DeveloperMode = true,
+                ActiveUiThemeId = "com.example.theme/night",
+            },
         };
 
         await store.SaveAsync(settings);
@@ -50,6 +55,8 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal(25, loaded.Audio.BufferMilliseconds);
         Assert.Equal("Ableton Push", loaded.Midi.ControllerInputName);
         Assert.Equal("Push", loaded.Midi.FeedbackOutputName);
+        Assert.True(loaded.Extensions.DeveloperMode);
+        Assert.Equal("com.example.theme/night", loaded.Extensions.ActiveUiThemeId);
     }
 
     [Fact]

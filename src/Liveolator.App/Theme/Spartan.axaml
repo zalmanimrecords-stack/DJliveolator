@@ -28,9 +28,9 @@
     <Setter Property="Opacity" Value="0.6" />
   </Style>
 
-  <!-- dB / range tick label beside faders and under knobs -->
+  <!-- dB / range tick label beside faders and under knobs (Dim, not Faint — legible at 9px) -->
   <Style Selector="TextBlock.tick">
-    <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    <Setter Property="Foreground" Value="{StaticResource Dim}" />
     <Setter Property="FontFamily" Value="Consolas, 'JetBrains Mono', monospace" />
     <Setter Property="FontSize" Value="9" />
   </Style>
@@ -228,7 +228,7 @@
     <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
   </Style>
   <Style Selector="Button.key:disabled">
-    <Setter Property="Opacity" Value="0.4" />
+    <Setter Property="Opacity" Value="0.5" />
   </Style>
 
   <!-- play button: holds a blue triangle; "on" (playing) accents the border instead of filling -->

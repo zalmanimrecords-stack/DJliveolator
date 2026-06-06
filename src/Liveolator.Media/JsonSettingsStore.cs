@@ -18,9 +18,11 @@ public sealed record SettingsSnapshot(
     string? MidiControllerInputName,
     string? MidiFeedbackOutputName,
     string? CaptureDeviceId = null,
-    CaptureSourceKind? CaptureSource = null)
+    CaptureSourceKind? CaptureSource = null,
+    bool DeveloperMode = false,
+    string? ActiveUiThemeId = null)
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 }
 
 /// <summary>
@@ -69,7 +71,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         if (snapshot is null)
             return AppSettings.Default;
 
-        if (snapshot.Version != SettingsSnapshot.CurrentVersion)
+        if (snapshot.Version is < 1 or > SettingsSnapshot.CurrentVersion)
         {
             _onWarning?.Invoke(
                 $"Settings file is version {snapshot.Version} (expected {SettingsSnapshot.CurrentVersion}); using defaults.");
@@ -90,6 +92,11 @@ public sealed class JsonSettingsStore : ISettingsStore
                 ControllerInputName = snapshot.MidiControllerInputName,
                 FeedbackOutputName = snapshot.MidiFeedbackOutputName,
             },
+            Extensions = new ExtensionSettings
+            {
+                DeveloperMode = snapshot.DeveloperMode,
+                ActiveUiThemeId = snapshot.ActiveUiThemeId,
+            },
         }.Normalized();
     }
 
@@ -107,7 +114,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Midi.ControllerInputName,
             normalized.Midi.FeedbackOutputName,
             normalized.Audio.CaptureDeviceId,
-            normalized.Audio.CaptureSource);
+            normalized.Audio.CaptureSource,
+            normalized.Extensions.DeveloperMode,
+            normalized.Extensions.ActiveUiThemeId);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

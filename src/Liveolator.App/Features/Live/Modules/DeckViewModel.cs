@@ -36,11 +36,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IWaveformProvider? _waveformProvider;
+    private readonly Func<string, DeckTrackInfo?>? _trackInfo;
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isSyncLocked;
     private bool _isLooping;
     private string _title = "No track loaded";
+    private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
@@ -48,14 +50,18 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
+    /// <param name="trackInfo">Resolves a loaded track's catalog facts (title/BPM/key/duration) by path,
+    /// so the deck can surface Key · BPM · duration; null leaves the meta line as a placeholder.</param>
     public DeckViewModel(
         int slot,
         IPerformanceActionDispatcher? dispatcher = null,
-        IWaveformProvider? waveformProvider = null)
+        IWaveformProvider? waveformProvider = null,
+        Func<string, DeckTrackInfo?>? trackInfo = null)
     {
         _slot = slot;
         _dispatcher = dispatcher;
         _waveformProvider = waveformProvider;
+        _trackInfo = trackInfo;
         DeckId = slot == 0 ? "A" : "B";
         bool enabled = dispatcher is not null;
         IObservable<bool> canEmit = Observable.Return(enabled);
@@ -143,8 +149,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _title, value);
     }
 
-    /// <summary>Placeholder deck meta line (key · pitch · time) until a track is loaded.</summary>
-    public string Meta => "—";
+    /// <summary>Deck meta line — "Key · BPM · duration" from the catalog, or "—" before a track loads.</summary>
+    public string Meta
+    {
+        get => _meta;
+        private set => this.RaiseAndSetIfChanged(ref _meta, value);
+    }
+
+    /// <summary>True once a track with known catalog facts is loaded (drives the meta line's visibility).</summary>
+    public bool HasTrackMeta => _meta != NoMeta;
+
+    private const string NoMeta = "—";
 
     /// <summary>The loaded track's waveform peaks (0..1), or null when none is decoded (placeholder).</summary>
     public IReadOnlyList<float>? Waveform
@@ -293,7 +308,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     private void OnTrackLoaded(string trackPath, double bpm)
     {
-        Title = Path.GetFileNameWithoutExtension(trackPath);
+        DeckTrackInfo? info = _trackInfo?.Invoke(trackPath);
+        Title = !string.IsNullOrWhiteSpace(info?.Title)
+            ? info!.Title
+            : Path.GetFileNameWithoutExtension(trackPath);
+        Meta = info is { } i ? $"{i.Key} · {i.Bpm} BPM · {i.Duration}" : NoMeta;
+        this.RaisePropertyChanged(nameof(HasTrackMeta));
         Progress = 0;
         Waveform = null;          // show the placeholder while the new overview decodes
         BeatGrid = Array.Empty<double>();
@@ -343,3 +363,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         }
     }
 }
+
+/// <summary>Pre-formatted catalog facts for a deck's loaded track (title + BPM/key/duration strings).</summary>
+public sealed record DeckTrackInfo(string Title, string Bpm, string Key, string Duration);

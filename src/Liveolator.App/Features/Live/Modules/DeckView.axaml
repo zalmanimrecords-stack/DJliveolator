@@ -20,10 +20,18 @@
           <TextBlock Foreground="White" FontWeight="SemiBold" FontSize="15"
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
-        <StackPanel Grid.Column="1" Spacing="1" Margin="12,0,0,0" VerticalAlignment="Center">
-          <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
-          <TextBlock Classes="faint" Text="{Binding Title}" />
-        </StackPanel>
+        <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+          <!-- loaded: track title + Key · BPM · duration -->
+          <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
+            <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
+          </StackPanel>
+          <!-- empty: deck id + placeholder -->
+          <StackPanel Spacing="1" IsVisible="{Binding !HasTrackMeta}">
+            <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
+          </StackPanel>
+        </Panel>
         <Button Grid.Column="2" Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
       </Grid>
 

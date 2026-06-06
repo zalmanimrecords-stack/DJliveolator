@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Liveolator.Core.Dsp;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Audio.Effects;
 using ManagedBass;
 using ManagedBass.Mix;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private readonly int _sampleRate;
     private readonly int _channels;
     private readonly ILogger _logger;
+    private readonly IAudioEffectRackProvider? _effectRacks;
     private readonly Dictionary<int, DeckDsp> _decks = new();
     private readonly int _cueDeviceIndex;
 
@@ -81,13 +83,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     }
 
     public BassMixerBackend(
-        int sampleRate = 48_000, int channels = 2, ILogger? logger = null, AudioSettings? audioSettings = null)
+        int sampleRate = 48_000, int channels = 2, ILogger? logger = null,
+        AudioSettings? audioSettings = null, IAudioEffectRackProvider? effectRacks = null)
     {
         if (sampleRate <= 0) throw new ArgumentOutOfRangeException(nameof(sampleRate));
         if (channels <= 0) throw new ArgumentOutOfRangeException(nameof(channels));
         _sampleRate = sampleRate;
         _channels = channels;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        _effectRacks = effectRacks;
 
         // ── master-limiter region (Gap #5) ──
         _masterLimiter = new MasterLimiter(sampleRate, channels);
@@ -252,9 +256,9 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         return handle;
     }
 
-    public IBassMixerChannel PlugDeck(int deckHandle)
+    public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
-        var channel = new BassMixerChannel(_channels);
+        var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot));
         // Add paused: the engine flips play state explicitly so a freshly loaded deck is silent.
         if (!BassMix.MixerAddChannel(_mixer, deckHandle, BassFlags.MixerChanPause))
             throw new BassPlaybackException($"MixerAddChannel failed: {Bass.LastError}");
@@ -424,9 +428,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         int count = length / sizeof(float);
         EnsureMasterScratch(count);
 
-        // Limit the master bus in place: read the mix into the reused scratch (no per-buffer alloc),
-        // run the brick-wall limiter, write it back to the device so the master never hard-clips.
+        // Read the mix into the reused scratch (no per-buffer alloc), run the optional master effect
+        // rack (VST3) first, then the brick-wall limiter LAST so the limiter guarantees the final output
+        // ceiling regardless of what the effects do (doc 11 + Gap #5), then write it back to the device.
         Marshal.Copy(buffer, _masterScratch, 0, count);
+        _effectRacks?.GetRack(AudioEffectRackSlot.Master).Process(_masterScratch.AsSpan(0, count), _channels);
         _masterLimiter.Process(_masterScratch.AsSpan(0, count));
         Marshal.Copy(_masterScratch, 0, buffer, count);
 

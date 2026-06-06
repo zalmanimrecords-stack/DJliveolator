@@ -16,6 +16,8 @@ public sealed class Knob : Control
 {
     /// <summary>Pixels of vertical drag that span the full 0..1 range.</summary>
     private const double DragRangePixels = 160.0;
+    /// <summary>Holding Shift slows the drag by this factor for precise EQ/filter trims.</summary>
+    private const double FineDragFactor = 5.0;
     private const double KeyStep = 0.05;
     private const double StartAngle = 135.0;
     private const double SweepAngle = 270.0;
@@ -24,6 +26,11 @@ public sealed class Knob : Control
         AvaloniaProperty.Register<Knob, double>(
             nameof(Value), defaultValue: 0.5,
             defaultBindingMode: Avalonia.Data.BindingMode.TwoWay, coerce: CoerceUnit);
+
+    /// <summary>The "home" value: a faint unity mark is drawn here and a double-click snaps back to it
+    /// (EQ/filter centre = flat). Default 0.5.</summary>
+    public static readonly StyledProperty<double> DefaultValueProperty =
+        AvaloniaProperty.Register<Knob, double>(nameof(DefaultValue), defaultValue: 0.5, coerce: CoerceUnit);
 
     public static readonly StyledProperty<IBrush> ArcBrushProperty =
         AvaloniaProperty.Register<Knob, IBrush>(nameof(ArcBrush), Brushes.DodgerBlue);
@@ -43,7 +50,7 @@ public sealed class Knob : Control
 
     static Knob()
     {
-        AffectsRender<Knob>(ValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty);
+        AffectsRender<Knob>(ValueProperty, DefaultValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty);
     }
 
     public Knob()
@@ -59,6 +66,13 @@ public sealed class Knob : Control
     {
         get => GetValue(ValueProperty);
         set => SetValue(ValueProperty, value);
+    }
+
+    /// <summary>The unity / home value (double-click snaps here; a faint mark is drawn at it).</summary>
+    public double DefaultValue
+    {
+        get => GetValue(DefaultValueProperty);
+        set => SetValue(DefaultValueProperty, value);
     }
 
     public IBrush ArcBrush { get => GetValue(ArcBrushProperty); set => SetValue(ArcBrushProperty, value); }
@@ -100,6 +114,13 @@ public sealed class Knob : Control
             var valuePen = new Pen(arc, arcStroke) { LineCap = PenLineCap.Round };
             context.DrawGeometry(null, valuePen, Arc(centre, arcRadius, StartAngle, angle));
         }
+
+        // unity / home mark — a faint notch across the track at DefaultValue so "flat" is findable at a glance
+        double detentAngle = StartAngle + (SweepAngle * Math.Clamp(DefaultValue, 0, 1));
+        var detentPen = new Pen(Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round };
+        context.DrawLine(detentPen,
+            PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
+            PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
 
         // knob body — radial gradient for a soft 3-D cap, with a hairline rim
         var body = new RadialGradientBrush
@@ -146,6 +167,13 @@ public sealed class Knob : Control
         base.OnPointerPressed(e);
         if (!IsEnabled)
             return;
+        // Double-click snaps to the home/unity value (e.g. flat EQ) — the standard DJ-gear reset gesture.
+        if (e.ClickCount >= 2)
+        {
+            Value = DefaultValue;
+            e.Handled = true;
+            return;
+        }
         _dragging = true;
         _dragStartY = e.GetPosition(this).Y;
         _dragStartValue = Value;
@@ -160,7 +188,8 @@ public sealed class Knob : Control
         if (!_dragging)
             return;
         double dy = _dragStartY - e.GetPosition(this).Y; // up = increase
-        Value = Math.Clamp(_dragStartValue + (dy / DragRangePixels), 0, 1);
+        double range = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? DragRangePixels * FineDragFactor : DragRangePixels;
+        Value = Math.Clamp(_dragStartValue + (dy / range), 0, 1);
         e.Handled = true;
     }
 

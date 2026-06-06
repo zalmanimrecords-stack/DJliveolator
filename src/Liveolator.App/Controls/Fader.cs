@@ -16,11 +16,17 @@ namespace Liveolator.App.Controls;
 public sealed class Fader : Control
 {
     private const double KeyStep = 0.05;
+    /// <summary>Holding Shift slows the drag by this factor for precise level/crossfade trims.</summary>
+    private const double FineDragFactor = 5.0;
 
     public static readonly StyledProperty<double> ValueProperty =
         AvaloniaProperty.Register<Fader, double>(
             nameof(Value), defaultValue: 0.5,
             defaultBindingMode: Avalonia.Data.BindingMode.TwoWay, coerce: CoerceUnit);
+
+    /// <summary>The "home" value a double-click snaps back to (e.g. crossfader centre). Default 0.5.</summary>
+    public static readonly StyledProperty<double> DefaultValueProperty =
+        AvaloniaProperty.Register<Fader, double>(nameof(DefaultValue), defaultValue: 0.5, coerce: CoerceUnit);
 
     public static readonly StyledProperty<Orientation> OrientationProperty =
         AvaloniaProperty.Register<Fader, Orientation>(nameof(Orientation), Orientation.Vertical);
@@ -50,6 +56,7 @@ public sealed class Fader : Control
     }
 
     public double Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
+    public double DefaultValue { get => GetValue(DefaultValueProperty); set => SetValue(DefaultValueProperty, value); }
     public Orientation Orientation { get => GetValue(OrientationProperty); set => SetValue(OrientationProperty, value); }
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
     public IBrush FillBrush { get => GetValue(FillBrushProperty); set => SetValue(FillBrushProperty, value); }
@@ -120,6 +127,13 @@ public sealed class Fader : Control
         base.OnPointerPressed(e);
         if (!IsEnabled)
             return;
+        // Double-click snaps to the home value (e.g. crossfader centre).
+        if (e.ClickCount >= 2)
+        {
+            Value = DefaultValue;
+            e.Handled = true;
+            return;
+        }
         _dragging = true;
         Point p = e.GetPosition(this);
         _dragStart = Orientation == Orientation.Vertical ? p.Y : p.X;
@@ -135,11 +149,12 @@ public sealed class Fader : Control
         if (!_dragging)
             return;
         Point p = e.GetPosition(this);
-        double len = Math.Max(1, (Orientation == Orientation.Vertical ? Bounds.Height : Bounds.Width) - 16);
+        double span = Math.Max(1, (Orientation == Orientation.Vertical ? Bounds.Height : Bounds.Width) - 16);
+        double range = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? span * FineDragFactor : span;
         double delta = Orientation == Orientation.Vertical
             ? _dragStart - p.Y      // up = increase
             : p.X - _dragStart;     // right = increase
-        Value = Math.Clamp(_dragStartValue + (delta / len), 0, 1);
+        Value = Math.Clamp(_dragStartValue + (delta / range), 0, 1);
         e.Handled = true;
     }
 
