@@ -56,9 +56,29 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private float[] _cueLegScratch = Array.Empty<float>();
     // ── end master-limiter region ────────────────────────────────────────────────────────────────
 
-    /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, and its
-    /// original sample rate (so a pitch/rate change is expressed relative to the track's natural rate).</summary>
-    private sealed record DeckDsp(BassMixerChannel Channel, DSPProcedure Procedure, float OriginalFrequency);
+    /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, its original
+    /// sample rate (so a pitch/rate change is expressed relative to the track's natural rate), and any
+    /// active loop sync handle + start byte (kept so the loop callback can seek back and so a re-arm or
+    /// clear can remove the prior sync).</summary>
+    private sealed class DeckDsp
+    {
+        public DeckDsp(BassMixerChannel channel, DSPProcedure procedure, float originalFrequency)
+        {
+            Channel = channel;
+            Procedure = procedure;
+            OriginalFrequency = originalFrequency;
+        }
+
+        public BassMixerChannel Channel { get; }
+        public DSPProcedure Procedure { get; }
+        public float OriginalFrequency { get; }
+
+        // Loop state: the registered BASS_SYNC_POS handle, the callback (kept alive for BASS), and the
+        // loop in-point in bytes. 0 sync handle = no active loop.
+        public int LoopSync { get; set; }
+        public SyncProcedure? LoopProcedure { get; set; }
+        public long LoopStartBytes { get; set; }
+    }
 
     public BassMixerBackend(
         int sampleRate = 48_000, int channels = 2, ILogger? logger = null, AudioSettings? audioSettings = null)
@@ -252,6 +272,80 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         double frequency = deck.OriginalFrequency * rateMultiplier;
         if (!Bass.ChannelSetAttribute(deckHandle, ChannelAttribute.Frequency, (float)frequency))
             _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+    }
+
+    public double GetDeckPositionSeconds(int deckHandle)
+    {
+        long position = BassMix.ChannelGetPosition(deckHandle);
+        if (position < 0)
+            return 0.0;
+        double seconds = Bass.ChannelBytes2Seconds(deckHandle, position);
+        return seconds > 0 ? seconds : 0.0;
+    }
+
+    public double GetDeckLengthSeconds(int deckHandle)
+    {
+        long length = Bass.ChannelGetLength(deckHandle);
+        if (length <= 0)
+            return 0.0;
+        double seconds = Bass.ChannelBytes2Seconds(deckHandle, length);
+        return seconds > 0 ? seconds : 0.0;
+    }
+
+    public void SetDeckLoop(int deckHandle, double startSeconds, double endSeconds)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            return;
+        if (endSeconds <= startSeconds)
+        {
+            _logger.LogWarning(
+                "Ignoring loop on deck {Handle}: end {End}s not after start {Start}s.",
+                deckHandle, endSeconds, startSeconds);
+            return;
+        }
+
+        ClearDeckLoopSync(deckHandle, deck); // replace any prior loop on this deck
+
+        long startBytes = Bass.ChannelSeconds2Bytes(deckHandle, Math.Max(0.0, startSeconds));
+        long endBytes = Bass.ChannelSeconds2Bytes(deckHandle, endSeconds);
+        if (startBytes < 0 || endBytes <= startBytes)
+        {
+            _logger.LogWarning("Loop region for deck {Handle} resolved to an empty byte span; ignoring.", deckHandle);
+            return;
+        }
+
+        deck.LoopStartBytes = startBytes;
+        // BASS_SYNC_POS at the loop out-point seeks the deck back to the in-point, so the region repeats.
+        // SyncFlags.Mixtime fires on the mixer's pull thread for sample-accurate, click-free looping.
+        deck.LoopProcedure = (handle, channel, data, user) =>
+        {
+            if (!BassMix.ChannelSetPosition(deckHandle, deck.LoopStartBytes))
+                _logger.LogWarning("Loop wrap seek on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+        };
+        deck.LoopSync = BassMix.ChannelSetSync(
+            deckHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
+        if (deck.LoopSync == 0)
+        {
+            deck.LoopProcedure = null;
+            _logger.LogWarning("Arming loop sync on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+        }
+    }
+
+    public void ClearDeckLoop(int deckHandle)
+    {
+        if (_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            ClearDeckLoopSync(deckHandle, deck);
+    }
+
+    private static void ClearDeckLoopSync(int deckHandle, DeckDsp deck)
+    {
+        if (deck.LoopSync != 0)
+        {
+            BassMix.ChannelRemoveSync(deckHandle, deck.LoopSync);
+            deck.LoopSync = 0;
+            deck.LoopProcedure = null;
+            deck.LoopStartBytes = 0;
+        }
     }
 
     public void SetDeckPlaying(int deckHandle, bool playing)

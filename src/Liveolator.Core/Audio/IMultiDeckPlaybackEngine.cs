@@ -59,6 +59,19 @@ public interface IMultiDeckPlaybackEngine
     /// <summary>Set the deck's natural tempo (BPM) used as the Sync reference. 0 (or negative) = unknown.</summary>
     void SetDeckBaseBpm(int slot, double bpm);
 
+    /// <summary>
+    /// The deck's first-beat (downbeat) anchor in seconds from the track start — the within-beat offset
+    /// where the analyzed beat grid begins. Used by Quantize/phase-match to align the deck to the shared
+    /// grid (doc 11). 0 when unknown.
+    /// </summary>
+    double DeckFirstBeat(int slot);
+
+    /// <summary>
+    /// Set the deck's first-beat anchor (seconds), fed from the track's analyzed <c>BpmResult</c> on
+    /// load (like base BPM). Negative = unknown.
+    /// </summary>
+    void SetDeckFirstBeat(int slot, double firstBeatSeconds);
+
     /// <summary>True while the deck is sync-locked (beatmatched) to the master tempo.</summary>
     bool IsSyncLocked(int slot);
 
@@ -82,4 +95,22 @@ public interface IMultiDeckPlaybackEngine
     /// Hot-cues belong to the loaded track and are cleared when a new track loads.
     /// </summary>
     void HotCue(int slot, int cueIndex);
+
+    // --- Loops (doc 11): a beat-length loop repeats a region of the track. Driven via DeckSetLoop.
+
+    /// <summary>The deck's active loop length in beats, or 0 when no loop is active.</summary>
+    double LoopBeats(int slot);
+
+    /// <summary>True while the deck is looping a region.</summary>
+    bool IsLooping(int slot);
+
+    /// <summary>
+    /// Start a beat-length loop on the deck, beginning at the current playhead. The beat length is
+    /// converted to a time region using the deck's base BPM, so it is musically <paramref name="beats"/>
+    /// beats long. No-op (and feedback-only) if nothing is loaded or the base BPM is unknown.
+    /// </summary>
+    void SetLoop(int slot, double beats);
+
+    /// <summary>Clear the deck's active loop (playback continues past the former loop region).</summary>
+    void ClearLoop(int slot);
 }

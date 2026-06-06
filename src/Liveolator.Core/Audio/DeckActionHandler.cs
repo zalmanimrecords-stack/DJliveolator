@@ -26,6 +26,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckSyncLockToggle,
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckHotCue,
+        PerformanceActionKind.DeckSetLoop,
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
@@ -56,15 +57,15 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckLoadTrack:
                 if (string.IsNullOrWhiteSpace(action.Argument))
                     throw new ArgumentException("DeckLoadTrack requires Argument set to the track path.", nameof(action));
-                _engine.Load(slot, action.Argument);
-                // Value carries the track's analyzed BPM (0 = unknown), feeding the deck's Sync reference
-                // tempo so beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
-                _engine.SetDeckBaseBpm(slot, action.Value);
+                LoadTrack(slot, action);
                 // Report the loaded path so a deck UI (waveform/title) can react — feedback is the only
                 // load-time signal back to subscribers, and it now carries the path via Argument.
                 RaiseFeedback(
                     PerformanceActionKind.DeckLoadTrack, slot,
                     new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: action.Argument));
+                break;
+            case PerformanceActionKind.DeckSetLoop:
+                SetLoop(slot, action);
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);
@@ -99,6 +100,32 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break; // dispatcher guarantees only handled kinds reach here
         }
     }
+
+    private void LoadTrack(int slot, PerformanceAction action)
+    {
+        _engine.Load(slot, action.Argument!);
+        // Value carries the track's analyzed BPM (0 = unknown), feeding the deck's Sync reference tempo so
+        // beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
+        _engine.SetDeckBaseBpm(slot, action.Value);
+        // The first-beat (downbeat) anchor — BpmResult.FirstBeatSeconds — feeds phase-match the same way
+        // base BPM feeds tempo-match. The single-Value load action carries the BPM only, so the anchor is
+        // supplied separately via SetDeckFirstBeat by the composition root that holds the full BpmResult
+        // (the engine defaults to a 0 anchor, leaving phase-match a no-op, until one is set).
+    }
+
+    private void SetLoop(int slot, PerformanceAction action)
+    {
+        // Value is the loop length in beats: > 0 sets a beat-length loop at the current playhead, <= 0
+        // clears any active loop. The engine converts beats to a time region using the deck's base BPM.
+        if (action.Value > 0.0)
+            _engine.SetLoop(slot, action.Value);
+        else
+            _engine.ClearLoop(slot);
+        RaiseFeedback(PerformanceActionKind.DeckSetLoop, slot, LoopFeedback(slot));
+    }
+
+    private ActionFeedbackState LoopFeedback(int slot)
+        => new(IsActive: _engine.IsLooping(slot), IsAvailable: true, Value: _engine.LoopBeats(slot));
 
     private void ToggleSyncLock(int slot)
     {
@@ -146,6 +173,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
             PerformanceActionKind.DeckSyncLockToggle => ActiveFeedback(_engine.IsSyncLocked(slot)),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
+            PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             _ => ActionFeedbackState.Unavailable,
         };
     }

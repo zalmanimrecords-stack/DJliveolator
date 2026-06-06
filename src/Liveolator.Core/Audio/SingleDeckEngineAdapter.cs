@@ -48,11 +48,15 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void Cue(int slot) => EnsureSlot(slot);
 
-    // The single-deck engine has no sync — there is no second deck to match against — so base BPM is
-    // neither stored nor used.
+    // The single-deck engine has no sync — there is no second deck to match against — so base BPM and
+    // the first-beat anchor are neither stored nor used.
     public double DeckBaseBpm(int slot) { EnsureSlot(slot); return 0; }
 
     public void SetDeckBaseBpm(int slot, double bpm) => EnsureSlot(slot);
+
+    public double DeckFirstBeat(int slot) { EnsureSlot(slot); return 0; }
+
+    public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => EnsureSlot(slot);
 
     public bool IsSyncLocked(int slot) { EnsureSlot(slot); return false; }
 
@@ -68,6 +72,15 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
     public bool IsHotCueSet(int slot, int cueIndex) { EnsureSlot(slot); return false; }
 
     public void HotCue(int slot, int cueIndex) => EnsureSlot(slot);
+
+    // The legacy single-deck engine has no loop support; report no active loop and accept no-ops.
+    public double LoopBeats(int slot) { EnsureSlot(slot); return 0; }
+
+    public bool IsLooping(int slot) { EnsureSlot(slot); return false; }
+
+    public void SetLoop(int slot, double beats) => EnsureSlot(slot);
+
+    public void ClearLoop(int slot) => EnsureSlot(slot);
 
     private void EnsureSlot(int slot)
     {

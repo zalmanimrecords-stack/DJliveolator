@@ -3,13 +3,18 @@ namespace Liveolator.Core.Tests;
 /// <summary>Synthetic PCM generators used to assert analysis results against known ground truth.</summary>
 internal static class TestSignals
 {
-    /// <summary>An impulse/click train at a known tempo: short bursts every beat.</summary>
-    public static float[] ClickTrain(double bpm, int sampleRate, double seconds, int clickWidth = 8)
+    /// <summary>
+    /// An impulse/click train at a known tempo: short bursts every beat, optionally offset so the first
+    /// click lands <paramref name="offsetSeconds"/> into the track (a non-zero first-beat anchor).
+    /// </summary>
+    public static float[] ClickTrain(
+        double bpm, int sampleRate, double seconds, int clickWidth = 8, double offsetSeconds = 0.0)
     {
         int total = (int)(sampleRate * seconds);
         var buffer = new float[total];
         double samplesPerBeat = 60.0 / bpm * sampleRate;
-        for (double pos = 0; pos < total; pos += samplesPerBeat)
+        double first = offsetSeconds * sampleRate;
+        for (double pos = first; pos < total; pos += samplesPerBeat)
         {
             int start = (int)pos;
             for (int i = 0; i < clickWidth && start + i < total; i++)
