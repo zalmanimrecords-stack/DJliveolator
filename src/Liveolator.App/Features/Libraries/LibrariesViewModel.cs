@@ -37,6 +37,8 @@ public sealed class LibrariesViewModel : ViewModelBase
     private TrackSortKey _sortKey = TrackSortKey.Title;
     private bool _sortDescending;
     private bool _suppressFilter;
+    // The folders the user has marked as sample sources (the classifier override, B2). Persisted.
+    private HashSet<string> _sampleFolders = new(StringComparer.OrdinalIgnoreCase);
     private TrackRowViewModel? _selectedTrack;
     private string _scanStatus = "Add folders, then Scan.";
     private bool _isScanning;
@@ -260,15 +262,19 @@ public sealed class LibrariesViewModel : ViewModelBase
         {
             IReadOnlyList<string> folders = await _store.LoadScanFoldersAsync(cancellationToken).ConfigureAwait(false);
             IReadOnlyList<MusicTrack> cached = await _store.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<string> sampleFolders = await _store.LoadSampleFoldersAsync(cancellationToken).ConfigureAwait(false);
+
+            _sampleFolders = new HashSet<string>(sampleFolders, StringComparer.OrdinalIgnoreCase);
 
             List<TrackRowViewModel>? rows = null;
             if (cached.Count > 0)
             {
                 _library.Restore(cached);
-                rows = _library.All
-                    .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-                    .Select(t => new TrackRowViewModel(t, _contextActions))
-                    .ToList();
+                // Re-apply the saved sample designations so a restored catalog comes back with the
+                // right Track/Sample split (reclassifies in place, no re-decode).
+                if (_sampleFolders.Count > 0)
+                    _library.SetSampleFolders(_sampleFolders);
+                rows = BuildRows();
             }
 
             RxApp.MainThreadScheduler.Schedule(() =>
@@ -307,13 +313,57 @@ public sealed class LibrariesViewModel : ViewModelBase
         _ = PersistFoldersAsync();
     }
 
-    // Rebuilds the per-folder status rows from the current catalog. Must run on the UI scheduler
-    // (mutates an ObservableCollection); callers already marshal there.
+    // Rebuilds the per-folder status rows from the current catalog, seeding each with its sample-folder
+    // designation and the toggle callback (B2). Must run on the UI scheduler (mutates an
+    // ObservableCollection); callers already marshal there.
     private void RefreshFolderStatuses()
     {
         FolderStatuses.Clear();
         foreach (FolderCatalogSummary summary in _library.SummarizeFolders(Folders.ToList()))
-            FolderStatuses.Add(new FolderStatusViewModel(summary));
+            FolderStatuses.Add(new FolderStatusViewModel(
+                summary, _sampleFolders.Contains(summary.Folder), OnSampleFolderChanged));
+    }
+
+    // Projects the current library catalog to row view-models, title-ordered. Shared by scan, restore,
+    // and sample-folder reclassification.
+    private List<TrackRowViewModel> BuildRows()
+        => _library.All
+            .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
+            .Select(t => new TrackRowViewModel(t, _contextActions))
+            .ToList();
+
+    // The user toggled a folder's "samples" designation in the Folders window (B2). Update the
+    // override set, reclassify the catalog in place (no re-decode), refresh the visible rows + facets,
+    // and persist — guarded so a save failure surfaces on the status line, never crashes the toggle.
+    private void OnSampleFolderChanged(string folder, bool isSample)
+    {
+        if (isSample)
+            _sampleFolders.Add(folder);
+        else
+            _sampleFolders.Remove(folder);
+
+        _library.SetSampleFolders(_sampleFolders);
+        _all = BuildRows();
+        RebuildFacets();
+        ApplyFilter();
+        RefreshFolderStatuses();
+        _ = PersistSampleFoldersAsync();
+    }
+
+    // Persists just the sample-folder set. Guarded so a save failure is never silent or fatal.
+    private async Task PersistSampleFoldersAsync()
+    {
+        if (_store is null)
+            return;
+
+        try
+        {
+            await _store.SaveSampleFoldersAsync(_sampleFolders.ToList()).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not save sample folders: {ex.Message}");
+        }
     }
 
     private async Task RunScanAsync()
@@ -333,10 +383,12 @@ public sealed class LibrariesViewModel : ViewModelBase
 
             await _library.ScanAsync(folders, progress).ConfigureAwait(false);
 
-            List<TrackRowViewModel> rows = _library.All
-                .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-                .Select(t => new TrackRowViewModel(t, _contextActions))
-                .ToList();
+            // Re-apply the sample designations so newly-scanned files under a samples folder are
+            // classified as Samples (reclassifies the catalog in place; no-op when none are set).
+            if (_sampleFolders.Count > 0)
+                _library.SetSampleFolders(_sampleFolders);
+
+            List<TrackRowViewModel> rows = BuildRows();
 
             // Persist the fresh catalog + the folders that produced it, so the next run restores them.
             await PersistCatalogAsync(folders).ConfigureAwait(false);
