@@ -23,6 +23,8 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.MixerEqBand,
         PerformanceActionKind.MixerFilter,
         PerformanceActionKind.MixerCueToggle,
+        PerformanceActionKind.MixerCueLevel,
+        PerformanceActionKind.MixerCueMix,
     };
 
     private readonly IMixer _mixer;
@@ -70,6 +72,12 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.MixerCueToggle:
                 ApplyCueToggle(action);
+                break;
+            case PerformanceActionKind.MixerCueLevel:
+                ApplyCueLevel(action);
+                break;
+            case PerformanceActionKind.MixerCueMix:
+                ApplyCueMix(action);
                 break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
@@ -142,6 +150,44 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             new ActionFeedbackState(IsActive: enabled, IsAvailable: true, Value: 0));
     }
 
+    private void ApplyCueLevel(PerformanceAction action)
+    {
+        double level;
+        lock (_gate)
+        {
+            level = ResolveAbsoluteOrDelta(action, _state.CueBus.Level);
+            _state = _state.WithCueBus(_state.CueBus.WithLevel(level));
+            PushCueOutputGains();
+        }
+        RaiseFeedback(
+            PerformanceActionKind.MixerCueLevel, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: State.CueBus.Level));
+        _logger.LogDebug("Cue level set to {Level}", State.CueBus.Level);
+    }
+
+    private void ApplyCueMix(PerformanceAction action)
+    {
+        double mix;
+        lock (_gate)
+        {
+            mix = ResolveAbsoluteOrDelta(action, _state.CueBus.Mix);
+            _state = _state.WithCueBus(_state.CueBus.WithMix(mix));
+            PushCueOutputGains();
+        }
+        RaiseFeedback(
+            PerformanceActionKind.MixerCueMix, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: State.CueBus.Mix));
+        _logger.LogDebug("Cue mix set to {Mix}", State.CueBus.Mix);
+    }
+
+    // The cue output mix (cued decks vs master, scaled by headphone level) depends only on the cue
+    // bus controls, so push it whenever level or mix changes; per-deck PFL routing rides SetCue.
+    private void PushCueOutputGains()
+    {
+        (double cueGain, double masterGain) = CueMixMath.HeadphoneOutputGains(_state.CueBus);
+        _mixer.SetCueOutputGains(cueGain, masterGain);
+    }
+
     /// <inheritdoc />
     public override ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot)
     {
@@ -152,6 +198,10 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Crossfader),
             PerformanceActionKind.MixerCueToggle when slot >= 0 && slot < state.Channels.Count
                 => new ActionFeedbackState(IsActive: state.Channel(slot).CueEnabled, IsAvailable: true, Value: 0),
+            PerformanceActionKind.MixerCueLevel
+                => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.CueBus.Level),
+            PerformanceActionKind.MixerCueMix
+                => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.CueBus.Mix),
             PerformanceActionKind.MixerChannelGain when slot >= 0 && slot < state.Channels.Count
                 => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Channel(slot).Gain),
             PerformanceActionKind.MixerFilter when slot >= 0 && slot < state.Channels.Count

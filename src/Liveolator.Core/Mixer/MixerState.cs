@@ -10,10 +10,12 @@ namespace Liveolator.Core.Mixer;
 /// <param name="Crossfader">Crossfader position 0..1: 0 = full deck A, 1 = full deck B, 0.5 = center.</param>
 /// <param name="Curve">Shape of the crossfader transition.</param>
 /// <param name="Channels">Per-deck channel strips, indexed by deck slot.</param>
+/// <param name="CueBus">The headphone-cue (PFL) bus level and cue/master blend.</param>
 public sealed record MixerState(
     double Crossfader,
     CrossfaderCurve Curve,
-    IReadOnlyList<DeckChannelState> Channels)
+    IReadOnlyList<DeckChannelState> Channels,
+    CueBusState CueBus)
 {
     /// <summary>Number of deck slots in this increment.</summary>
     public const int DeckCount = 2;
@@ -24,11 +26,12 @@ public sealed record MixerState(
     /// <summary>Deck slot index for deck B.</summary>
     public const int DeckB = 1;
 
-    /// <summary>Crossfader centered, smooth curve, both decks at their default channel strip.</summary>
+    /// <summary>Crossfader centered, smooth curve, both decks at their default channel strip, cue bus default.</summary>
     public static MixerState Default { get; } = new(
         Crossfader: 0.5,
         Curve: CrossfaderCurve.Smooth,
-        Channels: new[] { DeckChannelState.Default, DeckChannelState.Default });
+        Channels: new[] { DeckChannelState.Default, DeckChannelState.Default },
+        CueBus: CueBusState.Default);
 
     /// <summary>The channel strip for one deck slot.</summary>
     /// <exception cref="ArgumentOutOfRangeException">Slot is outside 0..<see cref="DeckCount"/>-1.</exception>
@@ -54,4 +57,11 @@ public sealed record MixerState(
     /// <summary>Returns a copy with the crossfader position clamped to 0..1.</summary>
     public MixerState WithCrossfader(double position)
         => this with { Crossfader = Math.Clamp(position, 0.0, 1.0) };
+
+    /// <summary>Returns a copy with the headphone-cue bus state replaced.</summary>
+    public MixerState WithCueBus(CueBusState cueBus)
+    {
+        ArgumentNullException.ThrowIfNull(cueBus);
+        return this with { CueBus = cueBus };
+    }
 }

@@ -10,6 +10,7 @@ internal sealed class FakeMixer : IMixer
     public Dictionary<(int Slot, EqBand Band), BiquadCoefficients> Eq { get; } = new();
     public Dictionary<int, BiquadCoefficients> Filter { get; } = new();
     public Dictionary<int, bool> Cue { get; } = new();
+    public (double CueGain, double MasterGain)? CueOutputGains { get; private set; }
 
     public void SetDeckGain(int slot, double linearGain) => DeckGain[slot] = linearGain;
 
@@ -19,4 +20,7 @@ internal sealed class FakeMixer : IMixer
     public void SetFilter(int slot, BiquadCoefficients coefficients) => Filter[slot] = coefficients;
 
     public void SetCue(int slot, bool enabled) => Cue[slot] = enabled;
+
+    public void SetCueOutputGains(double cueGain, double masterGain)
+        => CueOutputGains = (cueGain, masterGain);
 }

@@ -18,6 +18,8 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
 {
     private const double DefaultCrossfader = 0.5;
     private const double DefaultGain = 1.0;
+    private const double DefaultCueLevel = 1.0;
+    private const double DefaultCueMix = 0.0; // 0 = full cue (PFL), 1 = full master
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private bool _isCueA;
@@ -45,6 +47,14 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         CueACommand = ReactiveCommand.Create(() => EmitCue(slot: 0), canCue);
         CueBCommand = ReactiveCommand.Create(() => EmitCue(slot: 1), canCue);
 
+        CueLevel = new ContinuousControlViewModel(
+            "Cue", Seed(PerformanceActionKind.MixerCueLevel, slot: 0, DefaultCueLevel),
+            enabled ? v => Emit(PerformanceActionKind.MixerCueLevel, v, slot: 0) : null);
+
+        CueMix = new ContinuousControlViewModel(
+            "Cue / Master", Seed(PerformanceActionKind.MixerCueMix, slot: 0, DefaultCueMix),
+            enabled ? v => Emit(PerformanceActionKind.MixerCueMix, v, slot: 0) : null);
+
         if (_dispatcher is not null)
         {
             _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
@@ -59,6 +69,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel Crossfader { get; }
     public ContinuousControlViewModel ChannelGainA { get; }
     public ContinuousControlViewModel ChannelGainB { get; }
+
+    /// <summary>Headphone-cue (PFL) bus output level (MixerCueLevel).</summary>
+    public ContinuousControlViewModel CueLevel { get; }
+
+    /// <summary>Cue/master blend knob: 0 = pre-listen the cued decks, 1 = the master (MixerCueMix).</summary>
+    public ContinuousControlViewModel CueMix { get; }
 
     /// <summary>Headphone-cue toggles per deck (MixerCueToggle — a ready handler).</summary>
     public ReactiveCommand<Unit, Unit> CueACommand { get; }
@@ -117,6 +133,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.MixerCueToggle when e.Slot == 1:
                     IsCueB = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerCueLevel:
+                    CueLevel.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerCueMix:
+                    CueMix.SetFromFeedback(e.State.Value);
                     break;
             }
         });

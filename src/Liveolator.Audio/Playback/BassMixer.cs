@@ -21,6 +21,7 @@ public sealed class BassMixer : IMixer
 {
     private readonly IBassMixerChannel?[] _channels;
     private readonly ILogger _logger;
+    private ICueOutput? _cueOutput;
 
     public BassMixer(int deckCount = MixerState.DeckCount, ILoggerFactory? loggerFactory = null)
     {
@@ -29,6 +30,12 @@ public sealed class BassMixer : IMixer
         _channels = new IBassMixerChannel?[deckCount];
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixer>();
     }
+
+    /// <summary>
+    /// Registers (or clears) the headphone-cue output, called by the binding once the cue output
+    /// device/channel is open. Internal: the implementation lives in this binding.
+    /// </summary>
+    internal void SetCueOutput(ICueOutput? cueOutput) => _cueOutput = cueOutput;
 
     /// <summary>Number of deck slots this mixer addresses.</summary>
     public int DeckCount => _channels.Length;
@@ -65,6 +72,23 @@ public sealed class BassMixer : IMixer
     {
         if (TryChannel(slot, nameof(SetCue), out IBassMixerChannel channel))
             channel.SetCue(enabled);
+    }
+
+    public void SetCueOutputGains(double cueGain, double masterGain)
+    {
+        ICueOutput? cueOutput = _cueOutput;
+        if (cueOutput is null)
+        {
+            // The cue-mix knob moved before a headphone-cue output was configured (no 2nd output
+            // device selected). Keep the Core state authoritative; surface that it had nowhere to
+            // apply rather than failing silently (global standard #26).
+            _logger.LogDebug(
+                "SetCueOutputGains ignored: no headphone-cue output configured (cue={Cue}, master={Master}).",
+                cueGain, masterGain);
+            return;
+        }
+
+        cueOutput.SetCueOutputGains(cueGain, masterGain);
     }
 
     private bool TryChannel(int slot, string op, out IBassMixerChannel channel)

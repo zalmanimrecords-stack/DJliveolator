@@ -100,4 +100,44 @@ public sealed class MixerViewModelTests
         Assert.False(vm.IsCueA);
         Assert.True(vm.IsCueB);
     }
+
+    [Fact]
+    public void CueLevel_EmitsMixerCueLevel_Absolute()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        vm.CueLevel.Value = 0.6;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerCueLevel, action.Kind);
+        Assert.Equal(ActionInputMode.Absolute, action.InputMode);
+        Assert.Equal(0.6, action.Value);
+    }
+
+    [Fact]
+    public void CueMix_EmitsMixerCueMix_Absolute()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        vm.CueMix.Value = 0.35;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerCueMix, action.Kind);
+        Assert.Equal(0.35, action.Value);
+    }
+
+    [Fact]
+    public void CueLevel_Feedback_UpdatesControl_WithoutReDispatching()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerCueMix, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.8));
+
+        Assert.Equal(0.8, vm.CueMix.Value);
+        Assert.Empty(dispatcher.Dispatched);
+    }
 }

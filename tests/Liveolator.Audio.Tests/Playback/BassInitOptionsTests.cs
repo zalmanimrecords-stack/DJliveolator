@@ -45,6 +45,40 @@ public sealed class BassInitOptionsTests
     }
 
     [Fact]
+    public void From_Null_HasNoCueDevice()
+    {
+        BassInitOptions options = BassInitOptions.From(null);
+
+        Assert.Equal(BassInitOptions.NoCueDevice, options.CueDeviceIndex);
+        Assert.False(options.HasCueDevice);
+    }
+
+    [Fact]
+    public void From_NumericCueDeviceId_ParsesAndFlagsCuePresent()
+    {
+        BassInitOptions options = BassInitOptions.From(
+            new AudioSettings { OutputDeviceId = "1", CueOutputDeviceId = "2" });
+
+        Assert.Equal(2, options.CueDeviceIndex);
+        Assert.True(options.HasCueDevice);
+    }
+
+    [Theory]
+    [InlineData(null)]      // not configured
+    [InlineData("")]        // blank
+    [InlineData("notnum")]  // non-numeric
+    [InlineData("0")]       // BASS "No sound" device
+    [InlineData("-1")]      // out of range
+    public void From_NonRealCueDeviceId_FoldsToNoCueDevice(string? cueDeviceId)
+    {
+        BassInitOptions options = BassInitOptions.From(
+            new AudioSettings { CueOutputDeviceId = cueDeviceId });
+
+        Assert.Equal(BassInitOptions.NoCueDevice, options.CueDeviceIndex);
+        Assert.False(options.HasCueDevice);
+    }
+
+    [Fact]
     public void From_BufferOutOfRange_IsClampedToSupportedRange()
     {
         Assert.Equal(

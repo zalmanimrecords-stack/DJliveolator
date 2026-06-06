@@ -26,6 +26,14 @@ public sealed record AudioSettings
     /// <summary>Backend-opaque output device id, or null for the platform default device.</summary>
     public string? OutputDeviceId { get; init; }
 
+    /// <summary>
+    /// Backend-opaque output device id for the headphone-cue (PFL) output, or null when no separate
+    /// cue output is configured (cue then has nowhere to play). On the CMD STUDIO 2A's built-in 4-ch
+    /// interface this is the same device as <see cref="OutputDeviceId"/> with the cue on channels 3/4;
+    /// on a separate headphone interface it is a distinct device. Never hardcoded — the user picks it.
+    /// </summary>
+    public string? CueOutputDeviceId { get; init; }
+
     /// <summary>Requested output buffer length in milliseconds (see <see cref="Normalized"/>).</summary>
     public int BufferMilliseconds { get; init; } = DefaultBufferMs;
 

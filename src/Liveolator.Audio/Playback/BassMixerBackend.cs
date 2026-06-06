@@ -14,16 +14,28 @@ namespace Liveolator.Audio.Playback;
 /// the state machine and the channel DSP are tested with fakes, and real audio is verified manually
 /// (doc 11 checklist), mirroring <see cref="BassPlayback"/>.
 /// </summary>
-internal sealed class BassMixerBackend : IBassMixerBackend
+/// <remarks>
+/// Headphone cue (PFL): when the user has chosen a separate cue output device, the backend opens a
+/// second BASS device for it (the CMD STUDIO 2A's channels 3/4) and exposes <see cref="ICueOutput"/>
+/// so <see cref="BassMixer"/> can push the Core-computed cue/master output gains. The summed cued-deck
+/// (pre-fade) signal feeding the headphones comes from per-deck cue sends, which need the deck
+/// plumbing (<see cref="PlugDeck"/>) the deck-loops branch owns — see the integration note. Until
+/// those land the cue output carries the master leg only; the gains for both legs are stored here.
+/// </remarks>
+internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 {
     private readonly int _sampleRate;
     private readonly int _channels;
     private readonly ILogger _logger;
     private readonly Dictionary<int, DeckDsp> _decks = new();
+    private readonly int _cueDeviceIndex;
 
     private int _mixer;
+    private int _cueMixer;                  // 0 until a cue output device is opened
+    private int _cueMasterPush;             // push stream feeding the master leg into the cue mixer
     private DSPProcedure? _masterDsp;       // kept alive: BASS holds an unmanaged pointer to it
     private Action<float[]>? _masterTap;
+    private volatile float _masterLegGain;  // master-into-headphones gain (equal-power, level-scaled)
     private bool _disposed;
 
     /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, and its
@@ -39,8 +51,29 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _channels = channels;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        InitOutput(BassInitOptions.From(audioSettings));
+        BassInitOptions options = BassInitOptions.From(audioSettings);
+        InitOutput(options);
+        _cueDeviceIndex = TryInitCueDevice(options);
     }
+
+    // Open the user-chosen headphone-cue output device (doc 11) so a second BASS device backs the cue
+    // mixer. A missing/stale cue device must not disable all audio — log and run without cue.
+    private int TryInitCueDevice(BassInitOptions options)
+    {
+        if (!options.HasCueDevice || options.CueDeviceIndex == options.DeviceIndex)
+            return BassInitOptions.NoCueDevice; // no separate cue output, or it is the master device
+
+        if (TryInitDevice(options.CueDeviceIndex))
+            return options.CueDeviceIndex;
+
+        _logger.LogWarning(
+            "Headphone-cue output device {Device} unavailable ({Error}); cue output disabled.",
+            options.CueDeviceIndex, Bass.LastError);
+        return BassInitOptions.NoCueDevice;
+    }
+
+    /// <summary>True when a separate headphone-cue output device was successfully opened.</summary>
+    public bool HasCueOutput => _cueDeviceIndex >= 1;
 
     // Applies the user's persisted output choice (doc 12) before opening BASS: the playback buffer is a
     // global config BASS reads at device-open time, so set it first, then open the chosen device. A
@@ -70,7 +103,64 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _mixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
         if (_mixer == 0)
             throw new BassPlaybackException($"CreateMixerStream failed: {Bass.LastError}");
+
+        CreateCueMixerIfConfigured();
         return new MasterMixInfo(_channels, _sampleRate);
+    }
+
+    // The headphone-cue output is its own mixer stream on the cue device. The cued-deck (PFL) sends
+    // that should feed it depend on per-deck plumbing the deck-loops branch owns (see integration
+    // note); for now it carries the master leg, tapped from the master mixer and scaled by the
+    // master-into-headphones gain so the cue/master blend knob already works for monitoring.
+    private void CreateCueMixerIfConfigured()
+    {
+        if (!HasCueOutput)
+            return;
+
+        // CreateMixerStream binds to the current BASS device, so select the cue device before creating
+        // the cue mixer, then restore the master device for the rest of the master setup.
+        int masterDevice = Bass.CurrentDevice;
+        Bass.CurrentDevice = _cueDeviceIndex;
+        _cueMixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
+        if (_cueMixer == 0)
+        {
+            _logger.LogWarning("Cue mixer creation failed: {Error}; cue output disabled.", Bass.LastError);
+            Bass.CurrentDevice = masterDevice;
+            return;
+        }
+
+        // A push (STREAMPROC_PUSH) source plugged into the cue mixer carries the master leg: the
+        // master DSP pushes scaled master samples into it each buffer. Decode flag — the cue mixer
+        // pulls it, it never plays to the device itself.
+        _cueMasterPush = Bass.CreateStream(
+            _sampleRate, _channels, BassFlags.Float | BassFlags.Decode, StreamProcedureType.Push);
+        if (_cueMasterPush == 0 || !BassMix.MixerAddChannel(_cueMixer, _cueMasterPush, BassFlags.Default))
+        {
+            _logger.LogWarning("Cue master-leg push stream setup failed: {Error}; cue output disabled.", Bass.LastError);
+            Bass.StreamFree(_cueMixer);
+            _cueMixer = 0;
+            _cueMasterPush = 0;
+            Bass.CurrentDevice = masterDevice;
+            return;
+        }
+
+        if (!Bass.ChannelPlay(_cueMixer))
+            _logger.LogWarning("Bass.ChannelPlay (cue) failed: {Error}", Bass.LastError);
+
+        Bass.CurrentDevice = masterDevice;
+    }
+
+    public void SetCueOutputGains(double cueGain, double masterGain)
+    {
+        // Only the master leg is fed for now (see the class remarks / integration note): the cued-deck
+        // leg gain (cueGain) is applied where the per-deck cue sends sum, which the deck plumbing owns.
+        _masterLegGain = (float)Math.Clamp(masterGain, 0.0, 1.0);
+        if (cueGain > 0f && _cueMixer != 0)
+        {
+            _logger.LogDebug(
+                "Cue-deck leg gain {Cue} requested but per-deck cue sends are not yet wired; master leg only.",
+                cueGain);
+        }
     }
 
     public int OpenDeckStream(string filePath)
@@ -167,15 +257,38 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         Marshal.Copy(managed, 0, buffer, count);
     }
 
-    // BASS update thread: copy the mixed master to the analysis tap (read-only — never written back).
+    // BASS update thread: copy the mixed master to the analysis tap (read-only, never written back)
+    // and, when a cue output is open, push the master leg (scaled by the cue/master blend) into the
+    // headphone-cue mixer so the DJ can monitor the master through the cue/master knob.
     private void OnMasterDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
     {
-        if (length <= 0 || buffer == IntPtr.Zero || _masterTap is null)
+        if (length <= 0 || buffer == IntPtr.Zero)
             return;
         int count = length / sizeof(float);
         var managed = new float[count];
         Marshal.Copy(buffer, managed, 0, count);
-        _masterTap(managed);
+
+        _masterTap?.Invoke(managed);
+        FeedCueMasterLeg(managed, length);
+    }
+
+    // Push the master samples, scaled by the master-leg gain, into the cue mixer's push source. A zero
+    // gain still pushes silence so the cue mixer's clock keeps advancing.
+    private void FeedCueMasterLeg(float[] master, int byteLength)
+    {
+        if (_cueMasterPush == 0)
+            return;
+
+        float gain = _masterLegGain;
+        var leg = new float[master.Length];
+        if (gain != 0f)
+        {
+            for (int i = 0; i < master.Length; i++)
+                leg[i] = master[i] * gain;
+        }
+
+        if (Bass.StreamPutData(_cueMasterPush, leg, byteLength) == -1)
+            _logger.LogDebug("Cue master-leg push failed: {Error}", Bass.LastError);
     }
 
     public void Dispose()
@@ -189,6 +302,8 @@ internal sealed class BassMixerBackend : IBassMixerBackend
             Bass.StreamFree(deckHandle);
         }
         _decks.Clear();
+        if (_cueMixer != 0)
+            Bass.StreamFree(_cueMixer); // frees the plugged push source with it
         if (_mixer != 0)
             Bass.StreamFree(_mixer);
         Bass.Free();
