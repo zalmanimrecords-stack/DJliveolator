@@ -18,18 +18,28 @@ video decode, and image/video media probes.
 
 ## Compositor slice (doc 08, first vertical slice — `Gl/`)
 
-The first GL compositor increment lives in `Gl/`:
+The GL compositor lives in `Gl/`:
 
 - `FrameUniforms` — **pure**, GL-free: resolves the brightness macro + `BeatClockState` into the
   shader's per-frame uniforms (brightness + confidence-gated beat flash + blackout). Unit-tested.
 - `RgbaImage` / `SkiaImageLoader` — decode a still image to RGBA8 pixels for the layer texture
   (SkiaSharp, managed/cross-platform). A bad/missing file → `ImageLoadException`.
-- `QuadShaderSource` / `QuadRenderer` — one fullscreen textured quad through a GLSL fragment shader
-  with the one brightness/strobe effect. Needs a current GL context (created in `Run`).
+- `SceneComposition` / `ResolvedLayer` — **pure**: resolve a `VisualScene`'s layer stack into the
+  ordered (bottom→top) draw list, carrying each layer's blend mode + opacity + renderability (image
+  layers render; video/camera resolve non-renderable and are skipped). Unit-tested.
+- `BlendModeGl` — **pure**: maps `BlendMode` → premultiplied-alpha fixed-function GL blend factors
+  (Normal/Add/Screen/Multiply). `Overlay` is non-separable (no fixed-function mapping) and degrades
+  to Normal with a warning. Unit-tested.
+- `LiveClockSelector` — **pure**: chooses the clock the visuals bind to — the audio-driven master
+  clock when realtime audio is up, else the manual tap clock. Unit-tested.
+- `LayeredQuadShaderSource` / `LayeredQuadRenderer` — the fullscreen-quad GLSL program and the
+  multi-layer renderer: one texture per layer, drawn bottom→top with per-layer opacity + blend state.
+  A single image layer reproduces the original single-layer slice. Needs a current GL context
+  (created in `Run`).
 - `GlVisualPerformanceEngine : IVisualPerformanceEngine` — `SetMacro`/`Blackout`/`ActiveBank`/
-  `CurrentFrame` are pure observable state (unit-tested off the GPU); `Run()` opens the window and
-  renders. Layer-chain/blend, video/camera, quantized launch, transitions are **deferred** logged
-  no-ops — they grow into this class.
+  `CurrentFrame`/`CurrentComposition` are pure observable state (unit-tested off the GPU); `Run()`
+  opens the window and renders the active scene's blended layer stack. Video/camera sources,
+  quantized launch, and transitions are **deferred** logged no-ops — they grow into this class.
 
 **Manual visual verification (no headless path — GL needs a display):**
 
@@ -40,6 +50,15 @@ The first GL compositor increment lives in `Gl/`:
 3. Drive `SetMacro("brightness", v)` (0..1) → the image dims/brightens.
 4. Feed a beat clock with `IsBeat=true` + `Confidence>0` → the image flashes on the beat.
 5. `Blackout(true)` → output goes black; `Blackout(false)` restores.
+6. **Multi-layer + blend:** give the scene a second image layer (`BlendMode.Add` or `Screen`,
+   `Opacity < 1`). The two images composite — Add/Screen lighten where they overlap, Multiply
+   darkens — and lowering the top layer's opacity fades its contribution. With one layer the output
+   is identical to step 2.
+7. **Live-clock binding:** with realtime audio up (BASS present), the window pulses on the audible
+   master beat; headless, it pulses on the Live tab tap clock. (Composition picks the clock via
+   `LiveClockSelector` in `ServiceConfig.WireVisuals`.)
 
-**Not yet wired into the app:** `ServiceConfig` is untouched — the engine reaches the dispatcher
-only once a `VisualActionHandler` exists (deferred, mirror `BeatActionHandler`).
+**App wiring:** `ServiceConfig.WireVisuals` registers the engine as `IVisualPerformanceEngine`, joins
+its `VisualActionHandler` to the one dispatcher, and binds the engine to the `LiveClockSelector`-chosen
+clock. `Run()` is launched on demand via `IVisualStage` (the RENDER-WINDOW SEAM) — never at
+composition, so the app stays headless-safe.

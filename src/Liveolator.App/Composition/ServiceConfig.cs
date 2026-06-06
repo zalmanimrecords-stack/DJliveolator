@@ -81,14 +81,10 @@ public static class ServiceConfig
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
         // visuals pulse on the beat" experience works with NO audio hardware. The audio-driven
-        // AudioBeatClock (registered in WireLiveAudio when BASS is present) is a separate source used
-        // for the Libraries live-BPM readout; unifying the two is a later step (doc 03).
+        // AudioBeatClock (registered below when BASS is present) is a separate source used for the
+        // Libraries live-BPM readout; unifying the two is a later step (doc 03).
         var hostClock = new SystemHostClock();
         var sharedLiveClock = new ManualBeatClock(hostClock.TicksPerSecond);
-
-        // --- Visual engine (doc 08): the GL compositor reads the shared clock and its action handler
-        // joins the one dispatcher. Runs first so the handler exists when the dispatcher is composed.
-        VisualActionHandler visualHandler = WireVisuals(services, sharedLiveClock, liveProfileStore);
 
         // --- Software mixer (doc 11): pure-constructable with NO native dependency — BassMixer is a
         // routing skeleton that logs+drops calls for slots whose deck channel is not registered yet.
@@ -96,6 +92,24 @@ public static class ServiceConfig
         var mixer = new BassMixer();
         services.AddSingleton<IMixer>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
+
+        // --- Realtime audio engine (docs 01/02/11): built BEFORE the visual engine so its beat clock,
+        // when present, can drive the visuals (the audible signal is authoritative). The BASSmix backend
+        // needs native bass + bassmix at runtime; if absent the app still runs as a catalog browser and
+        // the deck transport is simply unrouted. The two decks feed ONE master mix and the beat clock is
+        // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
+        // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
+        // registrations stay below, next to the dispatcher composition that consumes them.
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio);
+        MasterMixPlaybackEngine? masterMix =
+            deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
+        bool realtimeUp = deckEngine is not null;
+
+        // --- Visual engine (doc 08): the GL compositor binds to the live clock — the audio-driven
+        // master clock when realtime audio is up (visuals lock to the music), else the shared manual tap
+        // clock (headless). Runs before the dispatcher so its handler exists when the dispatcher composes.
+        IBeatClock visualClock = LiveClockSelector.Select(masterMix?.BeatClock, sharedLiveClock);
+        VisualActionHandler visualHandler = WireVisuals(services, visualClock, liveProfileStore);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -105,19 +119,11 @@ public static class ServiceConfig
         services.AddSingleton<ILivePlaylist>(livePlaylist);
         var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
 
-        // --- Realtime audio engine (docs 01/02/11): best-effort two-deck DJ engine. The BASSmix backend
-        // needs the native bass + bassmix libraries at runtime; if they are absent the app still runs as a
-        // catalog browser and the deck transport is simply unrouted. The two decks feed ONE master mix and
-        // the beat clock is driven off that master (MasterMixPlaybackEngine), so it follows the audible
-        // post-crossfader signal (doc 11) rather than a single switched deck. Registering
+        // Register the realtime engine seams (constructed above, before the visual engine). Registering
         // IMultiDeckPlaybackEngine lets the deck handler address both decks AND lets the two-deck engine
         // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
-        // live-BPM readout (a separate source from the shared manual clock — unifying them is doc 03).
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio);
-        MasterMixPlaybackEngine? masterMix =
-            deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
-        bool realtimeUp = deckEngine is not null;
+        // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
@@ -259,19 +265,20 @@ public static class ServiceConfig
     // resolution but NEVER call Run() here, so the app launches headless. Launching the render window
     // is a deferred user action — see the RENDER-WINDOW SEAM note below.
     //
-    // The engine reads the SHARED live clock (passed in), so once the render window runs it pulses on
-    // the same beat the Live tab taps. A persisted visual bank (doc 13) is loaded at startup and feeds
-    // the engine when present; otherwise the empty/placeholder starter bank is used (tolerant — a
-    // missing/corrupt snapshot degrades to the starter bank with a warning, never crashing startup).
+    // The engine reads the live clock chosen by LiveClockSelector (audio-driven master clock when
+    // realtime audio is up, else the shared manual tap clock), so once the render window runs it pulses
+    // on the actual music — or on the Live tab taps when headless. A persisted visual bank (doc 13) is
+    // loaded at startup and feeds the engine when present; otherwise the placeholder starter bank is used
+    // (tolerant — a missing/corrupt snapshot degrades to the starter bank with a warning).
     private static VisualActionHandler WireVisuals(
-        IServiceCollection services, ManualBeatClock sharedLiveClock, ILiveProfileStore profileStore)
+        IServiceCollection services, IBeatClock liveClock, ILiveProfileStore profileStore)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        var visualEngine = new GlVisualPerformanceEngine(LoadOrBuildStarterBank(profileStore), brightnessMacro, sharedLiveClock);
+        var visualEngine = new GlVisualPerformanceEngine(LoadOrBuildStarterBank(profileStore), brightnessMacro, liveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
