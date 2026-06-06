@@ -12,12 +12,12 @@
       <!-- Master / Swing knobs (disabled — no action kind yet) -->
       <Grid ColumnDefinitions="*,*">
         <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center" Margin="0,0,16,0">
-          <controls:Knob Width="58" Height="58" HorizontalAlignment="Center"
+          <controls:Knob Width="55.7" Height="55.7" HorizontalAlignment="Center"
                          Value="{Binding Master.Value}" IsEnabled="{Binding Master.IsEnabled}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MASTER" />
         </StackPanel>
         <StackPanel Grid.Column="1" Spacing="8" HorizontalAlignment="Center">
-          <controls:Knob Width="58" Height="58" HorizontalAlignment="Center"
+          <controls:Knob Width="55.7" Height="55.7" HorizontalAlignment="Center"
                          Value="{Binding Swing.Value}" IsEnabled="{Binding Swing.IsEnabled}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="SWING" />
         </StackPanel>

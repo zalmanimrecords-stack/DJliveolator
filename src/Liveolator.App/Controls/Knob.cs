@@ -57,8 +57,8 @@ public sealed class Knob : Control
     {
         Focusable = true;
         Cursor = new Cursor(StandardCursorType.Hand);
-        Width = 56;
-        Height = 56;
+        Width = 53.8;
+        Height = 53.8;
     }
 
     /// <summary>Normalized value, 0..1 (two-way bound).</summary>
@@ -98,6 +98,24 @@ public sealed class Knob : Control
         double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.06;
         IBrush arc = on ? ArcBrush : TrackBrush;
 
+        // soft cast shadow under the cap — a radial dark→clear ellipse nudged down so the knob reads as
+        // a physical cap floating above the panel. DrawingContext has no blur filter, so the radial
+        // falloff fakes the penumbra.
+        var castShadow = new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0x66, 0, 0, 0), 0.58),
+                new GradientStop(Color.FromArgb(0x00, 0, 0, 0), 1.0),
+            },
+        };
+        double shadowRadius = bodyRadius * 1.18;
+        context.DrawEllipse(castShadow, null, new Point(centre.X, centre.Y + size * 0.055), shadowRadius, shadowRadius);
+
         // recessed track ring
         var trackPen = new Pen(TrackBrush, arcStroke) { LineCap = PenLineCap.Round };
         context.DrawGeometry(null, trackPen, Arc(centre, arcRadius, StartAngle, StartAngle + SweepAngle));
@@ -122,21 +140,54 @@ public sealed class Knob : Control
             PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
             PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
 
-        // knob body — radial gradient for a soft 3-D cap, with a hairline rim
+        // knob body — radial gradient for a soft 3-D cap with the light pooled toward the top, drawn
+        // with no outline so the bevel rim below can own the edge.
         var body = new RadialGradientBrush
         {
-            Center = new RelativePoint(0.5, 0.36, RelativeUnit.Relative),
-            GradientOrigin = new RelativePoint(0.5, 0.30, RelativeUnit.Relative),
-            RadiusX = new RelativeScalar(0.75, RelativeUnit.Relative),
-            RadiusY = new RelativeScalar(0.75, RelativeUnit.Relative),
+            Center = new RelativePoint(0.5, 0.34, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.5, 0.26, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.78, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.78, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromRgb(0x20, 0x2A, 0x3A), 0.0),
-                new GradientStop(Color.FromRgb(0x12, 0x18, 0x22), 0.72),
-                new GradientStop(Color.FromRgb(0x0B, 0x0F, 0x16), 1.0),
+                new GradientStop(Color.FromRgb(0x27, 0x33, 0x46), 0.0),
+                new GradientStop(Color.FromRgb(0x15, 0x1C, 0x28), 0.62),
+                new GradientStop(Color.FromRgb(0x09, 0x0C, 0x12), 1.0),
             },
         };
-        context.DrawEllipse(body, new Pen(TrackBrush, 1), centre, bodyRadius, bodyRadius);
+        context.DrawEllipse(body, null, centre, bodyRadius, bodyRadius);
+
+        // bevel rim — a vertical light→dark stroke so the cap edge catches light at the top and falls
+        // into shadow at the bottom, reading as a turned rim rather than a flat hairline.
+        var rim = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0.5, 0.0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5, 1.0, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromRgb(0x3A, 0x46, 0x5A), 0.0),
+                new GradientStop(Color.FromRgb(0x12, 0x18, 0x22), 0.5),
+                new GradientStop(Color.FromRgb(0x05, 0x07, 0x0B), 1.0),
+            },
+        };
+        context.DrawEllipse(null, new Pen(rim, Math.Max(1.0, size * 0.03)), centre, bodyRadius, bodyRadius);
+
+        // specular highlight — a soft light pool near the top of the cap for a subtle gloss; brighter
+        // when enabled so a disabled knob stays matte.
+        var spec = new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.5, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.5, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(on ? (byte)0x3A : (byte)0x20, 0xE6, 0xEE, 0xF8), 0.0),
+                new GradientStop(Color.FromArgb(0x00, 0xE6, 0xEE, 0xF8), 1.0),
+            },
+        };
+        context.DrawEllipse(spec, null,
+            new Point(centre.X, centre.Y - bodyRadius * 0.36), bodyRadius * 0.66, bodyRadius * 0.44);
 
         // glow dot at the value position (halo + core), then a short pointer tick on the body
         if (on)

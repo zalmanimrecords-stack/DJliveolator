@@ -18,7 +18,7 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:ContinuousControlViewModel">
             <StackPanel Spacing="6" Margin="6,0" HorizontalAlignment="Center">
-              <controls:Knob Width="50" Height="50" HorizontalAlignment="Center"
+              <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
                              Value="{Binding Value}" IsEnabled="{Binding IsEnabled}" />
               <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
                          Text="{Binding Value, StringFormat='0.00'}" />

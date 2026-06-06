@@ -74,7 +74,7 @@
       <!-- EQ / filter / pitch knobs -->
       <UniformGrid Columns="5">
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
           <Grid ColumnDefinitions="*,*" Width="62">
             <TextBlock Classes="tick" Text="−∞" />
@@ -83,7 +83,7 @@
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
           <Grid ColumnDefinitions="*,*" Width="62">
             <TextBlock Classes="tick" Text="−∞" />
@@ -92,7 +92,7 @@
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
           <Grid ColumnDefinitions="*,*" Width="62">
             <TextBlock Classes="tick" Text="−∞" />
@@ -101,7 +101,7 @@
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
           <Grid ColumnDefinitions="*,*" Width="62">
             <TextBlock Classes="tick" Text="−∞" />
@@ -110,7 +110,7 @@
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding Pitch.Value}" IsEnabled="{Binding Pitch.IsEnabled}" />
           <Grid ColumnDefinitions="*,*" Width="62">
             <TextBlock Classes="tick" Text="−100%" />
