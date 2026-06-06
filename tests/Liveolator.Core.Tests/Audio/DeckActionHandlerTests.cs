@@ -128,6 +128,7 @@ public class DeckActionHandlerTests
         }
 
         public int DeckCount => _playing.Length;
+        public event EventHandler<int>? DeckEnded { add { } remove { } }
         public bool IsPlaying(int slot) => _playing[slot];
         public void SetPlaying(int slot, bool value) => _playing[slot] = value;
 

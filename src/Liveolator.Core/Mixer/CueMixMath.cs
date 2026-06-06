@@ -64,4 +64,14 @@ public static class CueMixMath
         (double cueGain, double masterGain) = BlendGains(bus.Mix);
         return (cueGain * level, masterGain * level);
     }
+
+    /// <summary>
+    /// The scalar one deck's pre-fade samples are multiplied by before they are summed into the
+    /// headphone-cue mix (A2): the deck's pre-fade cue send (1 when cue-enabled, else 0) times the
+    /// bus <paramref name="cueGain"/> (the level-scaled cue leg of the blend from
+    /// <see cref="HeadphoneOutputGains"/>). 0 when the deck is not cued, so a non-cued deck never
+    /// bleeds into the headphones regardless of the blend knob.
+    /// </summary>
+    public static double DeckCueContributionGain(bool deckCueEnabled, double cueGain)
+        => deckCueEnabled ? Math.Max(0.0, cueGain) : 0.0;
 }

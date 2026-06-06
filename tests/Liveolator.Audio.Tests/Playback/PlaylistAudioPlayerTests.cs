@@ -119,4 +119,43 @@ public sealed class PlaylistAudioPlayerTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => new PlaylistAudioPlayer(playlist, engine, slot: 2));
     }
+
+    // --- End-of-track auto-advance (A4) ---
+
+    [Fact]
+    public void DeckEnded_OnBoundSlot_NotifiesTheQueueToAdvance()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        using var player = new PlaylistAudioPlayer(playlist, engine, slot: 0);
+
+        engine.RaiseDeckEnded(0);
+
+        Assert.Equal(1, playlist.NotifyTrackEndedCount);
+    }
+
+    [Fact]
+    public void DeckEnded_OnAnotherSlot_IsIgnored()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        using var player = new PlaylistAudioPlayer(playlist, engine, slot: 0);
+
+        engine.RaiseDeckEnded(1); // a different deck ended — not this player's queue
+
+        Assert.Equal(0, playlist.NotifyTrackEndedCount);
+    }
+
+    [Fact]
+    public void Dispose_UnsubscribesFromDeckEnded()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        var player = new PlaylistAudioPlayer(playlist, engine, slot: 0);
+
+        player.Dispose();
+        engine.RaiseDeckEnded(0);
+
+        Assert.Equal(0, playlist.NotifyTrackEndedCount);
+    }
 }

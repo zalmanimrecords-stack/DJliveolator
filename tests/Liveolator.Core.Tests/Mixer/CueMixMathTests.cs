@@ -110,4 +110,26 @@ public class CueMixMathTests
         Assert.Equal(0.0, cue, Tol);
         Assert.Equal(0.0, master, Tol);
     }
+
+    // --- Per-deck cue contribution into the headphone mix (A2: audible PFL) ---
+
+    [Fact]
+    public void DeckCueContributionGain_IsBusCueGain_WhenCued()
+    {
+        // A cued deck feeds the headphone mix at the bus cue-leg gain (level-scaled blend cue leg).
+        Assert.Equal(0.75, CueMixMath.DeckCueContributionGain(deckCueEnabled: true, cueGain: 0.75), Tol);
+    }
+
+    [Fact]
+    public void DeckCueContributionGain_IsZero_WhenNotCued()
+    {
+        // A non-cued deck never bleeds into the headphones, whatever the blend knob.
+        Assert.Equal(0.0, CueMixMath.DeckCueContributionGain(deckCueEnabled: false, cueGain: 1.0), Tol);
+    }
+
+    [Fact]
+    public void DeckCueContributionGain_ClampsNegativeCueGainToZero()
+    {
+        Assert.Equal(0.0, CueMixMath.DeckCueContributionGain(deckCueEnabled: true, cueGain: -0.3), Tol);
+    }
 }
