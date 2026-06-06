@@ -166,15 +166,20 @@ public sealed class WaveformStrip : Control
         }
     }
 
-    // The low-frequency (kick) band overlay: mirrored bars at the same columns as the broadband, sized by
-    // the kick peaks (always ≤ broadband, so they sit within the blue), in the warm KickBrush. The result
-    // reads as bright periodic spikes on each kick — the beat-align guide for sync.
+    // The low-frequency (kick) band overlay, drawn over the broadband bars as a GLOWING warm spike on each
+    // kick — the beat-align guide for sync. Each column is layered: a wide soft halo, a brighter mid, then
+    // a near-white hot core, all derived from KickBrush, so a kick reads as a luminous burst rather than a
+    // flat bar. Only the low band above a small floor draws, so quiet sections stay dark and the kicks pop.
     private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick)
     {
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
         const double step = 2.0;
-        var pen = new Pen(KickBrush, 1.8) { LineCap = PenLineCap.Round };
+
+        Color glow = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xFF, 0xA2, 0x2B);
+        var haloPen = new Pen(new ImmutableSolidColorBrush(glow, 0.20), 6) { LineCap = PenLineCap.Round };
+        var midPen = new Pen(new ImmutableSolidColorBrush(glow, 0.55), 3) { LineCap = PenLineCap.Round };
+        var corePen = new Pen(new ImmutableSolidColorBrush(Lighten(glow, 0.45)), 1.6) { LineCap = PenLineCap.Round };
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
@@ -182,10 +187,23 @@ public sealed class WaveformStrip : Control
             if (index < 0) index = 0;
             else if (index >= kick.Count) index = kick.Count - 1;
 
-            double amp = maxAmp * Math.Clamp(kick[index], 0f, 1f);
-            if (amp < 0.5) continue; // skip near-silent low band so only real kicks draw
-            context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
+            double k = Math.Clamp(kick[index], 0f, 1f);
+            if (k < 0.06) continue; // suppress the low-band noise floor → only real kicks glow
+            // Mild gamma lift so kicks read prominently without washing out the quieter body.
+            double amp = maxAmp * Math.Pow(k, 0.7);
+            var top = new Point(x, cy - amp);
+            var bottom = new Point(x, cy + amp);
+            context.DrawLine(haloPen, top, bottom);
+            context.DrawLine(midPen, top, bottom);
+            context.DrawLine(corePen, top, bottom);
         }
+    }
+
+    // Blend a colour toward white by t (0..1) for the hot glow core.
+    private static Color Lighten(Color c, double t)
+    {
+        static byte Up(byte v, double t) => (byte)Math.Clamp(v + (255 - v) * t, 0, 255);
+        return Color.FromArgb(c.A, Up(c.R, t), Up(c.G, t), Up(c.B, t));
     }
 
     // No track: the original deterministic pseudo-waveform placeholder.

@@ -24,6 +24,7 @@
             <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
                     BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                      KickBrush="{StaticResource Kick}"
                                       Progress="{Binding DeckA.Progress}" BeatGrid="{Binding DeckA.BeatGrid}"
                                       SeekCommand="{Binding DeckA.SeekCommand}" />
             </Border>
@@ -34,6 +35,7 @@
             <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
                     BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                      KickBrush="{StaticResource Kick}"
                                       Progress="{Binding DeckB.Progress}" BeatGrid="{Binding DeckB.BeatGrid}"
                                       SeekCommand="{Binding DeckB.SeekCommand}" />
             </Border>
