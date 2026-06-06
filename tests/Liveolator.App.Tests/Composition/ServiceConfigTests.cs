@@ -2,6 +2,7 @@ using System;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.Audio.Playback;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
@@ -92,6 +93,31 @@ public sealed class ServiceConfigTests
             Assert.Null(beatClock);
 
         Assert.NotNull(provider.GetService<LibrariesViewModel>());
+    }
+
+    [Fact]
+    public void Build_RegistersTheLiveProfileStore_SoAuthoredDataPersists()
+    {
+        using var provider = (ServiceProvider)ServiceConfig.Build();
+
+        // The Live-Mode profile store (mapping profiles / scenes / macros / autopilot rule-sets, doc 13)
+        // needs no native deps, so it is always wired for the host to load/save snapshots.
+        Assert.NotNull(provider.GetService<ILiveProfileStore>());
+    }
+
+    [Fact]
+    public void Build_BindsTheLiveQueueAudio_OnlyWhenTheRealtimeEngineIsUp()
+    {
+        using var provider = (ServiceProvider)ServiceConfig.Build();
+
+        // The playlist→audio binding follows the realtime engine: present together, or (no native BASS)
+        // neither — the queue still edits freely in catalog-browser mode.
+        var engine = provider.GetService<IMultiDeckPlaybackEngine>();
+        var player = provider.GetService<PlaylistAudioPlayer>();
+        if (engine is not null)
+            Assert.NotNull(player);
+        else
+            Assert.Null(player);
     }
 
     [Fact]

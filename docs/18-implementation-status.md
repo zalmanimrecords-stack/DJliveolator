@@ -447,9 +447,18 @@ subscribes to `NowChanged` and drives the underlying player.
 - Editing `Upcoming` (insert-next/move/remove) **never raises `NowChanged`** — playback is
   undisturbed (the doc 09 success criterion). `Now` is protected from removal; stale ids from a
   laggy UI are logged at debug and ignored. `SkipOn(...)` defers through `IBeatScheduler`.
-- **Deferred:** the audio binding over `PlaylistAudioPlayer` (GoToTrack/preload) and the
-  `NextTrackPreloader` — blocked on the audio library. The `NowChanged` seam is ready for it.
-  Note `Played` history is modeled (enum) but not yet surfaced.
+- **Audio binding now built** (`Liveolator.Audio/Playback/`): `PlaylistAudioPlayer` subscribes to
+  `NowChanged` and drives `IMultiDeckPlaybackEngine` (load + auto-play on the bound deck slot; stops
+  the slot when the queue runs dry), and `NextTrackPreloader` warms `Upcoming[0]` via the new pure
+  Core seam `IDeckPreloader`. Both are tolerant: a failed track load/preload is logged and dropped so
+  a bad track never crashes the show or stalls the queue (global #16/#26). Sequencing is unit-tested
+  with fakes (no native BASS) — Audio `PlaylistAudioPlayerTests` 8 + `NextTrackPreloaderTests` 6.
+  **App-wired (`ServiceConfig.WirePlaylistAudio`):** the player binds deck A only when the realtime
+  engine is up; headless it stays a catalog browser and the queue still edits freely.
+- **Deferred:** the **native `IDeckPreloader`** (pre-buffering the upcoming BASS stream, verified
+  manually) — the pure preloader sequencing + seam are ready for it; `NextTrackPreloader` is wired
+  only once an `IDeckPreloader` is registered. End-of-track → `NotifyTrackEnded` is a native
+  end-of-stream callback (manual). Note `Played` history is modeled (enum) but not yet surfaced.
 
 ### ✅ Autopilot rule engine — `Liveolator.Core/Autopilot/` (doc 10)
 
@@ -509,7 +518,11 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
    (with its scenes), the `VisualMacro` set, and `AutopilotRuleSet` as versioned snapshots under
    `live/{mappings,scenes,autopilot}/<name>.json` and `live/macros.json`. Atomic temp-then-move
    saves; tolerant loads (null/empty + warning on corrupt/old-version, mirroring
-   `JsonCatalogStore`). DI registration deferred to the host (not yet wired in `ServiceConfig`).
+   `JsonCatalogStore`). **Now DI-wired:** `ServiceConfig` registers `ILiveProfileStore` →
+   `LiveProfileStore`, and **surfaces load-at-startup** by loading the authored visual bank
+   (`live/scenes/Live.json`) to feed the GL visual engine when present (scenes → banks), falling
+   back to the placeholder starter bank when missing/corrupt (tolerant, like `JsonCatalogStore`).
+   Mapping-profile load-into-the-MIDI-list lands with the MIDI input pipeline (still deferred).
 2. **MCP tools** exposing the new Core capabilities to agents (doc 17).
 3. Remaining concern handlers (Visual/Deck/Mixer/Transport) as their engines land.
 
