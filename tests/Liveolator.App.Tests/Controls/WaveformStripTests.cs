@@ -35,4 +35,33 @@ public sealed class WaveformStripTests
     {
         Assert.Equal(0.0, WaveformStrip.FractionFromX(x, width), 6);
     }
+
+    [Theory]
+    [InlineData(0.5, 0.0)]   // no zoom → whole track
+    [InlineData(0.5, 1.0)]   // full zoom → whole track
+    [InlineData(0.5, 2.0)]   // out-of-range → whole track
+    public void VisibleWindow_ShowsWholeTrack_WhenNotZoomed(double progress, double zoom)
+    {
+        (double start, double span) = WaveformStrip.VisibleWindow(progress, zoom);
+        Assert.Equal(0.0, start, 6);
+        Assert.Equal(1.0, span, 6);
+    }
+
+    [Fact]
+    public void VisibleWindow_CentresOnThePlayhead_WhenZoomed()
+    {
+        (double start, double span) = WaveformStrip.VisibleWindow(progress: 0.5, zoomWindow: 0.10);
+        Assert.Equal(0.45, start, 6); // 0.5 ± 0.05
+        Assert.Equal(0.10, span, 6);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0.0)]    // at the start the window pins to the left edge
+    [InlineData(1.0, 0.90)]   // at the end the window pins to the right edge (1 - span)
+    public void VisibleWindow_ClampsAtTheTrackEnds(double progress, double expectedStart)
+    {
+        (double start, double span) = WaveformStrip.VisibleWindow(progress, zoomWindow: 0.10);
+        Assert.Equal(expectedStart, start, 6);
+        Assert.Equal(0.10, span, 6);
+    }
 }

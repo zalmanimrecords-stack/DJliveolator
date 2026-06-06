@@ -25,7 +25,8 @@
                     BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
                                       KickBrush="{StaticResource Kick}"
-                                      Progress="{Binding DeckA.Progress}" BeatGrid="{Binding DeckA.BeatGrid}"
+                                      Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
+                                      BeatGrid="{Binding DeckA.BeatGrid}"
                                       SeekCommand="{Binding DeckA.SeekCommand}" />
             </Border>
           </Grid>
@@ -36,7 +37,8 @@
                     BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
                                       KickBrush="{StaticResource Kick}"
-                                      Progress="{Binding DeckB.Progress}" BeatGrid="{Binding DeckB.BeatGrid}"
+                                      Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
+                                      BeatGrid="{Binding DeckB.BeatGrid}"
                                       SeekCommand="{Binding DeckB.SeekCommand}" />
             </Border>
           </Grid>

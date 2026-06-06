@@ -36,6 +36,14 @@ public sealed class PerformanceDeckSet : IDisposable
     public DeckViewModel DeckB { get; }
     public MixerViewModel Mixer { get; }
 
+    /// <summary>Advances both decks' playheads from the engine's live position — driven by the Live
+    /// render-loop timer so the zoomed waveform follows playback (a no-op for a stopped deck).</summary>
+    public void UpdatePlayheads()
+    {
+        DeckA.UpdatePlayhead();
+        DeckB.UpdatePlayhead();
+    }
+
     public void Dispose()
     {
         if (_disposed)

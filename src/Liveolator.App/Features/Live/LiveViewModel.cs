@@ -99,7 +99,12 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         MasterFx.Dispose();
     }
 
-    // The render loop pumps the manual clock so phase + the pulse advance smoothly between taps.
+    // The render loop pumps the manual clock so phase + the pulse advance smoothly between taps, and
+    // advances the decks' playheads so the zoomed waveform follows playback (the decks are shared, so
+    // the DJ tab follows too).
     private void OnTimerTick(object? sender, EventArgs e)
-        => _clockDriver?.Update(_hostClock!.NowTicks);
+    {
+        _clockDriver?.Update(_hostClock!.NowTicks);
+        _decks.UpdatePlayheads();
+    }
 }

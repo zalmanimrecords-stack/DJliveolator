@@ -28,8 +28,15 @@ namespace Liveolator.App.Features.Live.Modules;
 /// </summary>
 public sealed class DeckViewModel : ViewModelBase, IDisposable
 {
-    /// <summary>Overview resolution — plenty of buckets for the strip; the control samples to its width.</summary>
-    private const int WaveformBuckets = 1_000;
+    /// <summary>Overview resolution — high enough that a zoomed-in window still resolves individual kicks
+    /// (the strip samples down to its pixel width when showing the whole track).</summary>
+    private const int WaveformBuckets = 6_000;
+
+    /// <summary>Seconds of track shown in the zoomed-in (playing) view, centred on the playhead — wide
+    /// enough to see a few kicks for beat alignment, tight enough that each kick is large.</summary>
+    private const double PlayingZoomSeconds = 10.0;
+    private const double MinZoomWindow = 0.01;
+    private const double DefaultZoomWindow = 0.04; // fallback when the duration is unknown
 
     /// <summary>Hot-cue pad count shown on the deck (the mock's 1·2·3·4 row).</summary>
     private const int HotCueCount = 4;
@@ -48,6 +55,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
     private double _trackBpm;
+    private double _durationSeconds;
+    private double _zoomWindow;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -203,11 +212,50 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>True when transport/EQ can be driven; the UI disables those controls otherwise.</summary>
     public bool IsEnabled => _dispatcher is not null;
 
-    /// <summary>True while this deck is playing (drives the Play key's active state), from dispatcher feedback.</summary>
+    /// <summary>True while this deck is playing (drives the Play key's active state), from dispatcher feedback.
+    /// Toggling play also flips the waveform between the whole-track overview and the zoomed follow view.</summary>
     public bool IsPlaying
     {
         get => _isPlaying;
-        private set => this.RaiseAndSetIfChanged(ref _isPlaying, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isPlaying, value);
+            ZoomWindow = ComputeZoomWindow();
+        }
+    }
+
+    /// <summary>
+    /// The waveform zoom as a fraction of the track shown centred on the playhead: 0 = whole-track
+    /// overview (stopped/paused); on play it becomes a small window (~<see cref="PlayingZoomSeconds"/> of
+    /// audio) so the strip zooms in and follows the playhead, letting both decks' kicks be aligned by eye.
+    /// </summary>
+    public double ZoomWindow
+    {
+        get => _zoomWindow;
+        private set => this.RaiseAndSetIfChanged(ref _zoomWindow, value);
+    }
+
+    /// <summary>
+    /// Advances the playhead from the engine's live position while playing — called by the Live render-loop
+    /// timer (the decks are shared, so both tabs follow). Reads the position through the dispatcher feedback
+    /// seam (no direct engine call); a no-op when stopped or when no deck backs this slot.
+    /// </summary>
+    public void UpdatePlayhead()
+    {
+        if (_dispatcher is null || !_isPlaying)
+            return;
+        ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
+        if (position.IsAvailable)
+            Progress = position.Value;
+    }
+
+    private double ComputeZoomWindow()
+    {
+        if (!_isPlaying)
+            return 0.0; // whole-track overview when not playing
+        return _durationSeconds > 0
+            ? Math.Clamp(PlayingZoomSeconds / _durationSeconds, MinZoomWindow, 1.0)
+            : DefaultZoomWindow;
     }
 
     /// <summary>True while this deck is sync-locked (tempo-matched to the other deck), from feedback.</summary>
@@ -329,10 +377,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             : bpm > 0 ? $"{bpm:0.0} BPM" : NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
         Progress = 0;
-        Waveform = null;          // show the placeholder while the new overview decodes
+        Waveform = null;          // empty state while the new overview decodes (no fake waveform)
         KickPeaks = null;
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
+        _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
+        ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
         LoadWaveform(trackPath);
     }
@@ -367,6 +417,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             BeatGrid = overview.IsEmpty
                 ? Array.Empty<double>()
                 : BeatGridCalculator.BeatFractions(_trackBpm, overview.DurationSeconds);
+            // Now the duration is known, size the zoom window in real time (so the follow view shows a
+            // consistent ~PlayingZoomSeconds regardless of track length).
+            _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
+            ZoomWindow = ComputeZoomWindow();
         }
         catch (OperationCanceledException)
         {

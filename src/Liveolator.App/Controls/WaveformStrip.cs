@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -56,6 +57,15 @@ public sealed class WaveformStrip : Control
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<WaveformStrip, double>(nameof(Progress));
 
+    /// <summary>
+    /// Zoom window as a fraction of the track to show centred on the playhead: <c>0</c> (or ≥1) draws the
+    /// whole-track overview; a small value (e.g. 0.03) magnifies a window around <see cref="Progress"/> and
+    /// — because <see cref="Progress"/> advances during playback — the wave scrolls (follow), so the two
+    /// decks' kicks can be lined up by eye for sync.
+    /// </summary>
+    public static readonly StyledProperty<double> ZoomWindowProperty =
+        AvaloniaProperty.Register<WaveformStrip, double>(nameof(ZoomWindow));
+
     /// <summary>Invoked on click with the clicked 0..1 track fraction (click-to-seek).</summary>
     public static readonly StyledProperty<ICommand?> SeekCommandProperty =
         AvaloniaProperty.Register<WaveformStrip, ICommand?>(nameof(SeekCommand));
@@ -64,7 +74,7 @@ public sealed class WaveformStrip : Control
     {
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
-            PeaksProperty, KickPeaksProperty, BeatGridProperty, ProgressProperty);
+            PeaksProperty, KickPeaksProperty, BeatGridProperty, ProgressProperty, ZoomWindowProperty);
     }
 
     public WaveformStrip()
@@ -81,6 +91,7 @@ public sealed class WaveformStrip : Control
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
+    public double ZoomWindow { get => GetValue(ZoomWindowProperty); set => SetValue(ZoomWindowProperty, value); }
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
 
     /// <summary>
@@ -94,62 +105,86 @@ public sealed class WaveformStrip : Control
         return Math.Clamp(x / width, 0.0, 1.0);
     }
 
+    /// <summary>
+    /// The visible 0..1 track window for a given playhead <paramref name="progress"/> and
+    /// <paramref name="zoomWindow"/> (fraction of the track to show). Returns the whole track
+    /// <c>(0,1)</c> when the zoom is ≤0 or ≥1; otherwise a window of width <paramref name="zoomWindow"/>
+    /// centred on the playhead, clamped to stay inside the track at the ends. Pure, so the
+    /// mapping unit-tests without a render.
+    /// </summary>
+    public static (double Start, double Span) VisibleWindow(double progress, double zoomWindow)
+    {
+        if (double.IsNaN(zoomWindow) || zoomWindow <= 0 || zoomWindow >= 1)
+            return (0.0, 1.0);
+        double p = double.IsNaN(progress) ? 0 : Math.Clamp(progress, 0.0, 1.0);
+        double start = p - (zoomWindow / 2.0);
+        if (start < 0) start = 0;
+        else if (start + zoomWindow > 1) start = 1 - zoomWindow;
+        return (start, zoomWindow);
+    }
+
     public override void Render(DrawingContext context)
     {
         Rect b = Bounds;
         if (b.Width <= 0 || b.Height <= 0)
             return;
 
-        RenderBeatGrid(context, b);
-
         IReadOnlyList<float>? peaks = Peaks;
-        if (peaks is { Count: > 0 })
+        if (peaks is not { Count: > 0 })
         {
-            RenderWaveform(context, b, peaks);
-            // Kick/bass band drawn ON TOP of the broadband bars, in a distinct warm colour, so the kick
-            // transients pop as periodic spikes — the visual anchor a DJ aligns to for beat-sync.
-            IReadOnlyList<float>? kick = KickPeaks;
-            if (kick is { Count: > 0 })
-                RenderKickBand(context, b, kick);
+            RenderEmpty(context, b); // no track → an explicit empty state, never a fake waveform
+            return;
         }
-        else
-        {
-            RenderPlaceholder(context, b);
-        }
+
+        // The visible window: whole track when not zoomed, or a magnified slice centred on the playhead
+        // that scrolls as Progress advances (follow). All overlays use the same window so they stay aligned.
+        (double start, double span) = VisibleWindow(Progress, ZoomWindow);
+
+        RenderBeatGrid(context, b, start, span);
+        RenderWaveform(context, b, peaks, start, span);
+        // Kick/bass band drawn ON TOP, glowing, so the kick transients pop — the anchor a DJ aligns for sync.
+        IReadOnlyList<float>? kick = KickPeaks;
+        if (kick is { Count: > 0 })
+            RenderKickBand(context, b, kick, start, span);
     }
 
-    // Faint vertical lines at each beat fraction, drawn behind the waveform so they read as a guide.
-    private void RenderBeatGrid(DrawingContext context, Rect b)
+    // Maps a visible-window column x to its 0..1 track fraction.
+    private static double TrackFraction(double x, double width, double start, double span)
+        => start + (width <= 0 ? 0 : x / width) * span;
+
+    // Faint vertical lines at each beat fraction within the visible window.
+    private void RenderBeatGrid(DrawingContext context, Rect b, double start, double span)
     {
         IReadOnlyList<double>? grid = BeatGrid;
         if (grid is not { Count: > 0 })
             return;
 
         var pen = new Pen(GridBrush, 1);
+        double end = start + span;
         foreach (double fraction in grid)
         {
-            if (fraction < 0 || fraction > 1)
+            if (fraction < start || fraction > end)
                 continue;
-            double x = fraction * b.Width;
+            double x = (fraction - start) / span * b.Width;
             context.DrawLine(pen, new Point(x, 0), new Point(x, b.Height));
         }
     }
 
-    // Real data: one mirrored bar per column, sampled from the peak buckets; bars left of the playhead
-    // use the "played" brush.
-    private void RenderWaveform(DrawingContext context, Rect b, IReadOnlyList<float> peaks)
+    // Real data: one mirrored bar per column, sampled from the peak buckets within the visible window;
+    // bars left of the playhead use the "played" brush.
+    private void RenderWaveform(DrawingContext context, Rect b, IReadOnlyList<float> peaks, double start, double span)
     {
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
         const double step = 2.0;
-        double playheadX = Math.Clamp(Progress, 0.0, 1.0) * b.Width;
+        double playheadX = (Math.Clamp(Progress, 0.0, 1.0) - start) / span * b.Width;
 
         var playedPen = new Pen(PlayedBrush, 1.5) { LineCap = PenLineCap.Round };
         var aheadPen = new Pen(BarBrush, 1.5) { LineCap = PenLineCap.Round };
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
-            int index = (int)(x / b.Width * peaks.Count);
+            int index = (int)(TrackFraction(x, b.Width, start, span) * peaks.Count);
             if (index < 0) index = 0;
             else if (index >= peaks.Count) index = peaks.Count - 1;
 
@@ -159,7 +194,9 @@ public sealed class WaveformStrip : Control
             context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
         }
 
-        if (Progress > 0.0 && Progress < 1.0)
+        // Playhead: at the window edges (start/end of track) it sits at the strip edge; while zoomed-and-
+        // following it rides near the centre. Drawn whenever it is inside the visible window.
+        if (playheadX > 0 && playheadX < b.Width)
         {
             var headPen = new Pen(PlayedBrush, 1.5);
             context.DrawLine(headPen, new Point(playheadX, 0), new Point(playheadX, b.Height));
@@ -170,7 +207,7 @@ public sealed class WaveformStrip : Control
     // kick — the beat-align guide for sync. Each column is layered: a wide soft halo, a brighter mid, then
     // a near-white hot core, all derived from KickBrush, so a kick reads as a luminous burst rather than a
     // flat bar. Only the low band above a small floor draws, so quiet sections stay dark and the kicks pop.
-    private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick)
+    private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick, double start, double span)
     {
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
@@ -183,7 +220,7 @@ public sealed class WaveformStrip : Control
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
-            int index = (int)(x / b.Width * kick.Count);
+            int index = (int)(TrackFraction(x, b.Width, start, span) * kick.Count);
             if (index < 0) index = 0;
             else if (index >= kick.Count) index = kick.Count - 1;
 
@@ -206,25 +243,23 @@ public sealed class WaveformStrip : Control
         return Color.FromArgb(c.A, Up(c.R, t), Up(c.G, t), Up(c.B, t));
     }
 
-    // No track: the original deterministic pseudo-waveform placeholder.
-    private void RenderPlaceholder(DrawingContext context, Rect b)
+    // No track loaded: a calm baseline + a centred label, so the empty deck reads as "no track" rather
+    // than a misleading decorative waveform.
+    private void RenderEmpty(DrawingContext context, Rect b)
     {
         double cy = b.Height / 2;
-        double maxAmp = (b.Height / 2) - 3;
-        const double step = 3.0;
-        var pen = new Pen(BarBrush, 2) { LineCap = PenLineCap.Round };
+        var line = new Pen(GridBrush, 1);
+        context.DrawLine(line, new Point(6, cy), new Point(b.Width - 6, cy));
 
-        for (double x = 2; x < b.Width - 2; x += step)
-        {
-            double env = 0.45 + (0.55 * Math.Abs(Math.Sin(x * 0.018)));
-            double shape = (Math.Sin(x * 0.13) * 0.6) + (Math.Sin((x * 0.37) + 1.0) * 0.4);
-            double amp = maxAmp * env * (0.25 + (0.75 * Math.Abs(shape)));
-            context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
-        }
+        var label = new FormattedText(
+            "NO TRACK", CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            Typeface.Default, 11, new ImmutableSolidColorBrush(Color.FromRgb(0x5A, 0x65, 0x73)));
+        context.DrawText(label, new Point((b.Width - label.Width) / 2, cy - (label.Height / 2)));
     }
 
     // Click-to-seek: only when a track is loaded (peaks present) and a command is bound, so clicking the
-    // empty placeholder does nothing.
+    // empty strip does nothing. The clicked column maps through the visible window to a track fraction, so
+    // seeking is correct whether the strip is showing the whole track or a zoomed-in slice.
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -232,9 +267,11 @@ public sealed class WaveformStrip : Control
         if (command is null || Peaks is not { Count: > 0 })
             return;
 
-        double fraction = FractionFromX(e.GetPosition(this).X, Bounds.Width);
-        if (command.CanExecute(fraction))
-            command.Execute(fraction);
+        double viewFraction = FractionFromX(e.GetPosition(this).X, Bounds.Width);
+        (double start, double span) = VisibleWindow(Progress, ZoomWindow);
+        double trackFraction = Math.Clamp(start + (viewFraction * span), 0.0, 1.0);
+        if (command.CanExecute(trackFraction))
+            command.Execute(trackFraction);
         Focus();
         e.Handled = true;
     }

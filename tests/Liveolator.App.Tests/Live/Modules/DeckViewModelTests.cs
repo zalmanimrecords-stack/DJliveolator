@@ -387,6 +387,44 @@ public sealed class DeckViewModelTests
         Assert.False(vm.HasTrackMeta);
     }
 
+    // --- Zoom-follow during playback (doc 22 — scrolling waveform for kick-sync by eye) ---
+
+    [Fact]
+    public void Play_ZoomsTheWaveform_AndPauseReturnsToOverview()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.Equal(0.0, vm.ZoomWindow, 6); // stopped → whole-track overview
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.True(vm.ZoomWindow > 0, "play should zoom the waveform into a follow window.");
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0));
+        Assert.Equal(0.0, vm.ZoomWindow, 6); // pause → back to the overview
+    }
+
+    [Fact]
+    public void UpdatePlayhead_FollowsLivePosition_OnlyWhilePlaying()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSeek, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.42));
+
+        // stopped → the playhead must not move
+        vm.UpdatePlayhead();
+        Assert.Equal(0.0, vm.Progress, 6);
+
+        // playing → the playhead follows the engine's live position (read through the feedback seam)
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        vm.UpdatePlayhead();
+        Assert.Equal(0.42, vm.Progress, 6);
+    }
+
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load
     // sets rather than racing it. Times out so a regression fails fast instead of hanging.
     private static Task WaitForBeatGrid(DeckViewModel vm) => WaitForProperty(vm, nameof(DeckViewModel.BeatGrid));
