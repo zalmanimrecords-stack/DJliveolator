@@ -380,6 +380,26 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
+    public void LoadTrack_EchoesTheAnalyzedBpmInFeedback_SoTheDeckCanDeriveABeatGrid()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackChanged? captured = null;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckLoadTrack)
+                captured = e;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128.0, Argument: @"C:\song.flac", Slot: 0));
+
+        Assert.NotNull(captured);
+        Assert.Equal(128.0, captured!.State.Value, precision: 3);
+    }
+
+    [Fact]
     public void HotCue_IsInHandledKinds()
     {
         var handler = new DeckActionHandler(new FakeMultiDeckEngine());
