@@ -327,6 +327,52 @@ public sealed class DeckViewModelTests
         Assert.Empty(vm.BeatGrid);
     }
 
+    [Fact]
+    public void TrackLoad_PopulatesTitleAndMeta_FromResolver()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo(Title: "Midnight City", Bpm: "128.0", Key: "8A", Duration: "6:48"));
+
+        Assert.False(vm.HasTrackMeta);
+        Assert.Equal("—", vm.Meta);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: @"C:\music\anything.mp3"));
+
+        Assert.True(vm.HasTrackMeta);
+        Assert.Equal("Midnight City", vm.Title);
+        Assert.Equal("8A · 128.0 BPM · 6:48", vm.Meta);
+    }
+
+    [Fact]
+    public void TrackLoad_WithoutResolver_FallsBackToFileName_AndNoMeta()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no catalog resolver (e.g. Live tab)
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: @"C:\music\My Track.mp3"));
+
+        Assert.Equal("My Track", vm.Title);
+        Assert.False(vm.HasTrackMeta);
+        Assert.Equal("—", vm.Meta);
+    }
+
+    [Fact]
+    public void TrackLoad_MetaIsSlotIsolated()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("T", "120.0", "1A", "5:00"));
+
+        // a load reported for deck B must not touch deck A
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: @"C:\music\x.mp3"));
+
+        Assert.False(vm.HasTrackMeta);
+    }
+
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load
     // sets rather than racing it. Times out so a regression fails fast instead of hanging.
     private static Task WaitForBeatGrid(DeckViewModel vm) => WaitForProperty(vm, nameof(DeckViewModel.BeatGrid));
