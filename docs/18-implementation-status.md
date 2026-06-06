@@ -228,6 +228,13 @@ the next increment.
   path and its tests are unchanged; a two-deck engine implements the new `IMultiDeckPlaybackEngine`.
 - **App:** `ServiceConfig` wires `BassMixer` + `MixerActionHandler` into the dispatcher and registers
   `IMixer`, so UI/controllers can drive the mixer now.
+- **Headphone cue (PFL) is now audible (A2):** `CueMixMath` (pure, Core) carries the cue-bus math —
+  per-deck pre-fade send, equal-power cue/master blend, level-scaled headphone gains, and the per-deck
+  cue contribution (`DeckCueContributionGain`). `BassMixerBackend` now feeds **both** legs of the cue
+  mixer: the master leg (post-limiter master) and the cued-deck leg (each cue-enabled deck's pre-fade
+  samples, scaled by the cue-leg gain, pushed into the cue device). So enabling Cue routes a deck into the
+  headphones independently of the crossfader/master. The per-deck cue-send routing is native (manual-verify
+  on the CMD STUDIO 2A); the gain math is unit-tested.
 ### ✅ Two-deck DJ engine + master mix → clock — `Liveolator.Audio/Playback/` (doc 11, increment 2)
 
 The two decks now feed one master mix, the mixer's gain/EQ/filter route to real per-deck channels, and
@@ -268,8 +275,20 @@ the beat clock follows the audible mix — the increment that turns the routing 
   `PhaseAlignmentCalculator` (Core, pure — shortest signed nudge within ±½ beat) computes the seconds to
   move; the engine seeks the deck by it. The per-track **first-beat (downbeat) anchor** it needs is now in
   `BpmResult.FirstBeatSeconds` (computed by `FirstBeatEstimator`, a new third BPM-pipeline stage) and reaches
-  the engine via a new `SetDeckFirstBeat` seam (anchor unknown ⇒ Quantize arms but does not guess). `Cue`
-  jumps to the track start (settable cue points later) and pauses. **Loops:** `DeckSetLoop` arrives at the
+  the engine via a new `SetDeckFirstBeat` seam (anchor unknown ⇒ Quantize arms but does not guess).
+  **`Cue` is a settable temporary cue (A5, CDJ back-to-cue):** the pure `CueButtonResolver` (Core) decides
+  set-vs-return from transport state + live position + the stored temp cue (with an at-cue tolerance) —
+  pressing while paused at a fresh spot drops the cue there; pressing while playing (or paused at the cue)
+  returns to it (track start when none is set) and pauses; the temp cue clears on reload. (Press-and-hold
+  cue-play preview is deferred — the action seam carries no button release.) **Persistent hot cues (A3):**
+  the engine now takes an optional `IHotCueStore`; on Load it restores the track's saved cue set (keyed by
+  path) into the hot-cue bank, and a newly set cue is persisted back. `HotCuePositionMapper` (Core, pure)
+  converts the deck's 0..1 fraction to/from the store's sample offset using the deck length + master rate;
+  the store is wired in `ServiceConfig` (`JsonHotCueStore`). Tolerant: a missing/unreadable store, a load
+  that throws, or a save that throws all degrade to RAM-only cues — never crash the show. **End-of-track
+  (A4):** the engine arms a backend end-of-stream callback (`SetDeckEndCallback`) on Load and raises a
+  slot-tagged `DeckEnded` event when a deck runs out; `PlaylistAudioPlayer` listens and calls the live
+  queue's `NotifyTrackEnded` so it auto-advances (or stops when dry). **Loops:** `DeckSetLoop` arrives at the
   engine, which turns a beat length into a `[start, end)` time region via `BeatLoopCalculator` (Core, pure)
   using the per-deck base BPM, and arms it over two new `IBassMixerBackend` calls (`SetDeckLoop` =
   `BassMix.ChannelSetSync(BASS_SYNC_POS|Mixtime)` seeking back to the in-point, `ClearDeckLoop`).
@@ -280,29 +299,31 @@ the beat clock follows the audible mix — the increment that turns the routing 
   The pure math has its own Core tests: `PhaseAlignmentCalculatorTests`, `BeatLoopCalculatorTests`,
   `FirstBeatEstimatorTests`. **Manual-verify checklist (native, not in CI):** loop in/out is click-free and
   sample-accurate (BASS_SYNC_POS Mixtime wrap); a 4-beat loop is musically 4 beats at the deck tempo; loop
-  scales with the pitch fader; Quantize snaps two playing decks into phase without an audible skip.
+  scales with the pitch fader; Quantize snaps two playing decks into phase without an audible skip;
+  **enabling Cue on a deck is audible in the headphones (PFL) independent of the crossfader/master (A2);**
+  **a deck running to its end fires the end-sync so the live queue auto-advances (A4);** **a persisted hot
+  cue recalls at the same musical position after an app restart (A3).**
 - **App-wired (`ServiceConfig`):** the single-deck path is replaced by `TwoDeckBassEngine(mixer)` registered
   as `IMultiDeckPlaybackEngine`, with `MasterMixPlaybackEngine`'s clock registered as `IBeatClock` and
   `DeckActionHandler(IMultiDeckPlaybackEngine)` driving both decks. **Headless fallback preserved:** if
   native bass/bassmix is absent the realtime services are simply not registered and the app runs as a
   catalog browser (the Libraries tab's Load→A/B enable off dispatcher feedback, so deck B lights up now).
+- **A2–A5 landed (`feat/dj-decks-perfect`):** **PFL headphone cue is audible (A2)** — each cue-enabled
+  deck's pre-fade samples are summed into the cue mixer scaled by the level-scaled cue-leg gain (per-deck
+  push into the cue device); the gain math is pure (`CueMixMath.DeckCueContributionGain`) and the per-deck
+  cue-send routing is native (manual-verify on the CMD STUDIO 2A ch 3/4). **Persistent hot cues (A3),
+  settable temporary cue (A5), and end-of-track auto-advance (A4)** are wired and unit-tested (see the deck
+  engine + live-playlist notes). The first-beat anchor is threaded end-to-end (A1, prior wave).
 - **Deferred (next increment):** native `BassMixerBackend` **runtime** verification needs the `bassmix`
-  native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
-  ch 3/4; **threading the first-beat anchor to the engine end-to-end** — the `SetDeckFirstBeat` seam exists
-  and is exercised, but the `DeckLoadTrack` action carries only one numeric (`Value` = BPM), so the
-  composition root must call `SetDeckFirstBeat` from the loaded track's `BpmResult.FirstBeatSeconds`
-  (App/ServiceConfig wiring, out of this increment's lane); **continuous** phase tracking (this snaps once
-  on Quantize-on; doc 11's ±5% proportional correction while playing is a later pass); settable/named
-  cue points + hot-cue clear; per-pad hot-cue
-  LED feedback (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
-  `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The new deck transport is reachable via the
-  dispatcher and **all the transport controls are now surfaced in the DeckView UI** (shared by the Live and
-  DJ tabs): Sync/Play (existing), plus **Cue** (`DeckCue`), **Loop** (`DeckSetLoop`, a default 4-beat loop —
-  the action emits and the LOOP key follows its active-state feedback, ready for the engine handler still
-  being built), the **four hot-cue pads** (`DeckHotCue` per index, each pad lit from `DeckHotCue` feedback
-  via the cue index carried in `ActionFeedbackState.Argument`), and the **Pitch** fader (`DeckPitch`,
-  following its value feedback). `SetCue` (mixer PFL) still latches the flag only; `BassMixer` still drops
-  controls for an unregistered slot.
+  native fetched alongside core bass (update `scripts/fetch-bass`); **continuous** phase tracking (Quantize
+  snaps once on enable; doc 11's ±5% proportional correction while playing is a later pass); **press-and-hold
+  cue-play preview** (needs a button release the action seam does not carry); per-pad hot-cue LED feedback
+  (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
+  `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The deck transport is reachable via the
+  dispatcher and **all the transport controls are surfaced in the DeckView UI** (shared by the Live and
+  DJ tabs): Sync/Play, **Cue** (`DeckCue`), **Loop** (`DeckSetLoop`), the **hot-cue pads** (`DeckHotCue`
+  per index, each pad lit from feedback via the cue index in `ActionFeedbackState.Argument`), and the
+  **Pitch** fader (`DeckPitch`). `BassMixer` still drops controls for an unregistered slot.
 
 ### ✅ Deck waveform — overview + playhead, end-to-end — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` + `Liveolator.App` (doc 11)
 
@@ -552,13 +573,17 @@ subscribes to `NowChanged` and drives the underlying player.
   the slot when the queue runs dry), and `NextTrackPreloader` warms `Upcoming[0]` via the new pure
   Core seam `IDeckPreloader`. Both are tolerant: a failed track load/preload is logged and dropped so
   a bad track never crashes the show or stalls the queue (global #16/#26). Sequencing is unit-tested
-  with fakes (no native BASS) — Audio `PlaylistAudioPlayerTests` 8 + `NextTrackPreloaderTests` 6.
+  with fakes (no native BASS) — Audio `PlaylistAudioPlayerTests` + `NextTrackPreloaderTests`.
   **App-wired (`ServiceConfig.WirePlaylistAudio`):** the player binds deck A only when the realtime
   engine is up; headless it stays a catalog browser and the queue still edits freely.
+- **End-of-track auto-advance now wired (A4):** `PlaylistAudioPlayer` also subscribes to the engine's
+  new slot-tagged `DeckEnded` event and calls `ILivePlaylist.NotifyTrackEnded()` for its bound slot, so a
+  deck running out auto-advances the queue (or stops when dry) instead of going silent. The bound-slot
+  filter, ignore-other-slot, and unsubscribe-on-dispose paths are unit-tested with fakes; the engine raises
+  `DeckEnded` off a native BASS end-of-stream sync (`SetDeckEndCallback`), which is the manual-verify part.
 - **Deferred:** the **native `IDeckPreloader`** (pre-buffering the upcoming BASS stream, verified
   manually) — the pure preloader sequencing + seam are ready for it; `NextTrackPreloader` is wired
-  only once an `IDeckPreloader` is registered. End-of-track → `NotifyTrackEnded` is a native
-  end-of-stream callback (manual). Note `Played` history is modeled (enum) but not yet surfaced.
+  only once an `IDeckPreloader` is registered. Note `Played` history is modeled (enum) but not yet surfaced.
 
 ### ✅ Autopilot rule engine — `Liveolator.Core/Autopilot/` (doc 10)
 
