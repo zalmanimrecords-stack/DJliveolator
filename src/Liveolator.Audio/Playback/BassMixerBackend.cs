@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Settings;
 using ManagedBass;
 using ManagedBass.Mix;
@@ -26,6 +27,19 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     private Action<float[]>? _masterTap;
     private bool _disposed;
 
+    // ── master-limiter region (Gap #5) ──────────────────────────────────────────────────────────
+    // The post-crossfader brick-wall limiter so two summed decks never hard-clip the master (doc 11).
+    // Pure Core DSP, applied in place inside OnMasterDsp on the BASS update thread.
+    private readonly MasterLimiter _masterLimiter;
+
+    // RT-thread allocation fix (doc 01: "no allocation on the audio thread"): the DSP callbacks used to
+    // `new float[]` every buffer. These reusable scratch buffers are pre-sized from the BASS playback
+    // buffer length and reused in place; they only ever grow (logged) if BASS hands a larger block than
+    // the worst case we sized for, which should not happen in steady state.
+    private float[] _channelScratch = Array.Empty<float>();
+    private float[] _masterScratch = Array.Empty<float>();
+    // ── end master-limiter region ────────────────────────────────────────────────────────────────
+
     /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, and its
     /// original sample rate (so a pitch/rate change is expressed relative to the track's natural rate).</summary>
     private sealed record DeckDsp(BassMixerChannel Channel, DSPProcedure Procedure, float OriginalFrequency);
@@ -39,7 +53,21 @@ internal sealed class BassMixerBackend : IBassMixerBackend
         _channels = channels;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        InitOutput(BassInitOptions.From(audioSettings));
+        // ── master-limiter region (Gap #5) ──
+        _masterLimiter = new MasterLimiter(sampleRate, channels);
+
+        var options = BassInitOptions.From(audioSettings);
+
+        // Pre-size the RT scratch buffers to the worst-case buffer BASS will hand us: the playback
+        // buffer length (ms) of interleaved float samples, with headroom, so the DSP callbacks never
+        // allocate. Done before InitOutput sets the global buffer length.
+        int worstCaseSamples = (int)Math.Ceiling(options.BufferMilliseconds * 0.001 * sampleRate) * channels;
+        worstCaseSamples = Math.Max(worstCaseSamples, sampleRate * channels / 4); // floor: ~250 ms safety
+        _channelScratch = new float[worstCaseSamples];
+        _masterScratch = new float[worstCaseSamples];
+        // ── end master-limiter region ──
+
+        InitOutput(options);
     }
 
     // Applies the user's persisted output choice (doc 12) before opening BASS: the playback buffer is a
@@ -156,26 +184,69 @@ internal sealed class BassMixerBackend : IBassMixerBackend
     }
 
     // BASS update thread: filter the deck buffer in place via the managed channel processor.
+    // RT-thread allocation fix (Gap #5, doc 01): reuse the pre-allocated _channelScratch instead of
+    // `new float[]` every buffer. EnsureCapacity only grows on an unexpected oversized block (logged).
     private void ApplyChannelDsp(BassMixerChannel channel, IntPtr buffer, int length)
     {
         if (length <= 0 || buffer == IntPtr.Zero)
             return;
         int count = length / sizeof(float);
-        var managed = new float[count];
-        Marshal.Copy(buffer, managed, 0, count);
-        channel.Process(managed, _channels);
-        Marshal.Copy(managed, 0, buffer, count);
+        EnsureChannelScratch(count);
+        Marshal.Copy(buffer, _channelScratch, 0, count);
+        channel.Process(_channelScratch.AsSpan(0, count), _channels);
+        Marshal.Copy(_channelScratch, 0, buffer, count);
     }
 
-    // BASS update thread: copy the mixed master to the analysis tap (read-only — never written back).
+    // BASS update thread: apply the master brick-wall limiter in place (Gap #5) so two summed decks
+    // never hard-clip the master, then copy the limited master to the analysis tap. Allocation-free:
+    // reuses _masterScratch instead of `new float[]` per buffer (doc 01 RT-thread rule).
     private void OnMasterDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
     {
-        if (length <= 0 || buffer == IntPtr.Zero || _masterTap is null)
+        if (length <= 0 || buffer == IntPtr.Zero)
             return;
         int count = length / sizeof(float);
-        var managed = new float[count];
-        Marshal.Copy(buffer, managed, 0, count);
-        _masterTap(managed);
+        EnsureMasterScratch(count);
+
+        // Limit the master bus in place: read the mix into the reused scratch (no per-buffer alloc),
+        // run the brick-wall limiter, write it back to the device so the master never hard-clips.
+        Marshal.Copy(buffer, _masterScratch, 0, count);
+        _masterLimiter.Process(_masterScratch.AsSpan(0, count));
+        Marshal.Copy(_masterScratch, 0, buffer, count);
+
+        // Feed the (now limited) master to the analysis tap. This hands a buffer across the
+        // Action<float[]> → ReadOnlyMemory<float> seam (frame pipeline), which may retain it
+        // asynchronously, so the scratch cannot be reused here — allocate as the original code did.
+        // The heavy DSP (channel filters + master limiter) is now allocation-free; only this ownership
+        // hand-off allocates, and only when a tap is attached.
+        if (_masterTap is { } tap)
+        {
+            var tapBuffer = new float[count];
+            Array.Copy(_masterScratch, tapBuffer, count);
+            tap(tapBuffer);
+        }
+    }
+
+    // Grow-only capacity guards. Growth is off the steady-state path (worst-case sized up front) and is
+    // logged because reallocating on the audio thread is exactly what doc 01 forbids — seeing this warn
+    // means the up-front sizing was too small and must be raised.
+    private void EnsureChannelScratch(int count)
+    {
+        if (_channelScratch.Length >= count)
+            return;
+        _logger.LogWarning(
+            "Channel DSP buffer ({Count}) exceeded pre-allocated scratch ({Capacity}); growing on the audio thread.",
+            count, _channelScratch.Length);
+        _channelScratch = new float[count];
+    }
+
+    private void EnsureMasterScratch(int count)
+    {
+        if (_masterScratch.Length >= count)
+            return;
+        _logger.LogWarning(
+            "Master DSP buffer ({Count}) exceeded pre-allocated scratch ({Capacity}); growing on the audio thread.",
+            count, _masterScratch.Length);
+        _masterScratch = new float[count];
     }
 
     public void Dispose()
