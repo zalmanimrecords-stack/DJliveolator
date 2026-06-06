@@ -61,7 +61,10 @@ public sealed class DecodedWaveformProvider : IWaveformProvider
                 Append(samples, block);
             }
 
-            WaveformOverview overview = WaveformBuilder.Build(CollectionsMarshal.AsSpan(samples), bucketCount);
+            // Pass the overview rate so WaveformBuilder also derives the low-frequency (kick) band, which
+            // the deck strip draws as a distinct overlay for beat alignment (sync by eye).
+            WaveformOverview overview = WaveformBuilder.Build(
+                CollectionsMarshal.AsSpan(samples), bucketCount, _overviewSampleRate);
             // Duration from the mono sample count at the (known) overview rate, so the deck can place a
             // beat-grid overlay without a second decode. Empty overviews stay Empty (no duration).
             return overview.IsEmpty

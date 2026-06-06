@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:live="clr-namespace:Liveolator.App.Features.Live"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Live.LiveView"
              x:DataType="live:LiveViewModel">
 
@@ -12,6 +13,33 @@
         <ContentControl Grid.Column="0" Content="{Binding ProgramOut}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="1" Content="{Binding Beat}" />
       </Grid>
+
+      <!-- WAVEFORMS — two rows above the decks. The amber kick band shows each track's kick transients
+           so the downbeats can be lined up by eye for sync; click a strip to seek that deck. -->
+      <Border Classes="panel">
+        <StackPanel Margin="14,12" Spacing="10">
+          <Grid ColumnDefinitions="26,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="A" />
+            <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
+                    BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                      Progress="{Binding DeckA.Progress}" BeatGrid="{Binding DeckA.BeatGrid}"
+                                      SeekCommand="{Binding DeckA.SeekCommand}" />
+            </Border>
+          </Grid>
+          <Grid ColumnDefinitions="26,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="B" />
+            <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
+                    BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                      Progress="{Binding DeckB.Progress}" BeatGrid="{Binding DeckB.BeatGrid}"
+                                      SeekCommand="{Binding DeckB.SeekCommand}" />
+            </Border>
+          </Grid>
+        </StackPanel>
+      </Border>
 
       <!-- DECK A · MIXER · DECK B -->
       <Grid ColumnDefinitions="*,300,*">

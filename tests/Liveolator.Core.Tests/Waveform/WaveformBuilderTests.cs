@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Liveolator.Core.Waveform;
 using Xunit;
 
@@ -70,5 +71,62 @@ public sealed class WaveformBuilderTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => WaveformBuilder.Build(new float[10], 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => WaveformBuilder.Build(new float[10], -1));
+    }
+
+    // --- Low-frequency (kick) band ---
+
+    [Fact]
+    public void Build_WithoutSampleRate_HasNoLowBand()
+    {
+        var overview = WaveformBuilder.Build(new float[1000], bucketCount: 32);
+
+        Assert.False(overview.HasLowBand);
+        Assert.Null(overview.LowPeaks);
+    }
+
+    [Fact]
+    public void Build_WithSampleRate_PopulatesLowBand_AlignedToPeaks()
+    {
+        var overview = WaveformBuilder.Build(Sine(60, 8_000, 8_000, 0.8f), bucketCount: 32, sampleRate: 8_000);
+
+        Assert.True(overview.HasLowBand);
+        Assert.Equal(overview.Peaks.Count, overview.LowPeaks!.Count);
+    }
+
+    [Fact]
+    public void Build_LowBand_PassesKickFrequency_AttenuatesHighFrequency()
+    {
+        // Equal-amplitude tones: a 60 Hz "kick" and a 3 kHz "hi-hat" at an 8 kHz overview rate.
+        const int fs = 8_000;
+        var lowTone = WaveformBuilder.Build(Sine(60, fs, fs, 0.8f), bucketCount: 16, sampleRate: fs);
+        var highTone = WaveformBuilder.Build(Sine(3_000, fs, fs, 0.8f), bucketCount: 16, sampleRate: fs);
+
+        // Broadband sees both tones at full amplitude.
+        Assert.True(Max(lowTone.Peaks) > 0.7f);
+        Assert.True(Max(highTone.Peaks) > 0.7f);
+
+        // The kick band keeps the low tone but rejects the high tone — so kicks read clearly.
+        float kickOfLow = Max(lowTone.LowPeaks!);
+        float kickOfHigh = Max(highTone.LowPeaks!);
+        Assert.True(kickOfLow > 0.5f, $"60 Hz should pass the kick band, got {kickOfLow}");
+        Assert.True(kickOfHigh < 0.2f, $"3 kHz should be attenuated, got {kickOfHigh}");
+        Assert.True(kickOfLow > kickOfHigh * 3f);
+    }
+
+    private static float[] Sine(double frequencyHz, int sampleRate, int sampleCount, float amplitude)
+    {
+        var samples = new float[sampleCount];
+        double step = 2.0 * Math.PI * frequencyHz / sampleRate;
+        for (int i = 0; i < sampleCount; i++)
+            samples[i] = amplitude * (float)Math.Sin(step * i);
+        return samples;
+    }
+
+    private static float Max(IReadOnlyList<float> values)
+    {
+        float max = 0f;
+        foreach (float v in values)
+            if (v > max) max = v;
+        return max;
     }
 }

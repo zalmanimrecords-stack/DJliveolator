@@ -35,12 +35,8 @@
         <Button Grid.Column="2" Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
       </Grid>
 
-      <!-- waveform: real overview + playhead + beat-grid overlay; click to seek (DeckSeek) -->
-      <Border Height="56" Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}"
-              BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-        <controls:WaveformStrip Peaks="{Binding Waveform}" Progress="{Binding Progress}"
-                                BeatGrid="{Binding BeatGrid}" SeekCommand="{Binding SeekCommand}" />
-      </Border>
+      <!-- waveform now lives in the two dedicated rows above the decks (see LiveView/DjView) so the kick
+           transients of both decks sit side-by-side for beat-sync alignment. -->
 
       <!-- hot cues: each pad emits DeckHotCue for its index and lights from feedback -->
       <ItemsControl ItemsSource="{Binding HotCues}">

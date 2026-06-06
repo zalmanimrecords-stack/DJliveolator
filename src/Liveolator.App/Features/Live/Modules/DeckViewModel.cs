@@ -44,6 +44,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private string _title = "No track loaded";
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
+    private IReadOnlyList<float>? _kickPeaks;
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
     private double _trackBpm;
@@ -166,6 +167,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _waveform;
         private set => this.RaiseAndSetIfChanged(ref _waveform, value);
+    }
+
+    /// <summary>The loaded track's low-frequency (kick) band peaks (0..1), aligned 1:1 with
+    /// <see cref="Waveform"/>; null when none is decoded. The strip draws these as a distinct overlay so
+    /// the kick transients are visible for beat-sync alignment.</summary>
+    public IReadOnlyList<float>? KickPeaks
+    {
+        get => _kickPeaks;
+        private set => this.RaiseAndSetIfChanged(ref _kickPeaks, value);
     }
 
     /// <summary>
@@ -316,6 +326,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(HasTrackMeta));
         Progress = 0;
         Waveform = null;          // show the placeholder while the new overview decodes
+        KickPeaks = null;
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
@@ -347,6 +358,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             if (cts.IsCancellationRequested)
                 return;
             Waveform = overview.IsEmpty ? null : overview.Peaks;
+            KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
             // The grid needs both the BPM (from the load) and the decoded duration (from the overview).
             BeatGrid = overview.IsEmpty
                 ? Array.Empty<double>()
@@ -359,6 +371,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         catch (Exception)
         {
             Waveform = null; // belt-and-braces around the await boundary
+            KickPeaks = null;
             BeatGrid = Array.Empty<double>();
         }
     }

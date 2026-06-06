@@ -33,9 +33,20 @@ public sealed class WaveformStrip : Control
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(GridBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
+    /// <summary>Brush for the low-frequency (kick/bass) band overlay — drawn over the broadband bars so
+    /// the kick transients pop, letting a DJ align downbeats by eye for sync.</summary>
+    public static readonly StyledProperty<IBrush> KickBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF2, 0xA8, 0x3B)));
+
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<float>?>(nameof(Peaks));
+
+    /// <summary>The low-frequency (kick) band peaks (each 0..1), aligned 1:1 with <see cref="Peaks"/>;
+    /// null/empty draws no kick overlay.</summary>
+    public static readonly StyledProperty<IReadOnlyList<float>?> KickPeaksProperty =
+        AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<float>?>(nameof(KickPeaks));
 
     /// <summary>Beat-line positions as 0..1 track fractions to overlay; null/empty draws no grid.</summary>
     public static readonly StyledProperty<IReadOnlyList<double>?> BeatGridProperty =
@@ -52,8 +63,8 @@ public sealed class WaveformStrip : Control
     static WaveformStrip()
     {
         AffectsRender<WaveformStrip>(
-            BarBrushProperty, PlayedBrushProperty, GridBrushProperty,
-            PeaksProperty, BeatGridProperty, ProgressProperty);
+            BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
+            PeaksProperty, KickPeaksProperty, BeatGridProperty, ProgressProperty);
     }
 
     public WaveformStrip()
@@ -65,7 +76,9 @@ public sealed class WaveformStrip : Control
     public IBrush BarBrush { get => GetValue(BarBrushProperty); set => SetValue(BarBrushProperty, value); }
     public IBrush PlayedBrush { get => GetValue(PlayedBrushProperty); set => SetValue(PlayedBrushProperty, value); }
     public IBrush GridBrush { get => GetValue(GridBrushProperty); set => SetValue(GridBrushProperty, value); }
+    public IBrush KickBrush { get => GetValue(KickBrushProperty); set => SetValue(KickBrushProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
+    public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
@@ -91,9 +104,18 @@ public sealed class WaveformStrip : Control
 
         IReadOnlyList<float>? peaks = Peaks;
         if (peaks is { Count: > 0 })
+        {
             RenderWaveform(context, b, peaks);
+            // Kick/bass band drawn ON TOP of the broadband bars, in a distinct warm colour, so the kick
+            // transients pop as periodic spikes — the visual anchor a DJ aligns to for beat-sync.
+            IReadOnlyList<float>? kick = KickPeaks;
+            if (kick is { Count: > 0 })
+                RenderKickBand(context, b, kick);
+        }
         else
+        {
             RenderPlaceholder(context, b);
+        }
     }
 
     // Faint vertical lines at each beat fraction, drawn behind the waveform so they read as a guide.
@@ -141,6 +163,28 @@ public sealed class WaveformStrip : Control
         {
             var headPen = new Pen(PlayedBrush, 1.5);
             context.DrawLine(headPen, new Point(playheadX, 0), new Point(playheadX, b.Height));
+        }
+    }
+
+    // The low-frequency (kick) band overlay: mirrored bars at the same columns as the broadband, sized by
+    // the kick peaks (always ≤ broadband, so they sit within the blue), in the warm KickBrush. The result
+    // reads as bright periodic spikes on each kick — the beat-align guide for sync.
+    private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick)
+    {
+        double cy = b.Height / 2;
+        double maxAmp = (b.Height / 2) - 2;
+        const double step = 2.0;
+        var pen = new Pen(KickBrush, 1.8) { LineCap = PenLineCap.Round };
+
+        for (double x = 1; x < b.Width - 1; x += step)
+        {
+            int index = (int)(x / b.Width * kick.Count);
+            if (index < 0) index = 0;
+            else if (index >= kick.Count) index = kick.Count - 1;
+
+            double amp = maxAmp * Math.Clamp(kick[index], 0f, 1f);
+            if (amp < 0.5) continue; // skip near-silent low band so only real kicks draw
+            context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
         }
     }
 
