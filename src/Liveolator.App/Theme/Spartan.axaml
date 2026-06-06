@@ -193,8 +193,16 @@
     <Setter Property="Background" Value="{StaticResource S2}" />
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="8" />
     <Setter Property="Foreground" Value="{StaticResource Text}" />
+  </Style>
+
+  <!-- ============ progress / phase bars ============ -->
+  <Style Selector="ProgressBar">
+    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    <Setter Property="Background" Value="{StaticResource S4}" />
+    <Setter Property="MinHeight" Value="5" />
+    <Setter Property="CornerRadius" Value="3" />
   </Style>
 
   <!-- ============ key (beat keys / transport / hot-cues) ============ -->

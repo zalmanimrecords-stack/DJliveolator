@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Live.Modules.MasterFxView"
              x:DataType="m:MasterFxViewModel">
 
@@ -10,14 +11,14 @@
 
       <!-- Master / Swing knobs (disabled — no action kind yet) -->
       <Grid ColumnDefinitions="*,*">
-        <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center" Margin="0,0,16,0">
-          <Slider Orientation="Vertical" Height="90" Minimum="0" Maximum="1"
-                  Value="{Binding Master.Value}" IsEnabled="{Binding Master.IsEnabled}" />
+        <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center" Margin="0,0,16,0">
+          <controls:Knob Width="58" Height="58" HorizontalAlignment="Center"
+                         Value="{Binding Master.Value}" IsEnabled="{Binding Master.IsEnabled}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MASTER" />
         </StackPanel>
-        <StackPanel Grid.Column="1" Spacing="6" HorizontalAlignment="Center">
-          <Slider Orientation="Vertical" Height="90" Minimum="0" Maximum="1"
-                  Value="{Binding Swing.Value}" IsEnabled="{Binding Swing.IsEnabled}" />
+        <StackPanel Grid.Column="1" Spacing="8" HorizontalAlignment="Center">
+          <controls:Knob Width="58" Height="58" HorizontalAlignment="Center"
+                         Value="{Binding Swing.Value}" IsEnabled="{Binding Swing.IsEnabled}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="SWING" />
         </StackPanel>
       </Grid>
