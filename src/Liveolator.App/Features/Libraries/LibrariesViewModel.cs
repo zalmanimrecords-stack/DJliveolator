@@ -29,6 +29,14 @@ public sealed class LibrariesViewModel : ViewModelBase
     private readonly Shared.TrackContextActions? _contextActions;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
+    private string? _selectedArtist;
+    private string? _selectedGenre;
+    private int? _selectedYear;
+    private string? _selectedFileType;
+    private MediaAnalysisStatus? _selectedStatus;
+    private TrackSortKey _sortKey = TrackSortKey.Title;
+    private bool _sortDescending;
+    private bool _suppressFilter;
     private TrackRowViewModel? _selectedTrack;
     private string _scanStatus = "Add folders, then Scan.";
     private bool _isScanning;
@@ -64,6 +72,7 @@ public sealed class LibrariesViewModel : ViewModelBase
         PlaySelectedCommand = ReactiveCommand.Create(PlaySelected, canPlay);
 
         StopCommand = ReactiveCommand.Create(Stop);
+        ClearFiltersCommand = ReactiveCommand.Create(ClearFilters);
 
         // Which deck slots are actually backed is discovered through the dispatcher feedback seam
         // (doc 04) — no engine reference here. A slot reports available iff slot < engine.DeckCount,
@@ -83,13 +92,43 @@ public sealed class LibrariesViewModel : ViewModelBase
             _beatClock.StateChanged += OnBeatStateChanged;
         }
 
-        this.WhenAnyValue(x => x.SearchText).Subscribe(_ => ApplyFilter());
+        // Any filter or sort change re-runs the query (the search box, the facet pickers, the
+        // status filter, and the sort key/direction all funnel through one ApplyFilter). Merged as
+        // unit signals because WhenAnyValue caps at a few typed selectors.
+        Observable.Merge(
+                this.WhenAnyValue(x => x.SearchText).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SelectedArtist).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SelectedGenre).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SelectedYear).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SelectedFileType).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SelectedStatus).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SortKey).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.SortDescending).Select(_ => Unit.Default))
+            .Subscribe(_ => ApplyFilter());
         this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ => RebuildMatches());
     }
 
     public ObservableCollection<string> Folders { get; } = new();
     public ObservableCollection<TrackRowViewModel> Tracks { get; } = new();
     public ObservableCollection<TrackRowViewModel> HarmonicMatches { get; } = new();
+
+    /// <summary>Distinct facet values from the catalog (B1). A null selection on each = "all".</summary>
+    public ObservableCollection<string> Artists { get; } = new();
+    public ObservableCollection<string> Genres { get; } = new();
+    public ObservableCollection<int> Years { get; } = new();
+    public ObservableCollection<string> FileTypes { get; } = new();
+
+    /// <summary>The status-filter choices (null = "Any"); fixed, so it is built once.</summary>
+    public IReadOnlyList<MediaAnalysisStatus?> StatusOptions { get; } = new MediaAnalysisStatus?[]
+    {
+        null, MediaAnalysisStatus.Ok, MediaAnalysisStatus.PartiallyAnalyzed, MediaAnalysisStatus.Failed,
+    };
+
+    /// <summary>The sortable columns offered in the sort picker.</summary>
+    public IReadOnlyList<TrackSortKey> SortKeys { get; } = new[]
+    {
+        TrackSortKey.Title, TrackSortKey.Bpm, TrackSortKey.Key, TrackSortKey.Duration,
+    };
 
     /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
     public ObservableCollection<FolderStatusViewModel> FolderStatuses { get; } = new();
@@ -102,6 +141,9 @@ public sealed class LibrariesViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckBCommand { get; }
+
+    /// <summary>Resets every facet, the status filter, and the search box back to "show all" (B1).</summary>
+    public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
 
     /// <summary>True when playback is wired (Live Mode on); the UI hides transport controls otherwise.</summary>
     public bool IsLiveModeEnabled => _dispatcher is not null;
@@ -128,6 +170,55 @@ public sealed class LibrariesViewModel : ViewModelBase
     {
         get => _searchText;
         set => this.RaiseAndSetIfChanged(ref _searchText, value);
+    }
+
+    /// <summary>Selected artist facet (null = all artists).</summary>
+    public string? SelectedArtist
+    {
+        get => _selectedArtist;
+        set => this.RaiseAndSetIfChanged(ref _selectedArtist, value);
+    }
+
+    /// <summary>Selected genre facet (null = all genres).</summary>
+    public string? SelectedGenre
+    {
+        get => _selectedGenre;
+        set => this.RaiseAndSetIfChanged(ref _selectedGenre, value);
+    }
+
+    /// <summary>Selected year facet (null = all years).</summary>
+    public int? SelectedYear
+    {
+        get => _selectedYear;
+        set => this.RaiseAndSetIfChanged(ref _selectedYear, value);
+    }
+
+    /// <summary>Selected file-type facet (null = all file types).</summary>
+    public string? SelectedFileType
+    {
+        get => _selectedFileType;
+        set => this.RaiseAndSetIfChanged(ref _selectedFileType, value);
+    }
+
+    /// <summary>Selected analysis-status filter (null = any status).</summary>
+    public MediaAnalysisStatus? SelectedStatus
+    {
+        get => _selectedStatus;
+        set => this.RaiseAndSetIfChanged(ref _selectedStatus, value);
+    }
+
+    /// <summary>The column the track list is ordered by.</summary>
+    public TrackSortKey SortKey
+    {
+        get => _sortKey;
+        set => this.RaiseAndSetIfChanged(ref _sortKey, value);
+    }
+
+    /// <summary>Descending sort when true (the toggle next to the sort picker).</summary>
+    public bool SortDescending
+    {
+        get => _sortDescending;
+        set => this.RaiseAndSetIfChanged(ref _sortDescending, value);
     }
 
     public TrackRowViewModel? SelectedTrack
@@ -189,6 +280,7 @@ public sealed class LibrariesViewModel : ViewModelBase
                 if (rows is not null)
                 {
                     _all = rows;
+                    RebuildFacets();
                     ApplyFilter();
                     ScanStatus = $"{rows.Count} tracks (restored)";
                 }
@@ -253,6 +345,7 @@ public sealed class LibrariesViewModel : ViewModelBase
             RxApp.MainThreadScheduler.Schedule(() =>
             {
                 _all = rows;
+                RebuildFacets();
                 ApplyFilter();
                 ScanStatus = $"{rows.Count} tracks";
                 ScanProgressValue = 100;
@@ -303,13 +396,74 @@ public sealed class LibrariesViewModel : ViewModelBase
         }
     }
 
+    // Re-runs the composed facet/status/text filter (TrackQuery) then the sort (TrackSort) over the
+    // catalog, both pure Core logic, and projects the surviving tracks back to their row view-models.
+    // Suppressed during a multi-property reset so ClearFilters re-queries exactly once.
     private void ApplyFilter()
     {
+        if (_suppressFilter)
+            return;
+
+        var rowByTrack = _all.ToDictionary(r => r.Track);
+        var filter = new TrackFilter(
+            Text: SearchText,
+            Artist: SelectedArtist,
+            Genre: SelectedGenre,
+            Year: SelectedYear,
+            FileType: SelectedFileType,
+            Status: SelectedStatus);
+
+        IReadOnlyList<MusicTrack> filtered = TrackQuery.Apply(rowByTrack.Keys, filter, TrackQuery.MaxResults);
+        IReadOnlyList<MusicTrack> ordered = TrackSort.Apply(filtered, SortKey, SortDescending);
+
         Tracks.Clear();
-        string? query = SearchText?.Trim();
-        foreach (TrackRowViewModel row in _all)
-            if (string.IsNullOrEmpty(query) || row.Matches(query))
-                Tracks.Add(row);
+        foreach (MusicTrack track in ordered)
+            Tracks.Add(rowByTrack[track]);
+    }
+
+    // Recomputes the facet dropdowns from the current catalog (after a scan or restore) and drops any
+    // selection that no longer exists, so the pickers never offer a stale value. Must run on the UI
+    // scheduler (mutates ObservableCollections); callers already marshal there.
+    private void RebuildFacets()
+    {
+        TrackFacets facets = TrackFacets.Of(_all.Select(r => r.Track));
+        Replace(Artists, facets.Artists);
+        Replace(Genres, facets.Genres);
+        Replace(Years, facets.Years);
+        Replace(FileTypes, facets.FileTypes);
+
+        if (SelectedArtist is not null && !facets.Artists.Contains(SelectedArtist)) SelectedArtist = null;
+        if (SelectedGenre is not null && !facets.Genres.Contains(SelectedGenre)) SelectedGenre = null;
+        if (SelectedYear is { } y && !facets.Years.Contains(y)) SelectedYear = null;
+        if (SelectedFileType is not null && !facets.FileTypes.Contains(SelectedFileType)) SelectedFileType = null;
+    }
+
+    private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> values)
+    {
+        target.Clear();
+        foreach (T value in values)
+            target.Add(value);
+    }
+
+    // Resets every filter back to "show all" in one batch, re-querying just once at the end.
+    private void ClearFilters()
+    {
+        _suppressFilter = true;
+        try
+        {
+            SearchText = null;
+            SelectedArtist = null;
+            SelectedGenre = null;
+            SelectedYear = null;
+            SelectedFileType = null;
+            SelectedStatus = null;
+        }
+        finally
+        {
+            _suppressFilter = false;
+        }
+
+        ApplyFilter();
     }
 
     private void RebuildMatches()
