@@ -160,6 +160,9 @@ public sealed class MidiControlSessionTests
         public Task SaveVisualBankAsync(VisualBank bank, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Task<IReadOnlyList<string>> ListVisualBankNamesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+
         public Task<IReadOnlyList<VisualMacro>> LoadVisualMacrosAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<VisualMacro>>(Array.Empty<VisualMacro>());
 

@@ -20,21 +20,28 @@ public sealed class SceneGridViewModel : ViewModelBase, IDisposable
     public const int Rows = 8;
     public const int PadCount = Columns * Rows;
 
-    // The starter bank is a single bank today; the tab labels follow the mock until a real bank catalog
-    // from persistence (doc 13) is enumerable. Selecting a tab still emits VisualSelectBank for its index.
-    private static readonly string[] BankNames = { "Warmup", "Peak", "Breaks", "Outro" };
+    // Fallback bank labels (the mock's phases) used only when no real banks are supplied — e.g. headless
+    // construction or tests. The live app passes the engine's actual bank names (doc 22 C3), so a tab
+    // selecting bank index N maps VisualSelectBank to the real bank N.
+    private static readonly string[] FallbackBankNames = { "Warmup", "Peak", "Breaks", "Outro" };
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private int _selectedBankIndex;
     private bool _disposed;
 
-    public SceneGridViewModel(IPerformanceActionDispatcher? dispatcher = null)
+    /// <param name="dispatcher">Action layer; null disables the grid (no engine wired).</param>
+    /// <param name="bankNames">The real bank names from the engine, in selection-index order; null/empty
+    /// falls back to the mock's phase labels so the grid still renders headless / under test.</param>
+    public SceneGridViewModel(
+        IPerformanceActionDispatcher? dispatcher = null,
+        IReadOnlyList<string>? bankNames = null)
     {
         _dispatcher = dispatcher;
 
         Pads = new ObservableCollection<ScenePadViewModel>(
             Enumerable.Range(0, PadCount).Select(slot => new ScenePadViewModel(slot, dispatcher)));
-        Banks = new ObservableCollection<string>(BankNames);
+        Banks = new ObservableCollection<string>(
+            bankNames is { Count: > 0 } ? bankNames : FallbackBankNames);
 
         if (_dispatcher is not null)
         {

@@ -98,6 +98,60 @@ public sealed class GlVisualPerformanceEngineTests
         var engine = NewEngine(new FakeBeatClock());
 
         Assert.Equal("bank-1", engine.ActiveBank.Name);
+        Assert.Equal(1, engine.BankCount);
+        Assert.Equal(0, engine.ActiveBankIndex);
+    }
+
+    [Fact]
+    public void SelectBank_switches_the_active_bank_and_its_composition()
+    {
+        VisualBank warmup = NamedBank("Warmup", "warm.png");
+        VisualBank peak = NamedBank("Peak", "peak.png");
+        var engine = new GlVisualPerformanceEngine(new[] { warmup, peak }, Brightness(), new FakeBeatClock());
+
+        Assert.Equal("Warmup", engine.ActiveBank.Name);
+
+        engine.SelectBank(1);
+
+        Assert.Equal(1, engine.ActiveBankIndex);
+        Assert.Equal("Peak", engine.ActiveBank.Name);
+        // The active scene/composition follows the selected bank's first scene.
+        Assert.Equal("peak.png", engine.CurrentComposition()[0].Source.Reference);
+    }
+
+    [Fact]
+    public void SelectBank_ignores_an_out_of_range_index_without_changing_the_active_bank()
+    {
+        VisualBank warmup = NamedBank("Warmup", "warm.png");
+        VisualBank peak = NamedBank("Peak", "peak.png");
+        var engine = new GlVisualPerformanceEngine(new[] { warmup, peak }, Brightness(), new FakeBeatClock());
+
+        engine.SelectBank(1);
+        engine.SelectBank(9);  // out of range — ignored
+        engine.SelectBank(-1); // out of range — ignored
+
+        Assert.Equal(1, engine.ActiveBankIndex);
+        Assert.Equal("Peak", engine.ActiveBank.Name);
+    }
+
+    [Fact]
+    public void Multi_bank_constructor_rejects_an_empty_or_null_bank_list()
+    {
+        Assert.Throws<ArgumentException>(
+            () => new GlVisualPerformanceEngine(Array.Empty<VisualBank>(), Brightness(), new FakeBeatClock()));
+        Assert.Throws<ArgumentNullException>(
+            () => new GlVisualPerformanceEngine((IReadOnlyList<VisualBank>)null!, Brightness(), new FakeBeatClock()));
+    }
+
+    private static VisualBank NamedBank(string name, string imagePath)
+    {
+        var layer = new VisualLayer(
+            "base", new VisualSourceRef(VisualSourceKind.Image, imagePath),
+            Array.Empty<EffectRef>(), BlendMode.Normal, opacity: 1.0);
+        var scene = new VisualScene(
+            name + "-scene", new[] { layer }, new Dictionary<string, double>(),
+            TransitionStyle.Cut, BeatBehavior.None);
+        return new VisualBank(name, new[] { scene });
     }
 
     [Fact]
@@ -114,7 +168,6 @@ public sealed class GlVisualPerformanceEngineTests
         engine.LaunchClip(0, "clip", Quantize.NextBeat);
         engine.Strobe(true);
         engine.Transition(TransitionStyle.Cut, Quantize.Immediate);
-        engine.SelectBank(3);
     }
 
     [Fact]

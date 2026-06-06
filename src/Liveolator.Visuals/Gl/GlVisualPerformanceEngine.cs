@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Visuals;
 using Microsoft.Extensions.Logging;
@@ -42,8 +43,15 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     private readonly ConcurrentDictionary<string, double> _macroValues = new(StringComparer.Ordinal);
 
     private volatile bool _blackout;
-    private readonly VisualBank _activeBank;
 
+    // The ordered banks addressable by the Scene Grid / Push bank tabs, with the currently-active index.
+    // Bank selection mutates _activeBankIndex (pure, observable state — unit-tested off the GPU); the
+    // render loop reads ActiveBank each frame, so a SelectBank() takes effect on the next composed frame
+    // without touching the GL context. The list is non-empty by construction.
+    private readonly IReadOnlyList<VisualBank> _banks;
+    private volatile int _activeBankIndex;
+
+    /// <summary>Single-bank engine (the original first-slice shape). Equivalent to one-element bank list.</summary>
     public GlVisualPerformanceEngine(
         VisualBank initialBank,
         VisualMacro brightnessMacro,
@@ -51,8 +59,32 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         double flashStrength = 0.6,
         SkiaImageLoader? imageLoader = null,
         ILogger<GlVisualPerformanceEngine>? logger = null)
+        : this(new[] { initialBank ?? throw new ArgumentNullException(nameof(initialBank)) },
+               brightnessMacro, beatClock, flashStrength, imageLoader, logger)
     {
-        _activeBank = initialBank ?? throw new ArgumentNullException(nameof(initialBank));
+    }
+
+    /// <summary>
+    /// Multi-bank engine (doc 22 C3): the Scene Grid can switch the active bank at runtime via
+    /// <see cref="SelectBank"/>, which drives which scenes the pads load. The banks list must be
+    /// non-empty; the first bank is active initially.
+    /// </summary>
+    public GlVisualPerformanceEngine(
+        IReadOnlyList<VisualBank> banks,
+        VisualMacro brightnessMacro,
+        IBeatClock beatClock,
+        double flashStrength = 0.6,
+        SkiaImageLoader? imageLoader = null,
+        ILogger<GlVisualPerformanceEngine>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(banks);
+        if (banks.Count == 0)
+            throw new ArgumentException("At least one visual bank is required.", nameof(banks));
+        if (banks.Any(b => b is null))
+            throw new ArgumentException("A visual bank entry was null.", nameof(banks));
+
+        _banks = banks.ToArray();
+        _activeBankIndex = 0;
         _brightnessMacro = brightnessMacro ?? throw new ArgumentNullException(nameof(brightnessMacro));
         _beatClock = beatClock ?? throw new ArgumentNullException(nameof(beatClock));
         if (flashStrength < 0 || double.IsNaN(flashStrength))
@@ -66,7 +98,16 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         _macroValues[BrightnessMacro] = NormalizeDefault(brightnessMacro);
     }
 
-    public VisualBank ActiveBank => _activeBank;
+    public VisualBank ActiveBank => _banks[_activeBankIndex];
+
+    /// <summary>The number of banks addressable by the Scene Grid / Push bank tabs.</summary>
+    public int BankCount => _banks.Count;
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> BankNames => _banks.Select(b => b.Name).ToArray();
+
+    /// <summary>The index of the currently-active bank (the one the pads load scenes from).</summary>
+    public int ActiveBankIndex => _activeBankIndex;
 
     /// <summary>Resolves the uniforms for the next frame from current macro/blackout state + clock.</summary>
     public FrameUniforms CurrentFrame()
@@ -101,8 +142,23 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         _logger.LogInformation("Blackout {State}.", on ? "engaged" : "released");
     }
 
+    /// <summary>
+    /// Switches the active bank by index (doc 22 C3). An out-of-range index is ignored with a warning
+    /// (never a silent no-op — global standard #26); a valid index takes effect on the next composed
+    /// frame, so the render loop needs no GL-thread coordination. Pure state — unit-tested off the GPU.
+    /// </summary>
     public void SelectBank(int index)
-        => _logger.LogDebug("SelectBank({Index}) is deferred; the slice ships a single bank.", index);
+    {
+        if (index < 0 || index >= _banks.Count)
+        {
+            _logger.LogWarning(
+                "SelectBank({Index}) ignored: only {Count} bank(s) are loaded.", index, _banks.Count);
+            return;
+        }
+
+        _activeBankIndex = index;
+        _logger.LogInformation("Active visual bank → {Index} '{Name}'.", index, _banks[index].Name);
+    }
 
     // --- Deferred operations (later phases): logged no-ops so callers/tests are honest about scope. ---
 
@@ -200,9 +256,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         // The window/renderer are owned for the lifetime of Run(); nothing persists after it returns.
     }
 
-    // The active scene; richer scene/bank selection arrives with LoadScene + the VisualActionHandler.
+    // The active scene of the active bank; richer per-pad scene selection arrives with LoadScene wiring.
     private VisualScene? ActiveScene()
-        => _activeBank.Scenes.Count > 0 ? _activeBank.Scenes[0] : null;
+        => ActiveBank.Scenes.Count > 0 ? ActiveBank.Scenes[0] : null;
 
     // Decodes every renderable (image) layer of the active scene in composite order. A layer whose
     // image fails to decode is dropped with a warning (doc 08 — a missing asset degrades that layer,

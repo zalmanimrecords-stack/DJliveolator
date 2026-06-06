@@ -9,9 +9,15 @@ namespace Liveolator.Core.Tests.Visuals;
 /// </summary>
 internal sealed class FakeVisualPerformanceEngine : IVisualPerformanceEngine
 {
-    public FakeVisualPerformanceEngine(VisualBank bank) => ActiveBank = bank;
+    public FakeVisualPerformanceEngine(VisualBank bank, IReadOnlyList<string>? bankNames = null)
+    {
+        ActiveBank = bank;
+        BankNames = bankNames ?? new[] { bank.Name };
+    }
 
     public VisualBank ActiveBank { get; }
+
+    public IReadOnlyList<string> BankNames { get; }
 
     public List<int> SelectedBanks { get; } = new();
     public List<(VisualScene Scene, Quantize When, int EveryN)> LoadedScenes { get; } = new();

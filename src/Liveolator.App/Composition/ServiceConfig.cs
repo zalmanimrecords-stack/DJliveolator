@@ -411,7 +411,8 @@ public static class ServiceConfig
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        var visualEngine = new GlVisualPerformanceEngine(LoadOrBuildStarterBank(profileStore), brightnessMacro, liveClock);
+        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore);
+        var visualEngine = new GlVisualPerformanceEngine(banks, brightnessMacro, liveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -459,25 +460,40 @@ public static class ServiceConfig
     /// <summary>The well-known name of the user's authored startup scene bank under <c>live/scenes/</c>.</summary>
     private const string StartupVisualBankName = "Live";
 
-    // Loads the authored startup visual bank from persistence (doc 13) so saved scenes feed the engine
-    // across restarts. Tolerant: a missing/corrupt/old snapshot returns null (the store already warned),
-    // so we fall back to the placeholder starter bank rather than starting with no visuals. Blocking is
-    // acceptable in the composition root (one small JSON file), mirroring the settings load above.
-    private static VisualBank LoadOrBuildStarterBank(ILiveProfileStore profileStore)
+    // Loads every authored visual bank from persistence (doc 13/22 C3) so the Scene Grid can switch
+    // banks at runtime (VisualSelectBank → real bank data). The startup bank ("Live") is placed first
+    // so it is the active bank on launch (preserving prior single-bank behaviour); any other saved
+    // banks follow in name order. When nothing is saved, the engine ships the single placeholder starter
+    // bank. Tolerant: a missing/corrupt/old snapshot is skipped (the store already warned), never fatal —
+    // blocking on these small JSON files in the composition root mirrors the settings/macros load above.
+    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(ILiveProfileStore profileStore)
     {
+        var banks = new List<VisualBank>();
         try
         {
-            VisualBank? saved = profileStore.LoadVisualBankAsync(StartupVisualBankName).GetAwaiter().GetResult();
-            if (saved is not null && saved.Scenes.Count > 0)
-                return saved;
+            IReadOnlyList<string> names = profileStore.ListVisualBankNamesAsync().GetAwaiter().GetResult();
+            // Startup bank first (active on launch), then the rest, de-duplicated and skipping empties.
+            foreach (string name in names
+                         .OrderByDescending(n => string.Equals(n, StartupVisualBankName, StringComparison.OrdinalIgnoreCase))
+                         .ThenBy(n => n, StringComparer.OrdinalIgnoreCase))
+            {
+                VisualBank? bank = profileStore.LoadVisualBankAsync(name).GetAwaiter().GetResult();
+                if (bank is not null && bank.Scenes.Count > 0)
+                    banks.Add(bank);
+            }
         }
         catch (Exception ex)
         {
-            // The store load is itself tolerant; this guards only against an unexpected fault so a bad
-            // snapshot can never block startup (global standards #16/#26).
-            System.Diagnostics.Trace.TraceWarning($"Could not load saved visual bank '{StartupVisualBankName}': {ex.Message}.");
+            // The store loads are themselves tolerant; this guards only against an unexpected fault so a
+            // bad snapshot can never block startup (global standards #16/#26).
+            System.Diagnostics.Trace.TraceWarning($"Could not enumerate saved visual banks: {ex.Message}.");
         }
-        return BuildStarterBank();
+
+        // Always have at least one bank so the engine + Scene Grid have something to address.
+        if (banks.Count == 0)
+            banks.Add(BuildStarterBank());
+
+        return banks;
     }
 
     // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
@@ -492,7 +508,9 @@ public static class ServiceConfig
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
             sp.GetService<IVisualStage>(),
             sp.GetService<IWaveformProvider>(),
-            sp.GetRequiredService<PerformanceDeckSet>()));
+            sp.GetRequiredService<PerformanceDeckSet>(),
+            // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
+            sp.GetService<IVisualPerformanceEngine>()?.BankNames));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------

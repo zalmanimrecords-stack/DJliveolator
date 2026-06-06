@@ -125,6 +125,44 @@ public class LiveProfileStoreTests
         Assert.NotNull(warning);
     }
 
+    [Fact]
+    public async Task ListVisualBankNames_WhenNoneSaved_ReturnsEmpty()
+    {
+        using var dir = new TempDirectory();
+        var store = new LiveProfileStore(dir.Path);
+
+        Assert.Empty(await store.ListVisualBankNamesAsync());
+    }
+
+    [Fact]
+    public async Task ListVisualBankNames_ReturnsEverySavedBank_OrderedCaseInsensitively()
+    {
+        using var dir = new TempDirectory();
+        var store = new LiveProfileStore(dir.Path);
+
+        await store.SaveVisualBankAsync(new VisualBank("Peak", Array.Empty<VisualScene>()));
+        await store.SaveVisualBankAsync(new VisualBank("Live", Array.Empty<VisualScene>()));
+        await store.SaveVisualBankAsync(new VisualBank("breaks", Array.Empty<VisualScene>()));
+
+        IReadOnlyList<string> names = await store.ListVisualBankNamesAsync();
+
+        Assert.Equal(new[] { "breaks", "Live", "Peak" }, names);
+    }
+
+    [Fact]
+    public async Task ListVisualBankNames_RoundTripsWithLoad()
+    {
+        using var dir = new TempDirectory();
+        var store = new LiveProfileStore(dir.Path);
+        await store.SaveVisualBankAsync(SampleBank()); // named "set-a"
+
+        IReadOnlyList<string> names = await store.ListVisualBankNamesAsync();
+
+        string only = Assert.Single(names);
+        Assert.Equal("set-a", only);
+        Assert.NotNull(await store.LoadVisualBankAsync(only));
+    }
+
     // ---- VisualMacro definitions (doc 08) ---------------------------------------------------
 
     [Fact]

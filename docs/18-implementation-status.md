@@ -479,7 +479,7 @@ Silk.NET (OpenGL + GLFW windowing) + SkiaSharp for image decode.
 | Pure `BlendMode` → premultiplied-alpha GL blend factors (Overlay degrades to Normal) | `Gl/BlendModeGl` |
 | Pure live-clock selection (audio-driven master clock else manual tap clock) | `Gl/LiveClockSelector` |
 | Fullscreen-quad GLSL program + multi-layer GL renderer | `Gl/LayeredQuadShaderSource`, `Gl/LayeredQuadRenderer`, `Gl/ShaderCompilationException` |
-| Concrete engine (SetMacro/Blackout/ActiveBank/CurrentFrame/CurrentComposition pure; `Run()` opens window + renders the layer stack) | `Gl/GlVisualPerformanceEngine` |
+| Concrete engine (SetMacro/Blackout/ActiveBank/**multi-bank SelectBank**/CurrentFrame/CurrentComposition pure; `Run()` opens window + renders the layer stack) | `Gl/GlVisualPerformanceEngine` |
 
 - **Tested off the GPU (63 tests, green):** `FrameUniforms.Resolve` (macro mapping, confidence-gated
   beat flash, blackout override), `RgbaImage.Validated`, `SkiaImageLoader` (decode / missing /
@@ -488,10 +488,20 @@ Silk.NET (OpenGL + GLFW windowing) + SkiaSharp for image decode.
   manual-fallback), and the engine's pure state via `CurrentFrame()` / `CurrentComposition()`. GL
   context creation needs a display, so `Run()` is **manually** verified — steps in
   `Liveolator.Visuals/CLAUDE.md`.
+- **Bank selection is now real (doc 22 C3):** the engine holds an ordered, non-empty list of banks
+  (`BankCount`/`ActiveBankIndex`/`BankNames`); `SelectBank(index)` switches the active bank (an
+  out-of-range index logs a warning and is ignored — not a silent no-op), and the next composed frame
+  reads the new `ActiveBank`, so no GL-thread coordination is needed. Tested off the GPU (active bank +
+  composition follow the selection; out-of-range ignored; empty/null bank list rejected). The single-bank
+  constructor still works (one-element list), preserving the first-slice behaviour.
 - **Deferred (grow into `GlVisualPerformanceEngine`, not replace it):** video + camera layer sources
   (resolve as non-renderable and are skipped today), quantized scene/clip launching via
   `IBeatScheduler`, transitions/strobe, and the per-layer effect chain — all currently logged no-ops.
-  `Overlay` blend awaits a framebuffer read-back path (degrades to Normal for now).
+  `Overlay` blend awaits a framebuffer read-back path (degrades to Normal for now). **Per-pad scene
+  loading still renders only the active bank's first scene** (`LoadScene` remains a logged no-op on the
+  GL side — needs a display to verify), so switching banks changes which scene set the pads address and
+  what the next frame composites, but lighting an individual pad's scene into the GL output is the
+  remaining GL-render piece.
 
 ### ✅ Visual action handler — dispatcher → visual engine bridge — `Liveolator.Core/Visuals/` (doc 04/08)
 
@@ -503,7 +513,7 @@ no GL.
 | Handled kind | Engine call |
 |--------------|-------------|
 | `VisualLoadScene` | `LoadScene(ActiveBank.Scene(slot), Immediate)` (out-of-range slot logs + no-ops) |
-| `VisualSelectBank` | `SelectBank(slot)` |
+| `VisualSelectBank` | `SelectBank(slot)` — now switches the engine's **active bank** (doc 22 C3), not a no-op |
 | `VisualSetMacro` | `SetMacro(Argument, Value)` (missing name logs + no-ops) |
 | `VisualToggleLayer` / `VisualSetLayerOpacity` | `ToggleLayer(slot)` / `SetLayerOpacity(slot, Value)` |
 | `VisualLaunchClip` | `LaunchClip(slot, Argument, Immediate)` (missing clip id logs + no-ops) |
@@ -524,6 +534,14 @@ no GL.
   audible signal), else the shared manual tap clock (headless) — closing the clock half of the seam.
   The realtime engine is now constructed *before* `WireVisuals` so its master clock is available to
   the selector.
+- **Banks are real, not hardcoded (doc 22 C3):** `ILiveProfileStore.ListVisualBankNamesAsync` enumerates
+  the saved banks under `live/scenes/` (tested in `Liveolator.Media`); `ServiceConfig.LoadBanksOrStarter`
+  loads them all (startup bank "Live" first → active on launch, the rest in name order), and feeds the
+  ordered list to the multi-bank `GlVisualPerformanceEngine` (falling back to the placeholder starter
+  bank when none are saved). The Scene Grid's bank tabs are driven by the engine's real `BankNames`
+  (`SceneGridViewModel` → `LiveViewModel` → `ServiceConfig`), so selecting a tab maps `VisualSelectBank`
+  to actual bank data — the engine then switches its active bank. **Remaining GL-render piece:** lighting
+  an individual pad's scene into the GL output (`LoadScene`) still needs a display to verify (above).
 
 ### ✅ Visual library / VJ tab — asset browser — `Liveolator.App/Features/VisualLibrary/` (doc 08/13, Track C **C1**)
 
