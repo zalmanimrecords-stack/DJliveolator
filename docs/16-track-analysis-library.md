@@ -178,21 +178,32 @@ The real bindings live outside Core and stay pure/hardware-free:
 > Canonical = **Media** (file enumeration) and **Audio** (decode); the redundant copies are
 > removed once the running App unlocks its build output.
 
-## Deferred idea — online metadata enrichment (not now)
+## Online metadata enrichment — BUILT (Core + Online binding + MCP; live activation pending keys)
 
-A future, **optional** enrichment step could augment local analysis with online data
-(genre/style, plus a BPM/key **cross-check**). Decisions captured so we don't relearn them:
+An **optional, offline-first** enrichment that augments local analysis with online data (BPM/key
+**cross-check** + genre). The decisions below held up and are now implemented:
 
-- **Identify by acoustic fingerprint, not filename** — Chromaprint + AcoustID → MusicBrainz
-  (filenames are unreliable). Filename is fallback only.
-- **Sources:** MusicBrainz/Discogs (genre/style), Spotify audio-features or Beatport/Tunebat
-  (tempo/key/energy cross-check) — **licensing/ToS is the deciding factor for a distributed
-  app** and must be researched first (like the audio-stack decision).
-- **Architecture:** an `IMetadataProvider` seam, **offline-first** (local analysis always
-  works; enrichment only augments, with provenance local-vs-online), cached, rate-limited,
-  API keys in config (never hardcoded). Agreement with local detection → raise confidence to
-  Ok; disagreement → flag `PartiallyAnalyzed` for review.
-- **Status: deferred** (2026-06-03) by user decision; revisit after the core modules/UI.
+- **Identify by acoustic fingerprint, not filename** — Chromaprint (`fpcalc`) + AcoustID, with
+  artist/title tags as fallback. Built: `IAudioFingerprinter` (Core) → `FpcalcFingerprinter` (Online),
+  `IAcoustIdClient` → `AcoustIdClient` (Online).
+- **Source decision (ToS researched, 2026-06-06):** **GetSongBPM** for tempo/key (free; **requires a
+  visible back-link to getsongbpm.com** — surfaced via `OnlineLookupResult.Attribution`). AcoustID +
+  MusicBrainz for identity. **Spotify audio-features was rejected** (endpoint restricted for new apps
+  since late 2024); Beatport/Tunebat rejected (no public API / scraping violates ToS for a distributed app).
+- **Architecture (as designed):** `IMetadataProvider` seam (Core), offline-first — every miss/error →
+  `null`, never throws. `MetadataMergePolicy` (Core, tested): local stays authoritative; agreement
+  (incl. ½×/2×) → `CrossChecked` + confidence↑ + `Ok`; disagreement → keep local + `Conflicted`/
+  `PartiallyAnalyzed`; local-missing → fill from online (unverified). API keys from config/env, never
+  hardcoded. `OnlineMetadataProvider` (Online) composes fingerprint→identity→GetSongBPM.
+- **Agent access:** MCP tool **`lookup_track_online`** (`Liveolator.Mcp`) — opt-in via
+  `--getsongbpm-key`/`--acoustid-key`/`--fpcalc` (or `LIVEOLATOR_*` env); a disabled provider reports
+  "not configured" cleanly when no key is set.
+- **Tests:** Core `MetadataMergePolicyTests` (6); Online `AcoustIdClientTests`/`GetSongBpmClientTests`/
+  `OnlineMetadataProviderTests`/`FpcalcOutputParserTests` (23). HTTP behind injected `HttpClient` (fake
+  handler), fpcalc parsing pure — no network/native in CI.
+- **Status: BUILT** (2026-06-06). **Pending live activation:** user-supplied API keys (AcoustID +
+  GetSongBPM) + the `fpcalc` native binary fetched per-platform; and the App-side "Fetch online" button
+  (with attribution) + optional scan-time cross-check wiring.
 
 ## Phase
 
