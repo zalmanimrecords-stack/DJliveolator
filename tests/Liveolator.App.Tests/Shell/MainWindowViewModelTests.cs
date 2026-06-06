@@ -7,10 +7,12 @@ using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
+using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Tests.Fakes;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -65,9 +67,11 @@ public sealed class MainWindowViewModelTests
             new FakeMidiStatus(), new FakeOutputCatalog(), AppSettings.Default, new HistoricalScheduler());
         var settings = new SettingsViewModel(
             new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore());
+        var visualLibrary = new VisualLibraryViewModel(
+            new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
 
         return new MainWindowViewModel(
-            new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(), settings, status);
+            new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(), visualLibrary, settings, status);
     }
 
     [Fact]
