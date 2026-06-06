@@ -201,9 +201,12 @@ the beat clock follows the audible mix — the increment that turns the routing 
   and `SetDeckRate` (vinyl-style **pitch = playback-rate**; tempo+pitch move together, so still no `ManagedBass.Fx`).
   The pitch fader and the sync/quantize toggles are **per-slot state that persists across track loads** (the
   rate is re-applied to the newly loaded deck); **hot-cues (8/deck) belong to the loaded track and clear on
-  reload** — first press sets at the current position, next press jumps to it. Sync-lock and quantize are
-  **honest latches** today — the flag + LED feedback are live, but the actual beatmatching / beat-grid quantize
-  is a later increment (logged when armed). `Cue` jumps to the track start (settable cue points later) and pauses.
+  reload** — first press sets at the current position, next press jumps to it. **Sync-lock now does tempo
+  match** (beatmatch by BPM, doc 11): `TempoSyncCalculator` (Core, pure — ½×/2× fold) sets the follower's
+  rate to `leader_bpm / deck_bpm`; leader = the other deck (automatic); the analyzed BPM reaches the engine
+  via a new `SetDeckBaseBpm` seam fed from `DeckLoadTrack.Value`. **Quantize** (phase match) is still an
+  honest latch — it needs a per-track first-beat anchor not in `BpmResult` yet (a later increment, logged when
+  armed). `Cue` jumps to the track start (settable cue points later) and pauses.
 - **Testability:** all BASS interop sits behind `IBassMixerBackend`; the load/play/stop state machine, the new
   transport (seek/pitch/cue/sync/quantize/hot-cue), channel registration, master-tap→clock spine, and the
   biquad/gain processing all unit-test with fakes — native bass/bassmix is not in CI (the native
