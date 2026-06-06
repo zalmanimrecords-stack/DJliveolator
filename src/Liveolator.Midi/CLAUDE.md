@@ -46,10 +46,42 @@ still goes through `Microsoft.Extensions.Logging`.
 
 ## Public surface
 
-- `RtMidiDeviceProvider` — the entry point. Implements `IMidiDeviceProvider`; also
-  `OpenInput(name)` / `OpenOutput(name)` to open a named device as a Core seam. The App
-  composes one provider, lists devices for the Mappings UI, and opens the chosen one to
-  feed `MidiControllerRouter` (Core).
+- `RtMidiDeviceProvider` — the entry point. Implements `IMidiDeviceProvider` (now incl.
+  `OpenInput(name)` / `OpenOutput(name)` on the Core seam) to open a named device as a
+  Core `IMidiInput` / `IMidiOutput`. The App composes one provider, lists devices for the
+  Settings tab, and `ServiceConfig.WireMidiInput` opens the chosen one into a Core
+  `MidiInputPipeline` (router → mapper → the one dispatcher; feedback back out).
 
 **Tests:** `tests/Liveolator.Midi.Tests` — pure translation + provider lookup with a
 fake device manager. The native rtmidi library is **not** required to build or test.
+
+## MANUAL hardware verification — CMD STUDIO 2A live control (NOT automatable)
+
+The native rtmidi path + real controller cannot run in CI. Verify on a box with the
+controller connected and the per-platform rtmidi native present (RtMidi.Core bundles
+it). Run the App, set the controller + (optional) feedback output in the **Settings**
+tab, restart, then confirm:
+
+1. **Device opens, no crash.** App launches; Trace shows neither "not found" nor
+   "Opening MIDI controller … failed". Unplug the controller and relaunch → app still
+   runs (catalog browser), Trace logs the missing device. No startup throw.
+2. **Profile auto-selects.** With the device named "CMD Studio 2A", the default
+   `CmdStudio2AProfile` is the active profile (it matches the `DeviceHint`).
+3. **Transport.** Press Deck A / Deck B play-pause pads → the matching deck toggles
+   play/pause (needs native BASS for audible playback; otherwise verify the dispatcher
+   feedback / UI deck state changes).
+4. **Sync.** Press the Deck A/B sync buttons → `DeckSyncLockToggle` latches; the Live-tab
+   SYNC button reflects it.
+5. **Mixer.** Move the crossfader, the two channel faders, the per-deck 3-band EQ knobs,
+   and the filter knob → the mixer state / UI tracks each (`MixerCrossfade`,
+   `MixerChannelGain`, `MixerEqBand` Low/Mid/High, `MixerFilter`).
+6. **Jog nudge.** Turn a jog wheel slowly → `BeatNudgeForward` fires (tempo/phase nudge).
+7. **LED feedback (if a feedback output was selected).** Toggling sync from the UI lights
+   the controller's sync LED; the LED follows the toggle state.
+8. **MIDI learn override.** Arm learn for an action, move ANY control → that control
+   rebinds (the default CC numbers are starting defaults, not gospel — doc 05/07).
+
+The default CC/note numbers in `CmdStudio2AProfile` are a documented best-effort layout;
+if a control does not match the hardware, re-capture it via MIDI learn and (later) persist
+the profile (doc 13). Do not treat the numbers as confirmed until checked against the
+device's MIDI implementation chart.

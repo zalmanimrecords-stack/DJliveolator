@@ -16,6 +16,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mapping;
+using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
@@ -133,6 +134,12 @@ public static class ServiceConfig
             handlers, NullLogger<PerformanceActionDispatcher>.Instance);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
 
+        // --- MIDI controller → dispatcher (doc 05/07) ---
+        // Open the SETTINGS-chosen controller and route the live hardware through the same dispatcher
+        // (a missing/absent device degrades to running without MIDI — see WireMidiInput).
+        var midiProvider = new RtMidiDeviceProvider();
+        WireMidiInput(services, midiProvider, dispatcher, appSettings.Midi);
+
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
 
@@ -175,11 +182,12 @@ public static class ServiceConfig
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
-        // headless), and the choice is saved to settings.json. The audio output device + buffer are now
-        // applied at startup (loaded above, threaded into the realtime engine); opening the chosen MIDI
-        // controller into the dispatcher is the remaining increment (needs the mapper pipeline composed).
+        // headless), and the choice is saved to settings.json. The audio output device + buffer are
+        // applied at startup (loaded above, threaded into the realtime engine); the chosen MIDI
+        // controller is now opened into the dispatcher above (WireMidiInput). The Settings tab reuses
+        // the SAME provider instance that WireMidiInput opened the device through.
         services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
-        services.AddSingleton<IMidiDeviceProvider>(new RtMidiDeviceProvider());
+        services.AddSingleton<IMidiDeviceProvider>(midiProvider);
         services.AddSingleton<ISettingsStore>(settingsStore);
         services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
             sp.GetRequiredService<IAudioOutputDeviceCatalog>(),
@@ -307,4 +315,76 @@ public static class ServiceConfig
         services.AddSingleton<IAudioCaptureDeviceCatalog>(engine);
         services.AddSingleton<IAudioCaptureSourceFactory>(engine);
     }
+
+    // --- MIDI controller → dispatcher (doc 05/07) -------------------------------------------------
+    // Opens the SETTINGS-chosen MIDI controller and routes it through MidiControllerRouter →
+    // ControllerMapper → the one dispatcher, with MidiProfileSelector auto-selecting a profile by
+    // device name and MidiFeedbackPublisher driving LEDs back out (all composed by MidiInputPipeline,
+    // a pure Core seam). The resulting pipeline is registered so the DI container disposes it (which
+    // closes the device) at shutdown.
+    //
+    // DEGRADES GRACEFULLY (global standards #16/#26): no controller chosen, no matching device, or a
+    // native rtmidi/open failure all log + leave the app running WITHOUT MIDI — never throw at startup.
+    // The dispatcher still serves the UI; the hardware simply does not drive it. AvailableProfiles is the
+    // default-profile catalog (CMD STUDIO 2A today); a persisted/custom profile set (doc 13) extends it.
+    private static void WireMidiInput(
+        IServiceCollection services,
+        IMidiDeviceProvider midiProvider,
+        IPerformanceActionDispatcher dispatcher,
+        MidiSettings midiSettings)
+    {
+        MidiInputPipeline? pipeline = TryOpenMidiPipeline(midiProvider, dispatcher, midiSettings);
+        if (pipeline is not null)
+            services.AddSingleton(pipeline);
+    }
+
+    // Internal for testing the graceful-degradation paths (no selection / not found / open throws)
+    // with a fake provider — the App's mandatory error-handling contract for the device-open path.
+    internal static MidiInputPipeline? TryOpenMidiPipeline(
+        IMidiDeviceProvider midiProvider,
+        IPerformanceActionDispatcher dispatcher,
+        MidiSettings midiSettings)
+    {
+        string? inputName = midiSettings.Normalized().ControllerInputName;
+        if (string.IsNullOrWhiteSpace(inputName))
+        {
+            System.Diagnostics.Trace.TraceInformation(
+                "No MIDI controller selected; running without hardware control.");
+            return null;
+        }
+
+        try
+        {
+            IMidiInput? input = midiProvider.OpenInput(inputName);
+            if (input is null)
+            {
+                System.Diagnostics.Trace.TraceWarning(
+                    $"MIDI controller '{inputName}' not found; running without hardware control.");
+                return null;
+            }
+
+            // Feedback output is optional (doc 06) — control still works without LEDs. A null/blank name
+            // or a missing device simply skips feedback.
+            string? outputName = midiSettings.Normalized().FeedbackOutputName;
+            IMidiOutput? output = string.IsNullOrWhiteSpace(outputName)
+                ? null
+                : midiProvider.OpenOutput(outputName);
+
+            return MidiInputPipeline.Create(
+                input, output, dispatcher, AvailableMidiProfiles(), NullLoggerFactory.Instance);
+        }
+        catch (Exception ex)
+        {
+            // A native rtmidi failure or a device that vanished between enumeration and open must not
+            // crash startup — the app degrades to no-MIDI (global standards #16/#26).
+            System.Diagnostics.Trace.TraceWarning(
+                $"Opening MIDI controller '{inputName}' failed: {ex.Message}. Running without hardware control.");
+            return null;
+        }
+    }
+
+    // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
+    // today; persisted/custom profiles (doc 13) extend this set later.
+    private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
+        => new[] { CmdStudio2AProfile.Default };
 }
