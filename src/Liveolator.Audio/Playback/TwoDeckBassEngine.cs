@@ -57,6 +57,10 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     // Per-slot file path of the loaded track; the cue-store key. null = nothing loaded.
     private readonly string?[] _loadedPath = new string?[Decks];
 
+    // Per-slot temporary (primary) cue position as a 0..1 fraction; null = unset, so the Cue button
+    // returns to the track start (the prior behaviour). Belongs to the track — cleared on unload (A5).
+    private readonly double?[] _tempCue = new double?[Decks];
+
     // Per-slot transport state that persists across track loads (a DJ keeps the pitch fader and the
     // sync/quantize toggles where they were set when swapping tracks). Position is read live from the
     // backend, so it is not stored here.
@@ -287,9 +291,23 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         {
             if (_decks[slot] is not { } deck)
                 return;
-            // Jump to the cue point (the track start in this increment — settable cue points are a later
-            // increment) and pause there, the standard "back to cue" behaviour.
-            _backend.SetDeckPositionFraction(deck.Handle, 0.0);
+
+            // CDJ back-to-cue (A5): the pure resolver decides set-vs-return from the deck's transport
+            // state, live position, and stored temp cue. Set drops a fresh cue here; return jumps to the
+            // stored cue (or track start when none is set) and pauses.
+            double current = _backend.GetDeckPositionFraction(deck.Handle);
+            CueButtonAction action = CueButtonResolver.Resolve(deck.Playing, current, _tempCue[slot]);
+            if (action == CueButtonAction.SetCueHere)
+            {
+                _tempCue[slot] = current;
+                _backend.SetDeckPlaying(deck.Handle, false);
+                _decks[slot] = deck with { Playing = false };
+                _logger.LogInformation("Deck slot {Slot} cue: set temp cue at {Pos:F4}.", slot, current);
+                return;
+            }
+
+            double target = _tempCue[slot] ?? 0.0; // return to the stored cue, else the track start
+            _backend.SetDeckPositionFraction(deck.Handle, target);
             _backend.SetDeckPlaying(deck.Handle, false);
             _decks[slot] = deck with { Playing = false };
         }
@@ -644,6 +662,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _mixer.SetChannel(slot, null);
         _decks[slot] = null;
         _loadedPath[slot] = null;
+        _tempCue[slot] = null; // the temp cue belongs to the track — the new track starts with none
         Array.Clear(_hotCues[slot]);
         _baseBpm[slot] = 0.0;   // base BPM belongs to the track — the new track supplies its own on load
         _firstBeat[slot] = 0.0; // first-beat anchor likewise belongs to the track

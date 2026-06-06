@@ -268,6 +268,53 @@ public class TwoDeckBassEngineTests
         Assert.False(engine.IsPlaying(0));
     }
 
+    // --- Settable temporary cue (A5: CDJ back-to-cue) ---
+
+    [Fact]
+    public void Cue_WhenPausedAwayFromCue_SetsTempCueHere_StaysAtPosition()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100, paused after load
+        backend.PositionFraction[100] = 0.42;
+
+        engine.Cue(0); // first press at a fresh spot -> set the temp cue here
+
+        Assert.Equal(0.42, backend.PositionFraction[100], 6); // not moved to start
+        Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void Cue_AfterSetting_ReturnsToTheSetCue_NotTrackStart()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        backend.PositionFraction[100] = 0.42;
+        engine.Cue(0); // set temp cue at 0.42
+
+        backend.PositionFraction[100] = 0.8; // playhead moved on
+        engine.PlayPause(0);                  // now playing
+        engine.Cue(0);                        // back-to-cue -> jump to 0.42, pause
+
+        Assert.Equal(0.42, backend.PositionFraction[100], 6);
+        Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void Cue_TempCueClearedOnReload()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.PositionFraction[100] = 0.42;
+        engine.Cue(0); // set cue at 0.42 on track a
+
+        engine.Load(0, @"C:\b.wav"); // handle 101 — fresh track, no temp cue
+        engine.PlayPause(0);
+        backend.PositionFraction[101] = 0.6;
+        engine.Cue(0); // back-to-cue with no set cue -> track start
+
+        Assert.Equal(0.0, backend.PositionFraction[101], 6);
+    }
+
     [Fact]
     public void SyncLock_And_Quantize_AreStoredPerSlot()
     {
