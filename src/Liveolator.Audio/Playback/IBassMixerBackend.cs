@@ -39,6 +39,22 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Set the deck's playback rate as a multiplier of its original sample rate (1.0 = original).</summary>
     void SetDeckRate(int deckHandle, double rateMultiplier);
 
+    /// <summary>The deck's current playback position in seconds from the track start (0 if unknown).</summary>
+    double GetDeckPositionSeconds(int deckHandle);
+
+    /// <summary>The deck's total length in seconds (0 if unknown), used to scale loop/position math.</summary>
+    double GetDeckLengthSeconds(int deckHandle);
+
+    /// <summary>
+    /// Arm a loop on the deck over the half-open time region [<paramref name="startSeconds"/>,
+    /// <paramref name="endSeconds"/>) (BASS_SYNC_POS at the end-point seeking back to the start). Replaces
+    /// any prior loop on the deck.
+    /// </summary>
+    void SetDeckLoop(int deckHandle, double startSeconds, double endSeconds);
+
+    /// <summary>Remove the deck's active loop so playback continues past the former region.</summary>
+    void ClearDeckLoop(int deckHandle);
+
     /// <summary>Start the master output and arm the tap that delivers mixed samples to the frame pipeline.</summary>
     void StartMaster(Action<float[]> onMasterSamples);
 }

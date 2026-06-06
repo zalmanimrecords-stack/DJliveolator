@@ -430,6 +430,167 @@ public class TwoDeckBassEngineTests
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.HotCue(0, engine.HotCueCount));
     }
 
+    // --- Loops (beat-length -> time region via base BPM, doc 11) ---
+
+    [Fact]
+    public void SetLoop_ConvertsBeatLengthToTimeRegionUsingBaseBpm()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");          // handle 100
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        backend.PositionFraction[100] = 0.1;  // start at 10 s (length defaults to 100 s in the fake)
+
+        engine.SetLoop(0, 4.0);               // 4 beats -> 2 s region
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(10.0, start, precision: 6);
+        Assert.Equal(12.0, end, precision: 6);
+        Assert.True(engine.IsLooping(0));
+        Assert.Equal(4.0, engine.LoopBeats(0), precision: 6);
+    }
+
+    [Fact]
+    public void SetLoop_UnknownBaseBpm_IsIgnored()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // no base BPM set
+
+        engine.SetLoop(0, 4.0);
+
+        Assert.False(engine.IsLooping(0));
+        Assert.DoesNotContain(100, backend.Loops.Keys);
+    }
+
+    [Fact]
+    public void SetLoop_NothingLoaded_IsNoOp()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.SetDeckBaseBpm(0, 120.0);
+
+        engine.SetLoop(0, 4.0);
+
+        Assert.False(engine.IsLooping(0));
+        Assert.Empty(backend.Loops);
+    }
+
+    [Fact]
+    public void ClearLoop_RemovesTheActiveLoop()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetLoop(0, 4.0);
+
+        engine.ClearLoop(0);
+
+        Assert.False(engine.IsLooping(0));
+        Assert.DoesNotContain(100, backend.Loops.Keys);
+        Assert.Contains(100, backend.LoopsCleared);
+    }
+
+    [Fact]
+    public void SetLoop_ClearedWhenTrackReloads()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetLoop(0, 4.0);
+        Assert.True(engine.IsLooping(0));
+
+        engine.Load(0, @"C:\b.wav");
+
+        Assert.False(engine.IsLooping(0));
+    }
+
+    [Fact]
+    public void LoopBeats_ScalesRegionWithBpm()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 160.0); // faster tempo -> shorter region
+        backend.PositionFraction[100] = 0.0;
+
+        engine.SetLoop(0, 4.0); // 4 beats * (60/160) = 1.5 s
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(1.5, end - start, precision: 6);
+    }
+
+    // --- Phase match (Quantize aligns the deck playhead to the leader grid, doc 11) ---
+
+    [Fact]
+    public void Quantize_SnapsFollowerPlayheadToLeaderBeatPhase()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader, handle 100
+        engine.Load(1, @"C:\b.wav"); // follower, handle 101
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckFirstBeat(0, 0.0);
+        engine.SetDeckFirstBeat(1, 0.0);
+        // Length defaults to 100 s. Leader at 0.25 s (half a 120-BPM beat into its grid); follower on a
+        // beat (0 s). Phase-match should advance the follower +0.25 s -> fraction 0.0025.
+        backend.PositionFraction[100] = 0.0025; // 0.25 s
+        backend.PositionFraction[101] = 0.0;    // 0 s
+
+        engine.SetQuantize(1, true);
+
+        Assert.True(engine.IsQuantizeEnabled(1));
+        Assert.Equal(0.0025, backend.PositionFraction[101], precision: 6); // 0.25 s / 100 s
+    }
+
+    [Fact]
+    public void Quantize_NoLeader_LeavesPlayheadUnchanged()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(1, @"C:\b.wav"); // only the follower loaded (handle 100)
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckFirstBeat(1, 0.0);
+        backend.PositionFraction[100] = 0.3;
+
+        engine.SetQuantize(1, true);
+
+        Assert.True(engine.IsQuantizeEnabled(1)); // armed
+        Assert.Equal(0.3, backend.PositionFraction[100], precision: 6); // but no guess
+    }
+
+    [Fact]
+    public void Quantize_OwnAnchorUnknownBpm_LeavesPlayheadUnchanged()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav"); // handle 101, no base BPM -> own tempo unknown
+        engine.SetDeckBaseBpm(0, 120.0);
+        backend.PositionFraction[101] = 0.4;
+
+        engine.SetQuantize(1, true);
+
+        Assert.Equal(0.4, backend.PositionFraction[101], precision: 6);
+    }
+
+    [Fact]
+    public void SetDeckFirstBeat_IsStoredPerSlot()
+    {
+        using var engine = NewEngine(out _, out _);
+
+        engine.SetDeckFirstBeat(0, 0.08);
+
+        Assert.Equal(0.08, engine.DeckFirstBeat(0), precision: 6);
+        Assert.Equal(0.0, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    [Fact]
+    public void SetDeckFirstBeat_ClearedOnReload()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckFirstBeat(0, 0.08);
+
+        engine.Load(0, @"C:\b.wav");
+
+        Assert.Equal(0.0, engine.DeckFirstBeat(0), precision: 6);
+    }
+
     [Fact]
     public void MasterMix_FeedsBeatClock_EndToEnd()
     {

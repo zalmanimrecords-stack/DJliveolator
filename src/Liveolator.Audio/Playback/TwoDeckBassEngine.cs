@@ -54,6 +54,14 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     // with a known BPM loads (doc 11). Cleared when the slot unloads.
     private readonly double[] _baseBpm = new double[Decks];
 
+    // Per-slot first-beat (downbeat) anchor in seconds; 0 = unknown. Fed from the track's analyzed
+    // BpmResult on load (like base BPM) and used by Quantize phase-match. Cleared when the slot unloads.
+    private readonly double[] _firstBeat = new double[Decks];
+
+    // Per-slot active loop length in beats; 0 = no loop. The loop region (seconds) is derived from this
+    // and the base BPM so it stays a musical length. Belongs to the track, cleared when the slot unloads.
+    private readonly double[] _loopBeats = new double[Decks];
+
     // Hot-cue memory per deck: a position fraction per pad, null = unset. Belongs to the loaded track,
     // so it is cleared when the slot unloads.
     private readonly double?[][] _hotCues = new double?[Decks][];
@@ -259,6 +267,18 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         }
     }
 
+    public double DeckFirstBeat(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _firstBeat[slot];
+    }
+
+    public void SetDeckFirstBeat(int slot, double firstBeatSeconds)
+    {
+        ValidateSlot(slot);
+        lock (_gate) _firstBeat[slot] = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
+    }
+
     public bool IsSyncLocked(int slot)
     {
         ValidateSlot(slot);
@@ -326,10 +346,73 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     public void SetQuantize(int slot, bool enabled)
     {
         ValidateSlot(slot);
-        lock (_gate) _quantize[slot] = enabled;
-        // Quantize-on-beat-grid for cue/loop actions is a later increment; the flag is held + fed back.
-        if (enabled)
-            _logger.LogInformation("Deck slot {Slot} quantize armed; beat-grid quantize is not yet implemented.", slot);
+        lock (_gate)
+        {
+            _quantize[slot] = enabled;
+            // Phase match (doc 11): enabling Quantize snaps the deck's beat phase onto the leader's grid
+            // once, now. The latch stays so a UI/LED reflects the armed state; the alignment is the action.
+            if (enabled)
+                PhaseAlignToLeader(slot);
+        }
+    }
+
+    // Caller holds _gate. Snap one deck's playhead so its beat phase lines up with the sync leader's grid.
+    // Leader = the other deck if it is loaded with a known anchor + BPM. With no valid leader (or this
+    // deck's own anchor/BPM unknown) the playhead is left where it is — Quantize arms but does not guess.
+    private void PhaseAlignToLeader(int slot)
+    {
+        if (_decks[slot] is not { } deck)
+            return;
+
+        double slotBpm = EffectiveBpm(slot);
+        if (slotBpm <= 0.0)
+        {
+            _logger.LogInformation("Deck slot {Slot} quantize: own tempo unknown; phase unchanged.", slot);
+            return;
+        }
+
+        int leader = slot == 0 ? 1 : 0;
+        double leaderBpm = EffectiveBpm(leader);
+        if (_decks[leader] is null || leaderBpm <= 0.0)
+        {
+            _logger.LogInformation("Deck slot {Slot} quantize: no valid leader; phase unchanged.", slot);
+            return;
+        }
+
+        var followerPhase = new DeckPhase(_backend.GetDeckPositionSeconds(deck.Handle), _firstBeat[slot], slotBpm);
+        var leaderPhase = new DeckPhase(
+            _backend.GetDeckPositionSeconds(_decks[leader]!.Handle), _firstBeat[leader], leaderBpm);
+
+        double nudgeSeconds = PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
+        double length = _backend.GetDeckLengthSeconds(deck.Handle);
+        if (length <= 0.0)
+            return;
+
+        double targetFraction = Math.Clamp((followerPhase.PositionSeconds + nudgeSeconds) / length, 0.0, 1.0);
+        _backend.SetDeckPositionFraction(deck.Handle, targetFraction);
+        _logger.LogInformation(
+            "Deck slot {Slot} quantize: phase-aligned by {Nudge:F4}s to the leader grid.", slot, nudgeSeconds);
+    }
+
+    // Caller holds _gate. A deck's audible tempo: when Sync owns the deck it plays at the synced rate
+    // (matching the leader), otherwise its natural BPM scaled by its pitch fader. 0 when base BPM unknown.
+    private double EffectiveBpm(int slot)
+    {
+        if (_baseBpm[slot] <= 0.0)
+            return 0.0;
+        double rate = _syncLocked[slot] ? SyncedRateFor(slot) : RateFor(_pitchPosition[slot]);
+        return _baseBpm[slot] * rate;
+    }
+
+    // Caller holds _gate. The rate Sync would apply to a follower deck (its leader's audible tempo folded
+    // to the nearest octave), or its manual pitch rate when no valid leader exists — mirrors ReapplyRate.
+    private double SyncedRateFor(int slot)
+    {
+        int leader = slot == 0 ? 1 : 0;
+        if (_baseBpm[slot] <= 0.0 || _decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
+            return RateFor(_pitchPosition[slot]);
+        double leaderEffectiveBpm = _baseBpm[leader] * RateFor(_pitchPosition[leader]);
+        return TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
     }
 
     public int HotCueCount => HotCuesPerDeck;
@@ -358,6 +441,73 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         }
     }
 
+    public double LoopBeats(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _loopBeats[slot];
+    }
+
+    public bool IsLooping(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _loopBeats[slot] > 0.0;
+    }
+
+    public void SetLoop(int slot, double beats)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+            {
+                _logger.LogWarning("SetLoop deck slot {Slot} requested with no track loaded; ignoring.", slot);
+                return;
+            }
+            if (_baseBpm[slot] <= 0.0)
+            {
+                // A beat-length loop needs the deck's tempo to size the region; without it, do nothing
+                // rather than guess a wrong span (doc 11 loops are beat-synced to the deck grid).
+                _logger.LogWarning("SetLoop deck slot {Slot} ignored: base BPM unknown.", slot);
+                return;
+            }
+            if (beats < BeatLoopCalculator.MinBeats)
+            {
+                ClearLoopLocked(slot, deck);
+                return;
+            }
+
+            // Convert the musical beat length to a concrete time region starting at the current playhead,
+            // using the deck's natural BPM so the loop is musically <beats> beats regardless of pitch.
+            double startSeconds = _backend.GetDeckPositionSeconds(deck.Handle);
+            LoopRegion region = BeatLoopCalculator.Region(startSeconds, beats, _baseBpm[slot]);
+            _backend.SetDeckLoop(deck.Handle, region.StartSeconds, region.EndSeconds);
+            _loopBeats[slot] = beats;
+            _logger.LogInformation(
+                "Deck slot {Slot} loop: {Beats} beats -> [{Start:F3}s, {End:F3}s).",
+                slot, beats, region.StartSeconds, region.EndSeconds);
+        }
+    }
+
+    public void ClearLoop(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is { } deck)
+                ClearLoopLocked(slot, deck);
+        }
+    }
+
+    // Caller holds _gate. Drop any active loop on the slot (backend + tracked beat length).
+    private void ClearLoopLocked(int slot, LoadedDeck deck)
+    {
+        if (_loopBeats[slot] <= 0.0)
+            return;
+        _backend.ClearDeckLoop(deck.Handle);
+        _loopBeats[slot] = 0.0;
+        _logger.LogInformation("Deck slot {Slot} loop cleared.", slot);
+    }
+
     // Maps a normalized pitch position (0..1, 0.5 = centre) to a playback-rate multiplier within ±range.
     private static double RateFor(double normalizedPosition)
         => 1.0 + (Math.Clamp(normalizedPosition, 0.0, 1.0) - PitchCenter) * 2.0 * PitchRangePercent;
@@ -368,11 +518,14 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     {
         if (_decks[slot] is not { } deck)
             return;
+        _backend.ClearDeckLoop(deck.Handle); // drop any loop sync before the stream is freed
         _backend.UnplugDeck(deck.Handle);
         _mixer.SetChannel(slot, null);
         _decks[slot] = null;
         Array.Clear(_hotCues[slot]);
-        _baseBpm[slot] = 0.0; // base BPM belongs to the track — the new track supplies its own on load
+        _baseBpm[slot] = 0.0;   // base BPM belongs to the track — the new track supplies its own on load
+        _firstBeat[slot] = 0.0; // first-beat anchor likewise belongs to the track
+        _loopBeats[slot] = 0.0; // a new track has no active loop
     }
 
     public void Dispose()

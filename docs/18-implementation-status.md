@@ -39,11 +39,12 @@ The action-layer seam: every input source drives engines through one dispatcher.
 - **Deferred:** the concrete concern handlers land with their engines. Built so far:
   **`BeatActionHandler`** (see Beat), **`PlaylistActionHandler`** (see Live playlist),
   **`VisualActionHandler`** (see Visual action handler), **`DeckActionHandler`** (see Realtime audio —
-  load/play-pause/stop **+ seek/pitch/cue/sync-lock/quantize**, slot-addressed), and
+  load/play-pause/stop **+ seek/pitch/cue/sync-lock/quantize/hot-cue/loop**, slot-addressed), and
   **`MixerActionHandler`** (see Software mixer — Crossfade/ChannelGain/EqBand/Filter/CueToggle).
-  Pending Deck kind: **loop** only — `DeckSetLoop` needs a per-deck **runtime BPM** to convert a beat
-  length to a time region (the engine gets only a path at `Load`); hot-cues are done (cue index rides in
-  `Argument`).
+  **All Deck kinds are now claimed:** `DeckSetLoop` arrives via the handler (`Value` = beat length;
+  `> 0` sets a beat-length loop at the playhead, `<= 0` clears it) and the engine converts beats → a
+  time region using the per-deck base BPM threaded in by `SetDeckBaseBpm`; hot-cues are done (cue index
+  rides in `Argument`).
 
 ### ✅ Controller mapping engine — `Liveolator.Core/Mapping/` (doc 05)
 
@@ -204,14 +205,24 @@ the beat clock follows the audible mix — the increment that turns the routing 
   reload** — first press sets at the current position, next press jumps to it. **Sync-lock now does tempo
   match** (beatmatch by BPM, doc 11): `TempoSyncCalculator` (Core, pure — ½×/2× fold) sets the follower's
   rate to `leader_bpm / deck_bpm`; leader = the other deck (automatic); the analyzed BPM reaches the engine
-  via a new `SetDeckBaseBpm` seam fed from `DeckLoadTrack.Value`. **Quantize** (phase match) is still an
-  honest latch — it needs a per-track first-beat anchor not in `BpmResult` yet (a later increment, logged when
-  armed). `Cue` jumps to the track start (settable cue points later) and pauses.
+  via a new `SetDeckBaseBpm` seam fed from `DeckLoadTrack.Value`. **Quantize now does a real phase match**
+  (doc 11): enabling it snaps the deck's playhead so its beat phase lines up with the sync leader's grid.
+  `PhaseAlignmentCalculator` (Core, pure — shortest signed nudge within ±½ beat) computes the seconds to
+  move; the engine seeks the deck by it. The per-track **first-beat (downbeat) anchor** it needs is now in
+  `BpmResult.FirstBeatSeconds` (computed by `FirstBeatEstimator`, a new third BPM-pipeline stage) and reaches
+  the engine via a new `SetDeckFirstBeat` seam (anchor unknown ⇒ Quantize arms but does not guess). `Cue`
+  jumps to the track start (settable cue points later) and pauses. **Loops:** `DeckSetLoop` arrives at the
+  engine, which turns a beat length into a `[start, end)` time region via `BeatLoopCalculator` (Core, pure)
+  using the per-deck base BPM, and arms it over two new `IBassMixerBackend` calls (`SetDeckLoop` =
+  `BassMix.ChannelSetSync(BASS_SYNC_POS|Mixtime)` seeking back to the in-point, `ClearDeckLoop`).
 - **Testability:** all BASS interop sits behind `IBassMixerBackend`; the load/play/stop state machine, the new
   transport (seek/pitch/cue/sync/quantize/hot-cue), channel registration, master-tap→clock spine, and the
-  biquad/gain processing all unit-test with fakes — native bass/bassmix is not in CI (the native
-  `BassMixerBackend` is verified manually, like `BassPlayback`). +26 tests across these increments
-  (Core `DeckActionHandlerTests` +13, Audio `TwoDeckBassEngineTests` +13).
+  biquad/gain processing — plus the new **loops** and **phase-match** — all unit-test with fakes; native
+  bass/bassmix is not in CI (the native `BassMixerBackend` is verified manually, like `BassPlayback`).
+  The pure math has its own Core tests: `PhaseAlignmentCalculatorTests`, `BeatLoopCalculatorTests`,
+  `FirstBeatEstimatorTests`. **Manual-verify checklist (native, not in CI):** loop in/out is click-free and
+  sample-accurate (BASS_SYNC_POS Mixtime wrap); a 4-beat loop is musically 4 beats at the deck tempo; loop
+  scales with the pitch fader; Quantize snaps two playing decks into phase without an audible skip.
 - **App-wired (`ServiceConfig`):** the single-deck path is replaced by `TwoDeckBassEngine(mixer)` registered
   as `IMultiDeckPlaybackEngine`, with `MasterMixPlaybackEngine`'s clock registered as `IBeatClock` and
   `DeckActionHandler(IMultiDeckPlaybackEngine)` driving both decks. **Headless fallback preserved:** if
@@ -219,9 +230,11 @@ the beat clock follows the audible mix — the increment that turns the routing 
   catalog browser (the Libraries tab's Load→A/B enable off dispatcher feedback, so deck B lights up now).
 - **Deferred (next increment):** native `BassMixerBackend` **runtime** verification needs the `bassmix`
   native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
-  ch 3/4; **phase match (Quantize)** — needs a per-track first-beat anchor in analysis (`BpmResult` carries
-  BPM only), so the toggle still latches + feeds back; **loops** (`DeckSetLoop` can now reuse the per-deck
-  base BPM that Sync threads in via `SetDeckBaseBpm` to turn a beat length into a time region); settable/named
+  ch 3/4; **threading the first-beat anchor to the engine end-to-end** — the `SetDeckFirstBeat` seam exists
+  and is exercised, but the `DeckLoadTrack` action carries only one numeric (`Value` = BPM), so the
+  composition root must call `SetDeckFirstBeat` from the loaded track's `BpmResult.FirstBeatSeconds`
+  (App/ServiceConfig wiring, out of this increment's lane); **continuous** phase tracking (this snaps once
+  on Quantize-on; doc 11's ±5% proportional correction while playing is a later pass); settable/named
   cue points + hot-cue clear; per-pad hot-cue
   LED feedback (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
   `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The new deck transport is reachable via the

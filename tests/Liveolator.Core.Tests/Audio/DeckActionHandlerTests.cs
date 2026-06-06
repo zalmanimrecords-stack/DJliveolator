@@ -101,6 +101,8 @@ public class DeckActionHandlerTests
         private readonly double[] _position;
         private readonly double[] _pitch;
         private readonly double[] _baseBpm;
+        private readonly double[] _firstBeat;
+        private readonly double[] _loopBeats;
 
         public List<(int Slot, string Path)> Loaded { get; } = new();
         public List<int> PlayPaused { get; } = new();
@@ -108,6 +110,8 @@ public class DeckActionHandlerTests
         public List<(int Slot, double Position, bool Relative)> Seeks { get; } = new();
         public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
         public List<int> Cues { get; } = new();
+        public List<(int Slot, double Beats)> Loops { get; } = new();
+        public List<int> LoopsCleared { get; } = new();
 
         public FakeMultiDeckEngine(int deckCount = 2)
         {
@@ -117,6 +121,8 @@ public class DeckActionHandlerTests
             _position = new double[deckCount];
             _pitch = new double[deckCount];
             _baseBpm = new double[deckCount];
+            _firstBeat = new double[deckCount];
+            _loopBeats = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
                 _pitch[i] = 0.5; // center = original tempo
         }
@@ -152,6 +158,9 @@ public class DeckActionHandlerTests
         public double DeckBaseBpm(int slot) => _baseBpm[slot];
         public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
 
+        public double DeckFirstBeat(int slot) => _firstBeat[slot];
+        public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
@@ -165,6 +174,19 @@ public class DeckActionHandlerTests
         {
             HotCues.Add((slot, cueIndex));
             _setCues.Add((slot, cueIndex));
+        }
+
+        public double LoopBeats(int slot) => _loopBeats[slot];
+        public bool IsLooping(int slot) => _loopBeats[slot] > 0;
+        public void SetLoop(int slot, double beats)
+        {
+            Loops.Add((slot, beats));
+            _loopBeats[slot] = beats;
+        }
+        public void ClearLoop(int slot)
+        {
+            LoopsCleared.Add(slot);
+            _loopBeats[slot] = 0;
         }
     }
 
@@ -398,5 +420,71 @@ public class DeckActionHandlerTests
         dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
 
         Assert.True(dispatcher.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot: 1).IsActive);
+    }
+
+    // --- Loops (DeckSetLoop) ---
+
+    [Fact]
+    public void SetLoop_IsInHandledKinds()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckSetLoop, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void SetLoop_PositiveBeats_SetsBeatLengthLoopOnSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 4.0, Slot: 1));
+
+        Assert.Equal((1, 4.0), Assert.Single(engine.Loops));
+        Assert.True(engine.IsLooping(1));
+    }
+
+    [Fact]
+    public void SetLoop_NonPositiveBeats_ClearsTheLoop()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSetLoop, Value: 4.0, Slot: 0));
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSetLoop, Value: 0.0, Slot: 0));
+
+        Assert.Equal(0, Assert.Single(engine.LoopsCleared));
+        Assert.False(engine.IsLooping(0));
+    }
+
+    [Fact]
+    public void SetLoop_RaisesActiveFeedbackCarryingBeatLength()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSetLoop, Value: 8.0, Slot: 0));
+
+        ActionFeedbackState fb = handler.GetFeedback(PerformanceActionKind.DeckSetLoop, slot: 0);
+        Assert.True(fb.IsActive);
+        Assert.Equal(8.0, fb.Value, precision: 6);
+    }
+
+    // --- First-beat anchor seam (phase-match input, doc 11) ---
+
+    [Fact]
+    public void LoadTrack_DoesNotClaimToKnowFirstBeat_FromTheSingleValueAction()
+    {
+        // The load action's Value is the BPM; the first-beat anchor is supplied separately, so a plain
+        // load leaves the anchor at 0 (phase-match no-op until SetDeckFirstBeat is called).
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128.0, Slot: 0, Argument: @"C:\a.wav"));
+
+        Assert.Equal(0.0, engine.DeckFirstBeat(0), precision: 6);
     }
 }

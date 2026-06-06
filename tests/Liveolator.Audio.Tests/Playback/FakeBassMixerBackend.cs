@@ -50,12 +50,35 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
     public Dictionary<int, double> PositionFraction { get; } = new();
     public Dictionary<int, double> Rate { get; } = new();
 
+    /// <summary>Per-deck total length in seconds; defaults to 100 s so fraction↔seconds math is testable.</summary>
+    public Dictionary<int, double> LengthSeconds { get; } = new();
+
+    /// <summary>Loops armed via <see cref="SetDeckLoop"/>, by deck handle (cleared by <see cref="ClearDeckLoop"/>).</summary>
+    public Dictionary<int, (double Start, double End)> Loops { get; } = new();
+    public List<int> LoopsCleared { get; } = new();
+
     public double GetDeckPositionFraction(int deckHandle)
         => PositionFraction.TryGetValue(deckHandle, out double f) ? f : 0.0;
 
     public void SetDeckPositionFraction(int deckHandle, double fraction) => PositionFraction[deckHandle] = fraction;
 
     public void SetDeckRate(int deckHandle, double rateMultiplier) => Rate[deckHandle] = rateMultiplier;
+
+    private double DeckLength(int deckHandle)
+        => LengthSeconds.TryGetValue(deckHandle, out double len) && len > 0 ? len : 100.0;
+
+    public double GetDeckPositionSeconds(int deckHandle) => GetDeckPositionFraction(deckHandle) * DeckLength(deckHandle);
+
+    public double GetDeckLengthSeconds(int deckHandle) => DeckLength(deckHandle);
+
+    public void SetDeckLoop(int deckHandle, double startSeconds, double endSeconds)
+        => Loops[deckHandle] = (startSeconds, endSeconds);
+
+    public void ClearDeckLoop(int deckHandle)
+    {
+        Loops.Remove(deckHandle);
+        LoopsCleared.Add(deckHandle);
+    }
 
     public void StartMaster(Action<float[]> onMasterSamples)
     {
