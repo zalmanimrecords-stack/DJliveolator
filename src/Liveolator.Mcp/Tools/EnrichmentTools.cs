@@ -43,7 +43,7 @@ public sealed class EnrichmentTools
         if (!string.IsNullOrWhiteSpace(path))
             fingerprint = await fingerprinter.ComputeAsync(path, cancellationToken).ConfigureAwait(false);
 
-        var query = new TrackQuery(
+        var query = new TrackLookupQuery(
             artist,
             title,
             fingerprint?.Fingerprint,

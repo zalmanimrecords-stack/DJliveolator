@@ -31,7 +31,7 @@ public sealed class OnlineMetadataProvider : IMetadataProvider
         _logger = logger ?? NullLogger<OnlineMetadataProvider>.Instance;
     }
 
-    public async Task<OnlineTrackMetadata?> LookupAsync(TrackQuery query, CancellationToken cancellationToken = default)
+    public async Task<OnlineTrackMetadata?> LookupAsync(TrackLookupQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         try

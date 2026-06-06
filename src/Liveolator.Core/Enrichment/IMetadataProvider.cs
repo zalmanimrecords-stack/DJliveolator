@@ -19,5 +19,5 @@ public interface IMetadataProvider
     /// <c>null</c> when nothing is found or the lookup cannot complete. Never throws for "not found"
     /// or transport failures.
     /// </summary>
-    Task<OnlineTrackMetadata?> LookupAsync(TrackQuery query, CancellationToken cancellationToken = default);
+    Task<OnlineTrackMetadata?> LookupAsync(TrackLookupQuery query, CancellationToken cancellationToken = default);
 }

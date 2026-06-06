@@ -43,7 +43,7 @@ public class OnlineMetadataProviderTests
         var provider = new OnlineMetadataProvider(bpm, acoustId);
 
         OnlineTrackMetadata? result = await provider.LookupAsync(
-            new TrackQuery(AcoustId: "FP", Duration: TimeSpan.FromMinutes(9)));
+            new TrackLookupQuery(AcoustId: "FP", Duration: TimeSpan.FromMinutes(9)));
 
         Assert.Equal(1, acoustId.Calls);
         Assert.Equal("Loud", bpm.LastArtist);          // identity from the fingerprint drove the search
@@ -58,7 +58,7 @@ public class OnlineMetadataProviderTests
         var bpm = new FakeBpm();
         var provider = new OnlineMetadataProvider(bpm, acoustId);
 
-        await provider.LookupAsync(new TrackQuery(Artist: "Loud", Title: "5 Billion Stars"));
+        await provider.LookupAsync(new TrackLookupQuery(Artist: "Loud", Title: "5 Billion Stars"));
 
         Assert.Equal(0, acoustId.Calls);               // no fingerprint → don't call AcoustID
         Assert.Equal("Loud", bpm.LastArtist);
@@ -71,7 +71,7 @@ public class OnlineMetadataProviderTests
         var bpm = new FakeBpm();
         var provider = new OnlineMetadataProvider(bpm, acoustId);
 
-        await provider.LookupAsync(new TrackQuery(
+        await provider.LookupAsync(new TrackLookupQuery(
             Artist: "Loud", Title: "5 Billion Stars", AcoustId: "FP", Duration: TimeSpan.FromMinutes(9)));
 
         Assert.Equal(1, acoustId.Calls);
@@ -86,7 +86,7 @@ public class OnlineMetadataProviderTests
         var provider = new OnlineMetadataProvider(bpm, acoustId);
 
         OnlineTrackMetadata? result = await provider.LookupAsync(
-            new TrackQuery(AcoustId: "FP", Duration: TimeSpan.FromMinutes(9)));
+            new TrackLookupQuery(AcoustId: "FP", Duration: TimeSpan.FromMinutes(9)));
 
         Assert.Null(result);
         Assert.Equal(0, bpm.Calls);                    // nothing to search with
@@ -98,7 +98,7 @@ public class OnlineMetadataProviderTests
         var bpm = new FakeBpm();
         var provider = new OnlineMetadataProvider(bpm); // no fingerprint client wired
 
-        OnlineTrackMetadata? result = await provider.LookupAsync(new TrackQuery(Artist: "Loud", Title: "Track"));
+        OnlineTrackMetadata? result = await provider.LookupAsync(new TrackLookupQuery(Artist: "Loud", Title: "Track"));
 
         Assert.Equal(140, result!.Bpm);
         Assert.Equal(1, bpm.Calls);

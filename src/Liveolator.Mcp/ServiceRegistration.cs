@@ -82,6 +82,6 @@ internal static class ServiceRegistration
 /// </summary>
 internal sealed class DisabledMetadataProvider : IMetadataProvider
 {
-    public Task<OnlineTrackMetadata?> LookupAsync(TrackQuery query, CancellationToken cancellationToken = default)
+    public Task<OnlineTrackMetadata?> LookupAsync(TrackLookupQuery query, CancellationToken cancellationToken = default)
         => Task.FromResult<OnlineTrackMetadata?>(null);
 }

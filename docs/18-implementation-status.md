@@ -219,14 +219,15 @@ the beat clock follows the audible mix — the increment that turns the routing 
   catalog browser (the Libraries tab's Load→A/B enable off dispatcher feedback, so deck B lights up now).
 - **Deferred (next increment):** native `BassMixerBackend` **runtime** verification needs the `bassmix`
   native fetched alongside core bass (update `scripts/fetch-bass`); the per-deck **cue** bus → output
-  ch 3/4; the real **beatmatching** behind sync-lock + **beat-grid quantize** (the toggles latch + feed back
-  now); **loops** (`DeckSetLoop` needs a per-deck runtime BPM to turn a beat length into a time region — the
-  engine only gets a path at `Load`; the analyzed BPM lives in the catalog, so the enabler is threading it onto
-  the deck, e.g. a `SetDeckTempo` seam fed at load); settable/named cue points + hot-cue clear; per-pad hot-cue
+  ch 3/4; **phase match (Quantize)** — needs a per-track first-beat anchor in analysis (`BpmResult` carries
+  BPM only), so the toggle still latches + feeds back; **loops** (`DeckSetLoop` can now reuse the per-deck
+  base BPM that Sync threads in via `SetDeckBaseBpm` to turn a beat length into a time region); settable/named
+  cue points + hot-cue clear; per-pad hot-cue
   LED feedback (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
   `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The new deck transport is reachable via the
-  dispatcher but **not yet surfaced in the Live-tab DeckView UI** (cue/pitch/sync/hot-cue controls there are
-  still disabled — a separate UI increment). `SetCue` (mixer
+  dispatcher and **Sync is now surfaced in the Live-tab DeckView UI** (the SYNC button drives
+  `DeckSyncLockToggle` with active-state feedback); cue/pitch/loop/hot-cue controls there are still disabled
+  (a separate UI increment). `SetCue` (mixer
   PFL) still latches the flag only; `BassMixer` still drops controls for an unregistered slot.
 
 ### ✅ Deck waveform — overview + playhead, end-to-end — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` + `Liveolator.App` (doc 11)
@@ -379,7 +380,7 @@ view-models under `Features/Live/Modules/`, each driving the engines only throug
 |--------|------------|-----------------|
 | Program Out | `ProgramOutViewModel` | Show Visuals (`IVisualStage`); preview/REC/layers static |
 | Beat Engine | `BeatEngineViewModel` | Tap / Lock-toggle / ½× / 2× / Set / Nudge± / **Reset**; Auto disabled |
-| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/sync/hot-cue/pitch disabled |
+| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncLockToggle` (tempo match), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
 | Mixer | `MixerViewModel` | `MixerCrossfade`, `MixerChannelGain` (A/B); VU static |
 | Scene Grid | `SceneGridViewModel` + `ScenePadViewModel` | 8×8 `VisualLoadScene`, bank `VisualSelectBank`; pad state from feedback |
 | Master / FX | `MasterFxViewModel` | `VisualToggleStrobe`, `VisualBlackout`; Master/Swing disabled |
@@ -394,7 +395,7 @@ view-models under `Features/Live/Modules/`, each driving the engines only throug
 - **Feedback-driven UI:** sliders/pads/toggles seed from `GetFeedback` and follow `FeedbackChanged`;
   `ContinuousControlViewModel.SetFromFeedback` updates the bound control without re-emitting (no loop).
 - **Disabled + labeled** controls match the mock for capabilities with no Core handler yet (doc 18):
-  Auto, deck cue/loop/sync/hot-cues/pitch, Master-gain/Swing, VU levels, waveforms, footer telemetry.
+  Auto, deck cue/loop/hot-cues/pitch, Master-gain/Swing, VU levels, waveforms, footer telemetry.
 - Default landing tab switched to **Live**. App tests: 70 (module emission + feedback + the one-dispatcher
   composition). Real render verified manually — the GL window + live audio still need hardware.
 
@@ -486,13 +487,13 @@ realtime playback, the audio frame pipeline (doc 02), and audio-driven beat dete
 realtime half) are all landed (see Realtime audio). What still remains to build on top:
 
 - **Decks + mixer (doc 11):** two-deck playback, software mixer (crossfader/EQ/filter), hot cues,
-  loops, beatmatching, multi-channel ASIO/CoreAudio cue output. Unblocked — just not built yet.
+  loops, **tempo-sync built** (phase-match/quantize pending a beat anchor), multi-channel ASIO/CoreAudio
+  cue output. Unblocked — partially built.
 - **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) — **first increment built**
   (`BassCaptureEngine` + `CaptureAudioSource`, see Realtime audio). Remaining: ASIO device pick and the
   Settings device-picker UI.
 - **Decks + mixer (doc 11):** the software mixer's first increment is **built** (pure model + DSP
   math + `MixerActionHandler` + `BassMixer` routing skeleton; decks now slot-addressed — see Software
-  mixer). Still to build: the two-deck BASS engine wiring channels into `BassMixer`, the master/cue
-  bus into the frame pipeline, hot cues, loops, beatmatching/sync, and multi-channel ASIO/CoreAudio
-  cue output.
+  mixer). Still to build: the master/cue bus into the frame pipeline, loops, **phase-sync (Quantize)**
+  (tempo-sync is built), and multi-channel ASIO/CoreAudio cue output.
 - **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) and ASIO device pick.
