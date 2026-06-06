@@ -360,6 +360,20 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public void TrackLoad_WithoutResolver_StillShowsBpm_FromTheLoadValue()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no catalog resolver, but the load carries the BPM
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 126, Argument: @"C:\music\track.mp3"));
+
+        // A deck must never hide its tempo: with no catalog entry the meta still shows the analyzed BPM.
+        Assert.True(vm.HasTrackMeta);
+        Assert.Equal("126.0 BPM", vm.Meta);
+    }
+
+    [Fact]
     public void TrackLoad_MetaIsSlotIsolated()
     {
         var dispatcher = new FakeDispatcher();

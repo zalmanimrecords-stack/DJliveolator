@@ -322,7 +322,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Title = !string.IsNullOrWhiteSpace(info?.Title)
             ? info!.Title
             : Path.GetFileNameWithoutExtension(trackPath);
-        Meta = info is { } i ? $"{i.Key} · {i.Bpm} BPM · {i.Duration}" : NoMeta;
+        // Prefer the full catalog facts (Key · BPM · duration); if the track isn't in the catalog, still
+        // show at least the analyzed BPM that rides on the load action so a deck never hides its tempo.
+        Meta = info is { } i
+            ? $"{i.Key} · {i.Bpm} BPM · {i.Duration}"
+            : bpm > 0 ? $"{bpm:0.0} BPM" : NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
         Progress = 0;
         Waveform = null;          // show the placeholder while the new overview decodes

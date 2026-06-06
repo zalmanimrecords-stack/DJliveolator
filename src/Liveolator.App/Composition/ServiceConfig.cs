@@ -1,6 +1,7 @@
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
@@ -243,6 +244,16 @@ public static class ServiceConfig
         services.AddSingleton(midiSession);
         services.AddSingleton<IMidiControlStatus>(midiSession);
 
+        // Shared decks + crossfader (doc 11/12): ONE PerformanceDeckSet drives both the Live tab and the
+        // DJ tab, so a track loaded on one is reflected on the other (one source of truth). It carries the
+        // MusicLibrary so each deck can surface its loaded track's Key · BPM · duration. Both view-models
+        // resolve this singleton instead of each building a private set (the Live tab previously built one
+        // without the library, so its decks showed no BPM).
+        services.AddSingleton<PerformanceDeckSet>(sp => new PerformanceDeckSet(
+            sp.GetService<IPerformanceActionDispatcher>(),
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<MusicLibrary>()));
+
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
 
@@ -281,7 +292,8 @@ public static class ServiceConfig
             sp.GetRequiredService<ILivePlaylist>(),
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetRequiredService<TrackContextActions>(),
-            sp.GetService<IWaveformProvider>()));
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<PerformanceDeckSet>()));
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
@@ -456,7 +468,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
             sp.GetService<IVisualStage>(),
-            sp.GetService<IWaveformProvider>()));
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<PerformanceDeckSet>()));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------
