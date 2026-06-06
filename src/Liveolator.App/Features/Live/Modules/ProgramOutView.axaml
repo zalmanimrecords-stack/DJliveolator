@@ -4,8 +4,8 @@
              x:Class="Liveolator.App.Features.Live.Modules.ProgramOutView"
              x:DataType="m:ProgramOutViewModel">
 
-  <Border Background="#0A0A0B" BorderBrush="{StaticResource Hair}" BorderThickness="1"
-          CornerRadius="2" MinHeight="220">
+  <Border Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}" BorderThickness="1"
+          CornerRadius="16" MinHeight="220">
     <Grid Margin="16">
       <!-- top row: program-out summary + (static) REC -->
       <Grid VerticalAlignment="Top" ColumnDefinitions="*,Auto">

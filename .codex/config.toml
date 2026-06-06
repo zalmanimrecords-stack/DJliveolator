@@ -1,0 +1,8 @@
+[mcp_servers.liveolator]
+command = "dotnet"
+args = [
+    "src/Liveolator.Mcp/bin/Debug/net8.0/liveolator-mcp.dll",
+    "--stdio",
+    "--ffmpeg",
+    'C:\ffmpeg\bin\ffmpeg.exe',
+]

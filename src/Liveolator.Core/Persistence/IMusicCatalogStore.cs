@@ -32,4 +32,13 @@ public interface IMusicCatalogStore
 
     /// <summary>Saves the scan-folder roots so the user does not re-add them on the next run.</summary>
     Task SaveScanFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Loads the folders the user designated as "samples" (the classifier override), or an empty list
+    /// when none exist / the file is unreadable / it was written by an incompatible version.
+    /// </summary>
+    Task<IReadOnlyList<string>> LoadSampleFoldersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Saves the sample-folder designations so the kind split survives a restart.</summary>
+    Task SaveSampleFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default);
 }

@@ -36,6 +36,41 @@ public class JsonCatalogStoreTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsKind()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var sample = TestTracks.Analyzed("loop.wav", 120.0, 0, KeyMode.Major, kind: MusicMediaKind.Sample);
+        var song = TestTracks.Analyzed("song.wav", 128.0, 0, KeyMode.Major, kind: MusicMediaKind.Track);
+
+        await store.SaveMusicAsync(new[] { sample, song });
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+
+        Assert.Equal(MusicMediaKind.Sample, loaded.Single(t => t.File.Path == "loop.wav").Kind);
+        Assert.Equal(MusicMediaKind.Track, loaded.Single(t => t.File.Path == "song.wav").Kind);
+    }
+
+    [Fact]
+    public async Task SampleFolders_RoundTrip()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        await store.SaveSampleFoldersAsync(new[] { "/m/loops", "/m/oneshots" });
+        IReadOnlyList<string> loaded = await store.LoadSampleFoldersAsync();
+
+        Assert.Equal(new[] { "/m/loops", "/m/oneshots" }, loaded);
+    }
+
+    [Fact]
+    public async Task LoadSampleFolders_WhenNone_ReturnsEmpty()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        Assert.Empty(await store.LoadSampleFoldersAsync());
+    }
+
+    [Fact]
     public async Task SaveThenLoad_RoundTripsTrackMetadata()
     {
         using var dir = new TempDirectory();

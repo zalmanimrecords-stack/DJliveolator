@@ -1,6 +1,7 @@
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
@@ -9,10 +10,13 @@ using Liveolator.Audio;
 using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
 using Liveolator.Audio.Waveform;
+using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Beat;
+using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mapping;
@@ -23,6 +27,7 @@ using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 using Liveolator.Media;
+using Liveolator.Media.Extensions;
 using Liveolator.Midi;
 using Liveolator.Platform;
 using Liveolator.Visuals.Gl;
@@ -49,6 +54,72 @@ public static class ServiceConfig
         // store instance is registered below so the Settings tab reads/writes the very same file.
         var settingsStore = new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         AppSettings appSettings = settingsStore.LoadAsync().GetAwaiter().GetResult();
+
+        // --- Declarative extension packages -----------------------------------------------------
+        // Trust is read from a separate user-controlled file; packages cannot add their own keys.
+        // Enabled package content is loaded before the window is created so the selected UI theme
+        // can be applied in App.OnFrameworkInitializationCompleted.
+        var trustedPublishers = new JsonTrustedPublisherStore(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var extensionCatalog = new ExtensionCatalog(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var extensionValidator = new ExtensionPackageValidator(trustedPublishers);
+        var extensionInstaller = new ExtensionInstaller(
+            extensionValidator, extensionCatalog, appSettings.Extensions.DeveloperMode);
+        var visualEffects = new VisualEffectRegistry();
+        var uiThemes = new UiThemeManager();
+        string shaderProbeName = OperatingSystem.IsWindows()
+            ? "liveolator-shader-probe.exe"
+            : "liveolator-shader-probe";
+        var shaderProbe = new ProcessVisualShaderProbe(
+            Path.Combine(AppContext.BaseDirectory, shaderProbeName));
+        var extensionContent = new ExtensionContentLoader(
+            extensionCatalog, visualEffects, uiThemes, shaderProbe,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        extensionContent.ReloadAsync().GetAwaiter().GetResult();
+
+        services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
+        services.AddSingleton<IExtensionCatalog>(extensionCatalog);
+        services.AddSingleton<IExtensionValidator>(extensionValidator);
+        services.AddSingleton<IExtensionInstaller>(extensionInstaller);
+        services.AddSingleton<IVisualEffectRegistry>(visualEffects);
+        services.AddSingleton<IVisualShaderProbe>(shaderProbe);
+        services.AddSingleton<IUiThemeManager>(uiThemes);
+        services.AddSingleton<IExtensionContentReloader>(extensionContent);
+
+        // --- VST3 catalog + realtime racks -------------------------------------------------------
+        // The scanner and native processor bridge are deliberately separate. Without the optional
+        // native helper/bridge, plugins remain visible as unavailable placeholders and audio passes
+        // through unchanged.
+        string vstCatalogPath = Path.Combine(JsonCatalogStore.DefaultRoot(), "vst3-catalog.json");
+        string scannerName = OperatingSystem.IsWindows()
+            ? "liveolator-vst3-scanner.exe"
+            : "liveolator-vst3-scanner";
+        var vstCatalog = new Vst3ScannerClient(
+            Path.Combine(AppContext.BaseDirectory, scannerName),
+            vstCatalogPath,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        vstCatalog.RefreshAsync().GetAwaiter().GetResult();
+        var effectRacks = new AudioEffectRackProvider(new Vst3AudioEffectProcessorFactory());
+        var rackStateStore = new JsonAudioEffectRackStateStore(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        foreach (AudioEffectRackState state in rackStateStore.LoadAsync().GetAwaiter().GetResult())
+            effectRacks.GetRack(state.Slot).Restore(state);
+        services.AddSingleton<IAudioEffectPluginCatalog>(vstCatalog);
+        services.AddSingleton<IAudioEffectRackProvider>(effectRacks);
+        services.AddSingleton<IAudioEffectRackStateStore>(rackStateStore);
+        var audioEffectHandler = new AudioEffectActionHandler(effectRacks, onChanged: () =>
+        {
+            AudioEffectRackState[] states = Enumerable.Range(0, AudioEffectRackSlot.Count)
+                .Select(slot => effectRacks.GetRack(slot).State)
+                .ToArray();
+            _ = rackStateStore.SaveAsync(states).ContinueWith(
+                task => System.Diagnostics.Trace.TraceWarning(
+                    $"Audio effect rack state could not be saved: {task.Exception?.GetBaseException().Message}"),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+        });
 
         // --- Track-analysis / music-library module (doc 16) ---
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
@@ -105,7 +176,7 @@ public static class ServiceConfig
         // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout (a separate source from the shared manual clock — unifying them is doc 03).
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio);
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks);
         MasterMixPlaybackEngine? masterMix =
             deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
         bool realtimeUp = deckEngine is not null;
@@ -125,6 +196,7 @@ public static class ServiceConfig
             mixerHandler,
             visualHandler,
             playlistHandler,
+            audioEffectHandler,
         };
         if (realtimeUp)
             handlers.Add(new DeckActionHandler(deckEngine!));
@@ -132,6 +204,14 @@ public static class ServiceConfig
         var dispatcher = new PerformanceActionDispatcher(
             handlers, NullLogger<PerformanceActionDispatcher>.Instance);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
+
+        // --- Shared performance modules (doc 11): ONE set of decks + crossfader, so the DJ tab and the
+        // Live tab drive the same instances rather than look-alike copies (one source of truth, doc 12).
+        // Both LiveViewModel and DjViewModel resolve this singleton; the container owns its disposal.
+        services.AddSingleton<PerformanceDeckSet>(sp => new PerformanceDeckSet(
+            sp.GetRequiredService<IPerformanceActionDispatcher>(),
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<MusicLibrary>()));
 
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -171,21 +251,52 @@ public static class ServiceConfig
             sp.GetRequiredService<ILivePlaylist>(),
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetRequiredService<TrackContextActions>(),
-            sp.GetService<IWaveformProvider>()));
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<PerformanceDeckSet>()));
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
-        // headless), and the choice is saved to settings.json. The audio output device + buffer are now
-        // applied at startup (loaded above, threaded into the realtime engine); opening the chosen MIDI
-        // controller into the dispatcher is the remaining increment (needs the mapper pipeline composed).
+        // headless), and the choice is saved to settings.json. The audio output device + buffer are
+        // applied at startup (loaded above, threaded into the realtime engine); the chosen MIDI
+        // controller is now opened and routed below (the live MIDI control pipeline).
         services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
-        services.AddSingleton<IMidiDeviceProvider>(new RtMidiDeviceProvider());
+        var midiProvider = new RtMidiDeviceProvider();
+        services.AddSingleton<IMidiDeviceProvider>(midiProvider);
         services.AddSingleton<ISettingsStore>(settingsStore);
+
+        // --- Live MIDI control pipeline (doc 05) -------------------------------------------------
+        // Opens the chosen controller and routes its messages through the ONE dispatcher (a pad/knob
+        // drives the same handlers as the UI), publishes LED feedback, and surfaces a connection +
+        // activity pulse for the shell's top-bar indicators. Best-effort: with no controller selected,
+        // an absent native rtmidi, or no saved profile, the session stays idle / routes an empty profile
+        // — never blocking startup. Device changes apply on the next launch (composed from saved settings).
+        var profileStore = new LiveProfileStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<ILiveProfileStore>(profileStore);
+        var midiSession = new MidiControlSession(
+            midiProvider, dispatcher, profileStore, new MidiLearnSession(), NullLoggerFactory.Instance);
+        try
+        {
+            midiSession.StartAsync(appSettings.Midi).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"MIDI control session could not start: {ex.Message}.");
+        }
+        services.AddSingleton(midiSession);
+        services.AddSingleton<IMidiControlStatus>(midiSession);
+
+        // The loaded settings snapshot feeds the shell status bar's audio/MIDI device-name readouts.
+        services.AddSingleton(appSettings);
+        services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
             sp.GetRequiredService<IAudioOutputDeviceCatalog>(),
             sp.GetRequiredService<IAudioCaptureDeviceCatalog>(),
             sp.GetRequiredService<IMidiDeviceProvider>(),
-            sp.GetRequiredService<ISettingsStore>()));
+            sp.GetRequiredService<ISettingsStore>(),
+            sp.GetRequiredService<IExtensionCatalog>(),
+            sp.GetRequiredService<IExtensionInstaller>(),
+            sp.GetRequiredService<IUiThemeManager>(),
+            sp.GetRequiredService<IExtensionContentReloader>()));
 
         services.AddSingleton<MainWindowViewModel>();
 
@@ -198,11 +309,14 @@ public static class ServiceConfig
     // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when
     // the native bass/bassmix libraries are absent (e.g. CI / a dev box without the per-platform
     // binaries). Never throws for that case — the app falls back to the catalog browser.
-    private static TwoDeckBassEngine? TryBuildDeckEngine(BassMixer mixer, AudioSettings audioSettings)
+    private static TwoDeckBassEngine? TryBuildDeckEngine(
+        BassMixer mixer,
+        AudioSettings audioSettings,
+        IAudioEffectRackProvider effectRacks)
     {
         try
         {
-            return new TwoDeckBassEngine(mixer, audioSettings: audioSettings);
+            return new TwoDeckBassEngine(mixer, audioSettings: audioSettings, effectRacks: effectRacks);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
@@ -285,7 +399,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
             sp.GetService<IVisualStage>(),
-            sp.GetService<IWaveformProvider>()));
+            sp.GetService<IWaveformProvider>(),
+            sp.GetRequiredService<PerformanceDeckSet>()));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---

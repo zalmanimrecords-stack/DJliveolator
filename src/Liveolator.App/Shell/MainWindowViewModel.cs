@@ -17,12 +17,20 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private TabItemViewModel _currentTab;
 
-    public MainWindowViewModel(LibrariesViewModel libraries, LiveViewModel live, DjViewModel dj, SettingsViewModel settings)
+    public MainWindowViewModel(
+        LibrariesViewModel libraries,
+        LiveViewModel live,
+        DjViewModel dj,
+        SettingsViewModel settings,
+        ShellStatusViewModel status)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(status);
+
+        Status = status;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -39,6 +47,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         // Open the Live tab — the full performance surface (mock-faithful) is the app's centrepiece.
         _currentTab = Tabs[0];
     }
+
+    /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
+    public ShellStatusViewModel Status { get; }
 
     public ObservableCollection<TabItemViewModel> Tabs { get; }
 

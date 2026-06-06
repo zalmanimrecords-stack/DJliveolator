@@ -13,9 +13,12 @@ namespace Liveolator.Core.Actions;
 /// layer, hot-cue, or track position.</param>
 /// <param name="Argument">Free-form discriminator a kind may need (e.g. a macro name); null
 /// when unused.</param>
+/// <param name="Target">Optional stable instance identifier for actions that address a loaded
+/// extension instance, such as one VST effect in a rack.</param>
 public sealed record PerformanceAction(
     PerformanceActionKind Kind,
     ActionInputMode InputMode = ActionInputMode.Momentary,
     double Value = 0,
     int Slot = 0,
-    string? Argument = null);
+    string? Argument = null,
+    string? Target = null);

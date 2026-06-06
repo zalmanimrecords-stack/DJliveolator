@@ -61,6 +61,14 @@ public enum PerformanceActionKind
     MixerFilter,
     MixerCueToggle,
 
+    // Audio effects (VST3 host/racks)
+    AudioFxLoad,
+    AudioFxUnload,
+    AudioFxMove,
+    AudioFxToggleBypass,
+    AudioFxSetParameter,
+    AudioFxLoadPreset,
+
     // Auto-mix (doc 11) — hands-free assist
     AutoMixToggle,
     AutoMixSkipToNext,

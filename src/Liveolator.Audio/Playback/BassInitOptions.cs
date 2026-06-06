@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using Liveolator.Core.Settings;
 
@@ -14,6 +15,15 @@ internal readonly record struct BassInitOptions(int DeviceIndex, int BufferMilli
 {
     /// <summary>The <c>Bass.Init</c> sentinel for "use the system default output device".</summary>
     public const int DefaultDevice = -1;
+
+    /// <summary>
+    /// The BASS automatic-update period (ms) to apply alongside the playback buffer. BASS refills the
+    /// device playback buffer on this period; it MUST stay comfortably below <see cref="BufferMilliseconds"/>
+    /// or the buffer starves between refills and playback runs slow — a low buffer left with BASS's 100 ms
+    /// default period plays at roughly buffer/period speed (e.g. a 40 ms buffer ran at ~0.4×). A quarter of
+    /// the buffer, clamped to 5..20 ms, keeps a safe refill margin while preserving low DJ latency.
+    /// </summary>
+    public int UpdatePeriodMilliseconds => Math.Clamp(BufferMilliseconds / 4, 5, 20);
 
     /// <summary>
     /// Resolves the init parameters from settings (null = <see cref="AudioSettings.Default"/>). The

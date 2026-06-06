@@ -5,33 +5,49 @@
              x:Class="Liveolator.App.Features.Live.Modules.DeckView"
              x:DataType="m:DeckViewModel">
 
-  <Border Classes="panel">
-    <StackPanel Margin="18" Spacing="14">
+  <Border Classes="panel" MinHeight="430">
+    <StackPanel Margin="20" Spacing="16">
 
       <!-- header: badge · title · menu -->
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="10" VerticalAlignment="Center">
+        <Border Grid.Column="0" Width="42" Height="42" CornerRadius="9" VerticalAlignment="Center"
+                BorderBrush="#174D86" BorderThickness="1">
           <Border.Background>
             <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-              <GradientStop Color="#2E74E6" Offset="0" />
-              <GradientStop Color="#1A4FB8" Offset="1" />
+              <GradientStop Color="#142233" Offset="0" />
+              <GradientStop Color="#0B121C" Offset="1" />
             </LinearGradientBrush>
           </Border.Background>
-          <TextBlock Foreground="White" FontWeight="SemiBold" FontSize="15"
+          <TextBlock Foreground="{StaticResource Accent}" FontWeight="Bold" FontSize="20"
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
-        <StackPanel Grid.Column="1" Spacing="1" Margin="12,0,0,0" VerticalAlignment="Center">
-          <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
-          <TextBlock Classes="faint" Text="{Binding Title}" />
-        </StackPanel>
+        <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+          <!-- loaded: track title + Key · BPM · duration -->
+          <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
+            <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
+          </StackPanel>
+          <!-- empty: deck id + placeholder -->
+          <StackPanel Spacing="1" IsVisible="{Binding !HasTrackMeta}">
+            <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
+            <TextBlock Classes="muted" FontSize="13" Text="{Binding Title}" />
+          </StackPanel>
+        </Panel>
         <Button Grid.Column="2" Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
       </Grid>
 
       <!-- waveform: real overview + playhead + beat-grid overlay; click to seek (DeckSeek) -->
-      <Border Height="56" Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}"
+      <Border Height="78" Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}"
               BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-        <controls:WaveformStrip Peaks="{Binding Waveform}" Progress="{Binding Progress}"
-                                BeatGrid="{Binding BeatGrid}" SeekCommand="{Binding SeekCommand}" />
+        <Grid>
+          <controls:WaveformStrip Peaks="{Binding Waveform}" Progress="{Binding Progress}"
+                                  BeatGrid="{Binding BeatGrid}" SeekCommand="{Binding SeekCommand}" />
+          <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                  Background="{StaticResource S2}" Padding="12,5"
+                  IsVisible="{Binding !HasTrackMeta}">
+            <TextBlock FontSize="13" Text="Waveform - coming soon" />
+          </Border>
+        </Grid>
       </Border>
 
       <!-- hot cues: each pad emits DeckHotCue for its index and lights from feedback -->
@@ -43,74 +59,76 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:HotCuePadViewModel">
-            <Button Classes="key" Content="{Binding Label}" Classes.on="{Binding IsSet}"
-                    Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
+            <Button Classes="key deck" Content="{Binding Label}" Classes.on="{Binding IsSet}"
+                    Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,6,0" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
       <!-- transport: CUE · Play · Loop · Sync (tempo match) -->
       <UniformGrid Columns="4">
-        <Button Classes="key" Content="CUE" Command="{Binding CueCommand}"
-                IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
-        <Button Classes="play" Classes.on="{Binding IsPlaying}"
-                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
+        <Button Classes="key deck" Content="CUE" Command="{Binding CueCommand}"
+                IsEnabled="{Binding CanCue}" Margin="0,0,6,0" />
+        <Button Classes="play deck" Classes.on="{Binding IsPlaying}"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,6,0">
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{StaticResource Accent}" />
         </Button>
-        <Button Classes="key" Content="LOOP" Classes.on="{Binding IsLooping}"
-                Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" Margin="0,0,4,0" />
-        <Button Classes="key" Content="SYNC" Classes.on="{Binding IsSyncLocked}"
+        <Button Classes="key deck" Content="LOOP" Classes.on="{Binding IsLooping}"
+                Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" Margin="0,0,6,0" />
+        <Button Classes="key deck" Content="SYNC" Classes.on="{Binding IsSyncLocked}"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 
-      <!-- EQ / filter / pitch knobs -->
+      <!-- EQ / filter / pitch control bank -->
+      <Border Classes="hardware-well" Padding="8,10,8,8">
       <UniformGrid Columns="5">
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="62" Height="62" HorizontalAlignment="Center"
                          Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
+          <Grid ColumnDefinitions="*,*" Width="66">
             <TextBlock Classes="tick" Text="−∞" />
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="62" Height="62" HorizontalAlignment="Center"
                          Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
+          <Grid ColumnDefinitions="*,*" Width="66">
             <TextBlock Classes="tick" Text="−∞" />
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="62" Height="62" HorizontalAlignment="Center"
                          Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
+          <Grid ColumnDefinitions="*,*" Width="66">
             <TextBlock Classes="tick" Text="−∞" />
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="62" Height="62" HorizontalAlignment="Center"
                          Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
+          <Grid ColumnDefinitions="*,*" Width="66">
             <TextBlock Classes="tick" Text="−∞" />
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="56" Height="56" HorizontalAlignment="Center"
+          <controls:Knob Width="62" Height="62" HorizontalAlignment="Center"
                          Value="{Binding Pitch.Value}" IsEnabled="{Binding Pitch.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
+          <Grid ColumnDefinitions="*,*" Width="66">
             <TextBlock Classes="tick" Text="−100%" />
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+100%" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="PITCH" />
         </StackPanel>
       </UniformGrid>
+      </Border>
     </StackPanel>
   </Border>
 </UserControl>

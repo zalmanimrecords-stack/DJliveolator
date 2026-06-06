@@ -9,9 +9,10 @@ namespace Liveolator.Media;
 /// <summary>Versioned on-disk shape of the persisted music catalog (the doc 13 / doc 16 cache).</summary>
 public sealed record MusicCatalogSnapshot(int Version, IReadOnlyList<MusicTrack> Tracks)
 {
-    // v2 (2026-06-05): MusicTrack gained TrackMetadata (tags). An older snapshot is missing it,
-    // so it is discarded on load and re-scanned rather than served with empty metadata.
-    public const int CurrentVersion = 2;
+    // v2 (2026-06-05): MusicTrack gained TrackMetadata (tags).
+    // v3 (2026-06-06): MusicTrack gained Kind (Track/Sample). An older snapshot lacks the
+    // classification, so it is discarded on load and re-scanned rather than served miscategorized.
+    public const int CurrentVersion = 3;
 }
 
 /// <summary>Versioned on-disk shape of the persisted visual-media catalog (doc 13).</summary>
@@ -58,6 +59,9 @@ public sealed class JsonCatalogStore : IMusicCatalogStore
 
     /// <summary>Full path of the persisted scan-folder-roots JSON file.</summary>
     public string ScanFoldersPath => Path.Combine(_directory, "scan-folders.json");
+
+    /// <summary>Full path of the persisted sample-folder designations JSON file.</summary>
+    public string SampleFoldersPath => Path.Combine(_directory, "sample-folders.json");
 
     /// <summary>Default persistence root: <c>%APPDATA%/Liveolator</c> (or the XDG/Mac equivalent).</summary>
     public static string DefaultRoot()
@@ -125,6 +129,35 @@ public sealed class JsonCatalogStore : IMusicCatalogStore
         {
             _onWarning?.Invoke(
                 $"Scan-folders file at '{ScanFoldersPath}' is version {snapshot.Version} " +
+                $"(expected {ScanFoldersSnapshot.CurrentVersion}); ignoring.");
+            return Array.Empty<string>();
+        }
+
+        return snapshot.Folders ?? Array.Empty<string>();
+    }
+
+    public Task SaveSampleFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(folders);
+        return SaveAsync(SampleFoldersPath, new ScanFoldersSnapshot(ScanFoldersSnapshot.CurrentVersion, folders.ToList()), cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads the folders the user designated as "samples", or an empty list when none exist, the file is
+    /// unreadable, or it was written by an incompatible schema version (mirrors the scan-folders policy).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> LoadSampleFoldersAsync(CancellationToken cancellationToken = default)
+    {
+        ScanFoldersSnapshot? snapshot =
+            await LoadAsync<ScanFoldersSnapshot>(SampleFoldersPath, cancellationToken).ConfigureAwait(false);
+
+        if (snapshot is null)
+            return Array.Empty<string>();
+
+        if (snapshot.Version != ScanFoldersSnapshot.CurrentVersion)
+        {
+            _onWarning?.Invoke(
+                $"Sample-folders file at '{SampleFoldersPath}' is version {snapshot.Version} " +
                 $"(expected {ScanFoldersSnapshot.CurrentVersion}); ignoring.");
             return Array.Empty<string>();
         }

@@ -14,7 +14,7 @@
       </Grid>
 
       <!-- DECK A · MIXER · DECK B -->
-      <Grid ColumnDefinitions="*,200,*">
+      <Grid ColumnDefinitions="*,300,*">
         <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="2" Content="{Binding DeckB}" />

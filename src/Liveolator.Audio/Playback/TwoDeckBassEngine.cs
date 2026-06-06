@@ -1,5 +1,6 @@
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
+using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Settings;
 using Microsoft.Extensions.Logging;
@@ -76,12 +77,14 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// </param>
     public TwoDeckBassEngine(
         BassMixer mixer, int sampleRate = 48_000, int channels = 2,
-        ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null)
+        ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null,
+        IAudioEffectRackProvider? effectRacks = null)
         : this(
             new BassMixerBackend(
                 sampleRate, channels,
                 (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>(),
-                audioSettings),
+                audioSettings,
+                effectRacks),
             mixer, loggerFactory)
     {
     }
@@ -135,7 +138,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
             {
                 UnloadSlot(slot);
                 int handle = _backend.OpenDeckStream(trackPath);
-                IBassMixerChannel channel = _backend.PlugDeck(handle);
+                IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
                 // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the

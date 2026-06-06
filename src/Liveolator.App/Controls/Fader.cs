@@ -16,11 +16,17 @@ namespace Liveolator.App.Controls;
 public sealed class Fader : Control
 {
     private const double KeyStep = 0.05;
+    /// <summary>Holding Shift slows the drag by this factor for precise level/crossfade trims.</summary>
+    private const double FineDragFactor = 5.0;
 
     public static readonly StyledProperty<double> ValueProperty =
         AvaloniaProperty.Register<Fader, double>(
             nameof(Value), defaultValue: 0.5,
             defaultBindingMode: Avalonia.Data.BindingMode.TwoWay, coerce: CoerceUnit);
+
+    /// <summary>The "home" value a double-click snaps back to (e.g. crossfader centre). Default 0.5.</summary>
+    public static readonly StyledProperty<double> DefaultValueProperty =
+        AvaloniaProperty.Register<Fader, double>(nameof(DefaultValue), defaultValue: 0.5, coerce: CoerceUnit);
 
     public static readonly StyledProperty<Orientation> OrientationProperty =
         AvaloniaProperty.Register<Fader, Orientation>(nameof(Orientation), Orientation.Vertical);
@@ -50,6 +56,7 @@ public sealed class Fader : Control
     }
 
     public double Value { get => GetValue(ValueProperty); set => SetValue(ValueProperty, value); }
+    public double DefaultValue { get => GetValue(DefaultValueProperty); set => SetValue(DefaultValueProperty, value); }
     public Orientation Orientation { get => GetValue(OrientationProperty); set => SetValue(OrientationProperty, value); }
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
     public IBrush FillBrush { get => GetValue(FillBrushProperty); set => SetValue(FillBrushProperty, value); }
@@ -58,7 +65,7 @@ public sealed class Fader : Control
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
 
-    private static readonly IBrush CapBody = new SolidColorBrush(Color.FromRgb(0x23, 0x2D, 0x3D));
+    private static readonly IBrush SlotBrush = new SolidColorBrush(Color.FromRgb(0x07, 0x0A, 0x0F));
     private static readonly IBrush CapRim = new SolidColorBrush(Color.FromRgb(0x33, 0x3F, 0x52));
     private const int TickCount = 9;
 
@@ -88,12 +95,15 @@ public sealed class Fader : Control
                 context.DrawLine(tickPen, new Point(cx + 6, y), new Point(cx + 11, y));
             }
 
+            context.DrawLine(new Pen(SlotBrush, trackWidth + 5) { LineCap = PenLineCap.Round }, new Point(cx, top), new Point(cx, bottom));
             context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, top), new Point(cx, bottom));
             context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(cx, thumbY), new Point(cx, bottom));
 
             double capW = Math.Min(b.Width, 30);
             var cap = new Rect(cx - (capW / 2), thumbY - 8, capW, 16);
-            context.DrawRectangle(CapBody, new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawRectangle(CapGradient(), new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0xD7, 0xE0, 0xEA)), 1),
+                new Point(cap.Left + 4, cap.Top + 3), new Point(cap.Right - 4, cap.Top + 3));
             context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
                 new Point(cap.Left + 4, thumbY), new Point(cap.Right - 4, thumbY));
         }
@@ -104,22 +114,45 @@ public sealed class Fader : Control
             double len = Math.Max(1, right - left);
             double thumbX = left + (value * len);
 
+            context.DrawLine(new Pen(SlotBrush, trackWidth + 5) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(right, cy));
             context.DrawLine(new Pen(TrackBrush, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(right, cy));
             context.DrawLine(new Pen(fill, trackWidth) { LineCap = PenLineCap.Round }, new Point(left, cy), new Point(thumbX, cy));
 
             double capH = Math.Min(b.Height, 30);
             var cap = new Rect(thumbX - 8, cy - (capH / 2), 16, capH);
-            context.DrawRectangle(CapBody, new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawRectangle(CapGradient(), new Pen(CapRim, 1), cap, 4, 4);
+            context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x66, 0xD7, 0xE0, 0xEA)), 1),
+                new Point(cap.Left + 3, cap.Top + 4), new Point(cap.Left + 3, cap.Bottom - 4));
             context.DrawLine(new Pen(centreLine, 2) { LineCap = PenLineCap.Round },
                 new Point(thumbX, cap.Top + 4), new Point(thumbX, cap.Bottom - 4));
         }
     }
+
+    private static IBrush CapGradient()
+        => new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromRgb(0x3B, 0x47, 0x58), 0),
+                new GradientStop(Color.FromRgb(0x20, 0x29, 0x36), 0.48),
+                new GradientStop(Color.FromRgb(0x10, 0x15, 0x1D), 1),
+            },
+        };
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
         if (!IsEnabled)
             return;
+        // Double-click snaps to the home value (e.g. crossfader centre).
+        if (e.ClickCount >= 2)
+        {
+            Value = DefaultValue;
+            e.Handled = true;
+            return;
+        }
         _dragging = true;
         Point p = e.GetPosition(this);
         _dragStart = Orientation == Orientation.Vertical ? p.Y : p.X;
@@ -135,11 +168,12 @@ public sealed class Fader : Control
         if (!_dragging)
             return;
         Point p = e.GetPosition(this);
-        double len = Math.Max(1, (Orientation == Orientation.Vertical ? Bounds.Height : Bounds.Width) - 16);
+        double span = Math.Max(1, (Orientation == Orientation.Vertical ? Bounds.Height : Bounds.Width) - 16);
+        double range = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? span * FineDragFactor : span;
         double delta = Orientation == Orientation.Vertical
             ? _dragStart - p.Y      // up = increase
             : p.X - _dragStart;     // right = increase
-        Value = Math.Clamp(_dragStartValue + (delta / len), 0, 1);
+        Value = Math.Clamp(_dragStartValue + (delta / range), 0, 1);
         e.Handled = true;
     }
 

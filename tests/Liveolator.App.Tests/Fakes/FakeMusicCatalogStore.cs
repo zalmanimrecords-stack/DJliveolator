@@ -13,19 +13,24 @@ public sealed class FakeMusicCatalogStore : IMusicCatalogStore
 {
     private readonly IReadOnlyList<MusicTrack> _seedTracks;
     private readonly IReadOnlyList<string> _seedFolders;
+    private readonly IReadOnlyList<string> _seedSampleFolders;
 
     public FakeMusicCatalogStore(
         IEnumerable<MusicTrack>? seedTracks = null,
-        IEnumerable<string>? seedFolders = null)
+        IEnumerable<string>? seedFolders = null,
+        IEnumerable<string>? seedSampleFolders = null)
     {
         _seedTracks = seedTracks?.ToList() ?? new List<MusicTrack>();
         _seedFolders = seedFolders?.ToList() ?? new List<string>();
+        _seedSampleFolders = seedSampleFolders?.ToList() ?? new List<string>();
     }
 
     public IReadOnlyList<MusicTrack> SavedTracks { get; private set; } = Array.Empty<MusicTrack>();
     public IReadOnlyList<string> SavedFolders { get; private set; } = Array.Empty<string>();
+    public IReadOnlyList<string> SavedSampleFolders { get; private set; } = Array.Empty<string>();
     public int SaveMusicCalls { get; private set; }
     public int SaveFoldersCalls { get; private set; }
+    public int SaveSampleFoldersCalls { get; private set; }
 
     public Task<IReadOnlyList<MusicTrack>> LoadMusicAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(_seedTracks);
@@ -44,6 +49,16 @@ public sealed class FakeMusicCatalogStore : IMusicCatalogStore
     {
         SavedFolders = folders.ToList();
         SaveFoldersCalls++;
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> LoadSampleFoldersAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(_seedSampleFolders);
+
+    public Task SaveSampleFoldersAsync(IEnumerable<string> folders, CancellationToken cancellationToken = default)
+    {
+        SavedSampleFolders = folders.ToList();
+        SaveSampleFoldersCalls++;
         return Task.CompletedTask;
     }
 }

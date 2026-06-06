@@ -1,9 +1,31 @@
 namespace Liveolator.Core.Visuals;
 
+using System.Text.Json.Serialization;
+
 /// <summary>
-/// What a macro drives: a named parameter on a specific layer. This indirection keeps the engine
-/// decoupled from concrete shaders — adding a macro is data, not new control plumbing (doc 08).
+/// Structured address for a layer property or a parameter on a stable visual-effect instance.
 /// </summary>
-/// <param name="Layer">Index of the layer whose parameter the macro writes.</param>
-/// <param name="Parameter">Parameter name, e.g. "opacity", "speed", "echo.feedback".</param>
-public sealed record MacroTarget(int Layer, string Parameter);
+public sealed record MacroTarget
+{
+    public MacroTarget(int Layer, string Parameter)
+        : this(Layer, EffectInstanceId: null, Parameter)
+    {
+    }
+
+    [JsonConstructor]
+    public MacroTarget(int Layer, string? EffectInstanceId, string Parameter)
+    {
+        if (Layer < 0)
+            throw new ArgumentOutOfRangeException(nameof(Layer));
+        if (string.IsNullOrWhiteSpace(Parameter))
+            throw new ArgumentException("Parameter is required.", nameof(Parameter));
+
+        this.Layer = Layer;
+        this.EffectInstanceId = string.IsNullOrWhiteSpace(EffectInstanceId) ? null : EffectInstanceId;
+        this.Parameter = Parameter;
+    }
+
+    public int Layer { get; init; }
+    public string? EffectInstanceId { get; init; }
+    public string Parameter { get; init; }
+}

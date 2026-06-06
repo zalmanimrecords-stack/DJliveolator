@@ -17,6 +17,7 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     private readonly IAudioDecoder _decoder;
     private readonly TrackAnalyzer _analyzer;
     private readonly ITrackMetadataReader _metadataReader;
+    private IReadOnlySet<string> _sampleFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     public MusicLibrary(
         IFileEnumerator enumerator,
@@ -39,12 +40,36 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             .AnalyzeAsync(_decoder, file.Path, cancellationToken)
             .ConfigureAwait(false);
         MediaAnalysisStatus status = TrackStatusPolicy.For(result);
-        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata);
+        MusicMediaKind kind = SampleClassifier.Classify(file.Path, result.Duration, _sampleFolders);
+        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind);
     }
 
-    // A track that fails to decode can still have readable tags, so capture metadata here too.
+    // A track that fails to decode can still have readable tags, so capture metadata here too. With no
+    // duration it classifies as a Track unless the file sits under a designated samples folder.
     protected override MusicTrack CreateFailedEntry(ScannedFile file, string error)
-        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error, ReadMetadata(file.Path));
+        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error,
+               ReadMetadata(file.Path), SampleClassifier.Classify(file.Path, null, _sampleFolders));
+
+    /// <summary>
+    /// Designates which scan folders hold samples (the classifier override) and **reclassifies the whole
+    /// catalog in place** from cached durations — no re-decode, so toggling a folder is instant. New scans
+    /// use the same set.
+    /// </summary>
+    public void SetSampleFolders(IEnumerable<string> sampleFolders)
+    {
+        ArgumentNullException.ThrowIfNull(sampleFolders);
+        _sampleFolders = new HashSet<string>(
+            sampleFolders.Where(f => !string.IsNullOrWhiteSpace(f)), StringComparer.OrdinalIgnoreCase);
+
+        var reclassified = All
+            .Select(t => t with { Kind = SampleClassifier.Classify(t.File.Path, t.Duration, _sampleFolders) })
+            .ToList();
+        Restore(reclassified);
+    }
+
+    /// <summary>Returns the catalogued entries of one kind (full tracks vs samples), mirroring VisualMediaLibrary.OfKind.</summary>
+    public IReadOnlyList<MusicTrack> OfKind(MusicMediaKind kind)
+        => All.Where(t => t.Kind == kind).ToList();
 
     // The reader contract is "never throws", but guard anyway so a misbehaving reader
     // can never abort a scan — metadata simply degrades to null.
@@ -98,12 +123,12 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             if (string.IsNullOrWhiteSpace(folder))
                 continue;
 
-            string root = NormalizePath(folder);
+            string root = FolderScope.Normalize(folder);
             int total = 0, ok = 0, partial = 0, failed = 0;
 
             foreach (MusicTrack track in all)
             {
-                if (!IsUnder(NormalizePath(track.File.Path), root))
+                if (!FolderScope.IsUnderNormalized(FolderScope.Normalize(track.File.Path), root))
                     continue;
 
                 total++;
@@ -120,13 +145,4 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
 
         return summaries;
     }
-
-    // Canonical form for prefix comparison: forward slashes, no trailing separator.
-    private static string NormalizePath(string path) => path.Replace('\\', '/').TrimEnd('/');
-
-    // True when file path sits inside the folder root, matching only at a path boundary so
-    // "/music/rock" never absorbs "/music/rockabilly".
-    private static bool IsUnder(string filePath, string folderRoot)
-        => folderRoot.Length > 0
-           && filePath.StartsWith(folderRoot + "/", StringComparison.OrdinalIgnoreCase);
 }

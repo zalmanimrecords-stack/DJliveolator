@@ -16,6 +16,8 @@ public sealed class Knob : Control
 {
     /// <summary>Pixels of vertical drag that span the full 0..1 range.</summary>
     private const double DragRangePixels = 160.0;
+    /// <summary>Holding Shift slows the drag by this factor for precise EQ/filter trims.</summary>
+    private const double FineDragFactor = 5.0;
     private const double KeyStep = 0.05;
     private const double StartAngle = 135.0;
     private const double SweepAngle = 270.0;
@@ -24,6 +26,11 @@ public sealed class Knob : Control
         AvaloniaProperty.Register<Knob, double>(
             nameof(Value), defaultValue: 0.5,
             defaultBindingMode: Avalonia.Data.BindingMode.TwoWay, coerce: CoerceUnit);
+
+    /// <summary>The "home" value: a faint unity mark is drawn here and a double-click snaps back to it
+    /// (EQ/filter centre = flat). Default 0.5.</summary>
+    public static readonly StyledProperty<double> DefaultValueProperty =
+        AvaloniaProperty.Register<Knob, double>(nameof(DefaultValue), defaultValue: 0.5, coerce: CoerceUnit);
 
     public static readonly StyledProperty<IBrush> ArcBrushProperty =
         AvaloniaProperty.Register<Knob, IBrush>(nameof(ArcBrush), Brushes.DodgerBlue);
@@ -43,7 +50,7 @@ public sealed class Knob : Control
 
     static Knob()
     {
-        AffectsRender<Knob>(ValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty);
+        AffectsRender<Knob>(ValueProperty, DefaultValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty);
     }
 
     public Knob()
@@ -59,6 +66,13 @@ public sealed class Knob : Control
     {
         get => GetValue(ValueProperty);
         set => SetValue(ValueProperty, value);
+    }
+
+    /// <summary>The unity / home value (double-click snaps here; a faint mark is drawn at it).</summary>
+    public double DefaultValue
+    {
+        get => GetValue(DefaultValueProperty);
+        set => SetValue(DefaultValueProperty, value);
     }
 
     public IBrush ArcBrush { get => GetValue(ArcBrushProperty); set => SetValue(ArcBrushProperty, value); }
@@ -81,8 +95,33 @@ public sealed class Knob : Control
         var centre = new Point(b.Width / 2, b.Height / 2);
         double arcStroke = Math.Max(2.5, size * 0.055);
         double arcRadius = (size / 2) - (arcStroke / 2) - 1;
-        double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.06;
+        double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.04;
         IBrush arc = on ? ArcBrush : TrackBrush;
+
+        double recessRadius = bodyRadius + (size * 0.075);
+        context.DrawEllipse(
+            new SolidColorBrush(Color.FromRgb(0x07, 0x0A, 0x0F)),
+            new Pen(new SolidColorBrush(Color.FromRgb(0x2D, 0x38, 0x48)), 1),
+            centre,
+            recessRadius,
+            recessRadius);
+
+        // Hardware-style scale marks around the active arc.
+        var scalePen = new Pen(Halo(PointerBrush, on ? 0.72 : 0.28), Math.Max(1, size * 0.018))
+        {
+            LineCap = PenLineCap.Round,
+        };
+        const int scaleMarks = 17;
+        for (int i = 0; i < scaleMarks; i++)
+        {
+            double markAngle = StartAngle + (SweepAngle * i / (scaleMarks - 1));
+            double inner = arcRadius + (arcStroke * 1.25);
+            double outer = inner + (i % 4 == 0 ? size * 0.06 : size * 0.035);
+            context.DrawLine(
+                scalePen,
+                PointOnCircle(centre, inner, markAngle),
+                PointOnCircle(centre, outer, markAngle));
+        }
 
         // recessed track ring
         var trackPen = new Pen(TrackBrush, arcStroke) { LineCap = PenLineCap.Round };
@@ -101,7 +140,29 @@ public sealed class Knob : Control
             context.DrawGeometry(null, valuePen, Arc(centre, arcRadius, StartAngle, angle));
         }
 
+        // unity / home mark — a faint notch across the track at DefaultValue so "flat" is findable at a glance
+        double detentAngle = StartAngle + (SweepAngle * Math.Clamp(DefaultValue, 0, 1));
+        var detentPen = new Pen(Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round };
+        context.DrawLine(detentPen,
+            PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
+            PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
+
         // knob body — radial gradient for a soft 3-D cap, with a hairline rim
+        var collar = new RadialGradientBrush
+        {
+            Center = new RelativePoint(0.42, 0.35, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.34, 0.25, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.8, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.8, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromRgb(0x45, 0x50, 0x60), 0.0),
+                new GradientStop(Color.FromRgb(0x1C, 0x24, 0x30), 0.48),
+                new GradientStop(Color.FromRgb(0x08, 0x0B, 0x10), 1.0),
+            },
+        };
+        context.DrawEllipse(collar, null, centre, bodyRadius + 2.2, bodyRadius + 2.2);
+
         var body = new RadialGradientBrush
         {
             Center = new RelativePoint(0.5, 0.36, RelativeUnit.Relative),
@@ -116,6 +177,20 @@ public sealed class Knob : Control
             },
         };
         context.DrawEllipse(body, new Pen(TrackBrush, 1), centre, bodyRadius, bodyRadius);
+        context.DrawGeometry(
+            null,
+            new Pen(new SolidColorBrush(Color.FromArgb(0x58, 0xA8, 0xB7, 0xC8)), 1.1),
+            Arc(centre, bodyRadius - 1.2, 205, 335));
+
+        var gripPen = new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0x05, 0x08, 0x0D)), 1);
+        for (int i = 0; i < 20; i++)
+        {
+            double gripAngle = i * 18.0;
+            context.DrawLine(
+                gripPen,
+                PointOnCircle(centre, bodyRadius * 0.88, gripAngle),
+                PointOnCircle(centre, bodyRadius, gripAngle));
+        }
 
         // glow dot at the value position (halo + core), then a short pointer tick on the body
         if (on)
@@ -146,6 +221,13 @@ public sealed class Knob : Control
         base.OnPointerPressed(e);
         if (!IsEnabled)
             return;
+        // Double-click snaps to the home/unity value (e.g. flat EQ) — the standard DJ-gear reset gesture.
+        if (e.ClickCount >= 2)
+        {
+            Value = DefaultValue;
+            e.Handled = true;
+            return;
+        }
         _dragging = true;
         _dragStartY = e.GetPosition(this).Y;
         _dragStartValue = Value;
@@ -160,7 +242,8 @@ public sealed class Knob : Control
         if (!_dragging)
             return;
         double dy = _dragStartY - e.GetPosition(this).Y; // up = increase
-        Value = Math.Clamp(_dragStartValue + (dy / DragRangePixels), 0, 1);
+        double range = e.KeyModifiers.HasFlag(KeyModifiers.Shift) ? DragRangePixels * FineDragFactor : DragRangePixels;
+        Value = Math.Clamp(_dragStartValue + (dy / range), 0, 1);
         e.Handled = true;
     }
 

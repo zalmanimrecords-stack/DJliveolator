@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using Liveolator.App.Shell;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Extensions;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -37,29 +38,50 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IAudioCaptureDeviceCatalog _captures;
     private readonly IMidiDeviceProvider _midi;
     private readonly ISettingsStore _store;
+    private readonly IExtensionCatalog? _extensions;
+    private readonly IExtensionInstaller? _extensionInstaller;
+    private readonly IUiThemeManager? _themes;
+    private readonly IExtensionContentReloader? _contentReloader;
+    private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
     private int _selectedBufferMs = AudioSettings.DefaultBufferMs;
     private string _selectedMidiInput = NoDevice;
     private string _selectedMidiOutput = NoDevice;
     private string _status = string.Empty;
+    private string _packagePath = string.Empty;
+    private ExtensionItemViewModel? _selectedExtension;
+    private bool _developerMode;
+    private string? _activeUiThemeId;
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
         IAudioCaptureDeviceCatalog captures,
         IMidiDeviceProvider midi,
-        ISettingsStore store)
+        ISettingsStore store,
+        IExtensionCatalog? extensions = null,
+        IExtensionInstaller? extensionInstaller = null,
+        IUiThemeManager? themes = null,
+        IExtensionContentReloader? contentReloader = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
         _midi = midi ?? throw new ArgumentNullException(nameof(midi));
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _extensions = extensions;
+        _extensionInstaller = extensionInstaller;
+        _themes = themes;
+        _contentReloader = contentReloader;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
 
         RefreshDevicesCommand = ReactiveCommand.Create(RefreshDevices);
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
+        PreviewPackageCommand = ReactiveCommand.CreateFromTask(PreviewPackageAsync);
+        InstallPackageCommand = ReactiveCommand.CreateFromTask(InstallPackageAsync);
+        ToggleExtensionCommand = ReactiveCommand.CreateFromTask(ToggleExtensionAsync);
+        UninstallExtensionCommand = ReactiveCommand.CreateFromTask(UninstallExtensionAsync);
 
         RefreshDevices();
     }
@@ -78,6 +100,8 @@ public sealed class SettingsViewModel : ViewModelBase
 
     /// <summary>The selectable output buffer sizes in milliseconds.</summary>
     public ObservableCollection<int> BufferOptions { get; } = new();
+    public ObservableCollection<ExtensionItemViewModel> InstalledExtensions { get; } = new();
+    public ObservableCollection<string> UiThemeIds { get; } = new() { "Spartan" };
 
     public AudioOutputDevice? SelectedOutputDevice
     {
@@ -109,16 +133,46 @@ public sealed class SettingsViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _status, value);
     }
 
+    public string PackagePath
+    {
+        get => _packagePath;
+        set => this.RaiseAndSetIfChanged(ref _packagePath, value);
+    }
+
+    public ExtensionItemViewModel? SelectedExtension
+    {
+        get => _selectedExtension;
+        set => this.RaiseAndSetIfChanged(ref _selectedExtension, value);
+    }
+
+    public bool DeveloperMode
+    {
+        get => _developerMode;
+        set => this.RaiseAndSetIfChanged(ref _developerMode, value);
+    }
+
+    public string? ActiveUiThemeId
+    {
+        get => _activeUiThemeId;
+        set => this.RaiseAndSetIfChanged(ref _activeUiThemeId, value);
+    }
+
     public ReactiveCommand<Unit, Unit> RefreshDevicesCommand { get; }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
+    public ReactiveCommand<Unit, Unit> PreviewPackageCommand { get; }
+    public ReactiveCommand<Unit, Unit> InstallPackageCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleExtensionCommand { get; }
+    public ReactiveCommand<Unit, Unit> UninstallExtensionCommand { get; }
 
     /// <summary>Loads the persisted settings and selects the matching detected devices.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         AppSettings settings = await _store.LoadAsync(cancellationToken).ConfigureAwait(false);
+        _loadedSettings = settings;
         RefreshDevices();
         ApplySettings(settings);
+        await RefreshExtensionsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Re-enumerates all equipment (the "detect" action), preserving current selections where possible.</summary>
@@ -152,7 +206,7 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Persists the current selections as normalized <see cref="AppSettings"/>.</summary>
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        var settings = new AppSettings
+        var settings = _loadedSettings with
         {
             Audio = new AudioSettings
             {
@@ -164,10 +218,16 @@ public sealed class SettingsViewModel : ViewModelBase
                 ControllerInputName = SelectedMidiInput == NoDevice ? null : SelectedMidiInput,
                 FeedbackOutputName = SelectedMidiOutput == NoDevice ? null : SelectedMidiOutput,
             },
+            Extensions = new ExtensionSettings
+            {
+                DeveloperMode = DeveloperMode,
+                ActiveUiThemeId = ActiveUiThemeId == "Spartan" ? null : ActiveUiThemeId,
+            },
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
-        Status = "Settings saved.";
+        _loadedSettings = settings.Normalized();
+        Status = "Settings saved. UI theme changes apply after restart.";
     }
 
     private void ApplySettings(AppSettings settings)
@@ -185,6 +245,15 @@ public sealed class SettingsViewModel : ViewModelBase
             ? input : NoDevice;
         SelectedMidiOutput = settings.Midi.FeedbackOutputName is { } output && MidiOutputDevices.Contains(output)
             ? output : NoDevice;
+        DeveloperMode = settings.Extensions.DeveloperMode;
+        ActiveUiThemeId = settings.Extensions.ActiveUiThemeId ?? "Spartan";
+
+        UiThemeIds.Clear();
+        UiThemeIds.Add("Spartan");
+        if (_themes is not null)
+            foreach (UiThemeDefinition theme in _themes.AvailableThemes)
+                if (!UiThemeIds.Contains(theme.Id))
+                    UiThemeIds.Add(theme.Id);
     }
 
     private static void FillMidi(ObservableCollection<string> target, IReadOnlyList<string> names)
@@ -201,5 +270,76 @@ public sealed class SettingsViewModel : ViewModelBase
         while (index < options.Count && options[index] < value)
             index++;
         options.Insert(index, value);
+    }
+
+    private async Task PreviewPackageAsync()
+    {
+        if (_extensionInstaller is null || string.IsNullOrWhiteSpace(PackagePath))
+        {
+            Status = "Choose a .liveolator-pack path first.";
+            return;
+        }
+        ExtensionInstallPreview preview = await _extensionInstaller.PreviewAsync(PackagePath);
+        Status = preview.Validation.IsValid
+            ? $"Valid package: {preview.Validation.Manifest!.PackageId} {preview.Validation.Manifest.Version}, "
+              + $"{preview.Entries.Count} file(s)."
+            : string.Join(" ", preview.Validation.Issues.Select(i => i.Message));
+    }
+
+    private async Task InstallPackageAsync()
+    {
+        if (_extensionInstaller is null || string.IsNullOrWhiteSpace(PackagePath))
+        {
+            Status = "Choose a .liveolator-pack path first.";
+            return;
+        }
+        try
+        {
+            InstalledExtension installed = await _extensionInstaller.InstallAsync(PackagePath);
+            if (_contentReloader is not null)
+                await _contentReloader.ReloadAsync();
+            await RefreshExtensionsAsync();
+            Status = $"Installed {installed.Manifest.PackageId} {installed.Manifest.Version}.";
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException)
+        {
+            Status = $"Install failed: {ex.Message}";
+        }
+    }
+
+    private async Task ToggleExtensionAsync()
+    {
+        if (_extensionInstaller is null || SelectedExtension is null)
+            return;
+        await _extensionInstaller.SetEnabledAsync(
+            SelectedExtension.PackageId,
+            SelectedExtension.Version,
+            !SelectedExtension.IsEnabled);
+        if (_contentReloader is not null)
+            await _contentReloader.ReloadAsync();
+        await RefreshExtensionsAsync();
+        Status = "Extension state updated.";
+    }
+
+    private async Task UninstallExtensionAsync()
+    {
+        if (_extensionInstaller is null || SelectedExtension is null)
+            return;
+        await _extensionInstaller.UninstallAsync(SelectedExtension.PackageId, SelectedExtension.Version);
+        if (_contentReloader is not null)
+            await _contentReloader.ReloadAsync();
+        await RefreshExtensionsAsync();
+        Status = "Extension uninstalled.";
+    }
+
+    private async Task RefreshExtensionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_extensions is null)
+            return;
+        await _extensions.RefreshAsync(cancellationToken);
+        InstalledExtensions.Clear();
+        foreach (InstalledExtension extension in _extensions.Installed)
+            InstalledExtensions.Add(new ExtensionItemViewModel(extension));
+        SelectedExtension = InstalledExtensions.FirstOrDefault();
     }
 }

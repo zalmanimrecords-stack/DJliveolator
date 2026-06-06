@@ -50,6 +50,10 @@ public sealed class SettingsViewModelTests
         public List<string> Outputs { get; set; } = new() { "Ableton Push" };
         public IReadOnlyList<string> GetInputDeviceNames() => Inputs;
         public IReadOnlyList<string> GetOutputDeviceNames() => Outputs;
+
+        // The Settings tab only enumerates; device opening is exercised by MidiControlSession tests.
+        public IMidiInput? OpenInput(string deviceName) => null;
+        public IMidiOutput? OpenOutput(string deviceName) => null;
     }
 
     private sealed class FakeSettingsStore : ISettingsStore
