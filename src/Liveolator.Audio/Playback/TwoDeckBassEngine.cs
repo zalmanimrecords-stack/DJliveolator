@@ -1,4 +1,5 @@
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Settings;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,10 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     private readonly double[] _pitchPosition = new double[Decks];
     private readonly bool[] _syncLocked = new bool[Decks];
     private readonly bool[] _quantize = new bool[Decks];
+
+    // Per-slot analyzed natural tempo (BPM) used as the Sync reference; 0 = unknown. Set when a track
+    // with a known BPM loads (doc 11). Cleared when the slot unloads.
+    private readonly double[] _baseBpm = new double[Decks];
 
     // Hot-cue memory per deck: a position fraction per pad, null = unset. Belongs to the loaded track,
     // so it is cleared when the slot unloads.
@@ -133,8 +138,11 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
                 IBassMixerChannel channel = _backend.PlugDeck(handle);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
-                // Re-apply the slot's pitch fader to the new track so swapping decks keeps the tempo set.
-                _backend.SetDeckRate(handle, RateFor(_pitchPosition[slot]));
+                // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the
+                // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
+                // load action supplies the new track's base BPM via SetDeckBaseBpm).
+                if (!_syncLocked[slot])
+                    _backend.SetDeckRate(handle, RateFor(_pitchPosition[slot]));
                 _logger.LogInformation("Loaded deck slot {Slot} <- {Track}", slot, trackPath);
             }
             catch (Exception ex)
@@ -208,8 +216,13 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         {
             double next = Math.Clamp(relative ? _pitchPosition[slot] + value : value, 0.0, 1.0);
             _pitchPosition[slot] = next;
-            if (_decks[slot] is { } deck)
+            // While Sync is engaged the synced rate owns the deck (doc 11: Sync is an assist; manual
+            // nudging of a synced deck is a later increment). The position is still stored so it takes
+            // effect the moment Sync is released.
+            if (_decks[slot] is { } deck && !_syncLocked[slot])
                 _backend.SetDeckRate(deck.Handle, RateFor(next));
+            // This deck may be the sync leader — pull any synced follower to the new tempo.
+            ReapplySyncedFollowers();
         }
     }
 
@@ -228,6 +241,24 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         }
     }
 
+    public double DeckBaseBpm(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _baseBpm[slot];
+    }
+
+    public void SetDeckBaseBpm(int slot, double bpm)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            _baseBpm[slot] = bpm > 0.0 ? bpm : 0.0;
+            // A new reference tempo re-beatmatches: this deck may be a leader (pull its followers) or a
+            // synced follower whose own tempo just changed.
+            ReapplySyncedFollowers();
+        }
+    }
+
     public bool IsSyncLocked(int slot)
     {
         ValidateSlot(slot);
@@ -237,11 +268,53 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     public void SetSyncLock(int slot, bool enabled)
     {
         ValidateSlot(slot);
-        lock (_gate) _syncLocked[slot] = enabled;
-        // The latch + feedback are live so the UI/controller LED follows; the actual beatmatching
-        // (matching this deck's tempo + phase to the master grid) is a later increment (doc 11).
-        if (enabled)
-            _logger.LogInformation("Deck slot {Slot} sync-lock armed; beatmatching is not yet implemented.", slot);
+        lock (_gate)
+        {
+            _syncLocked[slot] = enabled;
+            if (enabled)
+            {
+                ReapplyRate(slot); // beatmatch this deck's tempo to the leader now
+            }
+            else if (_decks[slot] is { } deck)
+            {
+                // Released: hand the deck back to its manual pitch fader.
+                _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot]));
+            }
+        }
+    }
+
+    // Caller holds _gate. Beatmatch one synced deck to the sync leader: leader = the other deck if it is
+    // loaded, not itself sync-locked, and has a known base BPM. With no valid leader (or this deck's own
+    // base BPM unknown) the rate is left unchanged — Sync stays armed but silent, never a wrong tempo.
+    private void ReapplyRate(int slot)
+    {
+        if (_decks[slot] is not { } deck)
+            return;
+        if (_baseBpm[slot] <= 0.0)
+        {
+            _logger.LogInformation("Deck slot {Slot} sync: own BPM unknown; rate unchanged.", slot);
+            return;
+        }
+
+        int leader = slot == 0 ? 1 : 0;
+        if (_decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
+        {
+            _logger.LogInformation("Deck slot {Slot} sync: no valid leader; rate unchanged.", slot);
+            return;
+        }
+
+        // The leader's audible tempo is its natural BPM scaled by its own pitch fader.
+        double leaderEffectiveBpm = _baseBpm[leader] * RateFor(_pitchPosition[leader]);
+        double rate = TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
+        _backend.SetDeckRate(deck.Handle, rate);
+    }
+
+    // Caller holds _gate. A leader-tempo change (load / base BPM / pitch) must pull every synced deck.
+    private void ReapplySyncedFollowers()
+    {
+        for (int slot = 0; slot < Decks; slot++)
+            if (_syncLocked[slot])
+                ReapplyRate(slot);
     }
 
     public bool IsQuantizeEnabled(int slot)
@@ -299,6 +372,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _mixer.SetChannel(slot, null);
         _decks[slot] = null;
         Array.Clear(_hotCues[slot]);
+        _baseBpm[slot] = 0.0; // base BPM belongs to the track — the new track supplies its own on load
     }
 
     public void Dispose()

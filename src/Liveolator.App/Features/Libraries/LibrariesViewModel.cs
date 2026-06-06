@@ -330,7 +330,9 @@ public sealed class LibrariesViewModel : ViewModelBase
             return;
 
         _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Argument: _selectedTrack.Track.File.Path));
+            PerformanceActionKind.DeckLoadTrack,
+            Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
+            Argument: _selectedTrack.Track.File.Path));
         _dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
     }
 
@@ -345,7 +347,9 @@ public sealed class LibrariesViewModel : ViewModelBase
             return;
 
         _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Slot: slot, Argument: _selectedTrack.Track.File.Path));
+            PerformanceActionKind.DeckLoadTrack, Slot: slot,
+            Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
+            Argument: _selectedTrack.Track.File.Path));
         LoadStatus = $"Loaded \"{_selectedTrack.Title}\" → Deck {(slot == 0 ? "A" : "B")}";
     }
 

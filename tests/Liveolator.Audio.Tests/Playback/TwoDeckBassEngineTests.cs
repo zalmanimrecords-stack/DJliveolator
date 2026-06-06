@@ -257,6 +257,108 @@ public class TwoDeckBassEngineTests
         Assert.False(engine.IsQuantizeEnabled(1));
     }
 
+    // --- Sync Lock: tempo match (beatmatch by BPM, doc 11) ---
+
+    [Fact]
+    public void SetDeckBaseBpm_IsStoredPerSlot()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+
+        engine.SetDeckBaseBpm(0, 128.0);
+
+        Assert.Equal(128.0, engine.DeckBaseBpm(0), 6);
+        Assert.Equal(0.0, engine.DeckBaseBpm(1), 6);
+    }
+
+    [Fact]
+    public void Sync_MatchesFollowerRateToLeaderBpm()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader, handle 100
+        engine.Load(1, @"C:\b.wav"); // follower, handle 101
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal(128.0 / 124.0, backend.Rate[101], 6);
+    }
+
+    [Fact]
+    public void Sync_FoldsHalfTempoFollowerToNearUnity()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // 140 BPM leader
+        engine.Load(1, @"C:\b.wav"); // 70 BPM follower
+        engine.SetDeckBaseBpm(0, 140.0);
+        engine.SetDeckBaseBpm(1, 70.0);
+
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal(1.0, backend.Rate[101], 6); // plays at its own 70, aligning every other leader beat
+    }
+
+    [Fact]
+    public void Sync_Release_RevertsToManualPitchRate()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.SetPitch(1, 1.0, relative: false); // follower pitch fader at +8%
+
+        engine.SetSyncLock(1, true);
+        Assert.Equal(128.0 / 124.0, backend.Rate[101], 6); // sync owns the rate
+
+        engine.SetSyncLock(1, false);
+        Assert.Equal(1.08, backend.Rate[101], 6); // handed back to the pitch fader
+    }
+
+    [Fact]
+    public void Sync_NoLeaderBpm_LeavesRateUnchanged()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(1, @"C:\b.wav"); // only the follower is loaded (handle 100)
+        engine.SetDeckBaseBpm(1, 124.0);
+
+        engine.SetSyncLock(1, true); // leader slot 0 is empty
+
+        Assert.Equal(1.0, backend.Rate[100], 6); // still the load-time centre rate, no throw
+    }
+
+    [Fact]
+    public void Sync_LeaderBaseBpmChange_ReappliesFollowerRate()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.SetSyncLock(1, true);
+
+        engine.SetDeckBaseBpm(0, 140.0); // leader retuned
+
+        Assert.Equal(140.0 / 124.0, backend.Rate[101], 6);
+    }
+
+    [Fact]
+    public void Sync_FollowsLeaderPitchFader()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 124.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.SetSyncLock(1, true);
+        Assert.Equal(1.0, backend.Rate[101], 6); // equal tempos
+
+        engine.SetPitch(0, 1.0, relative: false); // nudge the leader's pitch fader to +8%
+
+        Assert.Equal(1.08, backend.Rate[101], 6); // follower tracks the leader's audible tempo
+    }
+
     [Fact]
     public void Position_ReadsBackend_ZeroWhenNothingLoaded()
     {

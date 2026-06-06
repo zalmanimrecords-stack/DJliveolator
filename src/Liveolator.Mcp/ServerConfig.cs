@@ -29,6 +29,15 @@ public sealed class ServerConfig
     /// <summary>Catalog-cache directory, or null for the default app-data root.</summary>
     public string? DataDirectory { get; init; }
 
+    /// <summary>GetSongBPM API key for online BPM/key enrichment (doc 16); null disables enrichment.</summary>
+    public string? GetSongBpmKey { get; init; }
+
+    /// <summary>AcoustID client key for fingerprint identification (doc 16); null = tag-based lookup only.</summary>
+    public string? AcoustIdKey { get; init; }
+
+    /// <summary>Path to (or bare name of) the Chromaprint <c>fpcalc</c> executable; null = PATH/env.</summary>
+    public string? FpcalcPath { get; init; }
+
     public static ServerConfig Parse(string[] args)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -37,6 +46,9 @@ public sealed class ServerConfig
         int port = 5174;
         string? ffmpegPath = Environment.GetEnvironmentVariable(FfmpegOptions.EnvironmentVariable);
         string? dataDir = Environment.GetEnvironmentVariable("LIVEOLATOR_DATA");
+        string? getSongBpmKey = Environment.GetEnvironmentVariable("LIVEOLATOR_GETSONGBPM_KEY");
+        string? acoustIdKey = Environment.GetEnvironmentVariable("LIVEOLATOR_ACOUSTID_KEY");
+        string? fpcalcPath = Environment.GetEnvironmentVariable("LIVEOLATOR_FPCALC_PATH");
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -57,8 +69,19 @@ public sealed class ServerConfig
                 case "--data":
                     dataDir = RequireValue(args, ref i, "--data");
                     break;
+                case "--getsongbpm-key":
+                    getSongBpmKey = RequireValue(args, ref i, "--getsongbpm-key");
+                    break;
+                case "--acoustid-key":
+                    acoustIdKey = RequireValue(args, ref i, "--acoustid-key");
+                    break;
+                case "--fpcalc":
+                    fpcalcPath = RequireValue(args, ref i, "--fpcalc");
+                    break;
                 default:
-                    throw new ArgumentException($"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--ffmpeg PATH] [--data DIR].");
+                    throw new ArgumentException(
+                        $"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--ffmpeg PATH] "
+                        + "[--data DIR] [--getsongbpm-key KEY] [--acoustid-key KEY] [--fpcalc PATH].");
             }
         }
 
@@ -68,6 +91,9 @@ public sealed class ServerConfig
             Port = port,
             FfmpegPath = string.IsNullOrWhiteSpace(ffmpegPath) ? null : ffmpegPath,
             DataDirectory = string.IsNullOrWhiteSpace(dataDir) ? null : dataDir,
+            GetSongBpmKey = string.IsNullOrWhiteSpace(getSongBpmKey) ? null : getSongBpmKey,
+            AcoustIdKey = string.IsNullOrWhiteSpace(acoustIdKey) ? null : acoustIdKey,
+            FpcalcPath = string.IsNullOrWhiteSpace(fpcalcPath) ? null : fpcalcPath,
         };
     }
 

@@ -57,6 +57,14 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 if (string.IsNullOrWhiteSpace(action.Argument))
                     throw new ArgumentException("DeckLoadTrack requires Argument set to the track path.", nameof(action));
                 _engine.Load(slot, action.Argument);
+                // Value carries the track's analyzed BPM (0 = unknown), feeding the deck's Sync reference
+                // tempo so beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
+                _engine.SetDeckBaseBpm(slot, action.Value);
+                // Report the loaded path so a deck UI (waveform/title) can react — feedback is the only
+                // load-time signal back to subscribers, and it now carries the path via Argument.
+                RaiseFeedback(
+                    PerformanceActionKind.DeckLoadTrack, slot,
+                    new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: action.Argument));
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);

@@ -8,6 +8,7 @@ using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
+using Liveolator.Audio.Waveform;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
@@ -20,6 +21,7 @@ using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
+using Liveolator.Core.Waveform;
 using Liveolator.Media;
 using Liveolator.Midi;
 using Liveolator.Platform;
@@ -53,6 +55,10 @@ public static class ServiceConfig
         services.AddSingleton<IFileEnumerator, FileSystemEnumerator>();          // Liveolator.Platform
         services.AddSingleton<IAudioDecoder>(_ => new CompositeAudioDecoder());  // Liveolator.Audio
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();        // Liveolator.Audio (ATL.NET tags)
+        // Deck waveform overview (doc 11): decodes the loaded track to peaks for the deck strip. Uses the
+        // offline decoder, so it works headless (no realtime BASS needed); failures degrade to no waveform.
+        services.AddSingleton<IWaveformProvider>(sp => new DecodedWaveformProvider(
+            sp.GetRequiredService<IAudioDecoder>()));
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
@@ -164,7 +170,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
             sp.GetRequiredService<ILivePlaylist>(),
             sp.GetRequiredService<MusicLibrary>(),
-            sp.GetRequiredService<TrackContextActions>()));
+            sp.GetRequiredService<TrackContextActions>(),
+            sp.GetService<IWaveformProvider>()));
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
@@ -277,7 +284,8 @@ public static class ServiceConfig
         services.AddSingleton<LiveViewModel>(sp => new LiveViewModel(
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
-            sp.GetService<IVisualStage>()));
+            sp.GetService<IVisualStage>(),
+            sp.GetService<IWaveformProvider>()));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---

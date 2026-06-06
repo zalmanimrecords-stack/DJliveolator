@@ -226,10 +226,11 @@ the beat clock follows the audible mix — the increment that turns the routing 
   still disabled — a separate UI increment). `SetCue` (mixer
   PFL) still latches the flag only; `BassMixer` still drops controls for an unregistered slot.
 
-### ✅ Deck waveform — data foundation — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` (doc 11)
+### ✅ Deck waveform — overview + playhead, end-to-end — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` + `Liveolator.App` (doc 11)
 
-The track-overview waveform the decks draw, built **data-first**: a pure peak model + reducer in Core, an
-offline decode→peaks provider in the Audio binding. The UI render + playhead wiring is the next increment.
+The track-overview waveform the decks draw, built **data-first** then wired through the action layer to the
+UI: a pure peak model + reducer in Core, an offline decode→peaks provider in the Audio binding, a
+data-driven strip control, and a deck VM that learns its track from `DeckLoadTrack` feedback.
 
 | Built | File |
 |-------|------|
@@ -237,6 +238,8 @@ offline decode→peaks provider in the Audio binding. The UI render + playhead w
 | Pure reducer (mono PCM → N max-abs buckets; transients preserved, clamped, upsamples) | `WaveformBuilder` (Core) |
 | Provider seam | `IWaveformProvider` (Core) |
 | Decode→reduce provider over the offline `IAudioDecoder` | `DecodedWaveformProvider` (Audio) |
+| Data-driven strip (real peaks + played/ahead split + playhead; decorative fallback) | `WaveformStrip` (App/Controls) |
+| Deck VM waveform + playhead | `DeckViewModel.Waveform`/`Progress` (App) |
 
 - `WaveformBuilder` takes **max-abs per bucket** (not an average) so transients survive the downsample;
   amplitudes clamp to 0..1 and every bucket is filled even when buckets > samples. Pure — unit-tested with
@@ -246,12 +249,19 @@ offline decode→peaks provider in the Audio binding. The UI render + playhead w
   **degrade, never throw**: an undecodable/failing/empty track returns `WaveformOverview.Empty` so the deck
   falls back to its placeholder; cancellation propagates. Tested with a fake decoder (no FFmpeg/BASS).
   +12 tests (Core `WaveformBuilderTests` 6, Audio `DecodedWaveformProviderTests` 6).
-- **Deferred (next increment — the render + playhead):** register `IWaveformProvider` →
-  `DecodedWaveformProvider` in `ServiceConfig`; on deck load (`DeckLoadTrack`), fetch the overview
-  off-thread and expose it on the deck VM; make `WaveformStrip` (`Liveolator.App/Controls`) **data-driven**
-  (render real peaks, fall back to its decorative bars when none) with a **playhead** overlay driven by the
-  deck `Position` feedback (already emitted by `DeckActionHandler`). These touch the Live-tab DeckView files
-  currently owned by parallel UI work, so they are intentionally held until that settles.
+- **UI wired (the render + playhead):** `ServiceConfig` registers `IWaveformProvider` →
+  `DecodedWaveformProvider` and threads it through `LiveViewModel`/`DjViewModel` into both decks. The deck
+  learns its loaded track from **`DeckLoadTrack` feedback** — `ActionFeedbackState` gained an optional
+  `Argument` (mirrors `PerformanceAction.Argument`) so `DeckActionHandler` reports the path on load, the only
+  load-time signal back to subscribers. `DeckViewModel` then sets the title, kicks an **off-thread** overview
+  decode (cancelling any prior in-flight load on a fast deck swap), and exposes `Waveform` + `Progress`.
+  `WaveformStrip` renders real mirrored peaks with a played/ahead colour split + a playhead line, falling
+  back to its decorative bars when no track is loaded. **Headless-safe:** the overview uses the offline
+  decoder (works with no realtime BASS); the playhead polls `DeckSeek` position feedback (`Unavailable`
+  without a realtime engine → stays at 0).
+- **Deferred:** a precomputed/cached overview in the catalog (re-decoding per load is fine for now but
+  redundant with analysis); a beat-grid overlay on the strip; click-to-seek on the waveform (would emit
+  `DeckSeek`); and surfacing the same strip on the **DJ-tab** deck view (the VM already carries the data).
 
 ### ✅ Settings — audio output / buffer / MIDI device selection — `Liveolator.App/Features/Settings/` (doc 12)
 

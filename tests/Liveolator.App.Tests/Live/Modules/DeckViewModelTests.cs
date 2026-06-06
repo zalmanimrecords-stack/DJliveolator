@@ -78,9 +78,50 @@ public sealed class DeckViewModelTests
 
         Assert.False(vm.CanCue);
         Assert.False(vm.CanLoop);
-        Assert.False(vm.CanSync);
         Assert.False(vm.CanHotCue);
         Assert.False(vm.Pitch.IsEnabled);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task Sync_EmitsDeckSyncLockToggle_ForItsSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot, dispatcher);
+
+        Assert.True(vm.CanSync);
+        await vm.SyncCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSyncLockToggle, action.Kind);
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public void CanSync_IsFalse_WithoutADispatcher()
+    {
+        var vm = new DeckViewModel(slot: 0); // catalog-browser mode: no engine backs the deck
+
+        Assert.False(vm.CanSync);
+    }
+
+    [Fact]
+    public void IsSyncLocked_FollowsDeckSyncLockToggleFeedback_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        Assert.False(vm.IsSyncLocked);
+
+        // Feedback for the other deck must not affect this one.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.False(vm.IsSyncLocked);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.True(vm.IsSyncLocked);
     }
 
     [Fact]

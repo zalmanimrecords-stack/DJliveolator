@@ -100,6 +100,7 @@ public class DeckActionHandlerTests
         private readonly bool[] _quantize;
         private readonly double[] _position;
         private readonly double[] _pitch;
+        private readonly double[] _baseBpm;
 
         public List<(int Slot, string Path)> Loaded { get; } = new();
         public List<int> PlayPaused { get; } = new();
@@ -115,6 +116,7 @@ public class DeckActionHandlerTests
             _quantize = new bool[deckCount];
             _position = new double[deckCount];
             _pitch = new double[deckCount];
+            _baseBpm = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
                 _pitch[i] = 0.5; // center = original tempo
         }
@@ -147,6 +149,9 @@ public class DeckActionHandlerTests
             _position[slot] = 0;
         }
 
+        public double DeckBaseBpm(int slot) => _baseBpm[slot];
+        public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
+
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
@@ -161,6 +166,20 @@ public class DeckActionHandlerTests
             HotCues.Add((slot, cueIndex));
             _setCues.Add((slot, cueIndex));
         }
+    }
+
+    [Fact]
+    public void LoadTrack_ForwardsValueAsBaseBpmToSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128.0, Slot: 1, Argument: @"C:\b.wav"));
+
+        Assert.Equal(128.0, engine.DeckBaseBpm(1), precision: 6);
+        Assert.Equal(0.0, engine.DeckBaseBpm(0), precision: 6); // other deck untouched
     }
 
     [Fact]
@@ -338,6 +357,26 @@ public class DeckActionHandlerTests
 
         Assert.Throws<ArgumentOutOfRangeException>(
             () => handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "8", Slot: 0)));
+    }
+
+    [Fact]
+    public void LoadTrack_RaisesFeedbackCarryingThePath()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackChanged? captured = null;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckLoadTrack)
+                captured = e;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, Argument: @"C:\song.flac", Slot: 1));
+
+        Assert.NotNull(captured);
+        Assert.Equal(1, captured!.Slot);
+        Assert.Equal(@"C:\song.flac", captured.State.Argument);
     }
 
     [Fact]

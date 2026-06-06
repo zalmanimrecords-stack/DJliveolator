@@ -49,17 +49,18 @@ public sealed class TrackContextActionsTests
     }
 
     [Fact]
-    public void LoadToDeck_dispatches_DeckLoadTrack_with_slot_and_path()
+    public void LoadToDeck_dispatches_DeckLoadTrack_with_slot_path_and_bpm()
     {
         var dispatcher = new RecordingDispatcher(deckCount: 2);
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
 
-        actions.LoadToDeck(1, "/m/a.wav");
+        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0);
 
         PerformanceAction a = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, a.Kind);
         Assert.Equal(1, a.Slot);
         Assert.Equal("/m/a.wav", a.Argument);
+        Assert.Equal(126.0, a.Value, precision: 6); // BPM rides in Value → deck sync reference (doc 11)
     }
 
     [Theory]

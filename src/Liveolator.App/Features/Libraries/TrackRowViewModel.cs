@@ -13,7 +13,9 @@ public sealed class TrackRowViewModel
     public TrackRowViewModel(MusicTrack track, TrackContextActions? contextActions = null)
     {
         Track = track ?? throw new ArgumentNullException(nameof(track));
-        Menu = contextActions is null ? null : new TrackMenuViewModel(track.File.Path, contextActions);
+        Menu = contextActions is null
+            ? null
+            : new TrackMenuViewModel(track.File.Path, contextActions, track.Bpm?.Bpm ?? 0);
     }
 
     public MusicTrack Track { get; }

@@ -12,17 +12,20 @@ namespace Liveolator.App.Features.Shared;
 public sealed class TrackMenuViewModel
 {
     private readonly string _trackPath;
+    private readonly double _bpm;
     private readonly TrackContextActions _actions;
 
-    public TrackMenuViewModel(string trackPath, TrackContextActions actions)
+    /// <param name="bpm">The track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).</param>
+    public TrackMenuViewModel(string trackPath, TrackContextActions actions, double bpm = 0)
     {
         _trackPath = trackPath ?? throw new ArgumentNullException(nameof(trackPath));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
+        _bpm = bpm;
 
         LoadToDeckACommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(0, _trackPath), Observable.Return(_actions.CanLoadToDeckA));
+            () => _actions.LoadToDeck(0, _trackPath, _bpm), Observable.Return(_actions.CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(1, _trackPath), Observable.Return(_actions.CanLoadToDeckB));
+            () => _actions.LoadToDeck(1, _trackPath, _bpm), Observable.Return(_actions.CanLoadToDeckB));
     }
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }

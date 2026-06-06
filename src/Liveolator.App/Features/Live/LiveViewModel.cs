@@ -2,6 +2,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Beat;
+using Liveolator.Core.Waveform;
 
 namespace Liveolator.App.Features.Live;
 
@@ -29,13 +30,15 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// <param name="hostClock">Monotonic host time used to stamp each pump tick.</param>
     /// <param name="timer">Render-loop seam driving <paramref name="clockDriver"/>; null disables it.</param>
     /// <param name="visualStage">Launches the GL visuals window on demand; null hides the control.</param>
+    /// <param name="waveformProvider">Decodes the deck waveform overview; null leaves the placeholder strip.</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
         IManualBeatClockDriver? clockDriver = null,
         IHostClock? hostClock = null,
         ILiveBeatTimer? timer = null,
-        IVisualStage? visualStage = null)
+        IVisualStage? visualStage = null,
+        IWaveformProvider? waveformProvider = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
@@ -44,8 +47,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
 
         ProgramOut = new ProgramOutViewModel(visualStage);
         Beat = new BeatEngineViewModel(dispatcher, beatClock);
-        DeckA = new DeckViewModel(slot: 0, dispatcher);
-        DeckB = new DeckViewModel(slot: 1, dispatcher);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider);
         Mixer = new MixerViewModel(dispatcher);
         SceneGrid = new SceneGridViewModel(dispatcher);
         MasterFx = new MasterFxViewModel(dispatcher);

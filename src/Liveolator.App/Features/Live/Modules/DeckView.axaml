@@ -27,16 +27,10 @@
         <Button Grid.Column="2" Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
       </Grid>
 
-      <!-- waveform placeholder (no live waveform backend yet) -->
+      <!-- waveform: real overview + playhead when a track is loaded, decorative strip otherwise -->
       <Border Height="56" Background="{StaticResource S2}" BorderBrush="{StaticResource Hair}"
               BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-        <Grid>
-          <controls:WaveformStrip />
-          <Border HorizontalAlignment="Center" VerticalAlignment="Center"
-                  Background="{StaticResource S2}" CornerRadius="4" Padding="8,3">
-            <TextBlock Classes="faint" Text="Waveform — coming soon" />
-          </Border>
-        </Grid>
+        <controls:WaveformStrip Peaks="{Binding Waveform}" Progress="{Binding Progress}" />
       </Border>
 
       <!-- hot cues (disabled — no handler yet) -->
@@ -47,7 +41,7 @@
         <Button Classes="key" Content="4" IsEnabled="{Binding CanHotCue}" />
       </UniformGrid>
 
-      <!-- transport: CUE (disabled) · Play · Loop (disabled) · Sync (disabled) -->
+      <!-- transport: CUE (disabled) · Play · Loop (disabled) · Sync (tempo match) -->
       <UniformGrid Columns="4">
         <Button Classes="key" Content="CUE" IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
         <Button Classes="play" Classes.on="{Binding IsPlaying}"
@@ -55,7 +49,8 @@
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{StaticResource Accent}" />
         </Button>
         <Button Classes="key" Content="LOOP" IsEnabled="{Binding CanLoop}" Margin="0,0,4,0" />
-        <Button Classes="key" Content="SYNC" IsEnabled="{Binding CanSync}" />
+        <Button Classes="key" Content="SYNC" Classes.on="{Binding IsSyncLocked}"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 
       <!-- EQ / filter / pitch knobs -->

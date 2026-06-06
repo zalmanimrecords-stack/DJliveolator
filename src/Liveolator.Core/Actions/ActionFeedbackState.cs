@@ -7,7 +7,10 @@ namespace Liveolator.Core.Actions;
 /// <param name="IsActive">Toggle is on, or the action is armed/engaged.</param>
 /// <param name="IsAvailable">The action can be triggered right now.</param>
 /// <param name="Value">Current value for knob-/fader-backed actions, in 0..1.</param>
-public sealed record ActionFeedbackState(bool IsActive, bool IsAvailable, double Value)
+/// <param name="Argument">Optional free-form payload mirroring <see cref="PerformanceAction.Argument"/>,
+/// for state that is not a bool/number — e.g. the loaded track path a deck reports after a load. Null
+/// when unused.</param>
+public sealed record ActionFeedbackState(bool IsActive, bool IsAvailable, double Value, string? Argument = null)
 {
     /// <summary>The state for an action that has no owning handler or cannot currently run.</summary>
     public static ActionFeedbackState Unavailable { get; } = new(IsActive: false, IsAvailable: false, Value: 0);

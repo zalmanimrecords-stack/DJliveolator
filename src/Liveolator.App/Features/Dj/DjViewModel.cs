@@ -7,6 +7,7 @@ using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Waveform;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Dj;
@@ -30,15 +31,16 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         IPerformanceActionDispatcher? dispatcher = null,
         ILivePlaylist? playlist = null,
         MusicLibrary? library = null,
-        Shared.TrackContextActions? contextActions = null)
+        Shared.TrackContextActions? contextActions = null,
+        IWaveformProvider? waveformProvider = null)
     {
         _dispatcher = dispatcher;
         _playlist = playlist;
         _library = library;
         _contextActions = contextActions;
 
-        DeckA = new DeckViewModel(slot: 0, dispatcher);
-        DeckB = new DeckViewModel(slot: 1, dispatcher);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider);
         Mixer = new MixerViewModel(dispatcher);
         Set = new ObservableCollection<SetEntryViewModel>();
 

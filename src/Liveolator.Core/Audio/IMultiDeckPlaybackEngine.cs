@@ -50,6 +50,15 @@ public interface IMultiDeckPlaybackEngine
     /// <summary>Jump the playhead to the deck's cue point (defaults to the track start) and pause there.</summary>
     void Cue(int slot);
 
+    /// <summary>
+    /// The deck's analyzed natural tempo (BPM) used as the Sync reference; 0 when unknown. Set when a
+    /// track with a known BPM loads so Sync Lock can beatmatch against it (doc 11).
+    /// </summary>
+    double DeckBaseBpm(int slot);
+
+    /// <summary>Set the deck's natural tempo (BPM) used as the Sync reference. 0 (or negative) = unknown.</summary>
+    void SetDeckBaseBpm(int slot, double bpm);
+
     /// <summary>True while the deck is sync-locked (beatmatched) to the master tempo.</summary>
     bool IsSyncLocked(int slot);
 

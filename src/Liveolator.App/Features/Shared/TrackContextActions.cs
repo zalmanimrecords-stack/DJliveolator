@@ -41,13 +41,16 @@ public sealed class TrackContextActions
     public bool CanLoadToDeckA { get; }
     public bool CanLoadToDeckB { get; }
 
-    /// <summary>Stages a track on a deck slot (A = 0, B = 1) without auto-playing it.</summary>
-    public void LoadToDeck(int slot, string trackPath)
+    /// <summary>
+    /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it. <paramref name="bpm"/> is the
+    /// track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).
+    /// </summary>
+    public void LoadToDeck(int slot, string trackPath, double bpm)
     {
         if (_dispatcher is null || string.IsNullOrWhiteSpace(trackPath))
             return;
         _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Slot: slot, Argument: trackPath));
+            PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: bpm, Argument: trackPath));
         _onStatus?.Invoke($"Loaded \"{TitleOf(trackPath)}\" → Deck {(slot == 0 ? "A" : "B")}");
     }
 
