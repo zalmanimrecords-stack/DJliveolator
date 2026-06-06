@@ -7,7 +7,9 @@ namespace Liveolator.Core.Waveform;
 /// unit-tested with no native decode.
 /// </summary>
 /// <param name="Peaks">One 0..1 magnitude per bucket, left-to-right across the track.</param>
-public sealed record WaveformOverview(IReadOnlyList<float> Peaks)
+/// <param name="DurationSeconds">Decoded track length in seconds; 0 when unknown. Lets the UI place a
+/// beat-grid overlay (beat interval ÷ duration = a 0..1 fraction) without a second decode.</param>
+public sealed record WaveformOverview(IReadOnlyList<float> Peaks, double DurationSeconds = 0)
 {
     /// <summary>Number of buckets.</summary>
     public int Count => Peaks.Count;

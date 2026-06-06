@@ -265,10 +265,13 @@ the beat clock follows the audible mix — the increment that turns the routing 
   cue points + hot-cue clear; per-pad hot-cue
   LED feedback (the `ActionFeedbackChanged` model has no cue-index field yet); tempo-preserving pitch (would add
   `ManagedBass.Fx`); and ASIO/CoreAudio multi-channel cue output. The new deck transport is reachable via the
-  dispatcher and **Sync is now surfaced in the Live-tab DeckView UI** (the SYNC button drives
-  `DeckSyncLockToggle` with active-state feedback); cue/pitch/loop/hot-cue controls there are still disabled
-  (a separate UI increment). `SetCue` (mixer
-  PFL) still latches the flag only; `BassMixer` still drops controls for an unregistered slot.
+  dispatcher and **all the transport controls are now surfaced in the DeckView UI** (shared by the Live and
+  DJ tabs): Sync/Play (existing), plus **Cue** (`DeckCue`), **Loop** (`DeckSetLoop`, a default 4-beat loop —
+  the action emits and the LOOP key follows its active-state feedback, ready for the engine handler still
+  being built), the **four hot-cue pads** (`DeckHotCue` per index, each pad lit from `DeckHotCue` feedback
+  via the cue index carried in `ActionFeedbackState.Argument`), and the **Pitch** fader (`DeckPitch`,
+  following its value feedback). `SetCue` (mixer PFL) still latches the flag only; `BassMixer` still drops
+  controls for an unregistered slot.
 
 ### ✅ Deck waveform — overview + playhead, end-to-end — `Liveolator.Core/Waveform/` + `Liveolator.Audio/Waveform/` + `Liveolator.App` (doc 11)
 
@@ -303,9 +306,16 @@ data-driven strip control, and a deck VM that learns its track from `DeckLoadTra
   back to its decorative bars when no track is loaded. **Headless-safe:** the overview uses the offline
   decoder (works with no realtime BASS); the playhead polls `DeckSeek` position feedback (`Unavailable`
   without a realtime engine → stays at 0).
+- **Completed in this increment:** a **beat-grid overlay** on the strip (the deck derives 0..1 beat-line
+  fractions via the pure `BeatGridCalculator` from the load BPM — now echoed in `DeckLoadTrack` feedback
+  `Value` — and the decoded duration, now carried on `WaveformOverview.DurationSeconds`); **click-to-seek**
+  (the strip maps the clicked X to a 0..1 fraction and emits `DeckSeek` through `DeckViewModel.SeekCommand`);
+  and the strip is **already surfaced on the DJ tab**, which shares `DeckView`/`DeckViewModel` via the
+  `ViewLocator`.
 - **Deferred:** a precomputed/cached overview in the catalog (re-decoding per load is fine for now but
-  redundant with analysis); a beat-grid overlay on the strip; click-to-seek on the waveform (would emit
-  `DeckSeek`); and surfacing the same strip on the **DJ-tab** deck view (the VM already carries the data).
+  redundant with analysis); a first-beat-anchored grid (the grid currently assumes the first beat is at the
+  track start — it needs the per-track downbeat anchor that analysis does not yet record); and a
+  continuously advancing playhead during playback (still needs a render-loop tick).
 
 ### ✅ Settings — audio output / buffer / MIDI device selection — `Liveolator.App/Features/Settings/` (doc 12)
 

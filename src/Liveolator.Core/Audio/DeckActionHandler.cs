@@ -59,10 +59,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                     throw new ArgumentException("DeckLoadTrack requires Argument set to the track path.", nameof(action));
                 LoadTrack(slot, action);
                 // Report the loaded path so a deck UI (waveform/title) can react — feedback is the only
-                // load-time signal back to subscribers, and it now carries the path via Argument.
+                // load-time signal back to subscribers, and it now carries the path via Argument and the
+                // analyzed BPM via Value (0 = unknown) so the deck can derive a beat-grid overlay.
                 RaiseFeedback(
                     PerformanceActionKind.DeckLoadTrack, slot,
-                    new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: action.Argument));
+                    new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: action.Value, Argument: action.Argument));
                 break;
             case PerformanceActionKind.DeckSetLoop:
                 SetLoop(slot, action);
