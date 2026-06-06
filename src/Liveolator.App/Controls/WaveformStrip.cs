@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 
 namespace Liveolator.App.Controls;
 
@@ -20,17 +21,17 @@ public sealed class WaveformStrip : Control
 {
     public static readonly StyledProperty<IBrush> BarBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(BarBrush), new SolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x80, 0xF6)));
+            nameof(BarBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x80, 0xF6)));
 
     /// <summary>Brush for the part of the waveform already played (left of the playhead).</summary>
     public static readonly StyledProperty<IBrush> PlayedBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(PlayedBrush), new SolidColorBrush(Color.FromRgb(0x2F, 0x80, 0xF6)));
+            nameof(PlayedBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x2F, 0x80, 0xF6)));
 
     /// <summary>Brush for the beat-grid lines (a faint hairline behind the waveform).</summary>
     public static readonly StyledProperty<IBrush> GridBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(GridBrush), new SolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
+            nameof(GridBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
