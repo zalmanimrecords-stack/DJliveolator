@@ -50,6 +50,23 @@ public sealed class SceneGridViewModelTests
     }
 
     [Fact]
+    public void Bank_tabs_use_the_supplied_bank_names()
+    {
+        var vm = new SceneGridViewModel(new FakeDispatcher(), new[] { "Live", "Set B" });
+
+        Assert.Equal(new[] { "Live", "Set B" }, vm.Banks);
+    }
+
+    [Fact]
+    public void Bank_tabs_fall_back_to_the_phase_labels_when_none_supplied()
+    {
+        var vm = new SceneGridViewModel(new FakeDispatcher());
+
+        // No real banks supplied → the mock's phase labels keep the grid presentable headless.
+        Assert.Equal(new[] { "Warmup", "Peak", "Breaks", "Outro" }, vm.Banks);
+    }
+
+    [Fact]
     public void Pads_SeedLoadedStateFromFeedback()
     {
         var dispatcher = new FakeDispatcher();

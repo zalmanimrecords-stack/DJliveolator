@@ -5,6 +5,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -19,6 +20,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
@@ -31,6 +33,7 @@ using Liveolator.Media;
 using Liveolator.Media.Extensions;
 using Liveolator.Midi;
 using Liveolator.Platform;
+using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -143,12 +146,25 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
-        // restarts (doc 13). The seam lives in Core; JsonCatalogStore is the Media binding.
-        services.AddSingleton<IMusicCatalogStore>(
-            _ => new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
+        // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
+        var catalogStore = new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IMusicCatalogStore>(catalogStore);
+        services.AddSingleton<IVisualCatalogStore>(catalogStore);
+        // Visual-media library (doc 08/13, Track C C1): the same Core library + composite probe the MCP
+        // scan_visual_folders tool uses. The composite probe routes images to a pure header reader and
+        // videos to ffprobe, so the common image case needs no external tool.
+        services.AddSingleton<IVisualMediaProbe>(_ => new CompositeVisualMediaProbe());
+        services.AddSingleton<VisualMediaLibrary>(sp => new VisualMediaLibrary(
+            sp.GetRequiredService<IFileEnumerator>(), sp.GetRequiredService<IVisualMediaProbe>()));
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
+        // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
+        // next run and survive a deck reload (tolerant: a missing/corrupt file degrades to no cues).
+        var hotCueStore = new JsonHotCueStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IHotCueStore>(hotCueStore);
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
@@ -172,7 +188,7 @@ public static class ServiceConfig
         // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks);
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore);
         MasterMixPlaybackEngine? masterMix =
             deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
         bool realtimeUp = deckEngine is not null;
@@ -285,6 +301,11 @@ public static class ServiceConfig
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
             sp.GetRequiredService<TrackContextActions>()));
 
+        // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
+        services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
+            sp.GetRequiredService<VisualMediaLibrary>(),
+            sp.GetRequiredService<IVisualCatalogStore>()));
+
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
         services.AddSingleton<DjViewModel>(sp => new DjViewModel(
@@ -354,11 +375,13 @@ public static class ServiceConfig
     private static TwoDeckBassEngine? TryBuildDeckEngine(
         BassMixer mixer,
         AudioSettings audioSettings,
-        IAudioEffectRackProvider effectRacks)
+        IAudioEffectRackProvider effectRacks,
+        IHotCueStore hotCueStore)
     {
         try
         {
-            return new TwoDeckBassEngine(mixer, audioSettings: audioSettings, effectRacks: effectRacks);
+            return new TwoDeckBassEngine(
+                mixer, audioSettings: audioSettings, effectRacks: effectRacks, hotCueStore: hotCueStore);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
@@ -388,7 +411,8 @@ public static class ServiceConfig
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        var visualEngine = new GlVisualPerformanceEngine(LoadOrBuildStarterBank(profileStore), brightnessMacro, liveClock);
+        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore);
+        var visualEngine = new GlVisualPerformanceEngine(banks, brightnessMacro, liveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -436,25 +460,40 @@ public static class ServiceConfig
     /// <summary>The well-known name of the user's authored startup scene bank under <c>live/scenes/</c>.</summary>
     private const string StartupVisualBankName = "Live";
 
-    // Loads the authored startup visual bank from persistence (doc 13) so saved scenes feed the engine
-    // across restarts. Tolerant: a missing/corrupt/old snapshot returns null (the store already warned),
-    // so we fall back to the placeholder starter bank rather than starting with no visuals. Blocking is
-    // acceptable in the composition root (one small JSON file), mirroring the settings load above.
-    private static VisualBank LoadOrBuildStarterBank(ILiveProfileStore profileStore)
+    // Loads every authored visual bank from persistence (doc 13/22 C3) so the Scene Grid can switch
+    // banks at runtime (VisualSelectBank → real bank data). The startup bank ("Live") is placed first
+    // so it is the active bank on launch (preserving prior single-bank behaviour); any other saved
+    // banks follow in name order. When nothing is saved, the engine ships the single placeholder starter
+    // bank. Tolerant: a missing/corrupt/old snapshot is skipped (the store already warned), never fatal —
+    // blocking on these small JSON files in the composition root mirrors the settings/macros load above.
+    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(ILiveProfileStore profileStore)
     {
+        var banks = new List<VisualBank>();
         try
         {
-            VisualBank? saved = profileStore.LoadVisualBankAsync(StartupVisualBankName).GetAwaiter().GetResult();
-            if (saved is not null && saved.Scenes.Count > 0)
-                return saved;
+            IReadOnlyList<string> names = profileStore.ListVisualBankNamesAsync().GetAwaiter().GetResult();
+            // Startup bank first (active on launch), then the rest, de-duplicated and skipping empties.
+            foreach (string name in names
+                         .OrderByDescending(n => string.Equals(n, StartupVisualBankName, StringComparison.OrdinalIgnoreCase))
+                         .ThenBy(n => n, StringComparer.OrdinalIgnoreCase))
+            {
+                VisualBank? bank = profileStore.LoadVisualBankAsync(name).GetAwaiter().GetResult();
+                if (bank is not null && bank.Scenes.Count > 0)
+                    banks.Add(bank);
+            }
         }
         catch (Exception ex)
         {
-            // The store load is itself tolerant; this guards only against an unexpected fault so a bad
-            // snapshot can never block startup (global standards #16/#26).
-            System.Diagnostics.Trace.TraceWarning($"Could not load saved visual bank '{StartupVisualBankName}': {ex.Message}.");
+            // The store loads are themselves tolerant; this guards only against an unexpected fault so a
+            // bad snapshot can never block startup (global standards #16/#26).
+            System.Diagnostics.Trace.TraceWarning($"Could not enumerate saved visual banks: {ex.Message}.");
         }
-        return BuildStarterBank();
+
+        // Always have at least one bank so the engine + Scene Grid have something to address.
+        if (banks.Count == 0)
+            banks.Add(BuildStarterBank());
+
+        return banks;
     }
 
     // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
@@ -469,7 +508,9 @@ public static class ServiceConfig
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
             sp.GetService<IVisualStage>(),
             sp.GetService<IWaveformProvider>(),
-            sp.GetRequiredService<PerformanceDeckSet>()));
+            sp.GetRequiredService<PerformanceDeckSet>(),
+            // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
+            sp.GetService<IVisualPerformanceEngine>()?.BankNames));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------

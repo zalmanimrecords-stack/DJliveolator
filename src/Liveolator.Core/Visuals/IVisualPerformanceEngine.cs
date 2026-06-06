@@ -14,7 +14,13 @@ public interface IVisualPerformanceEngine
     /// <summary>The bank currently addressable by pads / the Scene Grid.</summary>
     VisualBank ActiveBank { get; }
 
-    /// <summary>Selects the active bank by index.</summary>
+    /// <summary>
+    /// The names of all banks addressable by <see cref="SelectBank"/>, in selection-index order, so a
+    /// Scene Grid / Push surface can label its bank tabs from real data (doc 22 C3).
+    /// </summary>
+    IReadOnlyList<string> BankNames { get; }
+
+    /// <summary>Selects the active bank by index; an out-of-range index is ignored.</summary>
     void SelectBank(int index);
 
     /// <summary>Loads a scene's full layer stack, applied atomically at the resolved quantum.</summary>

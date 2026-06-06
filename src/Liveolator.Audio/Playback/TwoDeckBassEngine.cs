@@ -1,7 +1,9 @@
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -43,6 +45,21 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     private readonly object _gate = new();
     private readonly MasterAudioSource _master;
     private readonly LoadedDeck?[] _decks = new LoadedDeck?[Decks];
+
+    // Persistent hot-cue store (doc 11/13, A3): null = cues stay RAM-only (the prior behaviour). When
+    // present, a track's saved cue set is loaded on Load and re-saved on set/clear, keyed by file path.
+    private readonly IHotCueStore? _hotCueStore;
+
+    // The sample rate the persisted cue offsets are mapped against — the master mix rate. Cue positions
+    // are stored as fractions here but persisted as samples, so the store record is self-describing.
+    private readonly int _sampleRate;
+
+    // Per-slot file path of the loaded track; the cue-store key. null = nothing loaded.
+    private readonly string?[] _loadedPath = new string?[Decks];
+
+    // Per-slot temporary (primary) cue position as a 0..1 fraction; null = unset, so the Cue button
+    // returns to the track start (the prior behaviour). Belongs to the track — cleared on unload (A5).
+    private readonly double?[] _tempCue = new double?[Decks];
 
     // Per-slot transport state that persists across track loads (a DJ keeps the pitch fader and the
     // sync/quantize toggles where they were set when swapping tracks). Position is read live from the
@@ -86,14 +103,15 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     public TwoDeckBassEngine(
         BassMixer mixer, int sampleRate = 48_000, int channels = 2,
         ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null,
-        IAudioEffectRackProvider? effectRacks = null)
+        IAudioEffectRackProvider? effectRacks = null,
+        IHotCueStore? hotCueStore = null)
         : this(
             new BassMixerBackend(
                 sampleRate, channels,
                 (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>(),
                 audioSettings,
                 effectRacks),
-            mixer, loggerFactory)
+            mixer, loggerFactory, hotCueStore)
     {
     }
 
@@ -101,10 +119,13 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// Constructs the engine over a backend seam. Internal so tests inject a fake; the public ctor
     /// above wires the real BASSmix <see cref="BassMixerBackend"/>.
     /// </summary>
-    internal TwoDeckBassEngine(IBassMixerBackend backend, BassMixer mixer, ILoggerFactory? loggerFactory = null)
+    internal TwoDeckBassEngine(
+        IBassMixerBackend backend, BassMixer mixer, ILoggerFactory? loggerFactory = null,
+        IHotCueStore? hotCueStore = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _mixer = mixer ?? throw new ArgumentNullException(nameof(mixer));
+        _hotCueStore = hotCueStore;
         if (mixer.DeckCount < Decks)
             throw new ArgumentException(
                 $"Mixer addresses {mixer.DeckCount} deck(s); the two-deck engine needs {Decks}.", nameof(mixer));
@@ -121,11 +142,15 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
             _mixer.SetCueOutput(cueOutput);
 
         MasterMixInfo info = _backend.CreateMaster();
+        _sampleRate = info.SampleRate;
         _master = new MasterAudioSource(info.Channels, info.SampleRate);
         // Arm the master tap immediately: the mix runs continuously and the beat clock is fed whenever
         // a deck is playing, with no extra "start the mix" step for the host to coordinate.
         _backend.StartMaster(_master.Emit);
     }
+
+    /// <inheritdoc />
+    public event EventHandler<int>? DeckEnded;
 
     /// <summary>The post-crossfader master mix; feed this to a <see cref="MasterMixPlaybackEngine"/>.</summary>
     public IAudioSource MasterSource => _master;
@@ -170,11 +195,18 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
                 IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
+                _loadedPath[slot] = trackPath; // the cue-store key for this slot
                 // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the
                 // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
                 // load action supplies the new track's base BPM via SetDeckBaseBpm).
                 if (!_syncLocked[slot])
                     _backend.SetDeckRate(handle, RateFor(_pitchPosition[slot]));
+                // Restore the track's persisted hot cues (A3). Tolerant: a missing/unreadable store
+                // leaves the slot with the fresh (empty) cue bank UnloadSlot cleared — never a throw.
+                LoadPersistedHotCues(slot, handle, trackPath);
+                // Arm end-of-track handling (A4): when this stream runs out, mark the slot stopped and
+                // raise DeckEnded so the live queue can auto-advance (or stop when dry).
+                _backend.SetDeckEndCallback(handle, () => OnDeckEnded(slot, handle));
                 _logger.LogInformation("Loaded deck slot {Slot} <- {Track}", slot, trackPath);
             }
             catch (Exception ex)
@@ -265,9 +297,23 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         {
             if (_decks[slot] is not { } deck)
                 return;
-            // Jump to the cue point (the track start in this increment — settable cue points are a later
-            // increment) and pause there, the standard "back to cue" behaviour.
-            _backend.SetDeckPositionFraction(deck.Handle, 0.0);
+
+            // CDJ back-to-cue (A5): the pure resolver decides set-vs-return from the deck's transport
+            // state, live position, and stored temp cue. Set drops a fresh cue here; return jumps to the
+            // stored cue (or track start when none is set) and pauses.
+            double current = _backend.GetDeckPositionFraction(deck.Handle);
+            CueButtonAction action = CueButtonResolver.Resolve(deck.Playing, current, _tempCue[slot]);
+            if (action == CueButtonAction.SetCueHere)
+            {
+                _tempCue[slot] = current;
+                _backend.SetDeckPlaying(deck.Handle, false);
+                _decks[slot] = deck with { Playing = false };
+                _logger.LogInformation("Deck slot {Slot} cue: set temp cue at {Pos:F4}.", slot, current);
+                return;
+            }
+
+            double target = _tempCue[slot] ?? 0.0; // return to the stored cue, else the track start
+            _backend.SetDeckPositionFraction(deck.Handle, target);
             _backend.SetDeckPlaying(deck.Handle, false);
             _decks[slot] = deck with { Playing = false };
         }
@@ -459,9 +505,84 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
             if (_decks[slot] is not { } deck)
                 return; // nothing loaded — no position to store or jump to
             if (_hotCues[slot][cueIndex] is { } position)
+            {
                 _backend.SetDeckPositionFraction(deck.Handle, position); // jump to the stored cue
+            }
             else
+            {
                 _hotCues[slot][cueIndex] = _backend.GetDeckPositionFraction(deck.Handle); // set at current position
+                SavePersistedHotCues(slot, deck.Handle); // a newly set cue survives the next load/restart
+            }
+        }
+    }
+
+    // Caller holds _gate. Load a track's persisted cue set (A3) and project the sample-based cues onto
+    // this deck's 0..1 fraction bank using the deck length. No store, no length, or an unreadable file
+    // all leave the (already-cleared) bank empty — a persistence hiccup must never crash a load.
+    private void LoadPersistedHotCues(int slot, int handle, string trackPath)
+    {
+        if (_hotCueStore is null)
+            return;
+
+        try
+        {
+            TrackCueRecord? record = _hotCueStore.LoadAsync(trackPath).GetAwaiter().GetResult();
+            if (record is null)
+                return;
+
+            double lengthSeconds = _backend.GetDeckLengthSeconds(handle);
+            int sampleRate = record.SampleRate > 0 ? record.SampleRate : _sampleRate;
+            foreach (HotCue cue in record.HotCues)
+            {
+                if (cue.Index < 0 || cue.Index >= HotCuesPerDeck)
+                    continue; // tolerate a hand-edited / wider-bank file
+                _hotCues[slot][cue.Index] =
+                    HotCuePositionMapper.SamplesToFraction(cue.PositionSamples, lengthSeconds, sampleRate);
+            }
+            _logger.LogInformation(
+                "Deck slot {Slot}: restored {Count} persisted hot cue(s) for {Track}.",
+                slot, record.HotCues.Count, trackPath);
+        }
+        catch (Exception ex)
+        {
+            // Degrade to no-cues rather than failing the load (global standards #16/#26).
+            _logger.LogWarning(ex, "Could not load persisted hot cues for deck slot {Slot} <- {Track}.", slot, trackPath);
+        }
+    }
+
+    // Caller holds _gate. Persist the slot's current cue bank (A3), keyed by the loaded path, as a
+    // sample-based record. Fire-and-forget so a pad press stays instant; a failed save is logged, never
+    // thrown, and never blocks the show. Reads the bank snapshot now (under the gate) so the async write
+    // does not race a later cue edit.
+    private void SavePersistedHotCues(int slot, int handle)
+    {
+        if (_hotCueStore is null || _loadedPath[slot] is not { } trackPath)
+            return;
+
+        double lengthSeconds = _backend.GetDeckLengthSeconds(handle);
+        var set = new TrackCueSet(_sampleRate > 0 ? _sampleRate : 1, HotCuesPerDeck);
+        for (int i = 0; i < HotCuesPerDeck; i++)
+        {
+            if (_hotCues[slot][i] is { } fraction)
+                set = set.SetHotCue(i, HotCuePositionMapper.FractionToSamples(fraction, lengthSeconds, _sampleRate));
+        }
+
+        TrackCueRecord record = TrackCueRecord.FromCueSet(trackPath, set);
+        try
+        {
+            // Fire-and-forget: a pad press stays instant. Both a synchronous throw (a misbehaving store)
+            // and an async fault are logged and dropped, never crashing the show (global #16/#26).
+            _ = _hotCueStore.SaveAsync(record).ContinueWith(
+                task => _logger.LogWarning(
+                    task.Exception?.GetBaseException(),
+                    "Could not persist hot cues for deck slot {Slot} <- {Track}.", slot, trackPath),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not persist hot cues for deck slot {Slot} <- {Track}.", slot, trackPath);
         }
     }
 
@@ -532,6 +653,30 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _logger.LogInformation("Deck slot {Slot} loop cleared.", slot);
     }
 
+    // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the
+    // slot stopped under the gate, then raises DeckEnded OUTSIDE the lock so a subscriber that drives the
+    // engine back (e.g. the live-queue binding loading the next track) does not run nested under _gate.
+    // Guarded by handle so a stale callback from an already-replaced deck is ignored.
+    private void OnDeckEnded(int slot, int handle)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _decks[slot] is not { } deck || deck.Handle != handle)
+                return; // the slot was replaced/unloaded before the end fired — ignore the stale callback
+            _decks[slot] = deck with { Playing = false };
+        }
+
+        try
+        {
+            DeckEnded?.Invoke(this, slot);
+        }
+        catch (Exception ex)
+        {
+            // A misbehaving subscriber must not bubble onto the BASS sync thread (global #16/#26).
+            _logger.LogError(ex, "A DeckEnded handler threw for deck slot {Slot}.", slot);
+        }
+    }
+
     // Maps a normalized pitch position (0..1, 0.5 = centre) to a playback-rate multiplier within ±range.
     private static double RateFor(double normalizedPosition)
         => 1.0 + (Math.Clamp(normalizedPosition, 0.0, 1.0) - PitchCenter) * 2.0 * PitchRangePercent;
@@ -546,6 +691,8 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         _backend.UnplugDeck(deck.Handle);
         _mixer.SetChannel(slot, null);
         _decks[slot] = null;
+        _loadedPath[slot] = null;
+        _tempCue[slot] = null; // the temp cue belongs to the track — the new track starts with none
         Array.Clear(_hotCues[slot]);
         _baseBpm[slot] = 0.0;   // base BPM belongs to the track — the new track supplies its own on load
         _firstBeat[slot] = 0.0; // first-beat anchor likewise belongs to the track

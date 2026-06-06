@@ -38,6 +38,16 @@ public static class Camelot
         return false;
     }
 
+    /// <summary>
+    /// A monotonic sort index for a Camelot code, ordering around the wheel: number ascending,
+    /// then 'A' (minor) before 'B' (major) within a number. A null/blank/invalid code sorts last
+    /// (<see cref="int.MaxValue"/>), so keyless tracks fall to the bottom of a key sort.
+    /// </summary>
+    public static int SortIndex(string? code)
+        => code is not null && TryParse(code, out int number, out char letter)
+            ? (number * 2) + (letter == 'B' ? 1 : 0)
+            : int.MaxValue;
+
     private static bool TryParse(string code, out int number, out char letter)
     {
         number = 0;

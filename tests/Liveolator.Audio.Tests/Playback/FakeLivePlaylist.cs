@@ -35,5 +35,9 @@ internal sealed class FakeLivePlaylist : ILivePlaylist
     public void SetAutoAdvance(bool on) => AutoAdvance = on;
     public void SkipNow() { }
     public void SkipOn(Quantize when, int everyN = 1) { }
-    public void NotifyTrackEnded() { }
+
+    /// <summary>How many times the binding signalled end-of-track (A4 auto-advance assertions).</summary>
+    public int NotifyTrackEndedCount { get; private set; }
+
+    public void NotifyTrackEnded() => NotifyTrackEndedCount++;
 }

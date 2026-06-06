@@ -100,6 +100,31 @@ public sealed class LiveProfileStore : ILiveProfileStore
         return snapshot.Bank;
     }
 
+    public Task<IReadOnlyList<string>> ListVisualBankNamesAsync(CancellationToken cancellationToken = default)
+    {
+        string dir = Path.Combine(_liveRoot, "scenes");
+        // A missing folder simply means no banks have been saved yet — return empty, never throw.
+        if (!Directory.Exists(dir))
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+
+        try
+        {
+            IReadOnlyList<string> names = Directory
+                .EnumerateFiles(dir, "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Select(n => n!)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return Task.FromResult(names);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable scenes folder degrades to "no banks", surfaced via the store's warning sink.
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+    }
+
     public Task SaveVisualMacrosAsync(IEnumerable<VisualMacro> macros, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(macros);

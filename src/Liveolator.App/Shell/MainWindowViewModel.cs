@@ -4,6 +4,7 @@ using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.VisualLibrary;
 using ReactiveUI;
 
 namespace Liveolator.App.Shell;
@@ -21,12 +22,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         LibrariesViewModel libraries,
         LiveViewModel live,
         DjViewModel dj,
+        VisualLibraryViewModel visualLibrary,
         SettingsViewModel settings,
         ShellStatusViewModel status)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
+        ArgumentNullException.ThrowIfNull(visualLibrary);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(status);
 
@@ -38,7 +41,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             new("LIVE", live),
             new("DJ", dj),
-            new("VJ", new PlaceholderViewModel("VJ", "Visual compositor — coming soon.")),
+            new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
             new("MAPPINGS", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),
             new("SETTINGS", settings),

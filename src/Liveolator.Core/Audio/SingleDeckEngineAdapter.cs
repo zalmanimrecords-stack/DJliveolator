@@ -15,6 +15,15 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public int DeckCount => 1;
 
+    // The legacy single-deck engine (IAudioPlaybackEngine) has no end-of-stream signal, so this never
+    // fires; declared to satisfy the seam (the two-deck BASS engine is the path that raises it). The
+    // explicit add/remove keep the compiler from warning about an unused event.
+    public event EventHandler<int>? DeckEnded
+    {
+        add { }
+        remove { }
+    }
+
     public bool IsPlaying(int slot) => slot == 0 && _engine.IsPlaying;
 
     public void Load(int slot, string trackPath)

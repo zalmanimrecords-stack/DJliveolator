@@ -34,6 +34,13 @@ public interface ILiveProfileStore
     /// </summary>
     Task<VisualBank?> LoadVisualBankAsync(string name, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists the names of all saved visual banks (the file names under <c>live/scenes/</c>, without the
+    /// extension), ordered case-insensitively. Returns an empty list when none exist or the folder is
+    /// unreadable — never throws (global standards #16/#26). Drives the runtime bank picker (doc 22 C3).
+    /// </summary>
+    Task<IReadOnlyList<string>> ListVisualBankNamesAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Saves the macro definitions under <c>live/macros.json</c>.</summary>
     Task SaveVisualMacrosAsync(IEnumerable<VisualMacro> macros, CancellationToken cancellationToken = default);
 

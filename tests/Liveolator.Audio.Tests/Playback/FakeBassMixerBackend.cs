@@ -80,6 +80,18 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         LoopsCleared.Add(deckHandle);
     }
 
+    /// <summary>End-of-stream callbacks armed via <see cref="SetDeckEndCallback"/>, by deck handle.</summary>
+    public Dictionary<int, Action> EndCallbacks { get; } = new();
+
+    public void SetDeckEndCallback(int deckHandle, Action onEnded) => EndCallbacks[deckHandle] = onEnded;
+
+    /// <summary>Simulate the deck stream reaching its end so the engine's end-of-track path runs.</summary>
+    public void EmitDeckEnd(int deckHandle)
+    {
+        if (EndCallbacks.TryGetValue(deckHandle, out Action? cb))
+            cb();
+    }
+
     public void StartMaster(Action<float[]> onMasterSamples)
     {
         _masterTap = onMasterSamples;

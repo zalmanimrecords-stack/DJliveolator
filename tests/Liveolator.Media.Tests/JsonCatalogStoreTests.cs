@@ -227,4 +227,54 @@ public class JsonCatalogStoreTests
         Assert.True(File.Exists(store.MusicCatalogPath));
         Assert.False(File.Exists(store.MusicCatalogPath + ".tmp"));
     }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsVisualScanFolders()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var folders = new[] { @"C:\Visuals\Loops", @"C:\Visuals\Stills" };
+
+        await store.SaveVisualScanFoldersAsync(folders);
+        IReadOnlyList<string> loaded = await store.LoadVisualScanFoldersAsync();
+
+        Assert.Equal(folders, loaded);
+    }
+
+    [Fact]
+    public async Task LoadVisualScanFolders_WhenNoneExist_ReturnsEmpty()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        Assert.Empty(await store.LoadVisualScanFoldersAsync());
+    }
+
+    [Fact]
+    public async Task LoadVisualScanFolders_CorruptFile_ReturnsEmpty_AndWarns()
+    {
+        using var dir = new TempDirectory();
+        string? warning = null;
+        var store = new JsonCatalogStore(dir.Path, onWarning: w => warning = w);
+        await File.WriteAllTextAsync(store.VisualScanFoldersPath, "{ not valid json");
+
+        IReadOnlyList<string> loaded = await store.LoadVisualScanFoldersAsync();
+
+        Assert.Empty(loaded);
+        Assert.NotNull(warning);
+    }
+
+    [Fact]
+    public async Task VisualAndMusicScanFolders_ArePersistedSeparately()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        await store.SaveScanFoldersAsync(new[] { @"C:\Music" });
+        await store.SaveVisualScanFoldersAsync(new[] { @"C:\Visuals\A", @"C:\Visuals\B" });
+
+        Assert.NotEqual(store.ScanFoldersPath, store.VisualScanFoldersPath);
+        Assert.Single(await store.LoadScanFoldersAsync());
+        Assert.Equal(2, (await store.LoadVisualScanFoldersAsync()).Count);
+    }
 }

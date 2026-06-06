@@ -19,12 +19,13 @@ namespace Liveolator.Audio.Playback;
 /// <remarks>
 /// Headphone cue (PFL): when the user has chosen a separate cue output device, the backend opens a
 /// second BASS device for it (the CMD STUDIO 2A's channels 3/4) and exposes <see cref="ICueOutput"/>
-/// so <see cref="BassMixer"/> can push the Core-computed cue/master output gains. The summed cued-deck
-/// (pre-fade) signal feeding the headphones comes from per-deck cue sends, which need the deck
-/// plumbing (<see cref="PlugDeck"/>) the deck-loops branch owns — see the integration note. Until
-/// those land the cue output carries the master leg only; the gains for both legs are stored here.
-/// The master fed to both the analysis tap and the cue leg is the post-limiter signal (see
-/// <see cref="OnMasterDsp"/>).
+/// so <see cref="BassMixer"/> can push the Core-computed cue/master output gains. The cue output is a
+/// second mixer fed by two legs: the master leg (the post-limiter master, scaled in
+/// <see cref="OnMasterDsp"/>) and the cued-deck (PFL) leg — each deck's PRE-FADE samples, scaled by the
+/// cued-deck leg gain and pushed into the cue mixer from its own DSP callback while it is cue-enabled
+/// (<see cref="FeedDeckCueLeg"/>). So enabling Cue on a deck routes it into the headphones independently
+/// of the crossfader/master. Native, so verified manually on the CMD STUDIO 2A (doc 11 checklist); the
+/// gain math is pure in <see cref="Liveolator.Core.Mixer.CueMixMath"/> and unit-tested.
 /// </remarks>
 internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 {
@@ -41,6 +42,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private DSPProcedure? _masterDsp;       // kept alive: BASS holds an unmanaged pointer to it
     private Action<float[]>? _masterTap;
     private volatile float _masterLegGain;  // master-into-headphones gain (equal-power, level-scaled)
+    private volatile float _cueDeckLegGain; // cued-deck (PFL) leg gain (equal-power, level-scaled)
     private bool _disposed;
 
     // ── master-limiter region (Gap #5) ──────────────────────────────────────────────────────────
@@ -56,6 +58,9 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private float[] _channelScratch = Array.Empty<float>();
     private float[] _masterScratch = Array.Empty<float>();
     private float[] _cueLegScratch = Array.Empty<float>();
+    // Pre-fade cued-deck samples scaled into the cue mixer (A2). Sized like the others so the per-deck
+    // PFL push is allocation-free on the audio thread (doc 01 RT-thread rule).
+    private float[] _cueDeckScratch = Array.Empty<float>();
     // ── end master-limiter region ────────────────────────────────────────────────────────────────
 
     /// <summary>A plugged deck's managed processor, the DSP delegate kept alive for BASS, its original
@@ -64,15 +69,17 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     /// clear can remove the prior sync).</summary>
     private sealed class DeckDsp
     {
-        public DeckDsp(BassMixerChannel channel, DSPProcedure procedure, float originalFrequency)
+        public DeckDsp(BassMixerChannel channel, float originalFrequency)
         {
             Channel = channel;
-            Procedure = procedure;
             OriginalFrequency = originalFrequency;
         }
 
         public BassMixerChannel Channel { get; }
-        public DSPProcedure Procedure { get; }
+
+        // The DSP delegate, kept alive so BASS's unmanaged pointer stays valid. Set right after the
+        // deck is built (the callback closes over this DeckDsp, so it cannot be a ctor argument).
+        public DSPProcedure Procedure { get; set; } = null!;
         public float OriginalFrequency { get; }
 
         // Loop state: the registered BASS_SYNC_POS handle, the callback (kept alive for BASS), and the
@@ -80,6 +87,16 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         public int LoopSync { get; set; }
         public SyncProcedure? LoopProcedure { get; set; }
         public long LoopStartBytes { get; set; }
+
+        // Per-deck headphone-cue (PFL) push stream feeding the cue mixer (A2). 0 = no cue output, so the
+        // deck simply never sends to the headphones. The deck's pre-fade samples are scaled by the
+        // cued-deck leg gain and pushed here from the deck DSP callback when the deck is cue-enabled.
+        public int CuePush { get; set; }
+
+        // End-of-stream sync (A4): the registered BASS_SYNC_END handle and its callback (kept alive for
+        // BASS). 0 sync handle = no end callback armed.
+        public int EndSync { get; set; }
+        public SyncProcedure? EndProcedure { get; set; }
     }
 
     public BassMixerBackend(
@@ -106,6 +123,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         _channelScratch = new float[worstCaseSamples];
         _masterScratch = new float[worstCaseSamples];
         _cueLegScratch = new float[worstCaseSamples];
+        _cueDeckScratch = new float[worstCaseSamples];
         // ── end master-limiter region ──
 
         InitOutput(options);
@@ -263,15 +281,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public void SetCueOutputGains(double cueGain, double masterGain)
     {
-        // Only the master leg is fed for now (see the class remarks / integration note): the cued-deck
-        // leg gain (cueGain) is applied where the per-deck cue sends sum, which the deck plumbing owns.
+        // Both legs are now live (A2): the master leg is scaled in OnMasterDsp; the cued-deck (PFL) leg
+        // gain is read on the deck DSP callback when a deck is cue-enabled and pushed into the cue mixer.
         _masterLegGain = (float)Math.Clamp(masterGain, 0.0, 1.0);
-        if (cueGain > 0f && _cueMixer != 0)
-        {
-            _logger.LogDebug(
-                "Cue-deck leg gain {Cue} requested but per-deck cue sends are not yet wired; master leg only.",
-                cueGain);
-        }
+        _cueDeckLegGain = (float)Math.Clamp(cueGain, 0.0, 1.0);
     }
 
     public int OpenDeckStream(string filePath)
@@ -290,18 +303,55 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         if (!BassMix.MixerAddChannel(_mixer, deckHandle, BassFlags.MixerChanPause))
             throw new BassPlaybackException($"MixerAddChannel failed: {Bass.LastError}");
 
-        // Per-deck DSP applies gain/EQ/filter to the deck's samples before the mixer sums them.
-        DSPProcedure procedure = (handle, chan, buffer, length, user) => ApplyChannelDsp(channel, buffer, length);
+        // Remember the deck's natural sample rate so SetDeckRate can express pitch as a multiple of it.
+        Bass.ChannelGetAttribute(deckHandle, ChannelAttribute.Frequency, out float originalFrequency);
+
+        // The DeckDsp is built first so the DSP callback can read its per-deck cue-push handle (set just
+        // below) without a race — the callback only fires once the deck is unpaused by the engine.
+        var deck = new DeckDsp(channel, originalFrequency);
+
+        // Per-deck DSP applies gain/EQ/filter to the deck's samples before the mixer sums them; it also
+        // taps the PRE-FADE samples into the headphone-cue mixer when the deck is cue-enabled (A2).
+        DSPProcedure procedure = (handle, chan, buffer, length, user) => ApplyChannelDsp(deck, buffer, length);
         if (Bass.ChannelSetDSP(deckHandle, procedure) == 0)
         {
             BassMix.MixerRemoveChannel(deckHandle);
             throw new BassPlaybackException($"ChannelSetDSP (deck) failed: {Bass.LastError}");
         }
-
-        // Remember the deck's natural sample rate so SetDeckRate can express pitch as a multiple of it.
-        Bass.ChannelGetAttribute(deckHandle, ChannelAttribute.Frequency, out float originalFrequency);
-        _decks[deckHandle] = new DeckDsp(channel, procedure, originalFrequency);
+        deck.Procedure = procedure;
+        deck.CuePush = CreateDeckCuePush();
+        _decks[deckHandle] = deck;
         return channel;
+    }
+
+    // Create a per-deck push source plugged into the cue mixer for the deck's pre-fade (PFL) leg (A2).
+    // Returns 0 when there is no cue output (the deck then never sends to the headphones) or on a setup
+    // failure — a cue-routing hiccup must not break deck playback (global #16/#26). Mirrors the
+    // master-leg push: a decode-flagged push stream the cue mixer pulls; it never plays to a device.
+    private int CreateDeckCuePush()
+    {
+        if (_cueMixer == 0)
+            return 0;
+
+        int masterDevice = Bass.CurrentDevice;
+        Bass.CurrentDevice = _cueDeviceIndex;
+        try
+        {
+            int push = Bass.CreateStream(
+                _sampleRate, _channels, BassFlags.Float | BassFlags.Decode, StreamProcedureType.Push);
+            if (push == 0 || !BassMix.MixerAddChannel(_cueMixer, push, BassFlags.Default))
+            {
+                _logger.LogWarning("Per-deck cue push setup failed: {Error}; this deck has no headphone cue.", Bass.LastError);
+                if (push != 0)
+                    Bass.StreamFree(push);
+                return 0;
+            }
+            return push;
+        }
+        finally
+        {
+            Bass.CurrentDevice = masterDevice;
+        }
     }
 
     public double GetDeckPositionFraction(int deckHandle)
@@ -407,6 +457,32 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         }
     }
 
+    public void SetDeckEndCallback(int deckHandle, Action onEnded)
+    {
+        ArgumentNullException.ThrowIfNull(onEnded);
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            return;
+
+        // Replace any prior end sync on this deck so a reused handle never fires twice.
+        if (deck.EndSync != 0)
+        {
+            BassMix.ChannelRemoveSync(deckHandle, deck.EndSync);
+            deck.EndSync = 0;
+            deck.EndProcedure = null;
+        }
+
+        // BASS_SYNC_END fires once when the decoding deck stream reaches its end. Mixtime so it fires on
+        // the mixer's pull thread the moment the stream runs out. The callback is kept short — the engine
+        // marks the slot stopped and raises its DeckEnded event; the queue advance happens off that.
+        deck.EndProcedure = (handle, channel, data, user) => onEnded();
+        deck.EndSync = BassMix.ChannelSetSync(deckHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
+        if (deck.EndSync == 0)
+        {
+            deck.EndProcedure = null;
+            _logger.LogWarning("Arming end-of-stream sync on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+        }
+    }
+
     public void SetDeckPlaying(int deckHandle, bool playing)
     {
         BassFlags value = playing ? BassFlags.Default : BassFlags.MixerChanPause;
@@ -415,6 +491,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public void UnplugDeck(int deckHandle)
     {
+        if (_decks.TryGetValue(deckHandle, out DeckDsp? deck) && deck.CuePush != 0)
+        {
+            BassMix.MixerRemoveChannel(deck.CuePush); // detach the deck's PFL leg from the cue mixer
+            Bass.StreamFree(deck.CuePush);
+        }
         _decks.Remove(deckHandle);
         BassMix.MixerRemoveChannel(deckHandle);
         Bass.StreamFree(deckHandle);
@@ -430,18 +511,44 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
             _logger.LogWarning("Bass.ChannelPlay (master) failed: {Error}", Bass.LastError);
     }
 
-    // BASS update thread: filter the deck buffer in place via the managed channel processor.
-    // RT-thread allocation fix (Gap #5, doc 01): reuse the pre-allocated _channelScratch instead of
+    // BASS update thread: filter the deck buffer in place via the managed channel processor, and tap the
+    // PRE-FADE samples into the headphone-cue mixer when the deck is cue-enabled (A2 — audible PFL).
+    // RT-thread allocation fix (Gap #5, doc 01): reuse the pre-allocated scratch buffers instead of
     // `new float[]` every buffer. EnsureCapacity only grows on an unexpected oversized block (logged).
-    private void ApplyChannelDsp(BassMixerChannel channel, IntPtr buffer, int length)
+    private void ApplyChannelDsp(DeckDsp deck, IntPtr buffer, int length)
     {
         if (length <= 0 || buffer == IntPtr.Zero)
             return;
         int count = length / sizeof(float);
         EnsureChannelScratch(count);
         Marshal.Copy(buffer, _channelScratch, 0, count);
-        channel.Process(_channelScratch.AsSpan(0, count), _channels);
+
+        // PFL is pre-fade: send the deck's samples to the cue mixer BEFORE the channel/crossfader gain
+        // is applied, so the DJ hears the cued track at a steady level wherever the crossfader sits.
+        FeedDeckCueLeg(deck, count, length);
+
+        deck.Channel.Process(_channelScratch.AsSpan(0, count), _channels);
         Marshal.Copy(_channelScratch, 0, buffer, count);
+    }
+
+    // Push the deck's pre-fade samples (currently in _channelScratch), scaled by the cued-deck leg gain,
+    // into the deck's cue-mixer push source — but only while the deck is cue-enabled and a cue output
+    // exists. Allocation-free: reuses _cueDeckScratch (doc 01 RT-thread rule), like the master leg.
+    private void FeedDeckCueLeg(DeckDsp deck, int count, int byteLength)
+    {
+        if (deck.CuePush == 0 || !deck.Channel.CueEnabled)
+            return;
+
+        EnsureCueDeckScratch(count);
+        float gain = _cueDeckLegGain;
+        if (gain == 0f)
+            Array.Clear(_cueDeckScratch, 0, count);
+        else
+            for (int i = 0; i < count; i++)
+                _cueDeckScratch[i] = _channelScratch[i] * gain;
+
+        if (Bass.StreamPutData(deck.CuePush, _cueDeckScratch, byteLength) == -1)
+            _logger.LogDebug("Per-deck cue push failed: {Error}", Bass.LastError);
     }
 
     // BASS update thread: apply the master brick-wall limiter in place (Gap #5) so two summed decks
@@ -533,15 +640,27 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         _cueLegScratch = new float[count];
     }
 
+    private void EnsureCueDeckScratch(int count)
+    {
+        if (_cueDeckScratch.Length >= count)
+            return;
+        _logger.LogWarning(
+            "Cue-deck buffer ({Count}) exceeded pre-allocated scratch ({Capacity}); growing on the audio thread.",
+            count, _cueDeckScratch.Length);
+        _cueDeckScratch = new float[count];
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
         _disposed = true;
-        foreach (int deckHandle in new List<int>(_decks.Keys))
+        foreach (KeyValuePair<int, DeckDsp> entry in new List<KeyValuePair<int, DeckDsp>>(_decks))
         {
-            BassMix.MixerRemoveChannel(deckHandle);
-            Bass.StreamFree(deckHandle);
+            if (entry.Value.CuePush != 0)
+                Bass.StreamFree(entry.Value.CuePush); // the cue mixer's free below would also drop it
+            BassMix.MixerRemoveChannel(entry.Key);
+            Bass.StreamFree(entry.Key);
         }
         _decks.Clear();
         if (_cueMixer != 0)

@@ -36,6 +36,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// <param name="decks">The shared decks + crossfader (doc 11). When provided, the Live tab drives the
     /// same instances as the DJ tab (one source of truth); when null it builds a private set so the
     /// view-model still constructs headless / under test.</param>
+    /// <param name="visualBankNames">The visual engine's bank names (selection-index order) for the
+    /// Scene Grid's bank tabs; null/empty falls back to the mock's phase labels (doc 22 C3).</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
@@ -44,7 +46,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         ILiveBeatTimer? timer = null,
         IVisualStage? visualStage = null,
         IWaveformProvider? waveformProvider = null,
-        PerformanceDeckSet? decks = null)
+        PerformanceDeckSet? decks = null,
+        IReadOnlyList<string>? visualBankNames = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
@@ -55,7 +58,7 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         Beat = new BeatEngineViewModel(dispatcher, beatClock);
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
-        SceneGrid = new SceneGridViewModel(dispatcher);
+        SceneGrid = new SceneGridViewModel(dispatcher, visualBankNames);
         MasterFx = new MasterFxViewModel(dispatcher);
         MacroEncoders = new MacroEncodersViewModel(dispatcher);
 
