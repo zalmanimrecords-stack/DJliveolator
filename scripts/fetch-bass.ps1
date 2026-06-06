@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Fetches the un4seen BASS + BASSmix native libraries for the current (or a specified)
-    platform into runtimes/<rid>/native/, where the App build step picks them up.
+    Fetches the un4seen BASS native libraries — core BASS, the BASSmix add-on, and the BASSFLAC add-on
+    — for the current (or a specified) platform into runtimes/<rid>/native/, where the App build step
+    picks them up. BASSFLAC is optional (FLAC decode for playback + waveform); core + BASSmix are required.
 
 .DESCRIPTION
     BASS ships as per-platform zips from un4seen.com. This script downloads the right
@@ -61,10 +62,14 @@ $ridPlan = switch ($Rid) {
     'linux-x64' { @{ Suffix = '-linux'; Ext = 'so';    Prefix = 'lib'; PreferDir = 'x86_64' } }
 }
 
-# The libraries to fetch: core BASS + the BASSmix add-on (the two-deck master mixer).
+# The libraries to fetch: core BASS + the BASSmix add-on (the two-deck master mixer) + the BASSFLAC
+# add-on (FLAC decode for both realtime playback and the offline waveform/analysis; without it FLAC
+# tracks neither play nor draw a waveform). Add-ons are optional — a fetch failure for one is logged
+# and does not abort the others.
 $libs = @(
-    @{ Base = 'bass';    },
-    @{ Base = 'bassmix'; }
+    @{ Base = 'bass';     Required = $true },
+    @{ Base = 'bassmix';  Required = $true },
+    @{ Base = 'bassflac'; Required = $false }
 )
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -115,7 +120,16 @@ function Get-NativeLib($base) {
 }
 
 try {
-    foreach ($lib in $libs) { Get-NativeLib $lib.Base }
+    foreach ($lib in $libs) {
+        if ($lib.Required) {
+            Get-NativeLib $lib.Base
+        }
+        else {
+            # Optional add-on: a download/layout failure must not block the core libraries.
+            try { Get-NativeLib $lib.Base }
+            catch { Write-Warning "Optional add-on '$($lib.Base)' could not be fetched: $($_.Exception.Message)" }
+        }
+    }
 }
 catch {
     Write-Error "fetch-bass failed for $($Rid): $($_.Exception.Message)"

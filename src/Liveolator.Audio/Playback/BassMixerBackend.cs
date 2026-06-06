@@ -110,6 +110,25 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
         InitOutput(options);
         _cueDeviceIndex = TryInitCueDevice(options);
+        LoadAddOnPlugins();
+    }
+
+    // Load optional BASS decode add-ons (FLAC, AAC) found next to bass, so those formats PLAY (the offline
+    // waveform/analysis decoder loads them too; PluginLoad is process-global + idempotent, so order does
+    // not matter). An absent add-on is fine — that format simply won't play; logged so it's diagnosable.
+    private void LoadAddOnPlugins()
+    {
+        foreach (string baseName in new[] { "bassflac", "bass_aac" })
+        {
+            bool loaded = Bass.PluginLoad(baseName) != 0
+                || Bass.PluginLoad($"{baseName}.dll") != 0
+                || Bass.PluginLoad($"lib{baseName}.so") != 0
+                || Bass.PluginLoad($"lib{baseName}.dylib") != 0;
+            if (!loaded)
+                _logger.LogInformation(
+                    "BASS add-on '{Plugin}' not loaded; that format will not play (run scripts/fetch-bass to add it).",
+                    baseName);
+        }
     }
 
     // Open the user-chosen headphone-cue output device (doc 11) so a second BASS device backs the cue
