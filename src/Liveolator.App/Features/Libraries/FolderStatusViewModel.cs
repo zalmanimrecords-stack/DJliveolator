@@ -1,18 +1,49 @@
-using System.IO;
+using Liveolator.App.Shell;
 using Liveolator.Core.Library;
+using ReactiveUI;
 
 namespace Liveolator.App.Features.Libraries;
 
-/// <summary>Display wrapper over a <see cref="FolderCatalogSummary"/> for the folder-status window.</summary>
-public sealed class FolderStatusViewModel
+/// <summary>
+/// Display wrapper over a <see cref="FolderCatalogSummary"/> for the folder-status window, plus the
+/// per-folder "is this a samples folder?" toggle (B2). Toggling raises the supplied callback so the
+/// owning <see cref="LibrariesViewModel"/> updates the classifier + persists; this VM holds no
+/// business logic itself.
+/// </summary>
+public sealed class FolderStatusViewModel : ViewModelBase
 {
     private readonly FolderCatalogSummary _summary;
+    private readonly Action<string, bool>? _onSampleFolderChanged;
+    private bool _isSampleFolder;
 
-    public FolderStatusViewModel(FolderCatalogSummary summary)
-        => _summary = summary ?? throw new ArgumentNullException(nameof(summary));
+    public FolderStatusViewModel(
+        FolderCatalogSummary summary,
+        bool isSampleFolder = false,
+        Action<string, bool>? onSampleFolderChanged = null)
+    {
+        _summary = summary ?? throw new ArgumentNullException(nameof(summary));
+        _onSampleFolderChanged = onSampleFolderChanged;
+        _isSampleFolder = isSampleFolder; // seed without firing the callback
+    }
 
     /// <summary>Full folder path (shown muted under the name).</summary>
     public string Folder => _summary.Folder;
+
+    /// <summary>
+    /// True when this folder is designated a samples source. Setting it notifies the owner, which
+    /// reclassifies the catalog and persists; the seed value passed in the constructor does not.
+    /// </summary>
+    public bool IsSampleFolder
+    {
+        get => _isSampleFolder;
+        set
+        {
+            if (_isSampleFolder == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _isSampleFolder, value);
+            _onSampleFolderChanged?.Invoke(_summary.Folder, value);
+        }
+    }
 
     /// <summary>Last path segment, for the primary label.</summary>
     public string Name

@@ -5,7 +5,7 @@
              x:Class="Liveolator.App.Features.Libraries.LibrariesView"
              x:DataType="lib:LibrariesViewModel">
 
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,Auto,*">
 
     <!-- sub-bar -->
     <Grid Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="0,0,0,12">
@@ -22,8 +22,49 @@
                  Text="{Binding ScanStatus}" />
     </Grid>
 
+    <!-- filter / sort bar (B1): facet dropdowns + status filter + sort -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+      <ComboBox ItemsSource="{Binding Artists}" SelectedItem="{Binding SelectedArtist}"
+                PlaceholderText="Artist" MinWidth="120"
+                ToolTip.Tip="Filter by artist" />
+      <ComboBox ItemsSource="{Binding Genres}" SelectedItem="{Binding SelectedGenre}"
+                PlaceholderText="Genre" MinWidth="110"
+                ToolTip.Tip="Filter by genre" />
+      <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding SelectedYear}"
+                PlaceholderText="Year" MinWidth="80"
+                ToolTip.Tip="Filter by year" />
+      <ComboBox ItemsSource="{Binding FileTypes}" SelectedItem="{Binding SelectedFileType}"
+                PlaceholderText="Type" MinWidth="80"
+                ToolTip.Tip="Filter by file type" />
+      <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatus}"
+                MinWidth="110" ToolTip.Tip="Filter by analysis status">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <Border Width="1" Background="{StaticResource Hair}" Margin="4,2" />
+
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />
+      <ComboBox ItemsSource="{Binding SortKeys}" SelectedItem="{Binding SortKey}"
+                MinWidth="100" ToolTip.Tip="Sort tracks by">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <ToggleButton Classes="spartan" IsChecked="{Binding SortDescending}"
+                    Content="↓" ToolTip.Tip="Descending order" />
+
+      <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
+              ToolTip.Tip="Reset all filters" />
+    </StackPanel>
+
     <!-- main: table | detail -->
-    <Grid Row="1" ColumnDefinitions="*,320">
+    <Grid Grid.Row="2" ColumnDefinitions="*,320">
 
       <!-- track table -->
       <Border Grid.Column="0" Classes="panel">

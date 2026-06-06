@@ -28,6 +28,11 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     private readonly PerformanceDeckSet _decks;
     private readonly bool _ownsDecks;
     private bool _disposed;
+    // Played-history tracking (B5): the entry currently in Now, and the id we expect to become Now on
+    // the next advance (the prior Next). They let us tell an advance (record the leaving track) from a
+    // fresh Load (reset history) without changing the queue engine.
+    private QueueEntry? _previousNow;
+    private Guid? _expectedNextId;
 
     /// <param name="decks">The shared decks + crossfader (doc 11). When provided, the DJ tab drives the
     /// same instances as the Live tab (one source of truth); when null it builds a private set so the
@@ -48,6 +53,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider, library);
         Set = new ObservableCollection<SetEntryViewModel>();
+        Played = new ObservableCollection<SetEntryViewModel>();
 
         IObservable<bool> canEdit = Observable.Return(dispatcher is not null && playlist is not null);
         SkipCommand = ReactiveCommand.Create(SkipToNext, canEdit);
@@ -58,6 +64,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         {
             _playlist.NowChanged += OnNowChanged;
             RefreshSet();
+            CaptureQueuePosition(); // seed the played-history tracking from the initial queue
         }
     }
 
@@ -67,6 +74,12 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
     /// <summary>The set: the Now entry first, then the upcoming queue, in play order.</summary>
     public ObservableCollection<SetEntryViewModel> Set { get; }
+
+    /// <summary>Already-played tracks, most-recent first (B5). Read-only history, fed as the queue advances.</summary>
+    public ObservableCollection<SetEntryViewModel> Played { get; }
+
+    /// <summary>True when nothing has been played yet (the view hides the Played section).</summary>
+    public bool IsPlayedEmpty => Played.Count == 0;
 
     public ReactiveCommand<Unit, Unit> SkipCommand { get; }
     public ReactiveCommand<Unit, Unit> LoadFromLibraryCommand { get; }
@@ -111,7 +124,47 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     }
 
     private void OnNowChanged(object? sender, QueueEntry? now)
-        => RxApp.MainThreadScheduler.Schedule(RefreshSet);
+        => RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            UpdatePlayedHistory(now);
+            RefreshSet();
+        });
+
+    // Decides whether Now changed because the queue advanced (the prior Next became Now → the track
+    // that left Now is "played") or because a fresh set was loaded (→ reset history). The expected-next
+    // id captured on the previous change is the deterministic signal; the queue engine is untouched.
+    private void UpdatePlayedHistory(QueueEntry? now)
+    {
+        bool advanced = _previousNow is not null && now?.Id == _expectedNextId;
+        if (advanced)
+        {
+            RecordPlayed(_previousNow!);
+        }
+        else if (_previousNow is not null || now is not null)
+        {
+            // A reload/replace (not a sequential advance): the prior history no longer applies.
+            Played.Clear();
+            this.RaisePropertyChanged(nameof(IsPlayedEmpty));
+        }
+
+        CaptureQueuePosition();
+    }
+
+    private void RecordPlayed(QueueEntry entry)
+    {
+        var played = new QueueEntry(entry.TrackPath, entry.Id, TrackState.Played);
+        // No remove callback ⇒ history is read-only; titles come from the same catalog lookup as the set.
+        Played.Insert(0, new SetEntryViewModel(played, TitleFor(entry.TrackPath), null, _contextActions));
+        this.RaisePropertyChanged(nameof(IsPlayedEmpty));
+    }
+
+    // Snapshots the current Now and the id of the next-up entry, so the following NowChanged can tell
+    // an advance from a reload.
+    private void CaptureQueuePosition()
+    {
+        _previousNow = _playlist?.Now;
+        _expectedNextId = _playlist is { Upcoming: { Count: > 0 } up } ? up[0].Id : null;
+    }
 
     private void RefreshSet()
     {
@@ -144,6 +197,17 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         : null;
 
         return new SetEntryViewModel(entry, title, remove, _contextActions);
+    }
+
+    // Title from the catalog for a single path (history is recorded one entry at a time), or the file
+    // name when the track isn't catalogued.
+    private string TitleFor(string trackPath)
+    {
+        if (_library is not null)
+            foreach (MusicTrack track in _library.All)
+                if (string.Equals(track.File.Path, trackPath, StringComparison.OrdinalIgnoreCase))
+                    return track.Title;
+        return Path.GetFileNameWithoutExtension(trackPath);
     }
 
     private Dictionary<string, string> BuildTitleLookup()

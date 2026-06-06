@@ -625,6 +625,26 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
   folders + analyzed catalog at startup (`LibrariesViewModel.InitializeAsync`) and saves both
   after every scan / folder add, via the `IMusicCatalogStore` Core seam wired in `ServiceConfig`
   to `JsonCatalogStore` (`%APPDATA%/Liveolator/{catalog.music.json,scan-folders.json}`).
+- **✅ Search / filter / sort UI (doc 22 B1):** a filter/sort bar wires the previously-unused
+  `TrackFacets` into Artist/Genre/Year/FileType facet dropdowns, adds a status filter
+  (Ok/Partial/Failed) over `TrackFilter.Status`, and adds sort by Title/BPM/Key/Duration with an
+  asc/desc toggle + a Clear-filters button. The text search still composes with the facets. All
+  filter/sort logic funnels through one `ApplyFilter` in `LibrariesViewModel` over the **pure Core**
+  `TrackQuery.Apply` + a new pure `TrackSort` (`TrackSortKey`; missing values sort last either
+  direction, Title is the stable tie-break, `Camelot.SortIndex` orders the key column around the
+  wheel). Facets rebuild from the catalog on scan/restore and drop stale selections. Tested: Core
+  `TrackSortTests` (7), App `LibrariesViewModelFilterSortTests` (8).
+- **✅ Sample-folder designation UI (doc 22 B2):** each row in the Folders window has a "Samples"
+  checkbox (`FolderStatusViewModel.IsSampleFolder`) that calls through to `MusicLibrary.SetSampleFolders`,
+  reclassifies the cached catalog in place (Track ↔ Sample, no re-decode), refreshes rows + facets, and
+  persists via `IMusicCatalogStore.Save/LoadSampleFoldersAsync`. The designation is re-applied to a
+  restored catalog at startup and to newly-scanned files. Tested: App
+  `LibrariesViewModelSampleFolderTests` (3).
+- **✅ Played-history surfacing (doc 22 B5):** `TrackState.Played` is now produced and shown — `DjViewModel`
+  records each track as it leaves the Now slot into a most-recent-first `Played` list, rendered as a
+  read-only "PLAYED" section under the live set (hidden until something plays). The advance-vs-reload
+  distinction is made **in the view-model** (from the expected-next id captured on each `NowChanged`); the
+  `LivePlaylist` engine and all audio paths are untouched. Tested: App `DjViewModelPlayedHistoryTests` (4).
 
 ## Cross-cutting decisions made while building the above
 
