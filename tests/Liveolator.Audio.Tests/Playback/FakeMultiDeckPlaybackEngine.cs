@@ -63,6 +63,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void Cue(int slot) { }
     public double DeckBaseBpm(int slot) => 0;
     public void SetDeckBaseBpm(int slot, double bpm) { }
+    public double DeckFirstBeat(int slot) => 0;
+    public void SetDeckFirstBeat(int slot, double firstBeatSeconds) { }
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
     public bool IsQuantizeEnabled(int slot) => false;
@@ -70,4 +72,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public int HotCueCount => 8;
     public bool IsHotCueSet(int slot, int cueIndex) => false;
     public void HotCue(int slot, int cueIndex) { }
+    public double LoopBeats(int slot) => 0;
+    public bool IsLooping(int slot) => false;
+    public void SetLoop(int slot, double beats) { }
+    public void ClearLoop(int slot) { }
 }
