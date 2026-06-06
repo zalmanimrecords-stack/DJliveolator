@@ -20,6 +20,29 @@ public sealed class BeatGridCalculatorTests
     }
 
     [Fact]
+    public void BeatFractions_AnchorsTheGridOnTheFirstBeat()
+    {
+        // 120 BPM (0.5 s/beat), 8 s track, first beat at 1.0 s → lines at 1.0,1.5,…,8.0 s. Index 0 is the
+        // first beat (a bar downbeat), so the grid sits on the kicks rather than on the raw track start.
+        IReadOnlyList<double> grid =
+            BeatGridCalculator.BeatFractions(bpm: 120, durationSeconds: 8, firstBeatSeconds: 1.0);
+
+        Assert.Equal(1.0 / 8, grid[0], 6);
+        Assert.Equal(1.5 / 8, grid[1], 6);
+        Assert.Equal(15, grid.Count); // 1.0..8.0 s, step 0.5 s
+    }
+
+    [Fact]
+    public void BeatFractions_FallsBackToTheStart_OnAnOutOfRangeAnchor()
+    {
+        // An anchor at/after the track end is nonsense → anchor at the start (the pre-anchor behaviour).
+        IReadOnlyList<double> grid =
+            BeatGridCalculator.BeatFractions(bpm: 120, durationSeconds: 8, firstBeatSeconds: 99);
+
+        Assert.Equal(0.0, grid[0], 6);
+    }
+
+    [Fact]
     public void BeatFractions_DoesNotEmitLinesPastTheTrackEnd()
     {
         // 120 BPM, 7.25 s → last whole beat at 7.0 s (beat 14); 7.5 s would overshoot, so it is excluded.

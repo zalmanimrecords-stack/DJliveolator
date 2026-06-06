@@ -55,6 +55,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
     private double _trackBpm;
+    private double _firstBeatSeconds;
     private double _durationSeconds;
     private double _zoomWindow;
     private CancellationTokenSource? _loadCts;
@@ -258,6 +259,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             : DefaultZoomWindow;
     }
 
+    // The beat/bar grid needs the BPM (from the load), the decoded duration, and the first-beat anchor
+    // (from the DeckSetFirstBeat feedback); empty until the duration is known.
+    private void RecomputeBeatGrid()
+        => BeatGrid = _durationSeconds > 0
+            ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
+            : Array.Empty<double>();
+
     /// <summary>True while this deck is sync-locked (tempo-matched to the other deck), from feedback.</summary>
     public bool IsSyncLocked
     {
@@ -351,6 +359,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckLoadTrack when !string.IsNullOrEmpty(e.State.Argument):
                     OnTrackLoaded(e.State.Argument!, e.State.Value);
                     break;
+                case PerformanceActionKind.DeckSetFirstBeat:
+                    // The analyzed downbeat anchor (seconds), echoed right after the load — anchor the
+                    // beat/bar grid on it so the lines fall on the kicks (and match what Sync aligns to).
+                    _firstBeatSeconds = e.State.Value;
+                    RecomputeBeatGrid();
+                    break;
             }
         });
     }
@@ -381,6 +395,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         KickPeaks = null;
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
+        _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
         ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
@@ -413,13 +428,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             Waveform = overview.IsEmpty ? null : overview.Peaks;
             KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
-            // The grid needs both the BPM (from the load) and the decoded duration (from the overview).
-            BeatGrid = overview.IsEmpty
-                ? Array.Empty<double>()
-                : BeatGridCalculator.BeatFractions(_trackBpm, overview.DurationSeconds);
-            // Now the duration is known, size the zoom window in real time (so the follow view shows a
-            // consistent ~PlayingZoomSeconds regardless of track length).
+            // Now the duration is known: build the (first-beat-anchored) grid and size the zoom window in
+            // real time (so the follow view shows a consistent ~PlayingZoomSeconds regardless of length).
             _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
+            RecomputeBeatGrid();
             ZoomWindow = ComputeZoomWindow();
         }
         catch (OperationCanceledException)

@@ -313,6 +313,25 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public async Task BeatGrid_AnchorsOnTheFirstBeat_FromDeckSetFirstBeatFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 4);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+
+        Task gridSet = WaitForBeatGrid(vm);
+        // The load carries the BPM; the downbeat anchor arrives right after via DeckSetFirstBeat feedback.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 1.0)); // first beat at 1.0 s
+        await gridSet;
+
+        // 120 BPM, 4 s, anchor 1.0 s → the grid starts on the first beat at 1.0/4 = 0.25 (sits on the kick).
+        Assert.Equal(0.25, vm.BeatGrid[0], 6);
+    }
+
+    [Fact]
     public async Task BeatGrid_StaysEmpty_WhenTheLoadReportsNoBpm()
     {
         var dispatcher = new FakeDispatcher();

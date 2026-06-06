@@ -72,8 +72,10 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckSetFirstBeat:
                 // The analyzed first-beat (downbeat) anchor in seconds — feeds phase-match the same way
                 // SetDeckBaseBpm feeds tempo-match. Emitted right after DeckLoadTrack by the source that
-                // holds the full BpmResult (doc 11 / doc 22 A1). No feedback: it is a one-way data push.
+                // holds the full BpmResult (doc 11 / doc 22 A1). Echoed as feedback so the deck UI can
+                // anchor its beat/bar grid on the same downbeat the engine syncs to (grid sits on the kick).
                 _engine.SetDeckFirstBeat(slot, action.Value);
+                RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, slot, ValueFeedback(action.Value));
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);
@@ -182,6 +184,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckSyncLockToggle => ActiveFeedback(_engine.IsSyncLocked(slot)),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
+            PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),
             _ => ActionFeedbackState.Unavailable,
         };
     }

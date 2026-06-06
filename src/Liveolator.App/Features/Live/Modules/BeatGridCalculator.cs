@@ -16,13 +16,21 @@ public static class BeatGridCalculator
     /// <summary>Guard against a pathological tempo producing a runaway number of lines on a long track.</summary>
     private const int MaxBeatLines = 4_096;
 
+    /// <summary>Beats per bar (4/4) — the strip emphasises every fourth grid line (0, 4, 8 …) as a bar.</summary>
+    public const int BeatsPerBar = 4;
+
     /// <summary>
-    /// Beat-line positions as 0..1 fractions of the track, evenly spaced at the tempo's beat interval
-    /// from the track start. The first line (the start, fraction 0) is included.
+    /// Beat-line positions as 0..1 fractions of the track, evenly spaced at the tempo's beat interval and
+    /// anchored on the detected first beat (downbeat), so the grid lines fall on the track's kicks rather
+    /// than on the raw track start. Index 0 is the first beat — the strip treats every fourth line as a
+    /// bar downbeat (<see cref="BeatsPerBar"/>).
     /// </summary>
     /// <param name="bpm">Track tempo in beats per minute; 0 or negative means "unknown" → empty grid.</param>
     /// <param name="durationSeconds">Track length in seconds; 0 or negative → empty grid.</param>
-    public static IReadOnlyList<double> BeatFractions(double bpm, double durationSeconds)
+    /// <param name="firstBeatSeconds">Analyzed first-beat offset in seconds (the downbeat anchor); 0 or an
+    /// out-of-range value anchors at the track start (the pre-anchor behaviour).</param>
+    public static IReadOnlyList<double> BeatFractions(
+        double bpm, double durationSeconds, double firstBeatSeconds = 0)
     {
         if (!IsUsable(bpm) || !IsUsable(durationSeconds))
             return Array.Empty<double>();
@@ -31,20 +39,21 @@ public static class BeatGridCalculator
         if (!IsUsable(beatSeconds))
             return Array.Empty<double>();
 
-        // Lines at 0, beatSeconds, 2·beatSeconds … up to (not past) the track end.
-        int beatCount = (int)Math.Floor(durationSeconds / beatSeconds);
-        if (beatCount < 0)
-            return Array.Empty<double>();
-        if (beatCount > MaxBeatLines)
-            beatCount = MaxBeatLines;
+        // Anchor on the first beat when it is a sane in-track offset; otherwise grid from the start.
+        double anchor =
+            firstBeatSeconds > 0 && !double.IsNaN(firstBeatSeconds) && !double.IsInfinity(firstBeatSeconds)
+            && firstBeatSeconds < durationSeconds
+                ? firstBeatSeconds
+                : 0.0;
 
-        var fractions = new List<double>(beatCount + 1);
-        for (int beat = 0; beat <= beatCount; beat++)
+        // Lines at anchor, anchor+beatSeconds, … up to (not past) the track end. Index 0 = the first beat.
+        var fractions = new List<double>();
+        for (int beat = 0; beat <= MaxBeatLines; beat++)
         {
-            double fraction = (beat * beatSeconds) / durationSeconds;
-            if (fraction > 1.0)
+            double t = anchor + (beat * beatSeconds);
+            if (t > durationSeconds)
                 break;
-            fractions.Add(fraction);
+            fractions.Add(t / durationSeconds);
         }
 
         return fractions;

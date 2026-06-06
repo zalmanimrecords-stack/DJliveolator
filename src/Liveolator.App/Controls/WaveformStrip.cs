@@ -152,21 +152,43 @@ public sealed class WaveformStrip : Control
     private static double TrackFraction(double x, double width, double start, double span)
         => start + (width <= 0 ? 0 : x / width) * span;
 
-    // Faint vertical lines at each beat fraction within the visible window.
+    /// <summary>Beats per bar (4/4): every fourth grid line (index 0, 4, 8 …) is a bar downbeat, drawn
+    /// brighter so the grid reads as bars. The grid list is anchored on the first beat, so index 0 is a bar.</summary>
+    private const int BeatsPerBar = 4;
+
+    // Beat/bar grid within the visible window: bar lines (every 4th, from the first-beat anchor) are drawn
+    // bright; beat lines faint. Adaptive — lines that would be too dense to read are skipped, so the grid
+    // is hidden in the whole-track overview and resolves into bars, then beats, as the strip zooms in.
     private void RenderBeatGrid(DrawingContext context, Rect b, double start, double span)
     {
         IReadOnlyList<double>? grid = BeatGrid;
-        if (grid is not { Count: > 0 })
+        if (grid is not { Count: >= 2 } || span <= 0)
             return;
 
-        var pen = new Pen(GridBrush, 1);
+        double stepFraction = grid[1] - grid[0]; // even spacing → one beat
+        if (stepFraction <= 0)
+            return;
+        double beatPx = stepFraction / span * b.Width;
+        bool drawBeats = beatPx >= 7.0;
+        bool drawBars = beatPx * BeatsPerBar >= 7.0;
+        if (!drawBars)
+            return; // too zoomed-out to read even bar lines → draw no grid (keeps the overview clean)
+
+        Color g = (GridBrush as ISolidColorBrush)?.Color ?? Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6);
+        var beatPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0x55, g.R, g.G, g.B)), 1);
+        var barPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0xC8, g.R, g.G, g.B)), 1.4);
+
         double end = start + span;
-        foreach (double fraction in grid)
+        for (int i = 0; i < grid.Count; i++)
         {
+            double fraction = grid[i];
             if (fraction < start || fraction > end)
                 continue;
+            bool isBar = i % BeatsPerBar == 0;
+            if (!isBar && !drawBeats)
+                continue;
             double x = (fraction - start) / span * b.Width;
-            context.DrawLine(pen, new Point(x, 0), new Point(x, b.Height));
+            context.DrawLine(isBar ? barPen : beatPen, new Point(x, 0), new Point(x, b.Height));
         }
     }
 
