@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
 using Liveolator.Media;
 using Xunit;
@@ -88,6 +89,46 @@ public sealed class JsonSettingsStoreTests : IDisposable
 
         Assert.Equal(AppSettings.Default, settings);
         Assert.Contains("unreadable", warning);
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsCaptureSourceSelection()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with
+        {
+            Audio = new AudioSettings
+            {
+                CaptureDeviceId = "2",
+                CaptureSource = CaptureSourceKind.SystemLoopback,
+            },
+        };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal("2", loaded.Audio.CaptureDeviceId);
+        Assert.Equal(CaptureSourceKind.SystemLoopback, loaded.Audio.CaptureSource);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutCaptureFields_StillLoads()
+    {
+        // Backward compatibility: a version-1 file written before the capture fields existed must
+        // load (missing capture fields read as "no capture"), never fall back to all-defaults.
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":1,\"OutputDeviceId\":\"7\",\"BufferMilliseconds\":50,"
+            + "\"MidiControllerInputName\":\"Push\",\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal("7", loaded.Audio.OutputDeviceId);
+        Assert.Equal(50, loaded.Audio.BufferMilliseconds);
+        Assert.Equal("Push", loaded.Midi.ControllerInputName);
+        Assert.Null(loaded.Audio.CaptureDeviceId);
+        Assert.Null(loaded.Audio.CaptureSource);
     }
 
     [Fact]

@@ -113,6 +113,21 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// <summary>The post-crossfader master mix; feed this to a <see cref="MasterMixPlaybackEngine"/>.</summary>
     public IAudioSource MasterSource => _master;
 
+    /// <summary>
+    /// Re-open the output device / buffer at runtime from the user's settings (doc 12). Returns true if
+    /// audio is now running on the requested (or fallback) device; false on failure so the caller (the
+    /// <c>AudioReinitCoordinator</c>) can roll back. Decks stay loaded across the re-route.
+    /// </summary>
+    public bool ReinitializeOutput(AudioSettings settings)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+                return false;
+            return _backend.ReinitOutput(BassInitOptions.From(settings));
+        }
+    }
+
     public int DeckCount => Decks;
 
     public bool IsPlaying(int slot)

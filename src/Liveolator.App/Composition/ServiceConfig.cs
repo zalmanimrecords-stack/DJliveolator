@@ -181,11 +181,30 @@ public static class ServiceConfig
         services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
         services.AddSingleton<IMidiDeviceProvider>(new RtMidiDeviceProvider());
         services.AddSingleton<ISettingsStore>(settingsStore);
+
+        // Runtime device changes (doc 12 deferral): when the realtime engine is up, a Save in Settings
+        // re-opens the output device/buffer without a restart via the pure AudioReinitCoordinator (rolls
+        // back to the prior working device on failure), and applies the chosen capture source through the
+        // existing factory + a stable SwitchableAudioSource. Both are optional — in catalog-browser mode
+        // (no native BASS) they are null and the choice is saved for next launch only.
+        AudioReinitCoordinator? audioReinit = realtimeUp
+            ? new AudioReinitCoordinator(
+                new BassAudioEngineReinitializer(deckEngine!), appSettings.Audio,
+                NullLogger<AudioReinitCoordinator>.Instance)
+            : null;
+
         services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
             sp.GetRequiredService<IAudioOutputDeviceCatalog>(),
             sp.GetRequiredService<IAudioCaptureDeviceCatalog>(),
             sp.GetRequiredService<IMidiDeviceProvider>(),
-            sp.GetRequiredService<ISettingsStore>()));
+            sp.GetRequiredService<ISettingsStore>(),
+            audioReinit,
+            realtimeUp
+                ? new CaptureSourceController(
+                    sp.GetRequiredService<IAudioCaptureSourceFactory>(),
+                    new SwitchableAudioSource(),
+                    NullLogger<CaptureSourceController>.Instance)
+                : null));
 
         services.AddSingleton<MainWindowViewModel>();
 
@@ -294,13 +313,11 @@ public static class ServiceConfig
     // (enumeration/creation only touch native on demand and degrade to "no devices" if it is absent),
     // so this never disables app startup.
     //
-    // SETTINGS-UI SEAM (for the Settings agent): the device picker should resolve
-    // IAudioCaptureDeviceCatalog, list EnumerateCaptureDevices(), let the user choose an
-    // AudioCaptureDevice, then call IAudioCaptureSourceFactory.CreateCaptureSource(device) and feed
-    // the returned IAudioSource into the live pipeline (via SwitchableAudioSource.SetSource, mirroring
-    // how the deck source is swapped). Switching source is itself a PerformanceAction (doc 04) — wire
-    // it through the dispatcher, not by calling the engine directly. This task deliberately stops at
-    // the seam and does not build the picker UI.
+    // SETTINGS-UI SEAM: the Settings tab now consumes these — it lists EnumerateCaptureDevices(), lets the
+    // user pick an AudioCaptureDevice, persists the choice in AudioSettings, and applies it through the
+    // Core ICaptureSourceController (CaptureSourceController calls CreateCaptureSource(device) and routes the
+    // source into a stable SwitchableAudioSource). Remaining: feeding that switch into the analysis/beat
+    // pipeline and modelling source selection as a PerformanceAction (no live capture consumer exists yet).
     private static void WireCaptureSources(IServiceCollection services)
     {
         var engine = new BassCaptureEngine();

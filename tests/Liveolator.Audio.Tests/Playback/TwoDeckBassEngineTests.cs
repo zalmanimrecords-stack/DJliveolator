@@ -4,6 +4,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Settings;
 using Xunit;
 
 namespace Liveolator.Audio.Tests.Playback;
@@ -43,6 +44,28 @@ public class TwoDeckBassEngineTests
     {
         var backend = new FakeBassMixerBackend();
         Assert.Throws<ArgumentException>(() => new TwoDeckBassEngine(backend, new BassMixer(deckCount: 1)));
+    }
+
+    [Fact]
+    public void ReinitializeOutput_ForwardsResolvedInitOptionsToBackend()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+
+        bool ok = engine.ReinitializeOutput(new AudioSettings { OutputDeviceId = "3", BufferMilliseconds = 80 });
+
+        Assert.True(ok);
+        BassInitOptions applied = Assert.Single(backend.Reinits);
+        Assert.Equal(3, applied.DeviceIndex);
+        Assert.Equal(80, applied.BufferMilliseconds);
+    }
+
+    [Fact]
+    public void ReinitializeOutput_BackendFailure_ReturnsFalse()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        backend.ReinitResult = false;
+
+        Assert.False(engine.ReinitializeOutput(AudioSettings.Default));
     }
 
     [Fact]

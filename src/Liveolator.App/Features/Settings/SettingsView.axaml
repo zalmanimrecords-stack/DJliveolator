@@ -51,15 +51,20 @@
         </StackPanel>
       </Border>
 
-      <TextBlock Classes="section" Text="DETECTED INPUTS" />
+      <TextBlock Classes="section" Text="LIVE CAPTURE" />
       <Border Classes="panel">
-        <ItemsControl ItemsSource="{Binding CaptureDevices}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="audio:AudioCaptureDevice">
-              <TextBlock Classes="faint" Text="{Binding Name}" />
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        <StackPanel Spacing="4">
+          <TextBlock Classes="faint" Text="Capture source (system loopback / line-in) — feeds the live engine" />
+          <ComboBox ItemsSource="{Binding CaptureDevices}"
+                    SelectedItem="{Binding SelectedCaptureDevice}"
+                    HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="audio:AudioCaptureDevice">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </StackPanel>
       </Border>
 
       <StackPanel Orientation="Horizontal" Spacing="12">

@@ -38,10 +38,12 @@ public sealed class SettingsViewModelTests
 
     private sealed class FakeCaptureCatalog : IAudioCaptureDeviceCatalog
     {
-        public IReadOnlyList<AudioCaptureDevice> EnumerateCaptureDevices() => new[]
+        public List<AudioCaptureDevice> Devices { get; set; } = new()
         {
             new AudioCaptureDevice("0", "Line In", CaptureSourceKind.LineInput, IsDefault: true),
+            new AudioCaptureDevice("1", "Loopback (Speakers)", CaptureSourceKind.SystemLoopback, IsDefault: false),
         };
+        public IReadOnlyList<AudioCaptureDevice> EnumerateCaptureDevices() => Devices;
     }
 
     private sealed class FakeMidiProvider : IMidiDeviceProvider
@@ -64,12 +66,40 @@ public sealed class SettingsViewModelTests
         }
     }
 
+    private sealed class FakeReinitializer : IAudioEngineReinitializer
+    {
+        public AudioSettings? LastApplied { get; private set; }
+        public bool Result { get; set; } = true;
+        public bool Reinitialize(AudioSettings settings)
+        {
+            LastApplied = settings;
+            return Result;
+        }
+    }
+
+    private sealed class FakeCaptureController : ICaptureSourceController
+    {
+        public AudioCaptureDevice? LastSelected { get; private set; }
+        public bool Called { get; private set; }
+        public bool Result { get; set; } = true;
+        public bool SelectCaptureSource(AudioCaptureDevice? device)
+        {
+            Called = true;
+            LastSelected = device;
+            return Result;
+        }
+    }
+
     private static SettingsViewModel NewVm(
         FakeOutputCatalog? outputs = null,
+        FakeCaptureCatalog? captures = null,
         FakeMidiProvider? midi = null,
-        FakeSettingsStore? store = null)
-        => new(outputs ?? new FakeOutputCatalog(), new FakeCaptureCatalog(),
-               midi ?? new FakeMidiProvider(), store ?? new FakeSettingsStore());
+        FakeSettingsStore? store = null,
+        AudioReinitCoordinator? reinit = null,
+        ICaptureSourceController? captureController = null)
+        => new(outputs ?? new FakeOutputCatalog(), captures ?? new FakeCaptureCatalog(),
+               midi ?? new FakeMidiProvider(), store ?? new FakeSettingsStore(),
+               reinit, captureController);
 
     [Fact]
     public void Construct_PopulatesDeviceListsWithSentinels()
@@ -188,5 +218,129 @@ public sealed class SettingsViewModelTests
         Assert.Null(store.Saved.Audio.OutputDeviceId);
         Assert.Null(store.Saved.Midi.ControllerInputName);
         Assert.Null(store.Saved.Midi.FeedbackOutputName);
+    }
+
+    [Fact]
+    public void Construct_CaptureListLeadsWithNoneSentinel()
+    {
+        var vm = NewVm();
+
+        Assert.Same(SettingsViewModel.NoCaptureSource, vm.CaptureDevices[0]);
+        Assert.Contains(vm.CaptureDevices, d => d.Name == "Loopback (Speakers)");
+        // Default selection is "(none)".
+        Assert.Same(SettingsViewModel.NoCaptureSource, vm.SelectedCaptureDevice);
+    }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedCaptureSelection()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with
+            {
+                Audio = new AudioSettings { CaptureDeviceId = "1", CaptureSource = CaptureSourceKind.SystemLoopback },
+            },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal("1", vm.SelectedCaptureDevice!.Id);
+    }
+
+    [Fact]
+    public async Task Initialize_PersistedCaptureGone_FallsBackToNone()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with
+            {
+                Audio = new AudioSettings { CaptureDeviceId = "999", CaptureSource = CaptureSourceKind.LineInput },
+            },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Same(SettingsViewModel.NoCaptureSource, vm.SelectedCaptureDevice);
+    }
+
+    [Fact]
+    public async Task Save_PersistsSelectedCaptureSource()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.SelectedCaptureDevice = vm.CaptureDevices.First(d => d.Id == "1");
+
+        await vm.SaveAsync();
+
+        Assert.Equal("1", store.Saved.Audio.CaptureDeviceId);
+        Assert.Equal(CaptureSourceKind.SystemLoopback, store.Saved.Audio.CaptureSource);
+    }
+
+    [Fact]
+    public async Task Save_NoCaptureSelected_PersistsNull()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.SelectedCaptureDevice = SettingsViewModel.NoCaptureSource;
+
+        await vm.SaveAsync();
+
+        Assert.Null(store.Saved.Audio.CaptureDeviceId);
+        Assert.Null(store.Saved.Audio.CaptureSource);
+    }
+
+    [Fact]
+    public async Task Save_AppliesOutputChangeToRunningEngine()
+    {
+        var fake = new FakeReinitializer();
+        var reinit = new AudioReinitCoordinator(fake, startupSettings: AudioSettings.Default);
+        var vm = NewVm(reinit: reinit);
+        vm.SelectedOutputDevice = vm.OutputDevices.First(d => d.Id == "2");
+
+        await vm.SaveAsync();
+
+        Assert.Equal("2", fake.LastApplied!.OutputDeviceId);
+        Assert.Contains("re-initialised", vm.Status);
+    }
+
+    [Fact]
+    public async Task Save_RolledBackReinit_SurfacesFailureStatus()
+    {
+        var fake = new FakeReinitializer { Result = false };
+        var reinit = new AudioReinitCoordinator(fake, startupSettings: AudioSettings.Default);
+        var vm = NewVm(reinit: reinit);
+        vm.SelectedOutputDevice = vm.OutputDevices.First(d => d.Id == "2");
+
+        await vm.SaveAsync();
+
+        Assert.Contains("kept the previous device", vm.Status);
+    }
+
+    [Fact]
+    public async Task Save_AppliesSelectedCaptureSourceThroughController()
+    {
+        var controller = new FakeCaptureController();
+        var vm = NewVm(captureController: controller);
+        vm.SelectedCaptureDevice = vm.CaptureDevices.First(d => d.Id == "1");
+
+        await vm.SaveAsync();
+
+        Assert.True(controller.Called);
+        Assert.Equal("1", controller.LastSelected!.Id);
+    }
+
+    [Fact]
+    public async Task Save_NoCapture_DetachesThroughControllerWithNull()
+    {
+        var controller = new FakeCaptureController();
+        var vm = NewVm(captureController: controller);
+        vm.SelectedCaptureDevice = SettingsViewModel.NoCaptureSource;
+
+        await vm.SaveAsync();
+
+        Assert.True(controller.Called);
+        Assert.Null(controller.LastSelected);
     }
 }

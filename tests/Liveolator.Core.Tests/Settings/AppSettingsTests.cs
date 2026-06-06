@@ -1,3 +1,4 @@
+using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
 using Xunit;
 
@@ -48,6 +49,62 @@ public class AppSettingsTests
         };
 
         Assert.Equal(AudioSettings.MaxBufferMs, settings.Normalized().Audio.BufferMilliseconds);
+    }
+
+    [Fact]
+    public void Default_HasNoCaptureSource()
+    {
+        Assert.Null(AppSettings.Default.Audio.CaptureDeviceId);
+        Assert.Null(AppSettings.Default.Audio.CaptureSource);
+    }
+
+    [Fact]
+    public void Normalized_PreservesConsistentCaptureSelection()
+    {
+        var audio = new AudioSettings
+        {
+            CaptureDeviceId = "3",
+            CaptureSource = CaptureSourceKind.SystemLoopback,
+        };
+
+        AudioSettings result = audio.Normalized();
+
+        Assert.Equal("3", result.CaptureDeviceId);
+        Assert.Equal(CaptureSourceKind.SystemLoopback, result.CaptureSource);
+    }
+
+    [Theory]
+    [InlineData("", CaptureSourceKind.LineInput)]   // id missing -> no capture
+    [InlineData("  ", CaptureSourceKind.LineInput)] // blank id  -> no capture
+    public void Normalized_BlankCaptureIdFoldsToNoCapture(string id, CaptureSourceKind kind)
+    {
+        var audio = new AudioSettings { CaptureDeviceId = id, CaptureSource = kind };
+
+        AudioSettings result = audio.Normalized();
+
+        Assert.Null(result.CaptureDeviceId);
+        Assert.Null(result.CaptureSource);
+    }
+
+    [Fact]
+    public void Normalized_CaptureIdWithoutKindFoldsToNoCapture()
+    {
+        // A half-written / hand-edited config (id present, kind missing) must not yield an
+        // inconsistent selection — fold the whole choice to "no capture".
+        var audio = new AudioSettings { CaptureDeviceId = "2", CaptureSource = null };
+
+        AudioSettings result = audio.Normalized();
+
+        Assert.Null(result.CaptureDeviceId);
+        Assert.Null(result.CaptureSource);
+    }
+
+    [Fact]
+    public void Normalized_TrimsCaptureId()
+    {
+        var audio = new AudioSettings { CaptureDeviceId = " 5 ", CaptureSource = CaptureSourceKind.LineInput };
+
+        Assert.Equal("5", audio.Normalized().CaptureDeviceId);
     }
 
     [Fact]
