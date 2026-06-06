@@ -88,4 +88,30 @@ public sealed class BassInitOptionsTests
             AudioSettings.MinBufferMs,
             BassInitOptions.From(new AudioSettings { BufferMilliseconds = 1 }).BufferMilliseconds);
     }
+
+    [Theory]
+    [InlineData(AudioSettings.DefaultBufferMs, 10)] // 40 / 4 = 10
+    [InlineData(AudioSettings.MinBufferMs, 5)]      // 10 / 4 = 2 -> clamped up to 5
+    [InlineData(AudioSettings.MaxBufferMs, 20)]     // 200 / 4 = 50 -> clamped down to 20
+    public void UpdatePeriod_IsAQuarterOfBuffer_ClampedToSafeRange(int bufferMs, int expectedPeriod)
+    {
+        BassInitOptions options = BassInitOptions.From(new AudioSettings { BufferMilliseconds = bufferMs });
+
+        Assert.Equal(expectedPeriod, options.UpdatePeriodMilliseconds);
+    }
+
+    [Theory]
+    [InlineData(AudioSettings.MinBufferMs)]
+    [InlineData(AudioSettings.DefaultBufferMs)]
+    [InlineData(AudioSettings.MaxBufferMs)]
+    public void UpdatePeriod_StaysBelowBuffer_SoThePlaybackBufferNeverStarves(int bufferMs)
+    {
+        // The invariant that prevents the ~0.4x slow-playback bug: BASS refills the buffer on this
+        // period, so it must be strictly below the buffer length across the whole supported range.
+        BassInitOptions options = BassInitOptions.From(new AudioSettings { BufferMilliseconds = bufferMs });
+
+        Assert.True(
+            options.UpdatePeriodMilliseconds < options.BufferMilliseconds,
+            $"update period {options.UpdatePeriodMilliseconds}ms must be below buffer {options.BufferMilliseconds}ms");
+    }
 }

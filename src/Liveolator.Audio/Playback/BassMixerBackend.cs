@@ -136,6 +136,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     // stale saved device (since unplugged) must not disable all audio — fall back to the system default.
     private void InitOutput(BassInitOptions options)
     {
+        // The playback buffer must exceed BASS's automatic update period or it starves between refills
+        // and the whole device drags (a 40 ms buffer left with the default 100 ms period plays at ~0.4×).
+        // Apply a matching low update period so a short DJ-latency buffer stays continuously filled.
+        Bass.Configure(Configuration.UpdatePeriod, options.UpdatePeriodMilliseconds);
         Bass.PlaybackBufferLength = options.BufferMilliseconds;
 
         if (TryInitDevice(options.DeviceIndex))
@@ -160,6 +164,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
         // Buffer length is a global BASS config; set it before opening the device so the new device
         // picks it up. (An already-running device keeps its buffer until re-opened — acceptable here.)
+        // The playback buffer must exceed BASS's automatic update period or it starves between refills
+        // and the whole device drags (a 40 ms buffer left with the default 100 ms period plays at ~0.4×).
+        // Apply a matching low update period so a short DJ-latency buffer stays continuously filled.
+        Bass.Configure(Configuration.UpdatePeriod, options.UpdatePeriodMilliseconds);
         Bass.PlaybackBufferLength = options.BufferMilliseconds;
 
         if (!TryInitDevice(options.DeviceIndex))
