@@ -53,6 +53,7 @@ public enum PerformanceActionKind
     DeckPitch,
     DeckSyncLockToggle,
     DeckQuantizeToggle,
+    DeckSetFirstBeat,
 
     // Mixer (doc 11)
     MixerCrossfade,

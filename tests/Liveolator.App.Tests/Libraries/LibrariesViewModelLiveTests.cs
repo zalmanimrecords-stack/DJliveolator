@@ -84,10 +84,11 @@ public sealed class LibrariesViewModelLiveTests
 
         await vm.PlaySelectedCommand.Execute().ToTask();
 
-        Assert.Equal(2, dispatcher.Dispatched.Count);
+        Assert.Equal(3, dispatcher.Dispatched.Count);
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, dispatcher.Dispatched[0].Kind);
         Assert.Contains("Alpha.wav", dispatcher.Dispatched[0].Argument);
-        Assert.Equal(PerformanceActionKind.DeckPlayPause, dispatcher.Dispatched[1].Kind);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind); // downbeat anchor (doc 22 A1)
+        Assert.Equal(PerformanceActionKind.DeckPlayPause, dispatcher.Dispatched[2].Kind);
     }
 
     [Fact]
@@ -112,10 +113,12 @@ public sealed class LibrariesViewModelLiveTests
 
         await vm.LoadToDeckACommand.Execute().ToTask();
 
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckLoadTrack, action.Kind); // load only — no DeckPlayPause
+        Assert.Equal(2, dispatcher.Dispatched.Count); // load + first-beat anchor, no DeckPlayPause
+        PerformanceAction action = dispatcher.Dispatched[0];
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, action.Kind);
         Assert.Equal(0, action.Slot);
         Assert.Contains("Alpha.wav", action.Argument);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind); // doc 22 A1
         Assert.Contains("Deck A", vm.LoadStatus);
     }
 
@@ -129,9 +132,12 @@ public sealed class LibrariesViewModelLiveTests
 
         await vm.LoadToDeckBCommand.Execute().ToTask();
 
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(2, dispatcher.Dispatched.Count);
+        PerformanceAction action = dispatcher.Dispatched[0];
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, action.Kind);
         Assert.Equal(1, action.Slot);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind); // doc 22 A1
+        Assert.Equal(1, dispatcher.Dispatched[1].Slot);
     }
 
     [Fact]

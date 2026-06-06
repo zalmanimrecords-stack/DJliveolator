@@ -50,10 +50,12 @@ public sealed class TrackMenuViewModelTests
 
         await menu.LoadToDeckBCommand.Execute().ToTask();
 
-        PerformanceAction a = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(2, dispatcher.Dispatched.Count);
+        PerformanceAction a = dispatcher.Dispatched[0];
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, a.Kind);
         Assert.Equal(1, a.Slot);
         Assert.Equal("/m/track.wav", a.Argument);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind); // doc 22 A1
     }
 
     [Fact]
@@ -61,12 +63,13 @@ public sealed class TrackMenuViewModelTests
     {
         var dispatcher = new RecordingDispatcher(deckCount: 2);
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
-        var menu = new TrackMenuViewModel("/m/track.wav", actions, bpm: 124.0);
+        var menu = new TrackMenuViewModel("/m/track.wav", actions, bpm: 124.0, firstBeatSeconds: 0.25);
 
         await menu.LoadToDeckACommand.Execute().ToTask();
 
-        PerformanceAction a = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(124.0, a.Value, precision: 6);
+        Assert.Equal(124.0, dispatcher.Dispatched[0].Value, precision: 6); // BPM → sync reference (doc 11)
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind);
+        Assert.Equal(0.25, dispatcher.Dispatched[1].Value, precision: 6); // downbeat anchor → phase-match (doc 22 A1)
     }
 
     [Fact]

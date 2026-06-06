@@ -13,19 +13,22 @@ public sealed class TrackMenuViewModel
 {
     private readonly string _trackPath;
     private readonly double _bpm;
+    private readonly double _firstBeatSeconds;
     private readonly TrackContextActions _actions;
 
     /// <param name="bpm">The track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).</param>
-    public TrackMenuViewModel(string trackPath, TrackContextActions actions, double bpm = 0)
+    /// <param name="firstBeatSeconds">The analyzed downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1).</param>
+    public TrackMenuViewModel(string trackPath, TrackContextActions actions, double bpm = 0, double firstBeatSeconds = 0)
     {
         _trackPath = trackPath ?? throw new ArgumentNullException(nameof(trackPath));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         _bpm = bpm;
+        _firstBeatSeconds = firstBeatSeconds;
 
         LoadToDeckACommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(0, _trackPath, _bpm), Observable.Return(_actions.CanLoadToDeckA));
+            () => _actions.LoadToDeck(0, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(1, _trackPath, _bpm), Observable.Return(_actions.CanLoadToDeckB));
+            () => _actions.LoadToDeck(1, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckB));
     }
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }

@@ -27,6 +27,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckHotCue,
         PerformanceActionKind.DeckSetLoop,
+        PerformanceActionKind.DeckSetFirstBeat,
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
@@ -67,6 +68,12 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckSetLoop:
                 SetLoop(slot, action);
+                break;
+            case PerformanceActionKind.DeckSetFirstBeat:
+                // The analyzed first-beat (downbeat) anchor in seconds — feeds phase-match the same way
+                // SetDeckBaseBpm feeds tempo-match. Emitted right after DeckLoadTrack by the source that
+                // holds the full BpmResult (doc 11 / doc 22 A1). No feedback: it is a one-way data push.
+                _engine.SetDeckFirstBeat(slot, action.Value);
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);

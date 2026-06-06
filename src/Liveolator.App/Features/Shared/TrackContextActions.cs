@@ -43,14 +43,18 @@ public sealed class TrackContextActions
 
     /// <summary>
     /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it. <paramref name="bpm"/> is the
-    /// track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).
+    /// track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11);
+    /// <paramref name="firstBeatSeconds"/> is the analyzed downbeat anchor (0 = unknown), fed to phase-match
+    /// (doc 22 A1) right after the load.
     /// </summary>
-    public void LoadToDeck(int slot, string trackPath, double bpm)
+    public void LoadToDeck(int slot, string trackPath, double bpm, double firstBeatSeconds = 0)
     {
         if (_dispatcher is null || string.IsNullOrWhiteSpace(trackPath))
             return;
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: bpm, Argument: trackPath));
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat, Slot: slot, Value: firstBeatSeconds));
         _onStatus?.Invoke($"Loaded \"{TitleOf(trackPath)}\" → Deck {(slot == 0 ? "A" : "B")}");
     }
 

@@ -333,6 +333,9 @@ public sealed class LibrariesViewModel : ViewModelBase
             PerformanceActionKind.DeckLoadTrack,
             Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
             Argument: _selectedTrack.Track.File.Path));
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat,
+            Value: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0)); // downbeat anchor → phase-match (doc 22 A1)
         _dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
     }
 
@@ -350,6 +353,9 @@ public sealed class LibrariesViewModel : ViewModelBase
             PerformanceActionKind.DeckLoadTrack, Slot: slot,
             Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
             Argument: _selectedTrack.Track.File.Path));
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat, Slot: slot,
+            Value: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0)); // downbeat anchor → phase-match (doc 22 A1)
         LoadStatus = $"Loaded \"{_selectedTrack.Title}\" → Deck {(slot == 0 ? "A" : "B")}";
     }
 

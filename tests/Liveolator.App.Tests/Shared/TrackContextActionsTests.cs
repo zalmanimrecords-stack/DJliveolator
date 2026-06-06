@@ -54,13 +54,20 @@ public sealed class TrackContextActionsTests
         var dispatcher = new RecordingDispatcher(deckCount: 2);
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
 
-        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0);
+        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5);
 
-        PerformanceAction a = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckLoadTrack, a.Kind);
-        Assert.Equal(1, a.Slot);
-        Assert.Equal("/m/a.wav", a.Argument);
-        Assert.Equal(126.0, a.Value, precision: 6); // BPM rides in Value → deck sync reference (doc 11)
+        Assert.Equal(2, dispatcher.Dispatched.Count);
+        PerformanceAction load = dispatcher.Dispatched[0];
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, load.Kind);
+        Assert.Equal(1, load.Slot);
+        Assert.Equal("/m/a.wav", load.Argument);
+        Assert.Equal(126.0, load.Value, precision: 6); // BPM rides in Value → deck sync reference (doc 11)
+
+        // The load is immediately followed by the downbeat anchor → phase-match (doc 22 A1).
+        PerformanceAction anchor = dispatcher.Dispatched[1];
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, anchor.Kind);
+        Assert.Equal(1, anchor.Slot);
+        Assert.Equal(0.5, anchor.Value, precision: 6);
     }
 
     [Theory]

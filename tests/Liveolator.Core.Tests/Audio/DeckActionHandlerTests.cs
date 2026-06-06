@@ -507,4 +507,27 @@ public class DeckActionHandlerTests
 
         Assert.Equal(0.0, engine.DeckFirstBeat(0), precision: 6);
     }
+
+    [Fact]
+    public void DeckSetFirstBeat_IsAHandledKind()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckSetFirstBeat, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void DeckSetFirstBeat_ThreadsTheAnchorToTheEngine()
+    {
+        // The keystone for phase-sync (doc 22 A1): the analyzed first-beat (downbeat) anchor reaches the
+        // engine through its own action, so Quantize aligns beats — not just tempo — instead of snapping
+        // to a 0 anchor.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: 0.347, Slot: 1));
+
+        Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
+    }
 }
