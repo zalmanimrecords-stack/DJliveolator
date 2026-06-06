@@ -36,6 +36,13 @@ public sealed class ShellStatusViewModelTests
         public void Emit() => ActivityDetected?.Invoke(this, EventArgs.Empty);
     }
 
+    private sealed class FakeMetricsSampler : ISystemMetricsSampler
+    {
+        private readonly Queue<SystemMetrics> _readings;
+        public FakeMetricsSampler(params SystemMetrics[] readings) => _readings = new Queue<SystemMetrics>(readings);
+        public SystemMetrics Sample() => _readings.Count > 1 ? _readings.Dequeue() : _readings.Peek();
+    }
+
     private static AppSettings SettingsWith(string? outputId, string? controller, string? feedback)
         => AppSettings.Default with
         {
@@ -95,5 +102,34 @@ public sealed class ShellStatusViewModelTests
 
         scheduler.AdvanceBy(ShellStatusViewModel.FlashWindow + TimeSpan.FromMilliseconds(1));
         Assert.False(vm.MidiActive);
+    }
+
+    [Fact]
+    public void Metrics_SeedImmediately_ThenUpdateOnInterval()
+    {
+        var scheduler = new HistoricalScheduler();
+        var sampler = new FakeMetricsSampler(new SystemMetrics(12, 300), new SystemMetrics(47, 512));
+        var vm = new ShellStatusViewModel(
+            new FakeMidiStatus(), new FakeOutputCatalog(), SettingsWith(null, null, null),
+            scheduler, sampler, TimeSpan.FromSeconds(1));
+
+        Assert.True(vm.HasMetrics);
+        Assert.Equal("12%", vm.CpuText);
+        Assert.Equal("300 MB", vm.MemoryText);
+
+        scheduler.AdvanceBy(TimeSpan.FromSeconds(1) + TimeSpan.FromMilliseconds(1));
+        Assert.Equal("47%", vm.CpuText);
+        Assert.Equal("512 MB", vm.MemoryText);
+    }
+
+    [Fact]
+    public void Metrics_Hidden_WhenNoSamplerSupplied()
+    {
+        var vm = new ShellStatusViewModel(
+            new FakeMidiStatus(), new FakeOutputCatalog(), SettingsWith(null, null, null), new HistoricalScheduler());
+
+        Assert.False(vm.HasMetrics);
+        Assert.Equal("—", vm.CpuText);
+        Assert.Equal("—", vm.MemoryText);
     }
 }

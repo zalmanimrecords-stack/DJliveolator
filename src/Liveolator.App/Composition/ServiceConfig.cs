@@ -334,8 +334,10 @@ public static class ServiceConfig
             sp.GetRequiredService<IExtensionContentReloader>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
-        // (the MidiControlSession registered above). AppSettings feeds the device-name readouts.
+        // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the
+        // process metrics sampler feeds the live CPU/RAM readout (DI injects it into ShellStatusViewModel).
         services.AddSingleton(appSettings);
+        services.AddSingleton<ISystemMetricsSampler, ProcessSystemMetricsSampler>();
         services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
