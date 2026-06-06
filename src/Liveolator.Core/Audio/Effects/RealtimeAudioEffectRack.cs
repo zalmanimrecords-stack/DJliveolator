@@ -118,6 +118,42 @@ public sealed class RealtimeAudioEffectRack : IAudioEffectRack, IDisposable
         }
     }
 
+    public void Restore(AudioEffectRackState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (state.Slot != _slot)
+            throw new ArgumentException("Rack state belongs to a different slot.", nameof(state));
+
+        lock (_gate)
+        {
+            foreach (Entry old in _entries)
+                old.Processor?.Dispose();
+
+            var restored = new List<Entry>(state.Effects.Count);
+            foreach (AudioEffectInstanceState saved in state.Effects)
+            {
+                _factory.TryCreate(saved.PluginUid, out IAudioEffectProcessor? processor);
+                var entry = new Entry
+                {
+                    InstanceId = saved.InstanceId,
+                    PluginUid = saved.PluginUid,
+                    Processor = processor,
+                    IsBypassed = saved.IsBypassed,
+                    OpaqueState = saved.OpaqueState?.ToArray(),
+                };
+                foreach ((string parameter, double value) in saved.Parameters)
+                {
+                    entry.Parameters[parameter] = Math.Clamp(value, 0, 1);
+                    processor?.SetParameter(parameter, Math.Clamp(value, 0, 1));
+                }
+                if (saved.OpaqueState is { Length: > 0 })
+                    processor?.LoadPreset(saved.OpaqueState);
+                restored.Add(entry);
+            }
+            Publish(restored);
+        }
+    }
+
     public void Process(Span<float> interleaved, int channels)
     {
         Entry[] entries = Volatile.Read(ref _entries);

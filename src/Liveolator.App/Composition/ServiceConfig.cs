@@ -108,9 +108,27 @@ public static class ServiceConfig
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         vstCatalog.RefreshAsync().GetAwaiter().GetResult();
         var effectRacks = new AudioEffectRackProvider(new Vst3AudioEffectProcessorFactory());
+        // Restore persisted audio-effect rack state at startup and persist on every change, so VST3
+        // chains / parameters / missing-plugin placeholders survive restarts (app-shell wave).
+        var rackStateStore = new JsonAudioEffectRackStateStore(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        foreach (AudioEffectRackState state in rackStateStore.LoadAsync().GetAwaiter().GetResult())
+            effectRacks.GetRack(state.Slot).Restore(state);
         services.AddSingleton<IAudioEffectPluginCatalog>(vstCatalog);
         services.AddSingleton<IAudioEffectRackProvider>(effectRacks);
-        var audioEffectHandler = new AudioEffectActionHandler(effectRacks);
+        services.AddSingleton<IAudioEffectRackStateStore>(rackStateStore);
+        var audioEffectHandler = new AudioEffectActionHandler(effectRacks, onChanged: () =>
+        {
+            AudioEffectRackState[] states = System.Linq.Enumerable.Range(0, AudioEffectRackSlot.Count)
+                .Select(slot => effectRacks.GetRack(slot).State)
+                .ToArray();
+            _ = rackStateStore.SaveAsync(states).ContinueWith(
+                task => System.Diagnostics.Trace.TraceWarning(
+                    $"Audio effect rack state could not be saved: {task.Exception?.GetBaseException().Message}"),
+                System.Threading.CancellationToken.None,
+                System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted,
+                System.Threading.Tasks.TaskScheduler.Default);
+        });
 
         // --- Track-analysis / music-library module (doc 16) ---
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
@@ -205,10 +223,25 @@ public static class ServiceConfig
         WirePlaylistAudio(services, livePlaylist, deckEngine);
 
         // --- MIDI controller → dispatcher (doc 05/07) ---
-        // Open the SETTINGS-chosen controller and route the live hardware through the same dispatcher
-        // (a missing/absent device degrades to running without MIDI — see WireMidiInput).
+        // Open the SETTINGS-chosen controller and route the live hardware through the SAME dispatcher via
+        // MidiControlSession, which also publishes LED feedback, runs the activity monitor, and exposes
+        // IMidiControlStatus for the shell's connection/signal indicators. Best-effort: a missing/absent
+        // device or native rtmidi failure leaves the session idle (logged), never blocking startup
+        // (global standards #16/#26). The default-profile auto-select path (CmdStudio2AProfile) lives in
+        // TryOpenMidiPipeline for the controller-profile-capture increment (doc 22 step A8).
         var midiProvider = new RtMidiDeviceProvider();
-        WireMidiInput(services, midiProvider, dispatcher, appSettings.Midi);
+        var midiSession = new MidiControlSession(
+            midiProvider, dispatcher, liveProfileStore, new MidiLearnSession(), NullLoggerFactory.Instance);
+        try
+        {
+            midiSession.StartAsync(appSettings.Midi).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"MIDI control session could not start: {ex.Message}.");
+        }
+        services.AddSingleton(midiSession);
+        services.AddSingleton<IMidiControlStatus>(midiSession);
 
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -254,8 +287,8 @@ public static class ServiceConfig
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
         // headless), and the choice is saved to settings.json. The audio output device + buffer are
         // applied at startup (loaded above, threaded into the realtime engine); the chosen MIDI
-        // controller is now opened into the dispatcher above (WireMidiInput). The Settings tab reuses
-        // the SAME provider instance that WireMidiInput opened the device through.
+        // controller is now opened into the dispatcher above (MidiControlSession). The Settings tab reuses
+        // the SAME provider instance that the MIDI control session opened the device through.
         services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
         services.AddSingleton<IMidiDeviceProvider>(midiProvider);
         services.AddSingleton<ISettingsStore>(settingsStore);
@@ -288,6 +321,10 @@ public static class ServiceConfig
             sp.GetRequiredService<IUiThemeManager>(),
             sp.GetRequiredService<IExtensionContentReloader>()));
 
+        // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
+        // (the MidiControlSession registered above). AppSettings feeds the device-name readouts.
+        services.AddSingleton(appSettings);
+        services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
         ServiceProvider provider = services.BuildServiceProvider();
@@ -461,28 +498,18 @@ public static class ServiceConfig
         services.AddSingleton<IAudioCaptureSourceFactory>(engine);
     }
 
-    // --- MIDI controller → dispatcher (doc 05/07) -------------------------------------------------
-    // Opens the SETTINGS-chosen MIDI controller and routes it through MidiControllerRouter →
-    // ControllerMapper → the one dispatcher, with MidiProfileSelector auto-selecting a profile by
-    // device name and MidiFeedbackPublisher driving LEDs back out (all composed by MidiInputPipeline,
-    // a pure Core seam). The resulting pipeline is registered so the DI container disposes it (which
-    // closes the device) at shutdown.
+    // --- MIDI default-profile pipeline (doc 05/07) ------------------------------------------------
+    // Builds a MidiInputPipeline that routes the SETTINGS-chosen controller through MidiControllerRouter
+    // → ControllerMapper → the one dispatcher, with MidiProfileSelector auto-selecting a profile by
+    // device name (CmdStudio2AProfile.Default today) and MidiFeedbackPublisher driving LEDs.
+    //
+    // The running app opens the controller through MidiControlSession (see Build) — which also exposes
+    // IMidiControlStatus for the shell. This default-profile path is retained (and unit-tested) for the
+    // controller-profile-capture increment (doc 22 step A8), where the captured CMD STUDIO 2A profile
+    // becomes the session's default instead of an empty profile.
     //
     // DEGRADES GRACEFULLY (global standards #16/#26): no controller chosen, no matching device, or a
-    // native rtmidi/open failure all log + leave the app running WITHOUT MIDI — never throw at startup.
-    // The dispatcher still serves the UI; the hardware simply does not drive it. AvailableProfiles is the
-    // default-profile catalog (CMD STUDIO 2A today); a persisted/custom profile set (doc 13) extends it.
-    private static void WireMidiInput(
-        IServiceCollection services,
-        IMidiDeviceProvider midiProvider,
-        IPerformanceActionDispatcher dispatcher,
-        MidiSettings midiSettings)
-    {
-        MidiInputPipeline? pipeline = TryOpenMidiPipeline(midiProvider, dispatcher, midiSettings);
-        if (pipeline is not null)
-            services.AddSingleton(pipeline);
-    }
-
+    // native rtmidi/open failure all log + return null — never throw at startup.
     // Internal for testing the graceful-degradation paths (no selection / not found / open throws)
     // with a fake provider — the App's mandatory error-handling contract for the device-open path.
     internal static MidiInputPipeline? TryOpenMidiPipeline(

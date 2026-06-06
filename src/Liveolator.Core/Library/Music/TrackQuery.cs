@@ -3,6 +3,23 @@ using System.IO;
 namespace Liveolator.Core.Library.Music;
 
 /// <summary>
+/// A composable set of library filters. Every field is optional; a null/blank field matches all, so
+/// the facets combine (logical AND). Drives both the Libraries filter bar and the MCP <c>list_tracks</c>
+/// tool from one tested place.
+/// </summary>
+public sealed record TrackFilter(
+    string? Text = null,
+    MusicMediaKind? Kind = null,
+    string? Artist = null,
+    string? Genre = null,
+    double? MinBpm = null,
+    double? MaxBpm = null,
+    string? Camelot = null,
+    int? Year = null,
+    string? FileType = null,
+    MediaAnalysisStatus? Status = null);
+
+/// <summary>
 /// Pure, reusable filtering of a catalogued track set — free text (title / artist / file name),
 /// BPM range, and Camelot key — with deterministic ordering. The single place this query logic
 /// lives, so the MCP server (doc 17) and any UI search share one tested implementation rather than
@@ -30,27 +47,51 @@ public static class TrackQuery
         double? maxBpm = null,
         string? camelot = null,
         int limit = 100)
+        => Apply(tracks, new TrackFilter(Text: text, MinBpm: minBpm, MaxBpm: maxBpm, Camelot: camelot), limit);
+
+    /// <summary>
+    /// Returns the tracks matching every supplied facet of <paramref name="filter"/> (null/blank facets
+    /// match all), ordered by title and capped at <paramref name="limit"/>.
+    /// </summary>
+    public static IReadOnlyList<MusicTrack> Apply(
+        IEnumerable<MusicTrack> tracks, TrackFilter filter, int limit = 100)
     {
         ArgumentNullException.ThrowIfNull(tracks);
+        ArgumentNullException.ThrowIfNull(filter);
 
         IEnumerable<MusicTrack> query = tracks;
 
-        if (!string.IsNullOrWhiteSpace(text))
+        if (filter.Kind is { } kind)
+            query = query.Where(t => t.Kind == kind);
+
+        if (!string.IsNullOrWhiteSpace(filter.Text))
         {
-            string needle = text.Trim();
+            string needle = filter.Text.Trim();
             query = query.Where(t => MatchesText(t, needle));
         }
 
-        if (minBpm is { } lo)
+        if (!string.IsNullOrWhiteSpace(filter.Artist))
+            query = query.Where(t => string.Equals(t.Artist, filter.Artist, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(filter.Genre))
+            query = query.Where(t => string.Equals(t.Metadata?.Genre, filter.Genre, StringComparison.OrdinalIgnoreCase));
+
+        if (filter.MinBpm is { } lo)
             query = query.Where(t => t.Bpm is not null && t.Bpm.Bpm >= lo);
-        if (maxBpm is { } hi)
+        if (filter.MaxBpm is { } hi)
             query = query.Where(t => t.Bpm is not null && t.Bpm.Bpm <= hi);
 
-        if (!string.IsNullOrWhiteSpace(camelot))
+        if (!string.IsNullOrWhiteSpace(filter.Camelot))
         {
-            string key = camelot.Trim();
+            string key = filter.Camelot.Trim();
             query = query.Where(t => string.Equals(t.Key?.Camelot, key, StringComparison.OrdinalIgnoreCase));
         }
+
+        if (filter.Year is { } year)
+            query = query.Where(t => t.Metadata?.Year == year);
+        if (!string.IsNullOrWhiteSpace(filter.FileType))
+            query = query.Where(t => string.Equals(t.FileType, filter.FileType, StringComparison.OrdinalIgnoreCase));
+        if (filter.Status is { } status)
+            query = query.Where(t => t.Status == status);
 
         return query
             .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)

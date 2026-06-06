@@ -42,6 +42,29 @@ public sealed class AudioEffectRackTests
     }
 
     [Fact]
+    public void Restore_RehydratesStateAndKeepsMissingPluginIdentity()
+    {
+        using var rack = new RealtimeAudioEffectRack(AudioEffectRackSlot.DeckA, new FakeFactory());
+        var saved = new AudioEffectRackState(
+            AudioEffectRackSlot.DeckA,
+            new[]
+            {
+                new AudioEffectInstanceState(
+                    "missing-1", "missing", true,
+                    new Dictionary<string, double> { ["mix"] = 0.4 },
+                    new byte[] { 9 }),
+            },
+            0);
+
+        rack.Restore(saved);
+
+        AudioEffectInstanceState restored = Assert.Single(rack.State.Effects);
+        Assert.Equal("missing-1", restored.InstanceId);
+        Assert.True(restored.IsMissing);
+        Assert.True(restored.IsBypassed);
+    }
+
+    [Fact]
     public void ActionHandler_RoutesTargetAndParameterThroughDispatcher()
     {
         var factory = new FakeFactory();

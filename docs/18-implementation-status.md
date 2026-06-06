@@ -19,6 +19,9 @@
 `tests/Liveolator.Core.Tests` — **423 passing** (as of 2026-06-06). The extension
 increment also has 53 Media, 96 Audio, 43 Visuals, and 119 App tests passing; MIDI and
 Integration counts remain 27 and 25 respectively.
+`tests/Liveolator.Core.Tests` — **425 passing** (as of 2026-06-06). Solution-wide:
+**851 passing** across 8 test projects (Core 425, App 156, Audio 98, Media 54,
+Visuals 43, MIDI 27, Integration 25, Online 23).
 
 ### ✅ Extension packages, UI themes, visual registry, and audio FX racks — first increment
 
@@ -38,6 +41,8 @@ The managed extension spine in `docs/21-extension-system.md` is built:
 - Rack processing is after deck gain/EQ/filter and on the post-mix master before output/beat
   analysis. Rack snapshots are copy-on-write; `Process` itself takes no locks and allocates nothing.
 - Missing VST3 processors are pass-through placeholders that retain identity and saved state.
+- Rack order, bypass, parameters, plugin UID, opaque state, and missing-plugin placeholders persist
+  under `live/audio-fx-racks.json` and restore on startup.
 - **Native delivery still required:** the repository does not vendor the Steinberg SDK or ship the
   scanner, native bridge implementation, or shader-probe executables. Real VST3 processing and
   extension-shader activation remain unavailable until those distribution artifacts are supplied.
@@ -405,6 +410,22 @@ seams are pure Core; enumeration is a thin native binding; the UI logic is unit-
   only — re-plugging or changing the controller in Settings needs an app restart), and applying the
   buffer/device to `BassPlayback` (the legacy single-deck path). Persisted capture-source selection
   (the `WireCaptureSources` SETTINGS-UI seam) remains open.
+- **Live MIDI control pipeline now wired (`ServiceConfig`):** the chosen controller is opened at startup and
+  routed through the one dispatcher, so hardware drives the same handlers as the UI. `MidiControlSession`
+  (Core/Mapping) orchestrates it — `IMidiDeviceProvider.OpenInput/OpenOutput` (promoted onto the seam) →
+  `ControllerMapper` (profile loaded via `ILiveProfileStore`, empty fallback) → `MidiControllerRouter` +
+  `MidiFeedbackPublisher` (LEDs) + `MidiActivityMonitor` (connection pulse). Best-effort/headless-safe: no
+  controller, absent rtmidi, or no saved profile leaves it idle / routing an empty profile without blocking
+  startup. +17 tests (Core `MidiActivityMonitorTests` 3, `MidiControlSessionTests` 7; App
+  `ShellStatusViewModelTests` 4 + provider-seam fakes).
+- **Shell top-bar status (`Liveolator.App/Shell/`):** `ShellStatusViewModel` + the `MainWindow` status strip
+  show **where audio is routed** (selected output device name) and **which MIDI gear is connected**; the MIDI
+  LED flashes a dedicated **green** (`MidiActive` token — a deliberate exception to the single-blue line) on
+  each inbound message, driven off `IMidiControlStatus.ActivityDetected` via an Rx `Throttle`.
+- **Deferred (next increment):** a **MIDI-learn UI** to author/save device profiles (the routing pipeline is
+  ready and routes whatever profile is loaded). **Runtime** re-init on a device change (MIDI + audio apply at
+  startup only) and applying the buffer/device to `BassPlayback` (the legacy single-deck path) are also open.
+  Persisted capture-source selection (the `WireCaptureSources` SETTINGS-UI seam) remains open.
 
 ### ✅ Visual scene model (performance layer) — `Liveolator.Core/Visuals/` (doc 08)
 

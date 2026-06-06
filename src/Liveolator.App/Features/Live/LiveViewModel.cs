@@ -22,6 +22,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     private readonly IManualBeatClockDriver? _clockDriver;
     private readonly IHostClock? _hostClock;
     private readonly ILiveBeatTimer? _timer;
+    private readonly PerformanceDeckSet _decks;
+    private readonly bool _ownsDecks;
     private bool _disposed;
 
     /// <param name="dispatcher">The one action layer for all module intent; null disables every control.</param>
@@ -31,6 +33,9 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// <param name="timer">Render-loop seam driving <paramref name="clockDriver"/>; null disables it.</param>
     /// <param name="visualStage">Launches the GL visuals window on demand; null hides the control.</param>
     /// <param name="waveformProvider">Decodes the deck waveform overview; null leaves the placeholder strip.</param>
+    /// <param name="decks">The shared decks + crossfader (doc 11). When provided, the Live tab drives the
+    /// same instances as the DJ tab (one source of truth); when null it builds a private set so the
+    /// view-model still constructs headless / under test.</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
@@ -38,7 +43,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         IHostClock? hostClock = null,
         ILiveBeatTimer? timer = null,
         IVisualStage? visualStage = null,
-        IWaveformProvider? waveformProvider = null)
+        IWaveformProvider? waveformProvider = null,
+        PerformanceDeckSet? decks = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
@@ -47,9 +53,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
 
         ProgramOut = new ProgramOutViewModel(visualStage);
         Beat = new BeatEngineViewModel(dispatcher, beatClock);
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider);
-        Mixer = new MixerViewModel(dispatcher);
+        _ownsDecks = decks is null;
+        _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
         SceneGrid = new SceneGridViewModel(dispatcher);
         MasterFx = new MasterFxViewModel(dispatcher);
         MacroEncoders = new MacroEncodersViewModel(dispatcher);
@@ -66,9 +71,9 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
 
     public ProgramOutViewModel ProgramOut { get; }
     public BeatEngineViewModel Beat { get; }
-    public DeckViewModel DeckA { get; }
-    public DeckViewModel DeckB { get; }
-    public MixerViewModel Mixer { get; }
+    public DeckViewModel DeckA => _decks.DeckA;
+    public DeckViewModel DeckB => _decks.DeckB;
+    public MixerViewModel Mixer => _decks.Mixer;
     public SceneGridViewModel SceneGrid { get; }
     public MasterFxViewModel MasterFx { get; }
     public MacroEncodersViewModel MacroEncoders { get; }
@@ -87,9 +92,9 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         }
 
         Beat.Dispose();
-        DeckA.Dispose();
-        DeckB.Dispose();
-        Mixer.Dispose();
+        // Only dispose the decks this view-model created; a shared set is owned by the composition root.
+        if (_ownsDecks)
+            _decks.Dispose();
         SceneGrid.Dispose();
         MasterFx.Dispose();
     }

@@ -25,23 +25,28 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     private readonly ILivePlaylist? _playlist;
     private readonly MusicLibrary? _library;
     private readonly Shared.TrackContextActions? _contextActions;
+    private readonly PerformanceDeckSet _decks;
+    private readonly bool _ownsDecks;
     private bool _disposed;
 
+    /// <param name="decks">The shared decks + crossfader (doc 11). When provided, the DJ tab drives the
+    /// same instances as the Live tab (one source of truth); when null it builds a private set so the
+    /// view-model still constructs headless / under test.</param>
     public DjViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         ILivePlaylist? playlist = null,
         MusicLibrary? library = null,
         Shared.TrackContextActions? contextActions = null,
-        IWaveformProvider? waveformProvider = null)
+        IWaveformProvider? waveformProvider = null,
+        PerformanceDeckSet? decks = null)
     {
         _dispatcher = dispatcher;
         _playlist = playlist;
         _library = library;
         _contextActions = contextActions;
 
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo);
-        Mixer = new MixerViewModel(dispatcher);
+        _ownsDecks = decks is null;
+        _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider, library);
         Set = new ObservableCollection<SetEntryViewModel>();
 
         IObservable<bool> canEdit = Observable.Return(dispatcher is not null && playlist is not null);
@@ -56,9 +61,9 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public DeckViewModel DeckA { get; }
-    public DeckViewModel DeckB { get; }
-    public MixerViewModel Mixer { get; }
+    public DeckViewModel DeckA => _decks.DeckA;
+    public DeckViewModel DeckB => _decks.DeckB;
+    public MixerViewModel Mixer => _decks.Mixer;
 
     /// <summary>The set: the Now entry first, then the upcoming queue, in play order.</summary>
     public ObservableCollection<SetEntryViewModel> Set { get; }
@@ -82,9 +87,9 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         _disposed = true;
         if (_playlist is not null)
             _playlist.NowChanged -= OnNowChanged;
-        DeckA.Dispose();
-        DeckB.Dispose();
-        Mixer.Dispose();
+        // Only dispose the decks this view-model created; a shared set is owned by the composition root.
+        if (_ownsDecks)
+            _decks.Dispose();
     }
 
     // Bulk set construction has no single-action representation (a PerformanceAction carries one track,
@@ -148,23 +153,5 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             foreach (MusicTrack track in _library.All)
                 titles[track.File.Path] = track.Title; // last write wins on duplicate paths
         return titles;
-    }
-
-    // Catalog facts for a deck's loaded track — title + the BPM/key/duration a DJ mixes by, pre-formatted
-    // the same way the Libraries table shows them. Null when there is no library or no matching entry.
-    private DeckTrackInfo? ResolveTrackInfo(string trackPath)
-    {
-        if (_library is null || string.IsNullOrEmpty(trackPath))
-            return null;
-
-        MusicTrack? track = _library.All
-            .FirstOrDefault(t => string.Equals(t.File.Path, trackPath, StringComparison.OrdinalIgnoreCase));
-        if (track is null)
-            return null;
-
-        string bpm = track.Bpm is { } b ? b.Bpm.ToString("0.0") : "—";
-        string key = track.Key?.Camelot ?? "—";
-        string duration = track.Duration is { } d ? $"{(int)d.TotalMinutes}:{d.Seconds:00}" : "—";
-        return new DeckTrackInfo(track.Title, bpm, key, duration);
     }
 }

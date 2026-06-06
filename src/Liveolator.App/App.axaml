@@ -28,6 +28,9 @@
     <Color x:Key="GreenColor">#2F80F6</Color>    <!-- unified to the blue accent -->
     <Color x:Key="AmberColor">#2F80F6</Color>    <!-- unified to the blue accent -->
     <Color x:Key="VioletColor">#2F80F6</Color>   <!-- unified to the blue accent -->
+    <!-- Deliberate exception to the single-blue line: a true green reserved for live MIDI activity
+         (the top-bar signal LED), so an incoming controller signal reads at a glance. -->
+    <Color x:Key="MidiActiveColor">#29C467</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
     <SolidColorBrush x:Key="S1" Color="{StaticResource S1Color}" />
@@ -44,6 +47,7 @@
     <SolidColorBrush x:Key="Green" Color="{StaticResource GreenColor}" />
     <SolidColorBrush x:Key="Amber" Color="{StaticResource AmberColor}" />
     <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
+    <SolidColorBrush x:Key="MidiActive" Color="{StaticResource MidiActiveColor}" />
 
     <!-- Retint Fluent's accent so standard controls (combobox, scrollbar, selection, etc.) follow the blue line. -->
     <Color x:Key="SystemAccentColor">#2F80F6</Color>

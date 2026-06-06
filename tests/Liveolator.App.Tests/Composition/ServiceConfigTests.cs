@@ -2,6 +2,7 @@ using System;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Shell;
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
@@ -30,6 +31,19 @@ public sealed class ServiceConfigTests
         // The catalog/library is the always-on baseline, independent of native audio.
         Assert.NotNull(provider.GetService<MusicLibrary>());
         Assert.NotNull(provider.GetService<LibrariesViewModel>());
+    }
+
+    [Fact]
+    public void Build_ResolvesTheMainWindow_WithShellStatus()
+    {
+        // The main window is the app's root DataContext; it depends on ShellStatusViewModel, which in
+        // turn needs IMidiControlStatus (the MidiControlSession) + AppSettings. Resolving it through the
+        // real container guards against a composition gap that would crash the app on launch but slip
+        // past tests that never resolve the root (the app-shell + integration merge had exactly that gap).
+        using var provider = (ServiceProvider)ServiceConfig.Build();
+
+        Assert.NotNull(provider.GetService<ShellStatusViewModel>());
+        Assert.NotNull(provider.GetService<MainWindowViewModel>());
     }
 
     [Fact]

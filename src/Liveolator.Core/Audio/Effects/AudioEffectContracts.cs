@@ -65,10 +65,19 @@ public interface IAudioEffectRack
     void ToggleBypass(string instanceId);
     void SetParameter(string instanceId, string parameterId, double normalizedValue);
     void LoadPreset(string instanceId, ReadOnlySpan<byte> state);
+    void Restore(AudioEffectRackState state);
     void Process(Span<float> interleaved, int channels);
 }
 
 public interface IAudioEffectRackProvider
 {
     IAudioEffectRack GetRack(int slot);
+}
+
+public interface IAudioEffectRackStateStore
+{
+    Task<IReadOnlyList<AudioEffectRackState>> LoadAsync(CancellationToken cancellationToken = default);
+    Task SaveAsync(
+        IReadOnlyList<AudioEffectRackState> racks,
+        CancellationToken cancellationToken = default);
 }

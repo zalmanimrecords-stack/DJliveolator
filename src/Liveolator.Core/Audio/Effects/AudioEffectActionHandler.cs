@@ -15,9 +15,13 @@ public sealed class AudioEffectActionHandler : PerformanceActionHandlerBase
     };
 
     private readonly IAudioEffectRackProvider _racks;
+    private readonly Action? _onChanged;
 
-    public AudioEffectActionHandler(IAudioEffectRackProvider racks)
-        => _racks = racks ?? throw new ArgumentNullException(nameof(racks));
+    public AudioEffectActionHandler(IAudioEffectRackProvider racks, Action? onChanged = null)
+    {
+        _racks = racks ?? throw new ArgumentNullException(nameof(racks));
+        _onChanged = onChanged;
+    }
 
     public override IReadOnlySet<PerformanceActionKind> HandledKinds => Kinds;
 
@@ -53,6 +57,7 @@ public sealed class AudioEffectActionHandler : PerformanceActionHandlerBase
                 break;
         }
 
+        _onChanged?.Invoke();
         RaiseFeedback(
             action.Kind,
             action.Slot,

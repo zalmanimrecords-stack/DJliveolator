@@ -62,6 +62,8 @@ Each rack uses copy-on-write snapshots. Control changes happen outside the audio
 reads one immutable entry array without locks or allocations. Missing plugins retain UID, parameters,
 opaque state, ordering, and bypass state as pass-through placeholders.
 
+Rack state is versioned in `<app-data>/Liveolator/live/audio-fx-racks.json` and restored at startup.
+
 ```text
 deck source -> gain/EQ/filter -> deck rack -> BASSmix/crossfader
             -> master rack -> output + master beat-analysis tap
