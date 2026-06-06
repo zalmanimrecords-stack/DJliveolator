@@ -34,7 +34,7 @@
             <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
             <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
             <TextBlock Grid.Column="4" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" Margin="0,0,12,0" />
             <TextBlock Grid.Column="6" Classes="faint" Text="STATUS" />
           </Grid>
           <ListBox Classes="rows"
@@ -66,8 +66,8 @@
                   <TextBlock Grid.Column="2" Classes="muted" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
                   <TextBlock Grid.Column="3" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="4" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" />
-                  <TextBlock Grid.Column="6" Classes="faint" Text="{Binding StatusText}" />
+                  <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" Margin="0,0,12,0" />
+                  <TextBlock Grid.Column="6" Classes="muted" Text="{Binding StatusText}" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>
