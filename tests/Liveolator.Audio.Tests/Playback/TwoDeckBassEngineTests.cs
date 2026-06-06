@@ -1,9 +1,11 @@
 using System;
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Mixer;
+using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Xunit;
 
@@ -451,6 +453,88 @@ public class TwoDeckBassEngineTests
         engine.Load(0, @"C:\a.wav");
 
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.HotCue(0, engine.HotCueCount));
+    }
+
+    // --- Persistent hot cues (A3): store wired into the engine, load on Load, save on set ---
+
+    private static TwoDeckBassEngine NewEngineWithStore(
+        out FakeBassMixerBackend backend, out FakeHotCueStore store)
+    {
+        backend = new FakeBassMixerBackend();
+        store = new FakeHotCueStore();
+        return new TwoDeckBassEngine(backend, new BassMixer(deckCount: TwoDeckBassEngine.Decks), hotCueStore: store);
+    }
+
+    [Fact]
+    public void HotCue_SettingACue_PersistsToTheStore()
+    {
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        engine.Load(0, @"C:\a.wav"); // handle 100, length defaults to 100 s, master rate 48 kHz
+        backend.PositionFraction[100] = 0.5;
+
+        engine.HotCue(0, 1); // set cue 1 at 0.5
+
+        Assert.True(store.SaveCount >= 1);
+        TrackCueRecord? saved = store.Get(@"C:\a.wav");
+        Assert.NotNull(saved);
+        // 0.5 of 100 s at 48 kHz = 2_400_000 samples.
+        Assert.Equal(2_400_000L, saved!.HotCues[0].PositionSamples);
+    }
+
+    [Fact]
+    public void Load_RestoresPersistedCues_AsFractions()
+    {
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        // Seed a cue at 2_400_000 samples (= 0.5 of a 100 s/48 kHz track) on slot index 3.
+        var set = new TrackCueSet(48_000, slotCount: 8).SetHotCue(3, 2_400_000);
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", set));
+
+        engine.Load(0, @"C:\a.wav"); // handle 100
+
+        Assert.True(engine.IsHotCueSet(0, 3));
+        // A second press should jump the playhead to the restored fraction (0.5).
+        backend.PositionFraction[100] = 0.9;
+        engine.HotCue(0, 3);
+        Assert.Equal(0.5, backend.PositionFraction[100], precision: 6);
+    }
+
+    [Fact]
+    public void Load_DifferentTracks_RestoreTheirOwnCues()
+    {
+        using var engine = NewEngineWithStore(out _, out FakeHotCueStore store);
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", new TrackCueSet(48_000, 8).SetHotCue(0, 480_000)));
+        // b.wav has no saved cues.
+
+        engine.Load(0, @"C:\a.wav");
+        Assert.True(engine.IsHotCueSet(0, 0));
+
+        engine.Load(0, @"C:\b.wav"); // replaces; b has no cues
+        Assert.False(engine.IsHotCueSet(0, 0));
+    }
+
+    [Fact]
+    public void Load_StoreThrows_DegradesToNoCues_DoesNotThrow()
+    {
+        using var engine = NewEngineWithStore(out _, out FakeHotCueStore store);
+        store.Throw = true;
+
+        engine.Load(0, @"C:\a.wav"); // must not bubble the store failure
+
+        Assert.False(engine.IsHotCueSet(0, 0));
+    }
+
+    [Fact]
+    public void HotCue_SaveThrows_IsSwallowed()
+    {
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        engine.Load(0, @"C:\a.wav");
+        store.Throw = true;
+        backend.PositionFraction[100] = 0.4;
+
+        // Setting a cue while the store rejects the save must not crash the show.
+        engine.HotCue(0, 0);
+
+        Assert.True(engine.IsHotCueSet(0, 0)); // the in-RAM cue still latched
     }
 
     // --- Loops (beat-length -> time region via base BPM, doc 11) ---

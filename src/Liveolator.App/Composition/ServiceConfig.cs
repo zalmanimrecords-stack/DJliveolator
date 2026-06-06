@@ -149,6 +149,11 @@ public static class ServiceConfig
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
+        // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
+        // next run and survive a deck reload (tolerant: a missing/corrupt file degrades to no cues).
+        var hotCueStore = new JsonHotCueStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IHotCueStore>(hotCueStore);
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
@@ -172,7 +177,7 @@ public static class ServiceConfig
         // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks);
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore);
         MasterMixPlaybackEngine? masterMix =
             deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
         bool realtimeUp = deckEngine is not null;
@@ -354,11 +359,13 @@ public static class ServiceConfig
     private static TwoDeckBassEngine? TryBuildDeckEngine(
         BassMixer mixer,
         AudioSettings audioSettings,
-        IAudioEffectRackProvider effectRacks)
+        IAudioEffectRackProvider effectRacks,
+        IHotCueStore hotCueStore)
     {
         try
         {
-            return new TwoDeckBassEngine(mixer, audioSettings: audioSettings, effectRacks: effectRacks);
+            return new TwoDeckBassEngine(
+                mixer, audioSettings: audioSettings, effectRacks: effectRacks, hotCueStore: hotCueStore);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
