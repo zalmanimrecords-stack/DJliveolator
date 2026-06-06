@@ -50,6 +50,14 @@ public static class ServiceConfig
         var settingsStore = new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         AppSettings appSettings = settingsStore.LoadAsync().GetAwaiter().GetResult();
 
+        // --- Authored Live-Mode data (doc 13): mapping profiles / scenes / macros / autopilot rule-sets
+        // persisted under the per-user live/ root. The seam lives in Core; LiveProfileStore is the Media
+        // binding. Registered so the host (and later the MIDI / Settings agents) can load/save snapshots;
+        // a saved visual bank is loaded at startup below to feed the visual engine (scenes → banks).
+        // MERGE-RISK: this block + WireLiveProfiles/WirePlaylistAudio are the only additions to this file.
+        var liveProfileStore = new LiveProfileStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<ILiveProfileStore>(liveProfileStore);
+
         // --- Track-analysis / music-library module (doc 16) ---
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
         services.AddSingleton<IFileEnumerator, FileSystemEnumerator>();          // Liveolator.Platform
@@ -79,7 +87,7 @@ public static class ServiceConfig
 
         // --- Visual engine (doc 08): the GL compositor reads the shared clock and its action handler
         // joins the one dispatcher. Runs first so the handler exists when the dispatcher is composed.
-        VisualActionHandler visualHandler = WireVisuals(services, sharedLiveClock);
+        VisualActionHandler visualHandler = WireVisuals(services, sharedLiveClock, liveProfileStore);
 
         // --- Software mixer (doc 11): pure-constructable with NO native dependency — BassMixer is a
         // routing skeleton that logs+drops calls for slots whose deck channel is not registered yet.
@@ -133,6 +141,7 @@ public static class ServiceConfig
             handlers, NullLogger<PerformanceActionDispatcher>.Instance);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
 
+        WirePlaylistAudio(services, livePlaylist, deckEngine);
         WireCaptureSources(services);
         WireLiveTab(services, sharedLiveClock, hostClock);
 
@@ -192,6 +201,9 @@ public static class ServiceConfig
         ServiceProvider provider = services.BuildServiceProvider();
         // Populate the "Add to playlist" submenu once at startup (best-effort; guarded internally).
         _ = provider.GetRequiredService<TrackContextActions>().RefreshPlaylistsAsync();
+        // Eagerly activate the live-queue audio binding (when the realtime engine is up) so it starts
+        // subscribing to NowChanged immediately — nothing else resolves it.
+        _ = provider.GetService<PlaylistAudioPlayer>();
         return provider;
     }
 
@@ -220,16 +232,18 @@ public static class ServiceConfig
     // is a deferred user action — see the RENDER-WINDOW SEAM note below.
     //
     // The engine reads the SHARED live clock (passed in), so once the render window runs it pulses on
-    // the same beat the Live tab taps. The starter bank is empty (no GPU assets at startup); a real
-    // scene/bank catalog from persistence (doc 13) replaces it later.
-    private static VisualActionHandler WireVisuals(IServiceCollection services, ManualBeatClock sharedLiveClock)
+    // the same beat the Live tab taps. A persisted visual bank (doc 13) is loaded at startup and feeds
+    // the engine when present; otherwise the empty/placeholder starter bank is used (tolerant — a
+    // missing/corrupt snapshot degrades to the starter bank with a warning, never crashing startup).
+    private static VisualActionHandler WireVisuals(
+        IServiceCollection services, ManualBeatClock sharedLiveClock, ILiveProfileStore profileStore)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        var visualEngine = new GlVisualPerformanceEngine(BuildStarterBank(), brightnessMacro, sharedLiveClock);
+        var visualEngine = new GlVisualPerformanceEngine(LoadOrBuildStarterBank(profileStore), brightnessMacro, sharedLiveClock);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -274,6 +288,30 @@ public static class ServiceConfig
         }
     }
 
+    /// <summary>The well-known name of the user's authored startup scene bank under <c>live/scenes/</c>.</summary>
+    private const string StartupVisualBankName = "Live";
+
+    // Loads the authored startup visual bank from persistence (doc 13) so saved scenes feed the engine
+    // across restarts. Tolerant: a missing/corrupt/old snapshot returns null (the store already warned),
+    // so we fall back to the placeholder starter bank rather than starting with no visuals. Blocking is
+    // acceptable in the composition root (one small JSON file), mirroring the settings load above.
+    private static VisualBank LoadOrBuildStarterBank(ILiveProfileStore profileStore)
+    {
+        try
+        {
+            VisualBank? saved = profileStore.LoadVisualBankAsync(StartupVisualBankName).GetAwaiter().GetResult();
+            if (saved is not null && saved.Scenes.Count > 0)
+                return saved;
+        }
+        catch (Exception ex)
+        {
+            // The store load is itself tolerant; this guards only against an unexpected fault so a bad
+            // snapshot can never block startup (global standards #16/#26).
+            System.Diagnostics.Trace.TraceWarning($"Could not load saved visual bank '{StartupVisualBankName}': {ex.Message}.");
+        }
+        return BuildStarterBank();
+    }
+
     // --- Live tab: tap-tempo performance surface, demonstrable with NO audio hardware (docs 03/04/12) ---
     // Drives the SHARED ManualBeatClock and routes every control through the SINGLE dispatcher composed
     // in Build(), so the Live UI reaches the beat, mixer and visual handlers (and deck transport when
@@ -286,6 +324,27 @@ public static class ServiceConfig
             clock, clock, hostClock, new DispatcherLiveBeatTimer(),
             sp.GetService<IVisualStage>(),
             sp.GetService<IWaveformProvider>()));
+    }
+
+    // --- Live playlist audio binding (doc 09) -----------------------------------------------------
+    // Binds the pure ILivePlaylist queue to the realtime engine: PlaylistAudioPlayer drives the deck on
+    // each NowChanged (load + play), so editing the future never disturbs Now (the doc 09 invariant lives
+    // in the pure queue; this side only reacts to NowChanged). Wired ONLY when the realtime two-deck
+    // engine is up — headless (no native BASS) there is no deck to drive, so the app stays a catalog
+    // browser and the queue still edits freely. Registered as a singleton so the binding outlives Build()
+    // and keeps reacting for the app's lifetime.
+    //
+    // PRELOAD SEAM: NextTrackPreloader is wired only when an IDeckPreloader is registered. The native
+    // pre-buffering implementation (opening the upcoming BASS stream ahead, verified manually) is the
+    // remaining deferred piece; the pure preloader sequencing is built + unit-tested in Liveolator.Audio.
+    private static void WirePlaylistAudio(
+        IServiceCollection services, ILivePlaylist livePlaylist, IMultiDeckPlaybackEngine? deckEngine)
+    {
+        if (deckEngine is null)
+            return; // catalog-browser mode: no deck to bind the queue to.
+
+        // Deck A (slot 0) hosts the auto-advancing live queue; auto-play so a skip/advance starts at once.
+        services.AddSingleton(new PlaylistAudioPlayer(livePlaylist, deckEngine, slot: 0, autoPlay: true));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---
