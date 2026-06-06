@@ -22,7 +22,7 @@ internal interface IBassMixerBackend : IDisposable
     int OpenDeckStream(string filePath);
 
     /// <summary>Plug an opened deck stream into the master mix, returning its per-deck FX control.</summary>
-    IBassMixerChannel PlugDeck(int deckHandle);
+    IBassMixerChannel PlugDeck(int deckHandle, int slot);
 
     /// <summary>Pause or resume a plugged deck's contribution to the mix.</summary>
     void SetDeckPlaying(int deckHandle, bool playing);

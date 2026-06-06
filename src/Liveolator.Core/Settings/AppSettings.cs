@@ -13,10 +13,18 @@ public sealed record AppSettings
     /// <summary>MIDI controller settings (input + feedback device names).</summary>
     public MidiSettings Midi { get; init; } = MidiSettings.Default;
 
+    /// <summary>Extension developer-mode and the UI theme selected for the next startup.</summary>
+    public ExtensionSettings Extensions { get; init; } = ExtensionSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
     /// <summary>Returns a copy with every section normalized (buffer clamped, blank names folded).</summary>
     public AppSettings Normalized()
-        => this with { Audio = Audio.Normalized(), Midi = Midi.Normalized() };
+        => this with
+        {
+            Audio = Audio.Normalized(),
+            Midi = Midi.Normalized(),
+            Extensions = Extensions.Normalized(),
+        };
 }

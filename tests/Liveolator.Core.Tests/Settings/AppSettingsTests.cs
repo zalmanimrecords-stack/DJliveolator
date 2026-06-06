@@ -14,6 +14,8 @@ public class AppSettingsTests
         Assert.Equal(AudioSettings.DefaultBufferMs, settings.Audio.BufferMilliseconds);
         Assert.Null(settings.Midi.ControllerInputName);
         Assert.Null(settings.Midi.FeedbackOutputName);
+        Assert.False(settings.Extensions.DeveloperMode);
+        Assert.Null(settings.Extensions.ActiveUiThemeId);
     }
 
     [Theory]

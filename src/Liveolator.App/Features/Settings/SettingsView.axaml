@@ -9,7 +9,7 @@
 
       <TextBlock Classes="section" Text="AUDIO OUTPUT" />
       <Border Classes="panel">
-        <StackPanel Spacing="12">
+        <StackPanel Spacing="12" Margin="14">
           <StackPanel Spacing="4">
             <TextBlock Classes="faint" Text="Sound card / output device" />
             <ComboBox ItemsSource="{Binding OutputDevices}"
@@ -34,7 +34,7 @@
 
       <TextBlock Classes="section" Text="MIDI CONTROLLERS" />
       <Border Classes="panel">
-        <StackPanel Spacing="12">
+        <StackPanel Spacing="12" Margin="14">
           <StackPanel Spacing="4">
             <TextBlock Classes="faint" Text="Controller input (Push / CMD STUDIO 2A)" />
             <ComboBox ItemsSource="{Binding MidiInputDevices}"
@@ -53,7 +53,7 @@
 
       <TextBlock Classes="section" Text="DETECTED INPUTS" />
       <Border Classes="panel">
-        <ItemsControl ItemsSource="{Binding CaptureDevices}">
+        <ItemsControl ItemsSource="{Binding CaptureDevices}" Margin="14">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="audio:AudioCaptureDevice">
               <TextBlock Classes="faint" Text="{Binding Name}" />
@@ -62,9 +62,51 @@
         </ItemsControl>
       </Border>
 
+      <TextBlock Classes="section" Text="EXTENSIONS" />
+      <Border Classes="panel">
+        <StackPanel Spacing="10" Margin="14">
+          <TextBlock Classes="faint" Text="Local signed package (.liveolator-pack)" />
+          <TextBox Classes="spartan"
+                   Watermark="C:\path\to\pack.liveolator-pack"
+                   Text="{Binding PackagePath}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="spartan" Content="Preview" Command="{Binding PreviewPackageCommand}" />
+            <Button Classes="accent" Content="Install" Command="{Binding InstallPackageCommand}" />
+          </StackPanel>
+
+          <CheckBox Content="Developer mode (allow unsigned packages after restart)"
+                    IsChecked="{Binding DeveloperMode}" />
+
+          <TextBlock Classes="faint" Text="UI theme (applies after restart)" />
+          <ComboBox ItemsSource="{Binding UiThemeIds}"
+                    SelectedItem="{Binding ActiveUiThemeId}" />
+
+          <ListBox Classes="rows"
+                   ItemsSource="{Binding InstalledExtensions}"
+                   SelectedItem="{Binding SelectedExtension}"
+                   MinHeight="80">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="settings:ExtensionItemViewModel">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel>
+                    <TextBlock Text="{Binding PackageId}" />
+                    <TextBlock Classes="faint" Text="{Binding Content}" />
+                  </StackPanel>
+                  <TextBlock Grid.Column="1" Margin="12,0,0,0" Classes="faint" Text="{Binding State}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Classes="spartan" Content="Enable / Disable" Command="{Binding ToggleExtensionCommand}" />
+            <Button Classes="spartan" Content="Uninstall" Command="{Binding UninstallExtensionCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
       <StackPanel Orientation="Horizontal" Spacing="12">
-        <Button Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
-        <Button Content="Save" Command="{Binding SaveCommand}" />
+        <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
+        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
       </StackPanel>
 
       <TextBlock Classes="faint" Text="{Binding Status}" />

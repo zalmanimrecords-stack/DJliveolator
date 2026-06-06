@@ -31,7 +31,7 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         return OpenOverride?.Invoke(filePath) ?? _nextHandle++;
     }
 
-    public IBassMixerChannel PlugDeck(int deckHandle)
+    public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
         var channel = new FakeBassMixerChannel(deckHandle);
         Channels[deckHandle] = channel;
