@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The SQLite-backed catalog gateway (SqliteCatalogStore). The non-Core package bundles the
+         native sqlite engine, so persistence works cross-platform with no extra setup. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
   </ItemGroup>
 
