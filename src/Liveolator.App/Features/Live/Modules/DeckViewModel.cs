@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 
@@ -47,6 +48,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isSyncLocked;
+    private SyncLockState _syncState;
+    private bool _isMaster;
     private bool _isLooping;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
@@ -100,7 +103,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         SyncCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: slot)),
             canEmit);
-        _isSyncLocked = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot).IsActive ?? false;
+        // Seed the full beat-lock state from the handler's DeckSyncLockToggle feedback: IsActive = engaged,
+        // Value = the SyncLockState ordinal, Argument = "master" on the sync-reference deck.
+        ActionFeedbackState? syncSeed = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot);
+        _isSyncLocked = syncSeed?.IsActive ?? false;
+        _syncState = syncSeed is { } s ? (SyncLockState)(int)Math.Round(s.Value) : SyncLockState.Off;
+        _isMaster = syncSeed?.Argument == "master";
 
         // Click-to-seek: the strip computes the clicked 0..1 fraction and passes it here; we emit an
         // absolute DeckSeek for this slot. The fraction is clamped at the seam (defence against a bad value).
@@ -243,11 +251,30 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void UpdatePlayhead()
     {
-        if (_dispatcher is null || !_isPlaying)
+        if (_dispatcher is null)
+            return;
+
+        // Poll the sync state every tick (regardless of play state): the continuous lock loop transitions
+        // ACTIVE→LOCKED→DRIFTING with no action, and the MASTER badge must appear on the *other* deck —
+        // neither raises this deck's feedback event, so a poll is the only way the UI tracks them.
+        ActionFeedbackState sync = _dispatcher.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, _slot);
+        if (sync.IsAvailable)
+            ApplySyncFeedback(sync);
+
+        if (!_isPlaying)
             return;
         ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
         if (position.IsAvailable)
             Progress = position.Value;
+    }
+
+    // Project the DeckSyncLockToggle feedback onto the engaged/state/master surface (shared by the event
+    // path and the per-tick poll).
+    private void ApplySyncFeedback(ActionFeedbackState state)
+    {
+        IsSyncLocked = state.IsActive;
+        SyncState = (SyncLockState)(int)Math.Round(state.Value);
+        IsMaster = state.Argument == "master";
     }
 
     private double ComputeZoomWindow()
@@ -266,11 +293,39 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
             : Array.Empty<double>();
 
-    /// <summary>True while this deck is sync-locked (tempo-matched to the other deck), from feedback.</summary>
+    /// <summary>True while this deck has Sync engaged (the SYNC key's active highlight), from feedback.</summary>
     public bool IsSyncLocked
     {
         get => _isSyncLocked;
         private set => this.RaiseAndSetIfChanged(ref _isSyncLocked, value);
+    }
+
+    /// <summary>This deck's continuous beat-lock state — OFF/ACTIVE/LOCKED/DRIFTING — from feedback.</summary>
+    public SyncLockState SyncState
+    {
+        get => _syncState;
+        private set
+        {
+            if (_syncState == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _syncState, value);
+            this.RaisePropertyChanged(nameof(SyncStateLabel));
+        }
+    }
+
+    /// <summary>Short label for the SYNC key reflecting <see cref="SyncState"/> (LOCK / DRIFT / SYNC).</summary>
+    public string SyncStateLabel => _syncState switch
+    {
+        SyncLockState.Locked => "LOCK",
+        SyncLockState.Drifting => "DRIFT",
+        _ => "SYNC",
+    };
+
+    /// <summary>True when this deck is the sync MASTER (the reference the other deck locks to), from feedback.</summary>
+    public bool IsMaster
+    {
+        get => _isMaster;
+        private set => this.RaiseAndSetIfChanged(ref _isMaster, value);
     }
 
     /// <summary>True while this deck has an active loop (drives the LOOP key's active state), from feedback.</summary>
@@ -345,7 +400,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     IsPlaying = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckSyncLockToggle:
-                    IsSyncLocked = e.State.IsActive;
+                    ApplySyncFeedback(e.State);
                     break;
                 case PerformanceActionKind.DeckSetLoop:
                     IsLooping = e.State.IsActive;

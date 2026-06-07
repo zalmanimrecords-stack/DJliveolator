@@ -20,6 +20,8 @@ internal sealed class FakeLivePlaylist : ILivePlaylist
 
     public event EventHandler<QueueEntry?>? NowChanged;
 
+    public event EventHandler? Changed;
+
     /// <summary>Simulates the queue moving to <paramref name="now"/> and notifying subscribers.</summary>
     public void RaiseNowChanged(QueueEntry? now)
     {

@@ -27,6 +27,9 @@ public sealed class LivePlaylist : ILivePlaylist
     public event EventHandler<QueueEntry?>? NowChanged;
 
     /// <inheritdoc />
+    public event EventHandler? Changed;
+
+    /// <inheritdoc />
     public QueueEntry? Now => _now is { } item ? new QueueEntry(item.Path, item.Id, TrackState.Now) : null;
 
     /// <inheritdoc />
@@ -53,6 +56,7 @@ public sealed class LivePlaylist : ILivePlaylist
 
         PullNextIntoNow();
         RaiseNowChanged();
+        RaiseChanged();
     }
 
     /// <inheritdoc />
@@ -60,6 +64,7 @@ public sealed class LivePlaylist : ILivePlaylist
     {
         ArgumentException.ThrowIfNullOrEmpty(trackPath);
         _upcoming.Add(new Item(Guid.NewGuid(), trackPath));
+        RaiseChanged();
     }
 
     /// <inheritdoc />
@@ -67,6 +72,7 @@ public sealed class LivePlaylist : ILivePlaylist
     {
         ArgumentException.ThrowIfNullOrEmpty(trackPath);
         _upcoming.Insert(0, new Item(Guid.NewGuid(), trackPath));
+        RaiseChanged();
     }
 
     /// <inheritdoc />
@@ -83,6 +89,7 @@ public sealed class LivePlaylist : ILivePlaylist
         _upcoming.RemoveAt(from);
         int target = Math.Clamp(toIndex, 0, _upcoming.Count);
         _upcoming.Insert(target, item);
+        RaiseChanged();
     }
 
     /// <inheritdoc />
@@ -97,6 +104,8 @@ public sealed class LivePlaylist : ILivePlaylist
         int removed = _upcoming.RemoveAll(item => item.Id == id);
         if (removed == 0)
             _logger.LogDebug("RemoveFuture ignored: no upcoming entry with id {Id}.", id);
+        else
+            RaiseChanged();
     }
 
     /// <inheritdoc />
@@ -119,6 +128,7 @@ public sealed class LivePlaylist : ILivePlaylist
     {
         PullNextIntoNow();
         RaiseNowChanged();
+        RaiseChanged();
     }
 
     private void PullNextIntoNow()
@@ -135,6 +145,8 @@ public sealed class LivePlaylist : ILivePlaylist
     }
 
     private void RaiseNowChanged() => NowChanged?.Invoke(this, Now);
+
+    private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
     private readonly record struct Item(Guid Id, string Path);
 }

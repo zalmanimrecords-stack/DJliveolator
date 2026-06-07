@@ -32,7 +32,7 @@
         <ItemsControl ItemsSource="{Binding FolderStatuses}" Margin="12">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="lib:FolderStatusViewModel">
-              <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,7"
+              <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,7"
                     VerticalAlignment="Center">
                 <StackPanel Grid.Column="0" Spacing="2">
                   <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
@@ -44,6 +44,10 @@
                           IsChecked="{Binding IsSampleFolder}"
                           Content="Samples"
                           ToolTip.Tip="Treat every file under this folder as a sample (not a full track)" />
+                <Button Grid.Column="3" Classes="spartan" Content="Remove"
+                        VerticalAlignment="Center" Margin="16,0,0,0"
+                        Command="{Binding RemoveCommand}"
+                        ToolTip.Tip="Stop scanning this folder and drop its tracks from the library" />
               </Grid>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

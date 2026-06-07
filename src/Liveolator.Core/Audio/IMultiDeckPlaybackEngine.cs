@@ -1,3 +1,5 @@
+using Liveolator.Core.Audio.Sync;
+
 namespace Liveolator.Core.Audio;
 
 /// <summary>
@@ -80,11 +82,25 @@ public interface IMultiDeckPlaybackEngine
     /// </summary>
     void SetDeckFirstBeat(int slot, double firstBeatSeconds);
 
-    /// <summary>True while the deck is sync-locked (beatmatched) to the master tempo.</summary>
+    /// <summary>True while the deck is sync-locked (beatmatched + phase-locked) to the master.</summary>
     bool IsSyncLocked(int slot);
 
-    /// <summary>Enable or disable sync-lock for the deck.</summary>
+    /// <summary>
+    /// Enable or disable sync-lock for the deck. Engaging makes this deck the slave and the other loaded
+    /// deck the persistent sync <see cref="SyncMaster"/>; the slave is beatmatched, phase-snapped onto the
+    /// master's grid, then held there by the continuous correction loop (<see cref="UpdateSync"/>).
+    /// </summary>
     void SetSyncLock(int slot, bool enabled);
+
+    /// <summary>
+    /// The deck slot currently acting as the sync master (the reference the slave locks onto), or null
+    /// when no deck is synced. The master never has its tempo changed automatically; it also drives the
+    /// shared beat clock so the visuals lock to the same grid (doc 03/11).
+    /// </summary>
+    int? SyncMaster { get; }
+
+    /// <summary>The deck's beat-lock state for the SYNC button / waveform indicator (doc 11/12).</summary>
+    SyncLockState SyncState(int slot);
 
     /// <summary>True while the deck quantizes cue/loop actions to the beat grid.</summary>
     bool IsQuantizeEnabled(int slot);

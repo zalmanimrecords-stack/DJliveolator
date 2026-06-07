@@ -113,4 +113,50 @@ public class PhaseAlignmentCalculatorTests
         var leader = new DeckPhase(0.1, 0.0, leaderBpm);
         Assert.Equal(0.0, PhaseAlignmentCalculator.PhaseNudgeSeconds(follower, leader), precision: 6);
     }
+
+    [Fact]
+    public void BeatPhaseError_FollowerBehind_IsPositive()
+    {
+        // Leader 0.1 beat into its grid, follower on a beat => follower is behind by +0.1 beat.
+        var leader = new DeckPhase(PositionSeconds: 0.1 * (60.0 / 120.0), FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        Assert.Equal(0.1, PhaseAlignmentCalculator.BeatPhaseError(follower, leader), precision: 6);
+    }
+
+    [Fact]
+    public void BeatPhaseError_FollowerAhead_IsNegative()
+    {
+        var leader = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 0.1 * (60.0 / 120.0), FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        Assert.Equal(-0.1, PhaseAlignmentCalculator.BeatPhaseError(follower, leader), precision: 6);
+    }
+
+    [Fact]
+    public void BeatPhaseError_WrapsToNearestHalfBeat()
+    {
+        // 0.6-beat raw error is shorter measured as -0.4: any relationship resolves within ±0.5 beat.
+        var leader = new DeckPhase(PositionSeconds: 0.6 * (60.0 / 120.0), FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        double error = PhaseAlignmentCalculator.BeatPhaseError(follower, leader);
+
+        Assert.Equal(-0.4, error, precision: 6);
+        Assert.InRange(error, -0.5, 0.5);
+    }
+
+    [Fact]
+    public void PhaseNudge_EqualsBeatPhaseError_TimesBeatSeconds()
+    {
+        // The seconds nudge is just the wrapped beat error scaled by the follower's beat length — the two
+        // helpers share one definition.
+        var leader = new DeckPhase(PositionSeconds: 0.31, FirstBeatSeconds: 0.0, Bpm: 128.0);
+        var follower = new DeckPhase(PositionSeconds: 0.07, FirstBeatSeconds: 0.0, Bpm: 128.0);
+
+        double errorBeats = PhaseAlignmentCalculator.BeatPhaseError(follower, leader);
+        double nudge = PhaseAlignmentCalculator.PhaseNudgeSeconds(follower, leader);
+
+        Assert.Equal(errorBeats * (60.0 / 128.0), nudge, precision: 9);
+    }
 }

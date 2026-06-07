@@ -1,3 +1,5 @@
+using Liveolator.Core.Audio.Sync;
+
 namespace Liveolator.Core.Audio;
 
 /// <summary>
@@ -70,6 +72,11 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
     public bool IsSyncLocked(int slot) { EnsureSlot(slot); return false; }
 
     public void SetSyncLock(int slot, bool enabled) => EnsureSlot(slot);
+
+    // A single deck has no second deck to sync to: there is never a master and every slot is Off.
+    public int? SyncMaster => null;
+
+    public SyncLockState SyncState(int slot) { EnsureSlot(slot); return SyncLockState.Off; }
 
     public bool IsQuantizeEnabled(int slot) { EnsureSlot(slot); return false; }
 

@@ -105,6 +105,31 @@ public sealed class LibrariesViewModelTests
     }
 
     [Fact]
+    public async Task RemoveFolder_drops_the_status_row_and_its_tracks()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        Assert.Equal(2, vm.Tracks.Count);
+
+        vm.RemoveFolder("/music");
+
+        Assert.Empty(vm.Folders);
+        Assert.Empty(vm.FolderStatuses);
+        Assert.Empty(vm.Tracks); // the scanned tracks lived only under the removed folder
+    }
+
+    [Fact]
+    public void RemoveFolder_unknown_folder_is_a_noop()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav"); // adds "/music"
+
+        vm.RemoveFolder("/not-added");
+
+        Assert.Single(vm.Folders);
+        Assert.Equal("/music", vm.Folders[0]);
+    }
+
+    [Fact]
     public async Task Scan_populates_folder_status_counts_and_progress()
     {
         LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav", "/music/Gamma.wav");

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -164,6 +165,22 @@ public class DeckActionHandlerTests
 
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
+
+        // A synced deck reports Active and makes the other deck the master — enough for the handler's
+        // feedback translation; the real lock-state machine lives in the engine.
+        public int? SyncMaster
+        {
+            get
+            {
+                for (int s = 0; s < _sync.Length; s++)
+                    if (_sync[s])
+                        return s == 0 ? 1 : 0;
+                return null;
+            }
+        }
+
+        public SyncLockState SyncState(int slot) => _sync[slot] ? SyncLockState.Active : SyncLockState.Off;
+
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
         public void SetQuantize(int slot, bool enabled) => _quantize[slot] = enabled;
 

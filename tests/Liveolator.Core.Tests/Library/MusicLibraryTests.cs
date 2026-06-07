@@ -211,6 +211,55 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task PruneToFolders_DropsTracksOutsideRetainedFolders()
+    {
+        var enumerator = new FakeFileEnumerator(
+            File("/music/rock/a.mp3"), File("/music/jazz/c.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["/music/jazz/c.mp3"] = TestSignals.ClickTrain(90, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        int dropped = library.PruneToFolders(new[] { "/music/rock" });
+
+        Assert.Equal(1, dropped);
+        Assert.NotNull(library.TryGet("/music/rock/a.mp3"));
+        Assert.Null(library.TryGet("/music/jazz/c.mp3")); // jazz folder no longer retained → dropped
+    }
+
+    [Fact]
+    public async Task PruneToFolders_KeepsTrackStillCoveredByANestedRetainedFolder()
+    {
+        var enumerator = new FakeFileEnumerator(File("/music/rock/a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        // Removing the broad "/music" root still leaves the track covered by the kept "/music/rock" root.
+        int dropped = library.PruneToFolders(new[] { "/music/rock" });
+
+        Assert.Equal(0, dropped);
+        Assert.NotNull(library.TryGet("/music/rock/a.mp3"));
+    }
+
+    [Fact]
+    public async Task PruneToFolders_Empty_ClearsCatalog()
+    {
+        var enumerator = new FakeFileEnumerator(File("/music/rock/a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["/music/rock/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "/music" });
+
+        int dropped = library.PruneToFolders(Array.Empty<string>());
+
+        Assert.Equal(1, dropped);
+        Assert.Equal(0, library.Count);
+    }
+
+    [Fact]
     public async Task HarmonicMatches_ReturnsCompatibleKeys_ExcludingSeed()
     {
         // C major triad (8B) and A minor triad (8A) are relative-key compatible.

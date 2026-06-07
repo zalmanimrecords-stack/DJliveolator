@@ -63,6 +63,39 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     }
 
     /// <summary>
+    /// Drops every catalogued entry whose file no longer lives under any of the given folder roots.
+    /// Used when a scan folder is removed: it trims exactly the entries a re-scan of the reduced folder
+    /// set would drop, but instantly and without touching disk. An entry kept by a still-retained
+    /// (e.g. nested) root survives. An empty folder set clears the catalog. Returns the number removed.
+    /// </summary>
+    public int PruneToFolders(IEnumerable<string> folders)
+    {
+        ArgumentNullException.ThrowIfNull(folders);
+        string[] roots = folders
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(FolderScope.Normalize)
+            .ToArray();
+
+        lock (_gate)
+        {
+            List<string> toRemove = _byPath.Keys
+                .Where(path => !IsUnderAnyRoot(FolderScope.Normalize(path), roots))
+                .ToList();
+            foreach (string path in toRemove)
+                _byPath.Remove(path);
+            return toRemove.Count;
+        }
+    }
+
+    private static bool IsUnderAnyRoot(string normalizedPath, string[] normalizedRoots)
+    {
+        foreach (string root in normalizedRoots)
+            if (FolderScope.IsUnderNormalized(normalizedPath, root))
+                return true;
+        return false;
+    }
+
+    /// <summary>
     /// Scans the folders and updates the catalog incrementally: unchanged files are kept as-is
     /// (not re-processed), removed files are dropped, new/changed files are (re)built.
     /// </summary>

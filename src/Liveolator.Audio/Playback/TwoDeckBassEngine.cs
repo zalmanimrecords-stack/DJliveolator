@@ -25,7 +25,7 @@ namespace Liveolator.Audio.Playback;
 /// before this, mixer actions reached <see cref="BassMixer"/> but were dropped because no channel was
 /// ever registered.
 /// </remarks>
-public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
+public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectionDriver, IDisposable
 {
     /// <summary>Number of addressable deck slots (A = 0, B = 1).</summary>
     public const int Decks = MixerState.DeckCount;
@@ -68,6 +68,14 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     private readonly bool[] _syncLocked = new bool[Decks];
     private readonly bool[] _quantize = new bool[Decks];
 
+    // Per-slot beat-lock state for the SYNC indicator (Off/Active/Locked/Drifting), driven by the
+    // continuous correction loop and reset to Off when sync is released.
+    private readonly SyncLockState[] _syncState = new SyncLockState[Decks];
+
+    // Phase-lock loop tunables (gains/thresholds/output latency). Injected so the composition root can
+    // pass the user's output latency; defaults to the professional preset.
+    private readonly PhaseLockSettings _phaseLock;
+
     // Per-slot analyzed natural tempo (BPM) used as the Sync reference; 0 = unknown. Set when a track
     // with a known BPM loads (doc 11). Cleared when the slot unloads.
     private readonly double[] _baseBpm = new double[Decks];
@@ -104,14 +112,15 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
         BassMixer mixer, int sampleRate = 48_000, int channels = 2,
         ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null,
         IAudioEffectRackProvider? effectRacks = null,
-        IHotCueStore? hotCueStore = null)
+        IHotCueStore? hotCueStore = null,
+        PhaseLockSettings? phaseLock = null)
         : this(
             new BassMixerBackend(
                 sampleRate, channels,
                 (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>(),
                 audioSettings,
                 effectRacks),
-            mixer, loggerFactory, hotCueStore)
+            mixer, loggerFactory, hotCueStore, phaseLock)
     {
     }
 
@@ -121,11 +130,12 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
     /// </summary>
     internal TwoDeckBassEngine(
         IBassMixerBackend backend, BassMixer mixer, ILoggerFactory? loggerFactory = null,
-        IHotCueStore? hotCueStore = null)
+        IHotCueStore? hotCueStore = null, PhaseLockSettings? phaseLock = null)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _mixer = mixer ?? throw new ArgumentNullException(nameof(mixer));
         _hotCueStore = hotCueStore;
+        _phaseLock = phaseLock ?? PhaseLockSettings.Default;
         if (mixer.DeckCount < Decks)
             throw new ArgumentException(
                 $"Mixer addresses {mixer.DeckCount} deck(s); the two-deck engine needs {Decks}.", nameof(mixer));
@@ -363,14 +373,161 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, IDisposable
             _syncLocked[slot] = enabled;
             if (enabled)
             {
-                ReapplyRate(slot); // beatmatch this deck's tempo to the leader now
+                // Professional SYNC engage (doc 11): (1) beatmatch tempo to the master, then (2) snap the
+                // beat phase onto the master grid once so it lands inside the lock zone immediately (no
+                // long audible pitch-ride). The continuous loop (UpdateSync) then holds it there.
+                ReapplyRate(slot);
+                if (ValidLeaderSlot(slot) >= 0)
+                    PhaseAlignToLeader(slot);
+                SetSyncStateLocked(slot, SyncLockState.Active); // the loop refines to Locked on the next tick
             }
-            else if (_decks[slot] is { } deck)
+            else
             {
-                // Released: hand the deck back to its manual pitch fader.
-                _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot]));
+                if (_decks[slot] is { } deck)
+                    _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot])); // back to the manual fader
+                SetSyncStateLocked(slot, SyncLockState.Off);
             }
         }
+    }
+
+    public int? SyncMaster
+    {
+        get { lock (_gate) return ComputeSyncMasterLocked(); }
+    }
+
+    public SyncLockState SyncState(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _syncState[slot];
+    }
+
+    /// <inheritdoc />
+    public void UpdateSync(long hostTimeTicks)
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+                return;
+
+            // Hold every engaged (slave) deck phase-locked to its master. Normally just one deck is the
+            // slave; if a deck has Sync armed but has no valid master yet (the other deck unloaded), it
+            // stays Active but uncorrected — never a wrong tempo.
+            for (int slot = 0; slot < Decks; slot++)
+            {
+                if (!_syncLocked[slot])
+                    continue;
+                int leader = ValidLeaderSlot(slot);
+                if (leader < 0)
+                {
+                    SetSyncStateLocked(slot, SyncLockState.Active);
+                    continue;
+                }
+                CorrectSlaveLocked(slot, leader);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public bool TryGetSyncMasterBeat(out double effectiveBpm, out double continuousBeat)
+    {
+        effectiveBpm = 0.0;
+        continuousBeat = 0.0;
+        lock (_gate)
+        {
+            if (_disposed || ComputeSyncMasterLocked() is not int master || _decks[master] is not { } deck)
+                return false;
+
+            double bpm = EffectiveBpm(master);
+            if (bpm <= 0.0)
+                return false;
+
+            // Continuous beat position from the master deck's true playhead — the deterministic grid the
+            // shared clock (and the visuals) lock to. Latency-compensated so the published grid matches
+            // what the listener hears.
+            double posSeconds = _backend.GetDeckPositionSeconds(deck.Handle) - _phaseLock.OutputLatencySeconds;
+            effectiveBpm = bpm;
+            continuousBeat = (posSeconds - _firstBeat[master]) / (60.0 / bpm);
+            return true;
+        }
+    }
+
+    // Caller holds _gate. The sync master is the valid leader of whichever deck currently has Sync
+    // engaged (the slave). Computed rather than stored so it stays correct across loads/unloads. Null
+    // when no deck is synced or the would-be master is not a valid reference.
+    private int? ComputeSyncMasterLocked()
+    {
+        for (int slot = 0; slot < Decks; slot++)
+        {
+            if (!_syncLocked[slot])
+                continue;
+            int leader = ValidLeaderSlot(slot);
+            if (leader >= 0)
+                return leader;
+        }
+        return null;
+    }
+
+    // Caller holds _gate. The other deck if it is a valid sync reference for this slot (loaded, not itself
+    // synced, known base BPM) and this slot can be matched (loaded, known base BPM); otherwise -1.
+    private int ValidLeaderSlot(int slot)
+    {
+        if (_decks[slot] is null || _baseBpm[slot] <= 0.0)
+            return -1;
+        int leader = slot == 0 ? 1 : 0;
+        if (_decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
+            return -1;
+        return leader;
+    }
+
+    // Caller holds _gate. One correction tick for a synced slave: measure the residual beat-phase error
+    // against the master, apply the clamped micro pitch-bend, and re-snap once if it has slipped too far.
+    private void CorrectSlaveLocked(int slot, int leader)
+    {
+        if (_decks[slot] is not { } deck || _decks[leader] is not { } leaderDeck)
+            return;
+
+        double slaveBpm = EffectiveBpm(slot);
+        double leaderBpm = EffectiveBpm(leader);
+        if (slaveBpm <= 0.0 || leaderBpm <= 0.0)
+        {
+            SetSyncStateLocked(slot, SyncLockState.Active);
+            return;
+        }
+
+        // Latency-compensated positions. The same output latency is subtracted from both decks, so for
+        // deck-to-deck phase it cancels (they share one output path) — kept explicit for correctness and
+        // for any future split routing; it primarily aligns the shared clock / visuals to audible output.
+        double lat = _phaseLock.OutputLatencySeconds;
+        var slavePhase = new DeckPhase(_backend.GetDeckPositionSeconds(deck.Handle) - lat, _firstBeat[slot], slaveBpm);
+        var masterPhase = new DeckPhase(_backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, _firstBeat[leader], leaderBpm);
+
+        double beatmatchedRate = SyncedRateFor(slot); // the tempo-matched base rate, before phase correction
+        PhaseLockCorrection correction =
+            PhaseLockController.Correct(slavePhase, masterPhase, beatmatchedRate, _phaseLock);
+
+        _backend.SetDeckRate(deck.Handle, correction.EffectiveRate);
+
+        if (correction.RequiresReSnap)
+        {
+            double length = _backend.GetDeckLengthSeconds(deck.Handle);
+            if (length > 0.0)
+            {
+                double target = Math.Clamp((slavePhase.PositionSeconds + correction.ReSnapSeconds) / length, 0.0, 1.0);
+                _backend.SetDeckPositionFraction(deck.Handle, target);
+            }
+        }
+
+        SetSyncStateLocked(slot, correction.State);
+    }
+
+    // Caller holds _gate. Store the slot's sync state, logging only on a transition (never per frame) so
+    // set diagnostics capture lock/drift changes without flooding the log (doc 03 invariant).
+    private void SetSyncStateLocked(int slot, SyncLockState state)
+    {
+        if (_syncState[slot] == state)
+            return;
+        _logger.LogInformation("Deck slot {Slot} sync state {Old} -> {New}.", slot, _syncState[slot], state);
+        _syncState[slot] = state;
     }
 
     // Caller holds _gate. Beatmatch one synced deck to the sync leader: leader = the other deck if it is

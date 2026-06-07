@@ -50,6 +50,20 @@ public sealed class LibrariesViewModelPersistenceTests
     }
 
     [Fact]
+    public async Task RemoveFolder_persists_the_trimmed_folder_set_and_catalog()
+    {
+        var store = new FakeMusicCatalogStore();
+        var vm = new LibrariesViewModel(EmptyLibrary("/music/Alpha.wav"), store: store);
+        vm.AddFolder("/music");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.RemoveFolder("/music");
+
+        Assert.DoesNotContain("/music", store.SavedFolders); // folder root no longer persisted
+        Assert.Empty(store.SavedTracks);                     // its tracks pruned from the saved catalog
+    }
+
+    [Fact]
     public async Task State_round_trips_across_view_model_instances()
     {
         // First run: scan and let it persist.

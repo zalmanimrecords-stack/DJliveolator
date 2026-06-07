@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 
 namespace Liveolator.Audio.Tests.Playback;
 
@@ -72,6 +73,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) { }
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
+    public int? SyncMaster => null;
+    public SyncLockState SyncState(int slot) => SyncLockState.Off;
     public bool IsQuantizeEnabled(int slot) => false;
     public void SetQuantize(int slot, bool enabled) { }
     public int HotCueCount => 8;

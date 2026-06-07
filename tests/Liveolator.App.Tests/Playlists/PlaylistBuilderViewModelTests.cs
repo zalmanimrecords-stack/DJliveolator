@@ -58,6 +58,7 @@ public sealed class PlaylistBuilderViewModelTests
         public void SkipOn(Quantize when, int everyN = 1) { }
         public void NotifyTrackEnded() { }
         public event EventHandler<QueueEntry?>? NowChanged { add { } remove { } }
+        public event EventHandler? Changed { add { } remove { } }
     }
 
     private static async Task<MusicLibrary> BuildLibrary(params string[] files)

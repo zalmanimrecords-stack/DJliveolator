@@ -370,15 +370,40 @@ public sealed class LibrariesViewModel : ViewModelBase
         _ = PersistFoldersAsync();
     }
 
+    /// <summary>Removes a scan folder (no-op if absent): drops it from the set, clears any sample-folder
+    /// designation it carried, prunes the catalogued tracks that lived only under it (exactly what a
+    /// re-scan of the reduced set would drop), refreshes the view, and persists the trimmed folder set +
+    /// catalog so the removal survives a restart.</summary>
+    public void RemoveFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Folders.Remove(folder))
+            return;
+
+        bool wasSampleFolder = _sampleFolders.Remove(folder);
+
+        _library.PruneToFolders(Folders.ToList());
+        // A removed samples folder changes the classifier set, so reclassify the survivors in place.
+        if (wasSampleFolder)
+            _library.SetSampleFolders(_sampleFolders);
+
+        _all = BuildRows();
+        RebuildFacets();
+        ApplyFilter();
+        RefreshFolderStatuses();
+
+        // Fire-and-forget but fully guarded: a save failure is logged to the status line, never thrown.
+        _ = PersistAfterRemoveAsync(wasSampleFolder);
+    }
+
     // Rebuilds the per-folder status rows from the current catalog, seeding each with its sample-folder
-    // designation and the toggle callback (B2). Must run on the UI scheduler (mutates an
+    // designation and the toggle + remove callbacks (B2). Must run on the UI scheduler (mutates an
     // ObservableCollection); callers already marshal there.
     private void RefreshFolderStatuses()
     {
         FolderStatuses.Clear();
         foreach (FolderCatalogSummary summary in _library.SummarizeFolders(Folders.ToList()))
             FolderStatuses.Add(new FolderStatusViewModel(
-                summary, _sampleFolders.Contains(summary.Folder), OnSampleFolderChanged));
+                summary, _sampleFolders.Contains(summary.Folder), OnSampleFolderChanged, RemoveFolder));
     }
 
     // Projects the current library catalog to row view-models, title-ordered. Shared by scan, restore,
@@ -486,6 +511,27 @@ public sealed class LibrariesViewModel : ViewModelBase
         catch (Exception ex)
         {
             RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Scan done; saving the catalog failed: {ex.Message}");
+        }
+    }
+
+    // Persists the trimmed folder set + the pruned catalog after a folder removal (and the sample-folder
+    // set when the removed folder had been a samples source). Guarded so a save failure surfaces on the
+    // status line but never crashes the removal.
+    private async Task PersistAfterRemoveAsync(bool sampleFoldersChanged)
+    {
+        if (_store is null)
+            return;
+
+        try
+        {
+            await _store.SaveScanFoldersAsync(Folders.ToList()).ConfigureAwait(false);
+            await _store.SaveMusicAsync(_library.All).ConfigureAwait(false);
+            if (sampleFoldersChanged)
+                await _store.SaveSampleFoldersAsync(_sampleFolders.ToList()).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not save after removing the folder: {ex.Message}");
         }
     }
 

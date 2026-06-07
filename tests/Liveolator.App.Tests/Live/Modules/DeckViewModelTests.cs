@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 using Xunit;
@@ -273,6 +274,53 @@ public sealed class DeckViewModelTests
         dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 1,
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
         Assert.True(vm.IsSyncLocked);
+    }
+
+    [Fact]
+    public void SyncStateAndLabel_FollowDeckSyncLockToggleFeedbackValue()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        // Value carries the SyncLockState ordinal: 2 = Locked.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: (double)SyncLockState.Locked));
+        Assert.Equal(SyncLockState.Locked, vm.SyncState);
+        Assert.Equal("LOCK", vm.SyncStateLabel);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: (double)SyncLockState.Drifting));
+        Assert.Equal("DRIFT", vm.SyncStateLabel);
+    }
+
+    [Fact]
+    public void IsMaster_FollowsMasterArgument_InFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.False(vm.IsMaster);
+
+        // The master deck reports Argument "master" with state Off (it is not itself synced).
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "master"));
+        Assert.True(vm.IsMaster);
+        Assert.False(vm.IsSyncLocked);
+    }
+
+    [Fact]
+    public void UpdatePlayhead_PollsSyncState_SoTheMasterBadgeTracksTheOtherDeck()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // No event was raised for slot 0 — only seeded feedback (as the engine would report on poll).
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncLockToggle, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "master"));
+
+        vm.UpdatePlayhead();
+
+        Assert.True(vm.IsMaster);
     }
 
     [Fact]

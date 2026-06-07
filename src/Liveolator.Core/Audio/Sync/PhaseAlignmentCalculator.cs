@@ -34,6 +34,33 @@ public static class PhaseAlignmentCalculator
     }
 
     /// <summary>
+    /// The signed beat-phase error between two decks, in beats wrapped to (-0.5, 0.5]: how far the
+    /// <paramref name="follower"/> must move to align its beat phase with the <paramref name="leader"/>'s,
+    /// in the shorter direction. Positive = the follower is behind the leader's beat (must advance);
+    /// negative = ahead (must rewind). Returns 0 when either tempo is non-positive (no shared grid).
+    /// </summary>
+    /// <remarks>
+    /// The single source of phase-error math: the one-shot Quantize snap (<see cref="PhaseNudgeSeconds"/>)
+    /// converts this to seconds, and the continuous <c>PhaseLockController</c> feeds it straight into its
+    /// proportional correction. Keeping both on one wrapped-beats definition keeps snap and lock consistent.
+    /// </remarks>
+    /// <param name="follower">The deck whose phase is measured (position/anchor/effective BPM).</param>
+    /// <param name="leader">The deck defining the target grid (position/anchor/effective BPM).</param>
+    public static double BeatPhaseError(DeckPhase follower, DeckPhase leader)
+    {
+        if (follower.Bpm <= 0.0 || leader.Bpm <= 0.0)
+            return 0.0;
+
+        double followerDistance = BeatDistance(follower.PositionSeconds, follower.FirstBeatSeconds, follower.Bpm);
+        double leaderDistance = BeatDistance(leader.PositionSeconds, leader.FirstBeatSeconds, leader.Bpm);
+
+        // The follower must reach the leader's beat-distance. The signed error wrapped to (-0.5, 0.5]
+        // picks the shorter direction (advance vs. rewind) to the nearest aligned beat.
+        double errorBeats = leaderDistance - followerDistance;
+        return errorBeats - Math.Round(errorBeats); // wrap to (-0.5, 0.5]
+    }
+
+    /// <summary>
     /// Seconds to nudge the <paramref name="follower"/> playhead so its beat phase aligns with the
     /// <paramref name="leader"/>'s. Positive = move the playhead forward, negative = back; the result is
     /// the shortest correction, always within ±half a follower beat. Returns 0 when either tempo is
@@ -46,16 +73,8 @@ public static class PhaseAlignmentCalculator
         if (follower.Bpm <= 0.0 || leader.Bpm <= 0.0)
             return 0.0;
 
-        double followerDistance = BeatDistance(follower.PositionSeconds, follower.FirstBeatSeconds, follower.Bpm);
-        double leaderDistance = BeatDistance(leader.PositionSeconds, leader.FirstBeatSeconds, leader.Bpm);
-
-        // The follower must reach the leader's beat-distance. The signed phase error in beats, wrapped to
-        // (-0.5, 0.5], picks the shorter direction (advance vs. rewind) to the nearest aligned beat.
-        double errorBeats = leaderDistance - followerDistance;
-        errorBeats -= Math.Round(errorBeats); // wrap to (-0.5, 0.5]
-
         double followerBeatSeconds = 60.0 / follower.Bpm;
-        return errorBeats * followerBeatSeconds;
+        return BeatPhaseError(follower, leader) * followerBeatSeconds;
     }
 }
 

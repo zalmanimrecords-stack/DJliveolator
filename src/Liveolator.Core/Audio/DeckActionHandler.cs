@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio.Sync;
 
 namespace Liveolator.Core.Audio;
 
@@ -141,8 +142,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     {
         bool next = !_engine.IsSyncLocked(slot);
         _engine.SetSyncLock(slot, next);
-        RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, slot, ActiveFeedback(next));
+        RaiseFeedback(PerformanceActionKind.DeckSyncLockToggle, slot, SyncFeedback(slot));
     }
+
+    // Sync feedback carries the full beat-lock state, not just on/off, so the SYNC button can show
+    // OFF/ACTIVE/LOCKED/DRIFTING and a MASTER badge: IsActive = engaged, Value = the SyncLockState
+    // ordinal, Argument = "master" on whichever deck is the sync reference (doc 11/12). Polled each
+    // render tick by the deck view-model so the loop's live state transitions reach the UI.
+    private ActionFeedbackState SyncFeedback(int slot)
+        => new(
+            IsActive: _engine.IsSyncLocked(slot),
+            IsAvailable: true,
+            Value: (double)_engine.SyncState(slot),
+            Argument: _engine.SyncMaster == slot ? "master" : null);
 
     private void ToggleQuantize(int slot)
     {
@@ -181,7 +193,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckPlayPause => ActiveFeedback(_engine.IsPlaying(slot)),
             PerformanceActionKind.DeckSeek => ValueFeedback(_engine.Position(slot)),
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
-            PerformanceActionKind.DeckSyncLockToggle => ActiveFeedback(_engine.IsSyncLocked(slot)),
+            PerformanceActionKind.DeckSyncLockToggle => SyncFeedback(slot),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),

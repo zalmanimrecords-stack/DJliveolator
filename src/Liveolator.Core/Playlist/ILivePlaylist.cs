@@ -48,4 +48,11 @@ public interface ILivePlaylist
 
     /// <summary>Raised when Now changes (null when the queue is exhausted).</summary>
     event EventHandler<QueueEntry?>? NowChanged;
+
+    /// <summary>
+    /// Raised after any mutation that changes the set — Now or the upcoming order/contents
+    /// (load, append, insert, move, remove, advance). Lets a persistence binding snapshot the
+    /// current set so it survives a restart (doc 13), without the queue knowing about storage.
+    /// </summary>
+    event EventHandler? Changed;
 }

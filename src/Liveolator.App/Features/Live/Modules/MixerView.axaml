@@ -6,15 +6,19 @@
              x:DataType="m:MixerViewModel">
 
   <Border Classes="panel" MinHeight="430">
-    <StackPanel Margin="20" Spacing="18">
+    <StackPanel Margin="20" Spacing="14">
 
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <TextBlock Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                   FontSize="15" LetterSpacing="2.2" Text="MIXER" />
-        <Button Grid.Column="2" Classes="spartan" Content="LINK" FontSize="10"
-                BorderBrush="{StaticResource Accent}" Foreground="{StaticResource Accent}"
-                IsEnabled="False" />
-      </Grid>
+      <Border Classes="hardware-well" Padding="10,10,10,12">
+        <StackPanel Spacing="8">
+          <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
+            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="32"
+                            Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
+            <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
+          </Grid>
+        </StackPanel>
+      </Border>
 
       <Border Classes="hardware-well" Padding="8,12">
       <!-- A fader | one shared dB scale | B fader — faders centred on each side of the centre scale -->
@@ -48,14 +52,6 @@
       </Grid>
       </Border>
 
-      <Border BorderBrush="{StaticResource Hair}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
-        <Grid ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
-          <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="30"
-                          Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
-          <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
-        </Grid>
-      </Border>
     </StackPanel>
   </Border>
 </UserControl>

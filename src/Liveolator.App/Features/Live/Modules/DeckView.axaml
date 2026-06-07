@@ -32,26 +32,37 @@
             <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
           </StackPanel>
         </Panel>
-        <Button Grid.Column="2" Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <!-- MASTER badge: shown on whichever deck is the sync reference (doc 11), from feedback. -->
+          <Border IsVisible="{Binding IsMaster}" Background="{StaticResource Accent}"
+                  CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+            <TextBlock Text="MASTER" FontSize="9" FontWeight="SemiBold" Foreground="White" />
+          </Border>
+          <Button Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
+        </StackPanel>
       </Grid>
 
       <!-- waveform now lives in the two dedicated rows above the decks (see LiveView/DjView) so the kick
            transients of both decks sit side-by-side for beat-sync alignment. -->
 
-      <!-- hot cues: each pad emits DeckHotCue for its index and lights from feedback -->
-      <ItemsControl ItemsSource="{Binding HotCues}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid Columns="4" />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="m:HotCuePadViewModel">
-            <Button Classes="key" Content="{Binding Label}" Classes.on="{Binding IsSet}"
-                    Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+      <!-- Hot cues: stored jump points inside the loaded track. Pads 1-4 emit DeckHotCue for their index
+           and light from feedback once a cue point is set. -->
+      <StackPanel Spacing="6">
+        <TextBlock Classes="section" Text="HOT CUES" />
+        <ItemsControl ItemsSource="{Binding HotCues}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="4" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="m:HotCuePadViewModel">
+              <Button Classes="key" Content="{Binding Label}" Classes.on="{Binding IsSet}"
+                      Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
 
       <!-- transport: CUE · Play · Loop · Sync (tempo match) -->
       <UniformGrid Columns="4">
@@ -63,7 +74,9 @@
         </Button>
         <Button Classes="key" Content="LOOP" Classes.on="{Binding IsLooping}"
                 Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" Margin="0,0,4,0" />
-        <Button Classes="key" Content="SYNC" Classes.on="{Binding IsSyncLocked}"
+        <!-- SYNC: label reflects the live beat-lock state (SYNC/LOCK/DRIFT); the `on` class highlights
+             while engaged. State + master are polled from DeckSyncLockToggle feedback each render tick. -->
+        <Button Classes="key" Content="{Binding SyncStateLabel}" Classes.on="{Binding IsSyncLocked}"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 

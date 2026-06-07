@@ -10,11 +10,13 @@ public class LivePlaylistTests
     private readonly ImmediateBeatScheduler _scheduler = new();
     private readonly LivePlaylist _playlist;
     private int _nowChangedCount;
+    private int _changedCount;
 
     public LivePlaylistTests()
     {
         _playlist = new LivePlaylist(_scheduler, new CapturingLogger<LivePlaylist>());
         _playlist.NowChanged += (_, _) => _nowChangedCount++;
+        _playlist.Changed += (_, _) => _changedCount++;
     }
 
     [Fact]
@@ -149,6 +151,43 @@ public class LivePlaylistTests
         _playlist.NotifyTrackEnded();
 
         Assert.Equal("a.mp3", _playlist.Now!.TrackPath); // stayed put
+    }
+
+    [Fact]
+    public void Changed_FiresOnEveryMutationThatAltersTheSet()
+    {
+        // Each editing operation that changes Now or the upcoming order/contents must signal a save.
+        _playlist.Load(new[] { "a.mp3", "b.mp3", "c.mp3" });
+        Assert.Equal(1, _changedCount); // load
+
+        _playlist.Append("d.mp3");
+        Assert.Equal(2, _changedCount); // append
+
+        _playlist.InsertNext("x.mp3");
+        Assert.Equal(3, _changedCount); // insert
+
+        Guid lastId = _playlist.Upcoming[^1].Id;
+        _playlist.Move(lastId, 0);
+        Assert.Equal(4, _changedCount); // move
+
+        _playlist.RemoveFuture(lastId);
+        Assert.Equal(5, _changedCount); // remove
+
+        _playlist.SkipNow();
+        Assert.Equal(6, _changedCount); // advance
+    }
+
+    [Fact]
+    public void Changed_DoesNotFire_OnNoOpEdits()
+    {
+        _playlist.Load(new[] { "a.mp3", "b.mp3" });
+        int afterLoad = _changedCount;
+
+        _playlist.Move(Guid.NewGuid(), 0);        // stale id
+        _playlist.RemoveFuture(Guid.NewGuid());   // stale id
+        _playlist.RemoveFuture(_playlist.Now!.Id); // Now is protected
+
+        Assert.Equal(afterLoad, _changedCount);
     }
 
     [Fact]

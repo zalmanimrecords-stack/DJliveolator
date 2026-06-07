@@ -1,3 +1,4 @@
+using System.Reactive;
 using Liveolator.App.Shell;
 using Liveolator.Core.Library;
 using ReactiveUI;
@@ -6,9 +7,9 @@ namespace Liveolator.App.Features.Libraries;
 
 /// <summary>
 /// Display wrapper over a <see cref="FolderCatalogSummary"/> for the folder-status window, plus the
-/// per-folder "is this a samples folder?" toggle (B2). Toggling raises the supplied callback so the
-/// owning <see cref="LibrariesViewModel"/> updates the classifier + persists; this VM holds no
-/// business logic itself.
+/// per-folder "is this a samples folder?" toggle (B2) and a "remove this folder" command. Both raise
+/// the supplied callbacks so the owning <see cref="LibrariesViewModel"/> updates the classifier /
+/// scan-set and persists; this VM holds no business logic itself.
 /// </summary>
 public sealed class FolderStatusViewModel : ViewModelBase
 {
@@ -19,12 +20,18 @@ public sealed class FolderStatusViewModel : ViewModelBase
     public FolderStatusViewModel(
         FolderCatalogSummary summary,
         bool isSampleFolder = false,
-        Action<string, bool>? onSampleFolderChanged = null)
+        Action<string, bool>? onSampleFolderChanged = null,
+        Action<string>? onRemove = null)
     {
         _summary = summary ?? throw new ArgumentNullException(nameof(summary));
         _onSampleFolderChanged = onSampleFolderChanged;
         _isSampleFolder = isSampleFolder; // seed without firing the callback
+        RemoveCommand = ReactiveCommand.Create(() => onRemove?.Invoke(_summary.Folder));
     }
+
+    /// <summary>Removes this folder from the scan set (drops its catalogued tracks too). Disabled when
+    /// no remove callback was supplied.</summary>
+    public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
 
     /// <summary>Full folder path (shown muted under the name).</summary>
     public string Folder => _summary.Folder;

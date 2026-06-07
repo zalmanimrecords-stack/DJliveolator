@@ -16,6 +16,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
@@ -193,11 +194,17 @@ public static class ServiceConfig
             deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
         bool realtimeUp = deckEngine is not null;
 
-        // --- Visual engine (doc 08): the GL compositor binds to the live clock — the audio-driven
-        // master clock when realtime audio is up (visuals lock to the music), else the shared manual tap
-        // clock (headless). Runs before the dispatcher so its handler exists when the dispatcher composes.
-        IBeatClock visualClock = LiveClockSelector.Select(masterMix?.BeatClock, sharedLiveClock);
-        VisualActionHandler visualHandler = WireVisuals(services, visualClock, liveProfileStore);
+        // --- Visual engine (doc 08): the GL compositor binds to the live clock. Base source = the
+        // audio-driven master-mix clock when realtime audio is up (visuals lock to the music), else the
+        // shared manual tap clock (headless). Wrapped in a SwitchingBeatClock so that when a deck becomes
+        // the sync MASTER, the visuals (and the registered IBeatClock below) follow that deck's
+        // deterministic grid directly — the product's audio↔visual lock (doc 03/11). MasterClockBridge
+        // does the per-tick switching on the render loop. Runs before the dispatcher so its handler exists
+        // when the dispatcher composes.
+        IBeatClock visualBaseClock = LiveClockSelector.Select(masterMix?.BeatClock, sharedLiveClock);
+        var deckBeatClock = new DeckDrivenBeatClock(hostClock.TicksPerSecond);
+        var sharedVisualClock = new SwitchingBeatClock(visualBaseClock);
+        VisualActionHandler visualHandler = WireVisuals(services, sharedVisualClock, liveProfileStore);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -205,6 +212,17 @@ public static class ServiceConfig
         // edits (insert/move/remove/skip) so the UI drives them through the one dispatcher.
         var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), NullLogger<LivePlaylist>.Instance);
         services.AddSingleton<ILivePlaylist>(livePlaylist);
+
+        // Persist + restore the live set so the DJ tab opens where the last run left off (doc 13) instead
+        // of an empty queue. Restore runs HERE — synchronously, before the queue's audio binding is wired
+        // (WirePlaylistAudio / the eager PlaylistAudioPlayer at the end of Build) — so the restored Now is
+        // shown but not auto-played on launch. After restoring, every later edit is saved on the queue's
+        // Changed event (fire-and-forget, faults logged) so a crash loses at most the last edit. Tolerant:
+        // a missing/corrupt set degrades to an empty queue (global standards #16/#26).
+        var liveSetStore = new JsonLiveSetStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<ILiveSetStore>(liveSetStore);
+        RestoreAndPersistLiveSet(livePlaylist, liveSetStore);
+
         var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
 
         // Register the realtime engine seams (constructed above, before the visual engine). Registering
@@ -212,10 +230,15 @@ public static class ServiceConfig
         // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
+        MasterClockBridge? syncBridge = null;
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
-            services.AddSingleton<IBeatClock>(masterMix!.BeatClock);
+            // The shared clock the Libraries readout + visuals follow is the switching clock, so all of
+            // them lock to the sync-master deck when one is engaged (else the audio-mix base). The bridge
+            // (pumped by the Live render loop) drives the deck clock and flips the switch.
+            services.AddSingleton<IBeatClock>(sharedVisualClock);
+            syncBridge = new MasterClockBridge(deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
         }
 
         // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
@@ -271,7 +294,7 @@ public static class ServiceConfig
             sp.GetRequiredService<MusicLibrary>()));
 
         WireCaptureSources(services);
-        WireLiveTab(services, sharedLiveClock, hostClock);
+        WireLiveTab(services, sharedLiveClock, hostClock, syncBridge);
 
         // --- View-models ---
         // Shared back-end for the per-track right-click menu (Add to Deck A/B, Add to playlist). The
@@ -382,14 +405,56 @@ public static class ServiceConfig
     {
         try
         {
+            // Output latency for the phase-lock loop ≈ the configured output buffer. It cancels for
+            // deck-to-deck phase (both decks share one output) but aligns the master-driven shared clock
+            // (and the visuals) to what the listener actually hears.
+            var phaseLock = new PhaseLockSettings(OutputLatencySeconds: audioSettings.BufferMilliseconds / 1000.0);
             return new TwoDeckBassEngine(
-                mixer, audioSettings: audioSettings, effectRacks: effectRacks, hotCueStore: hotCueStore);
+                mixer, audioSettings: audioSettings, effectRacks: effectRacks, hotCueStore: hotCueStore,
+                phaseLock: phaseLock);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
             System.Diagnostics.Trace.TraceWarning($"Realtime audio disabled: {ex.Message}.");
             return null;
         }
+    }
+
+    // --- Live set restore + autosave (doc 09/13) --------------------------------------------------
+    // Loads the saved set into the queue at startup (Now first, then the upcoming order) and then keeps
+    // the on-disk snapshot in step with every edit via the queue's Changed event. The save is fire-and-
+    // forget so a UI edit is never blocked on disk; a write fault is logged, never swallowed silently
+    // (global standards #16/#26). Subscribing AFTER the restore avoids re-saving the freshly loaded set.
+    private static void RestoreAndPersistLiveSet(ILivePlaylist livePlaylist, ILiveSetStore store)
+    {
+        try
+        {
+            IReadOnlyList<string>? savedSet = store.LoadAsync().GetAwaiter().GetResult();
+            if (savedSet is { Count: > 0 })
+                livePlaylist.Load(savedSet);
+        }
+        catch (Exception ex)
+        {
+            // The store load is itself tolerant; this guards only against an unexpected fault so a bad
+            // snapshot can never block startup (global standards #16/#26).
+            System.Diagnostics.Trace.TraceWarning($"Could not restore the live set: {ex.Message}.");
+        }
+
+        livePlaylist.Changed += (_, _) =>
+        {
+            var paths = new List<string>();
+            if (livePlaylist.Now is { } now)
+                paths.Add(now.TrackPath);
+            foreach (QueueEntry entry in livePlaylist.Upcoming)
+                paths.Add(entry.TrackPath);
+
+            _ = store.SaveAsync(paths).ContinueWith(
+                task => System.Diagnostics.Trace.TraceWarning(
+                    $"Live set could not be saved: {task.Exception?.GetBaseException().Message}"),
+                System.Threading.CancellationToken.None,
+                System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted,
+                System.Threading.Tasks.TaskScheduler.Default);
+        };
     }
 
     // --- Visual engine (doc 08, task 5) -----------------------------------------------------------
@@ -503,7 +568,9 @@ public static class ServiceConfig
     // in Build(), so the Live UI reaches the beat, mixer and visual handlers (and deck transport when
     // the realtime engine is up) — never a direct engine call (doc 04). The clock is shared on purpose:
     // tap/lock/nudge advance the same clock the visual engine reads.
-    private static void WireLiveTab(IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock)
+    private static void WireLiveTab(
+        IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock,
+        MasterClockBridge? syncBridge)
     {
         services.AddSingleton<LiveViewModel>(sp => new LiveViewModel(
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
@@ -512,7 +579,9 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<PerformanceDeckSet>(),
             // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
-            sp.GetService<IVisualPerformanceEngine>()?.BankNames));
+            sp.GetService<IVisualPerformanceEngine>()?.BankNames,
+            // Pumps the phase-lock loop + master-driven shared clock on the render loop (null = headless).
+            syncBridge));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------
