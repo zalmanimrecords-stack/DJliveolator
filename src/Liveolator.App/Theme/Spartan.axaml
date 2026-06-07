@@ -104,6 +104,14 @@
     <Setter Property="CornerRadius" Value="16" />
   </Style>
 
+  <Style Selector="Border.hardware-well">
+    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="BoxShadow" Value="inset 0 2 5 0 #99000000, inset 0 -1 0 0 #1FFFFFFF" />
+  </Style>
+
   <!-- small round icon button (e.g. the deck "..." menu) -->
   <Style Selector="Button.icon">
     <Setter Property="Background">

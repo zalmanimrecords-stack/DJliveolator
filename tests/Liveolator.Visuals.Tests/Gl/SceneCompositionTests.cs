@@ -56,6 +56,23 @@ public sealed class SceneCompositionTests
     }
 
     [Fact]
+    public void Resolve_carries_the_ordered_effect_chain_to_the_renderer()
+    {
+        var first = new EffectRef("core/first", new Dictionary<string, double>());
+        var second = new EffectRef("core/second", new Dictionary<string, double>());
+        var layer = new VisualLayer(
+            "fx",
+            new VisualSourceRef(VisualSourceKind.Image, "x"),
+            new[] { first, second },
+            BlendMode.Normal,
+            1.0);
+
+        ResolvedLayer resolved = Assert.Single(SceneComposition.Resolve(Scene(layer)));
+
+        Assert.Equal(new[] { first, second }, resolved.Effects);
+    }
+
+    [Fact]
     public void RenderableLayers_keeps_only_image_layers_in_order()
     {
         VisualScene scene = Scene(

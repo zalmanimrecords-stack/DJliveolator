@@ -27,7 +27,8 @@ internal static class TestTracks
             MediaAnalysisStatus.Ok,
             null,
             metadata,
-            kind);
+            kind,
+            TrackAnalyzer.CurrentVersion);
     }
 
     public static MusicTrack Failed(string path)

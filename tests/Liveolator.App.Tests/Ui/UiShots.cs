@@ -6,6 +6,8 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Liveolator.App.Composition;
 using Liveolator.App.Shell;
+using Liveolator.Core.Audio;
+using Liveolator.Core.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 
 [assembly: AvaloniaTestApplication(typeof(Liveolator.App.Tests.Ui.UiShotAppBuilder))]
@@ -35,26 +37,53 @@ public class UiShots
         string outDir = Path.Combine(RepoRoot(), "artifacts", "ui-shots");
         Directory.CreateDirectory(outDir);
 
-        IServiceProvider services = ServiceConfig.Build();
+        var devices = new HeadlessDeviceProvider();
+        using var services = (ServiceProvider)ServiceConfig.Build(
+            devices, devices, devices, devices, enableSystemMetrics: false);
         var shell = services.GetRequiredService<MainWindowViewModel>();
 
         var window = new MainWindow { DataContext = shell, Width = 1440, Height = 900 };
-        window.Show();
-        Dispatcher.UIThread.RunJobs();
-
-        int index = 0;
-        foreach (var tab in shell.Tabs)
+        try
         {
-            shell.CurrentTab = tab;
+            window.Show();
             Dispatcher.UIThread.RunJobs();
 
-            var frame = window.CaptureRenderedFrame();
-            string name = $"{index:00}-{Safe(tab.Title)}.png";
-            frame?.Save(Path.Combine(outDir, name));
-            index++;
-        }
+            int index = 0;
+            foreach (var tab in shell.Tabs)
+            {
+                shell.CurrentTab = tab;
+                Dispatcher.UIThread.RunJobs();
 
-        Assert.True(index > 0);
+                var frame = window.CaptureRenderedFrame();
+                string name = $"{index:00}-{Safe(tab.Title)}.png";
+                frame?.Save(Path.Combine(outDir, name));
+                index++;
+            }
+
+            Assert.True(index > 0);
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    private sealed class HeadlessDeviceProvider :
+        IMidiDeviceProvider,
+        IAudioOutputDeviceCatalog,
+        IAudioCaptureDeviceCatalog,
+        IAudioCaptureSourceFactory
+    {
+        public IReadOnlyList<string> GetInputDeviceNames() => Array.Empty<string>();
+        public IReadOnlyList<string> GetOutputDeviceNames() => Array.Empty<string>();
+        public IMidiInput? OpenInput(string deviceName) => null;
+        public IMidiOutput? OpenOutput(string deviceName) => null;
+        public IReadOnlyList<AudioOutputDevice> EnumerateOutputDevices() =>
+            Array.Empty<AudioOutputDevice>();
+        public IReadOnlyList<AudioCaptureDevice> EnumerateCaptureDevices() =>
+            Array.Empty<AudioCaptureDevice>();
+        public IAudioSource CreateCaptureSource(AudioCaptureDevice device) =>
+            throw new InvalidOperationException("Headless UI shots do not create capture sources.");
     }
 
     private static string Safe(string s)

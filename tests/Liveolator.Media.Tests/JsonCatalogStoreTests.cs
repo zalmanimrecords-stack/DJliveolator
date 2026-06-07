@@ -1,3 +1,4 @@
+using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
@@ -29,6 +30,8 @@ public class JsonCatalogStoreTests
         Assert.Equal(KeyMode.Major, c.Key.Mode);
         Assert.Equal(MediaAnalysisStatus.Ok, c.Status);
         Assert.NotNull(c.Cues.IntroStart);
+        Assert.Equal(TrackAnalyzer.CurrentVersion, c.AnalyzerVersion);
+        Assert.False(c.AnalysisIsManual);
 
         MusicTrack broken = loaded.Single(t => t.File.Path == "broken.mp3");
         Assert.Equal(MediaAnalysisStatus.Failed, broken.Status);
@@ -226,6 +229,29 @@ public class JsonCatalogStoreTests
 
         Assert.True(File.Exists(store.MusicCatalogPath));
         Assert.False(File.Exists(store.MusicCatalogPath + ".tmp"));
+    }
+
+    [Fact]
+    public async Task ConcurrentSaves_AreSerialized_AndLeaveAValidCatalog()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        MusicTrack[][] snapshots = Enumerable.Range(0, 24)
+            .Select(save => Enumerable.Range(0, 200)
+                .Select(track => TestTracks.Analyzed(
+                    $"save-{save:D2}-track-{track:D3}.wav",
+                    120 + save,
+                    0,
+                    KeyMode.Major))
+                .ToArray())
+            .ToArray();
+
+        await Task.WhenAll(snapshots.Select(snapshot => store.SaveMusicAsync(snapshot)));
+
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+        Assert.Equal(200, loaded.Count);
+        Assert.Single(loaded.Select(track => track.File.Path[..7]).Distinct());
+        Assert.Empty(Directory.EnumerateFiles(dir.Path, "*.tmp"));
     }
 
     [Fact]

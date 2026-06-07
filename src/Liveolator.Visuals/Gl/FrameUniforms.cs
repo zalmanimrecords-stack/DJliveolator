@@ -15,7 +15,13 @@ namespace Liveolator.Visuals.Gl;
 /// beats; peaks on <see cref="BeatClockState.IsBeat"/> scaled by detection confidence.
 /// </param>
 /// <param name="Blackout">When true the shader outputs black regardless of the other values.</param>
-public readonly record struct FrameUniforms(float Brightness, float BeatFlash, bool Blackout)
+public readonly record struct FrameUniforms(
+    float Brightness,
+    float BeatFlash,
+    bool Blackout,
+    float BeatPhase = 0,
+    float BarPhase = 0,
+    float Confidence = 0)
 {
     /// <summary>The neutral pass-through frame: full brightness, no flash, not blacked out.</summary>
     public static FrameUniforms Neutral { get; } = new(Brightness: 1f, BeatFlash: 0f, Blackout: false);
@@ -51,7 +57,13 @@ public readonly record struct FrameUniforms(float Brightness, float BeatFlash, b
 
         double flash = ResolveFlash(beat, flashStrength);
 
-        return new FrameUniforms((float)brightness, (float)flash, blackout);
+        return new FrameUniforms(
+            (float)brightness,
+            (float)flash,
+            blackout,
+            (float)beat.BeatPhase,
+            (float)beat.BarPhase,
+            (float)beat.Confidence);
     }
 
     // The flash peaks on the beat frame and decays linearly across the beat via BeatPhase, gated by

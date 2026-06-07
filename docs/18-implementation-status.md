@@ -2,7 +2,11 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-06**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-07**.
+>
+> **See also `docs/24-system-review-2026-06-07.md`** — a ten-expert full-system review with a
+> verified bug map and the recommended next 10 steps. Where doc 24 and this file disagree on a
+> code fact, doc 24 wins (it was measured against the working tree on 2026-06-07).
 
 ## How to read this
 
@@ -16,12 +20,13 @@
 
 ## Core test count
 
-`tests/Liveolator.Core.Tests` — **423 passing** (as of 2026-06-06). The extension
-increment also has 53 Media, 96 Audio, 43 Visuals, and 119 App tests passing; MIDI and
-Integration counts remain 27 and 25 respectively.
-`tests/Liveolator.Core.Tests` — **425 passing** (as of 2026-06-06). Solution-wide:
-**851 passing** across 8 test projects (Core 425, App 156, Audio 98, Media 54,
-Visuals 43, MIDI 27, Integration 25, Online 23).
+Solution-wide: **1,279 passing, 0 failed, 0 skipped** across 8 test projects, measured
+**2026-06-07** (`dotnet test`): Core 650, App 234, Audio 162, Media 92, Visuals 66,
+Integration 25, MIDI 27, Online 23. The growth over the previously-recorded 851 reflects the
+in-flight wave — continuous phase-lock sync (`PhaseLockController`, `PhaseAlignmentCalculator`),
+the deck-driven shared clock (`DeckDrivenBeatClock`/`SwitchingBeatClock`/`MasterClockBridge`),
+and live-set persistence (`ILiveSetStore`/`JsonLiveSetStore`) — all of which landed with
+committed tests.
 
 ### ✅ Extension packages, UI themes, visual registry, and audio FX racks — first increment
 
@@ -46,9 +51,13 @@ The managed extension spine in `docs/21-extension-system.md` is built:
 - **Native delivery still required:** the repository does not vendor the Steinberg SDK or ship the
   scanner, native bridge implementation, or shader-probe executables. Real VST3 processing and
   extension-shader activation remain unavailable until those distribution artifacts are supplied.
-- **Visual compositor limitation remains:** the GL engine is still the one-layer brightness slice.
-  Package/registry contracts are ready, but multi-layer rendering and arbitrary effect chains are
-  not yet implemented.
+- **Visual compositor limitation remains:** the GL engine now composites a **multi-layer** stack
+  with per-layer blend + opacity and beat flash off the shared clock (see "GL compositor" below),
+  but **arbitrary effect chains are not yet implemented** — `EffectRef` chains are dropped before
+  the renderer (`SceneComposition`), so no GLSL effect executes. Package/registry contracts are
+  ready; the per-layer effect pass is the remaining piece. **Note (doc 24):** the running render
+  loop also does not yet re-read the scene after the window opens, so live scene/bank/layer/opacity
+  changes do not reach the GL output — only brightness/flash/blackout uniforms are live.
 
 ## Module status
 

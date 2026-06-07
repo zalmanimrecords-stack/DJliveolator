@@ -26,7 +26,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_AlwaysProvidesTheCatalogBrowser()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         // The catalog/library is the always-on baseline, independent of native audio.
         Assert.NotNull(provider.GetService<MusicLibrary>());
@@ -40,7 +40,7 @@ public sealed class ServiceConfigTests
         // turn needs IMidiControlStatus (the MidiControlSession) + AppSettings. Resolving it through the
         // real container guards against a composition gap that would crash the app on launch but slip
         // past tests that never resolve the root (the app-shell + integration merge had exactly that gap).
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         Assert.NotNull(provider.GetService<ShellStatusViewModel>());
         Assert.NotNull(provider.GetService<MainWindowViewModel>());
@@ -49,7 +49,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_RegistersTheCatalogStore_SoStatePersists()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         // Persistence is always wired (it needs no native deps), so the scanned catalog + scan folders
         // survive a restart whether or not Live Mode comes up.
@@ -59,7 +59,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_AlwaysProvidesTheLiveTab_EvenWithoutNativeAudio()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         // The Live tab runs on a pure-managed ManualBeatClock, so it must resolve and be wired for
         // intent (the shared dispatcher) whether or not realtime BASS audio is present.
@@ -75,7 +75,7 @@ public sealed class ServiceConfigTests
         // The single dispatcher (doc 04) is always present — the beat, mixer and visual handlers are
         // pure-managed, so the Live UI can drive them with no native audio. Only the realtime deck
         // engine + its audio beat clock are gated on native BASS.
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         var dispatcher = provider.GetService<IPerformanceActionDispatcher>();
         Assert.NotNull(dispatcher);
@@ -93,7 +93,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_GatesRealtimeAudioOnNativeBass_orFallsBackCleanly()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         var beatClock = provider.GetService<IBeatClock>();
         var engine = provider.GetService<IMultiDeckPlaybackEngine>();
@@ -112,7 +112,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_RegistersTheLiveProfileStore_SoAuthoredDataPersists()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         // The Live-Mode profile store (mapping profiles / scenes / macros / autopilot rule-sets, doc 13)
         // needs no native deps, so it is always wired for the host to load/save snapshots.
@@ -122,7 +122,7 @@ public sealed class ServiceConfigTests
     [Fact]
     public void Build_BindsTheLiveQueueAudio_OnlyWhenTheRealtimeEngineIsUp()
     {
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         // The playlist→audio binding follows the realtime engine: present together, or (no native BASS)
         // neither — the queue still edits freely in catalog-browser mode.
@@ -139,8 +139,11 @@ public sealed class ServiceConfigTests
     {
         // The GL engine must be resolvable for later on-demand rendering, but composing the provider
         // must NOT open a window/GL context (Run() is never called here) — the app launches headless.
-        using var provider = (ServiceProvider)ServiceConfig.Build();
+        using var provider = BuildForTest();
 
         Assert.NotNull(provider.GetService<IVisualPerformanceEngine>());
     }
+
+    private static ServiceProvider BuildForTest() =>
+        (ServiceProvider)ServiceConfig.Build(enableSystemMetrics: false);
 }

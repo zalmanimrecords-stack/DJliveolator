@@ -1,6 +1,10 @@
 using System;
 using Liveolator.Audio.Playback;
+using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Playlist;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Liveolator.Audio.Tests.Playback;
@@ -26,6 +30,27 @@ public sealed class PlaylistAudioPlayerTests
         Assert.Equal(new[] { "Load(1,a.wav)", "PlayPause(1)" }, engine.Calls);
         Assert.Equal("a.wav", engine.LoadedOn(1));
         Assert.True(engine.IsPlaying(1));
+    }
+
+    [Fact]
+    public void NowChanged_DispatchesCataloguedBpmAndFirstBeatToTheDeck()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        var dispatcher = new PerformanceActionDispatcher(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            dispatcher,
+            engine,
+            analysisResolver: path => path == "a.wav" ? new BpmResult(126.0, 0.9, 0.375) : null,
+            slot: 1);
+
+        playlist.RaiseNowChanged(Entry("a.wav"));
+
+        Assert.Equal(126.0, engine.DeckBaseBpm(1), precision: 6);
+        Assert.Equal(0.375, engine.DeckFirstBeat(1), precision: 6);
     }
 
     [Fact]

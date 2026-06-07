@@ -48,7 +48,12 @@ namespace Liveolator.App.Composition;
 /// </summary>
 public static class ServiceConfig
 {
-    public static IServiceProvider Build()
+    public static IServiceProvider Build(
+        IMidiDeviceProvider? midiProviderOverride = null,
+        IAudioOutputDeviceCatalog? outputCatalogOverride = null,
+        IAudioCaptureDeviceCatalog? captureCatalogOverride = null,
+        IAudioCaptureSourceFactory? captureFactoryOverride = null,
+        bool enableSystemMetrics = true)
     {
         var services = new ServiceCollection();
 
@@ -204,7 +209,8 @@ public static class ServiceConfig
         IBeatClock visualBaseClock = LiveClockSelector.Select(masterMix?.BeatClock, sharedLiveClock);
         var deckBeatClock = new DeckDrivenBeatClock(hostClock.TicksPerSecond);
         var sharedVisualClock = new SwitchingBeatClock(visualBaseClock);
-        VisualActionHandler visualHandler = WireVisuals(services, sharedVisualClock, liveProfileStore);
+        VisualActionHandler visualHandler =
+            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -230,15 +236,18 @@ public static class ServiceConfig
         // register its per-deck channel into the BassMixer as decks load — closing the seam so the mixer's
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
-        MasterClockBridge? syncBridge = null;
+        MasterClockPump? syncPump = null;
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
             // The shared clock the Libraries readout + visuals follow is the switching clock, so all of
             // them lock to the sync-master deck when one is engaged (else the audio-mix base). The bridge
-            // (pumped by the Live render loop) drives the deck clock and flips the switch.
+            // pump drives the deck clock and flips the switch independently of UI responsiveness.
             services.AddSingleton<IBeatClock>(sharedVisualClock);
-            syncBridge = new MasterClockBridge(deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
+            var syncBridge = new MasterClockBridge(
+                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
+            syncPump = new MasterClockPump(syncBridge, hostClock);
+            services.AddSingleton(syncPump);
         }
 
         // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
@@ -257,10 +266,12 @@ public static class ServiceConfig
             handlers.Add(new DeckActionHandler(deckEngine!));
 
         var dispatcher = new PerformanceActionDispatcher(
-            handlers, NullLogger<PerformanceActionDispatcher>.Instance);
+            handlers,
+            NullLogger<PerformanceActionDispatcher>.Instance,
+            requireCompleteOwnership: realtimeUp);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
 
-        WirePlaylistAudio(services, livePlaylist, deckEngine);
+        WirePlaylistAudio(services, livePlaylist, dispatcher, deckEngine);
 
         // --- MIDI controller → dispatcher (doc 05/07) ---
         // Open the SETTINGS-chosen controller and route the live hardware through the SAME dispatcher via
@@ -269,7 +280,7 @@ public static class ServiceConfig
         // device or native rtmidi failure leaves the session idle (logged), never blocking startup
         // (global standards #16/#26). The default-profile auto-select path (CmdStudio2AProfile) lives in
         // TryOpenMidiPipeline for the controller-profile-capture increment (doc 22 step A8).
-        var midiProvider = new RtMidiDeviceProvider();
+        var midiProvider = midiProviderOverride ?? new RtMidiDeviceProvider();
         var midiSession = new MidiControlSession(
             midiProvider, dispatcher, liveProfileStore, new MidiLearnSession(), NullLoggerFactory.Instance);
         try
@@ -293,8 +304,8 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<MusicLibrary>()));
 
-        WireCaptureSources(services);
-        WireLiveTab(services, sharedLiveClock, hostClock, syncBridge);
+        WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
+        WireLiveTab(services, sharedLiveClock, hostClock);
 
         // --- View-models ---
         // Shared back-end for the per-track right-click menu (Add to Deck A/B, Add to playlist). The
@@ -345,7 +356,8 @@ public static class ServiceConfig
         // applied at startup (loaded above, threaded into the realtime engine); the chosen MIDI
         // controller is now opened into the dispatcher above (MidiControlSession). The Settings tab reuses
         // the SAME provider instance that the MIDI control session opened the device through.
-        services.AddSingleton<IAudioOutputDeviceCatalog>(new BassOutputDeviceCatalog());
+        services.AddSingleton<IAudioOutputDeviceCatalog>(
+            outputCatalogOverride ?? new BassOutputDeviceCatalog());
         services.AddSingleton<IMidiDeviceProvider>(midiProvider);
         services.AddSingleton<ISettingsStore>(settingsStore);
 
@@ -381,7 +393,8 @@ public static class ServiceConfig
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the
         // process metrics sampler feeds the live CPU/RAM readout (DI injects it into ShellStatusViewModel).
         services.AddSingleton(appSettings);
-        services.AddSingleton<ISystemMetricsSampler, ProcessSystemMetricsSampler>();
+        if (enableSystemMetrics)
+            services.AddSingleton<ISystemMetricsSampler, ProcessSystemMetricsSampler>();
         services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
@@ -391,6 +404,7 @@ public static class ServiceConfig
         // Eagerly activate the live-queue audio binding (when the realtime engine is up) so it starts
         // subscribing to NowChanged immediately — nothing else resolves it.
         _ = provider.GetService<PlaylistAudioPlayer>();
+        provider.GetService<MasterClockPump>()?.Start();
         return provider;
     }
 
@@ -471,7 +485,10 @@ public static class ServiceConfig
     // loaded at startup and feeds the engine when present; otherwise the placeholder starter bank is used
     // (tolerant — a missing/corrupt snapshot degrades to the starter bank with a warning).
     private static VisualActionHandler WireVisuals(
-        IServiceCollection services, IBeatClock liveClock, ILiveProfileStore profileStore)
+        IServiceCollection services,
+        IBeatClock liveClock,
+        ILiveProfileStore profileStore,
+        IVisualEffectRegistry effectRegistry)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
@@ -479,7 +496,22 @@ public static class ServiceConfig
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
         IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore);
-        var visualEngine = new GlVisualPerformanceEngine(banks, brightnessMacro, liveClock);
+        IReadOnlyList<VisualMacro> macros;
+        try
+        {
+            macros = profileStore.LoadVisualMacrosAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not restore visual macros: {ex.Message}.");
+            macros = Array.Empty<VisualMacro>();
+        }
+        var visualEngine = new GlVisualPerformanceEngine(
+            banks,
+            brightnessMacro,
+            liveClock,
+            effectRegistry: effectRegistry,
+            macros: macros);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -569,8 +601,7 @@ public static class ServiceConfig
     // the realtime engine is up) — never a direct engine call (doc 04). The clock is shared on purpose:
     // tap/lock/nudge advance the same clock the visual engine reads.
     private static void WireLiveTab(
-        IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock,
-        MasterClockBridge? syncBridge)
+        IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock)
     {
         services.AddSingleton<LiveViewModel>(sp => new LiveViewModel(
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
@@ -579,9 +610,7 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<PerformanceDeckSet>(),
             // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
-            sp.GetService<IVisualPerformanceEngine>()?.BankNames,
-            // Pumps the phase-lock loop + master-driven shared clock on the render loop (null = headless).
-            syncBridge));
+            sp.GetService<IVisualPerformanceEngine>()?.BankNames));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------
@@ -596,13 +625,22 @@ public static class ServiceConfig
     // pre-buffering implementation (opening the upcoming BASS stream ahead, verified manually) is the
     // remaining deferred piece; the pure preloader sequencing is built + unit-tested in Liveolator.Audio.
     private static void WirePlaylistAudio(
-        IServiceCollection services, ILivePlaylist livePlaylist, IMultiDeckPlaybackEngine? deckEngine)
+        IServiceCollection services,
+        ILivePlaylist livePlaylist,
+        IPerformanceActionDispatcher dispatcher,
+        IMultiDeckPlaybackEngine? deckEngine)
     {
         if (deckEngine is null)
             return; // catalog-browser mode: no deck to bind the queue to.
 
         // Deck A (slot 0) hosts the auto-advancing live queue; auto-play so a skip/advance starts at once.
-        services.AddSingleton(new PlaylistAudioPlayer(livePlaylist, deckEngine, slot: 0, autoPlay: true));
+        services.AddSingleton(sp => new PlaylistAudioPlayer(
+            livePlaylist,
+            dispatcher,
+            deckEngine,
+            path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
+            slot: 0,
+            autoPlay: true));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---
@@ -616,8 +654,22 @@ public static class ServiceConfig
     // Core ICaptureSourceController (CaptureSourceController calls CreateCaptureSource(device) and routes the
     // source into a stable SwitchableAudioSource). Remaining: feeding that switch into the analysis/beat
     // pipeline and modelling source selection as a PerformanceAction (no live capture consumer exists yet).
-    private static void WireCaptureSources(IServiceCollection services)
+    private static void WireCaptureSources(
+        IServiceCollection services,
+        IAudioCaptureDeviceCatalog? catalogOverride,
+        IAudioCaptureSourceFactory? factoryOverride)
     {
+        if (catalogOverride is not null || factoryOverride is not null)
+        {
+            services.AddSingleton(
+                catalogOverride ?? throw new ArgumentException(
+                    "A capture catalog override requires a matching source-factory override."));
+            services.AddSingleton(
+                factoryOverride ?? throw new ArgumentException(
+                    "A capture source-factory override requires a matching catalog override."));
+            return;
+        }
+
         var engine = new BassCaptureEngine();
         services.AddSingleton<IAudioCaptureDeviceCatalog>(engine);
         services.AddSingleton<IAudioCaptureSourceFactory>(engine);

@@ -19,6 +19,7 @@ public static class MixerMath
 
     // Max EQ boost/cut at a band's extreme (0 or 1) in decibels.
     private const double MaxEqGainDb = 24.0;
+    private const double EqKillGainDb = -96.0;
 
     private const double DefaultQ = 0.707; // Butterworth-ish, no resonant peak.
 
@@ -74,7 +75,10 @@ public static class MixerMath
             _ => throw new ArgumentOutOfRangeException(nameof(band), band, "Unknown EQ band."),
         };
 
-        double gainDb = (Math.Clamp(control, 0.0, 1.0) - EqBands.Unity) * 2.0 * MaxEqGainDb;
+        double clampedControl = Math.Clamp(control, 0.0, 1.0);
+        double gainDb = clampedControl <= 0.0
+            ? EqKillGainDb
+            : (clampedControl - EqBands.Unity) * 2.0 * MaxEqGainDb;
         if (Math.Abs(gainDb) < 1e-6)
             return BiquadCoefficients.Bypass;
 

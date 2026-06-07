@@ -171,6 +171,35 @@ public sealed class GlVisualPerformanceEngineTests
     }
 
     [Fact]
+    public void LoadScene_replaces_the_live_composition_and_marks_it_dirty()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+        long before = engine.CompositionVersion;
+        VisualScene replacement = NamedBank("Replacement", "replacement.png").Scenes[0];
+
+        engine.LoadScene(replacement, Quantize.Immediate);
+
+        Assert.Equal("replacement.png", engine.CurrentComposition()[0].Source.Reference);
+        Assert.True(engine.CompositionVersion > before);
+    }
+
+    [Fact]
+    public void Layer_mutations_update_the_live_composition()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+
+        engine.SetLayerOpacity(0, 0.35);
+        Assert.Equal(0.35, engine.CurrentComposition()[0].Opacity, precision: 6);
+
+        engine.ToggleLayer(0);
+        Assert.Equal(0.0, engine.CurrentComposition()[0].Opacity, precision: 6);
+
+        engine.SetLayerSource(
+            0, new VisualSourceRef(VisualSourceKind.Image, "replacement.png"), Quantize.Immediate);
+        Assert.Equal("replacement.png", engine.CurrentComposition()[0].Source.Reference);
+    }
+
+    [Fact]
     public void Constructor_rejects_negative_flash_strength()
         => Assert.Throws<ArgumentOutOfRangeException>(
             () => new GlVisualPerformanceEngine(BankWithImage(), Brightness(), new FakeBeatClock(), flashStrength: -1));

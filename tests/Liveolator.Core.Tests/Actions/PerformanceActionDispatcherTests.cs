@@ -15,7 +15,7 @@ public class PerformanceActionDispatcherTests
     [Fact]
     public void Dispatch_RoutesActionToOwningHandler()
     {
-        var transport = new FakeActionHandler(PerformanceActionKind.TransportNextTrack);
+        var transport = new FakeActionHandler(PerformanceActionKind.TransportStop);
         var visual = new FakeActionHandler(PerformanceActionKind.VisualBlackout);
         using var dispatcher = Build(new[] { transport, visual });
         var action = new PerformanceAction(PerformanceActionKind.VisualBlackout);
@@ -30,7 +30,7 @@ public class PerformanceActionDispatcherTests
     [Fact]
     public void Dispatch_UnhandledKind_DoesNotThrow_AndLogsWarning()
     {
-        var transport = new FakeActionHandler(PerformanceActionKind.TransportNextTrack);
+        var transport = new FakeActionHandler(PerformanceActionKind.TransportStop);
         using var dispatcher = Build(new[] { transport });
 
         dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.VisualBlackout));
@@ -126,6 +126,24 @@ public class PerformanceActionDispatcherTests
         var b = new FakeActionHandler(PerformanceActionKind.BeatLock);
 
         Assert.Throws<ArgumentException>(() => Build(new[] { a, b }));
+    }
+
+    [Fact]
+    public void Constructor_StrictOwnership_RejectsMissingKinds()
+    {
+        var handler = new FakeActionHandler(PerformanceActionKind.BeatLock);
+
+        Assert.Throws<ArgumentException>(() =>
+            new PerformanceActionDispatcher(new[] { handler }, _logger, requireCompleteOwnership: true));
+    }
+
+    [Fact]
+    public void Constructor_StrictOwnership_AcceptsEveryKindExactlyOnce()
+    {
+        var handler = new FakeActionHandler(Enum.GetValues<PerformanceActionKind>());
+
+        using var dispatcher =
+            new PerformanceActionDispatcher(new[] { handler }, _logger, requireCompleteOwnership: true);
     }
 
     [Fact]

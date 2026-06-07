@@ -9,6 +9,7 @@ namespace Liveolator.Core.Beat;
 /// </summary>
 public sealed class SwitchingBeatClock : IBeatClock
 {
+    private readonly object _gate = new();
     private IBeatClock _active;
 
     /// <param name="initial">The source to forward until <see cref="Select"/> changes it.</param>
@@ -19,13 +20,27 @@ public sealed class SwitchingBeatClock : IBeatClock
     }
 
     /// <inheritdoc />
-    public BeatClockState Current => _active.Current;
+    public BeatClockState Current
+    {
+        get
+        {
+            lock (_gate)
+                return _active.Current;
+        }
+    }
 
     /// <inheritdoc />
     public event EventHandler<BeatClockState>? StateChanged;
 
     /// <summary>The currently forwarded source.</summary>
-    public IBeatClock Active => _active;
+    public IBeatClock Active
+    {
+        get
+        {
+            lock (_gate)
+                return _active;
+        }
+    }
 
     /// <summary>
     /// Switch the active source. Re-subscribes and republishes the new source's current state so
@@ -34,14 +49,29 @@ public sealed class SwitchingBeatClock : IBeatClock
     public void Select(IBeatClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);
-        if (ReferenceEquals(clock, _active))
-            return;
+        BeatClockState state;
+        lock (_gate)
+        {
+            if (ReferenceEquals(clock, _active))
+                return;
 
-        _active.StateChanged -= Forward;
-        _active = clock;
-        _active.StateChanged += Forward;
-        StateChanged?.Invoke(this, _active.Current);
+            _active.StateChanged -= Forward;
+            _active = clock;
+            _active.StateChanged += Forward;
+            state = _active.Current;
+        }
+
+        StateChanged?.Invoke(this, state);
     }
 
-    private void Forward(object? sender, BeatClockState state) => StateChanged?.Invoke(this, state);
+    private void Forward(object? sender, BeatClockState state)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(sender, _active))
+                return;
+        }
+
+        StateChanged?.Invoke(this, state);
+    }
 }

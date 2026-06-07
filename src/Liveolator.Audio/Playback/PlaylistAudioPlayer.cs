@@ -1,3 +1,5 @@
+using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Playlist;
 using Microsoft.Extensions.Logging;
@@ -18,7 +20,9 @@ namespace Liveolator.Audio.Playback;
 public sealed class PlaylistAudioPlayer : IDisposable
 {
     private readonly ILivePlaylist _playlist;
+    private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly IMultiDeckPlaybackEngine _engine;
+    private readonly Func<string, BpmResult?>? _analysisResolver;
     private readonly int _slot;
     private readonly bool _autoPlay;
     private readonly ILogger<PlaylistAudioPlayer> _logger;
@@ -34,9 +38,32 @@ public sealed class PlaylistAudioPlayer : IDisposable
         int slot = 0,
         bool autoPlay = true,
         ILogger<PlaylistAudioPlayer>? logger = null)
+        : this(
+            playlist,
+            new PerformanceActionDispatcher(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+                NullLogger<PerformanceActionDispatcher>.Instance),
+            engine,
+            analysisResolver: null,
+            slot: slot,
+            autoPlay: autoPlay,
+            logger: logger)
+    {
+    }
+
+    public PlaylistAudioPlayer(
+        ILivePlaylist playlist,
+        IPerformanceActionDispatcher dispatcher,
+        IMultiDeckPlaybackEngine engine,
+        Func<string, BpmResult?>? analysisResolver = null,
+        int slot = 0,
+        bool autoPlay = true,
+        ILogger<PlaylistAudioPlayer>? logger = null)
     {
         _playlist = playlist ?? throw new ArgumentNullException(nameof(playlist));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _analysisResolver = analysisResolver;
         if (slot < 0 || slot >= engine.DeckCount)
             throw new ArgumentOutOfRangeException(nameof(slot), slot, "Deck slot is out of range for the engine.");
 
@@ -82,7 +109,8 @@ public sealed class PlaylistAudioPlayer : IDisposable
         {
             try
             {
-                _engine.Stop(_slot);
+                _dispatcher.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.TransportStop, Slot: _slot));
             }
             catch (Exception ex)
             {
@@ -93,15 +121,44 @@ public sealed class PlaylistAudioPlayer : IDisposable
 
         try
         {
-            _engine.Load(_slot, now.TrackPath);
+            BpmResult? analysis = ResolveAnalysis(now.TrackPath);
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckLoadTrack,
+                ActionInputMode.Absolute,
+                Value: analysis?.Bpm ?? 0.0,
+                Slot: _slot,
+                Argument: now.TrackPath));
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetFirstBeat,
+                ActionInputMode.Absolute,
+                Value: analysis?.FirstBeatSeconds ?? 0.0,
+                Slot: _slot));
             if (_autoPlay && !_engine.IsPlaying(_slot))
-                _engine.PlayPause(_slot);
+                _dispatcher.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckPlayPause, Slot: _slot));
         }
         catch (Exception ex)
         {
             // Degrade: log and continue. The queue has already advanced past this entry, so the next
             // NowChanged (e.g. an auto-advance) can still play — a bad track does not kill the show.
             _logger.LogError(ex, "Failed to load live-queue track '{TrackPath}' onto deck {Slot}.", now.TrackPath, _slot);
+        }
+    }
+
+    private BpmResult? ResolveAnalysis(string trackPath)
+    {
+        if (_analysisResolver is null)
+            return null;
+
+        try
+        {
+            return _analysisResolver(trackPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex, "Could not resolve beat metadata for live-queue track '{TrackPath}'.", trackPath);
+            return null;
         }
     }
 

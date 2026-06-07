@@ -11,7 +11,8 @@ namespace Liveolator.Visuals.Gl;
 /// <param name="Name">The source layer's name (for diagnostics).</param>
 /// <param name="Source">The texture source reference.</param>
 /// <param name="Blend">How this layer composites over those beneath it.</param>
-/// <param name="Opacity">Effective opacity in 0..1 (the layer's own opacity; macro-driven opacity is later).</param>
+/// <param name="Opacity">Effective opacity in 0..1.</param>
+/// <param name="Effects">Ordered GLSL effect instances applied before the layer is composited.</param>
 /// <param name="Renderable">
 /// True when this slice can draw the layer (an <see cref="VisualSourceKind.Image"/> source). Video and
 /// camera sources are deferred, so they resolve as non-renderable and the renderer skips them rather
@@ -22,4 +23,5 @@ public readonly record struct ResolvedLayer(
     VisualSourceRef Source,
     BlendMode Blend,
     double Opacity,
+    IReadOnlyList<EffectRef> Effects,
     bool Renderable);

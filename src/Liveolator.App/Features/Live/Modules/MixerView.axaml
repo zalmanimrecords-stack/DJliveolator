@@ -52,6 +52,28 @@
       </Grid>
       </Border>
 
+      <Border Classes="hardware-well" Padding="12,10">
+        <Grid ColumnDefinitions="*,18,*">
+          <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center">
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="LEVEL" />
+            <controls:Knob x:Name="CueLevelControl"
+                           Width="58" Height="58"
+                           Value="{Binding CueLevel.Value}"
+                           IsEnabled="{Binding CueLevel.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MIN      MAX" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="2" Spacing="6" HorizontalAlignment="Center">
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="MIX" />
+            <controls:Knob x:Name="CueMixControl"
+                           Width="58" Height="58"
+                           Value="{Binding CueMix.Value}"
+                           IsEnabled="{Binding CueMix.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUE   MASTER" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
     </StackPanel>
   </Border>
 </UserControl>

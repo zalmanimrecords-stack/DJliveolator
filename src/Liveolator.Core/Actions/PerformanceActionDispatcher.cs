@@ -29,7 +29,8 @@ public sealed class PerformanceActionDispatcher : IPerformanceActionDispatcher, 
     public PerformanceActionDispatcher(
         IEnumerable<IPerformanceActionHandler> handlers,
         ILogger<PerformanceActionDispatcher> logger,
-        IActionFeedbackSynchronizer? synchronizer = null)
+        IActionFeedbackSynchronizer? synchronizer = null,
+        bool requireCompleteOwnership = false)
     {
         ArgumentNullException.ThrowIfNull(handlers);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -48,8 +49,20 @@ public sealed class PerformanceActionDispatcher : IPerformanceActionDispatcher, 
                 routes[kind] = handler;
             }
 
-            handler.FeedbackChanged += OnHandlerFeedbackChanged;
         }
+
+        if (requireCompleteOwnership)
+        {
+            PerformanceActionKind[] missing = Enum.GetValues<PerformanceActionKind>()
+                .Where(kind => !routes.ContainsKey(kind))
+                .ToArray();
+            if (missing.Length > 0)
+                throw new ArgumentException(
+                    $"No handler owns action kind(s): {string.Join(", ", missing)}.", nameof(handlers));
+        }
+
+        foreach (IPerformanceActionHandler handler in _handlers)
+            handler.FeedbackChanged += OnHandlerFeedbackChanged;
 
         _routes = routes;
     }

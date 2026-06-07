@@ -22,10 +22,8 @@ namespace Liveolator.Visuals.Gl;
 /// behaviour. The beat clock is the shared live clock supplied at construction, so visuals react to
 /// the same music the DJ side drives (the RENDER-WINDOW SEAM clock half — doc 18).
 ///
-/// Still deferred (structured to grow into this class, not replace it): video and camera layer
-/// sources (they resolve as non-renderable and are skipped), quantized scene/clip launching via
-/// <see cref="IBeatScheduler"/>, and transitions. Those operations log and no-op here rather than
-/// failing the build or the render loop.
+/// Effect chains execute as ordered GLSL framebuffer passes before each layer is composited. Video
+/// and camera sources, quantized clip launching, and transitions remain deferred.
 /// </summary>
 public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDisposable
 {
@@ -37,6 +35,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     private readonly SkiaImageLoader _imageLoader;
     private readonly ILogger<GlVisualPerformanceEngine> _logger;
     private readonly double _flashStrength;
+    private readonly IVisualEffectRegistry _effectRegistry;
+    private readonly IReadOnlyList<VisualMacro> _macros;
 
     // Macro control values are normalized 0..1 and may be written from a UI/MIDI thread while the
     // render thread reads them, so the store is concurrent and reads take an immutable snapshot.
@@ -50,6 +50,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     // without touching the GL context. The list is non-empty by construction.
     private readonly IReadOnlyList<VisualBank> _banks;
     private volatile int _activeBankIndex;
+    private readonly object _sceneGate = new();
+    private VisualScene? _activeScene;
+    private long _compositionVersion;
 
     /// <summary>Single-bank engine (the original first-slice shape). Equivalent to one-element bank list.</summary>
     public GlVisualPerformanceEngine(
@@ -58,9 +61,11 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         IBeatClock beatClock,
         double flashStrength = 0.6,
         SkiaImageLoader? imageLoader = null,
-        ILogger<GlVisualPerformanceEngine>? logger = null)
+        ILogger<GlVisualPerformanceEngine>? logger = null,
+        IVisualEffectRegistry? effectRegistry = null,
+        IReadOnlyList<VisualMacro>? macros = null)
         : this(new[] { initialBank ?? throw new ArgumentNullException(nameof(initialBank)) },
-               brightnessMacro, beatClock, flashStrength, imageLoader, logger)
+               brightnessMacro, beatClock, flashStrength, imageLoader, logger, effectRegistry, macros)
     {
     }
 
@@ -75,7 +80,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         IBeatClock beatClock,
         double flashStrength = 0.6,
         SkiaImageLoader? imageLoader = null,
-        ILogger<GlVisualPerformanceEngine>? logger = null)
+        ILogger<GlVisualPerformanceEngine>? logger = null,
+        IVisualEffectRegistry? effectRegistry = null,
+        IReadOnlyList<VisualMacro>? macros = null)
     {
         ArgumentNullException.ThrowIfNull(banks);
         if (banks.Count == 0)
@@ -85,6 +92,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
 
         _banks = banks.ToArray();
         _activeBankIndex = 0;
+        _activeScene = _banks[0].Scene(0);
+        _compositionVersion = 1;
         _brightnessMacro = brightnessMacro ?? throw new ArgumentNullException(nameof(brightnessMacro));
         _beatClock = beatClock ?? throw new ArgumentNullException(nameof(beatClock));
         if (flashStrength < 0 || double.IsNaN(flashStrength))
@@ -93,9 +102,14 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         _flashStrength = flashStrength;
         _imageLoader = imageLoader ?? new SkiaImageLoader();
         _logger = logger ?? NullLogger<GlVisualPerformanceEngine>.Instance;
+        _effectRegistry = effectRegistry ?? new VisualEffectRegistry();
+        _macros = (macros ?? Array.Empty<VisualMacro>())
+            .Append(brightnessMacro)
+            .DistinctBy(macro => macro.Name, StringComparer.Ordinal)
+            .ToArray();
 
-        // Seed the brightness macro with its default so the first frame is well-defined.
-        _macroValues[BrightnessMacro] = NormalizeDefault(brightnessMacro);
+        foreach (VisualMacro macro in _macros)
+            _macroValues[macro.Name] = NormalizeDefault(macro);
     }
 
     public VisualBank ActiveBank => _banks[_activeBankIndex];
@@ -108,6 +122,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
 
     /// <summary>The index of the currently-active bank (the one the pads load scenes from).</summary>
     public int ActiveBankIndex => _activeBankIndex;
+
+    internal long CompositionVersion => Interlocked.Read(ref _compositionVersion);
 
     /// <summary>Resolves the uniforms for the next frame from current macro/blackout state + clock.</summary>
     public FrameUniforms CurrentFrame()
@@ -122,7 +138,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     /// the scene→layer mapping unit-test off the GPU. The renderer draws the renderable subset.
     /// </summary>
     public IReadOnlyList<ResolvedLayer> CurrentComposition()
-        => SceneComposition.Resolve(ActiveScene());
+    {
+        lock (_sceneGate)
+            return SceneComposition.Resolve(_activeScene);
+    }
 
     public void SetMacro(string name, double value)
     {
@@ -132,7 +151,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         double clamped = Math.Clamp(value, 0.0, 1.0);
         _macroValues[name] = clamped;
 
-        if (!string.Equals(name, BrightnessMacro, StringComparison.Ordinal))
+        if (!_macros.Any(macro => string.Equals(macro.Name, name, StringComparison.Ordinal)))
             _logger.LogDebug("Macro '{Macro}' set to {Value:0.###} but is not bound in this slice; ignored by the shader.", name, clamped);
     }
 
@@ -156,21 +175,46 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
             return;
         }
 
-        _activeBankIndex = index;
+        lock (_sceneGate)
+        {
+            _activeBankIndex = index;
+            _activeScene = _banks[index].Scene(0);
+            MarkCompositionDirty();
+        }
         _logger.LogInformation("Active visual bank → {Index} '{Name}'.", index, _banks[index].Name);
     }
 
-    // --- Deferred operations (later phases): logged no-ops so callers/tests are honest about scope. ---
+    // --- Scene/layer mutation plus operations still deferred to later phases. ---
 
     public void LoadScene(VisualScene scene, Quantize when, int everyN = 1)
-        => LogDeferred(nameof(LoadScene));
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        lock (_sceneGate)
+        {
+            _activeScene = scene;
+            MarkCompositionDirty();
+        }
+
+        foreach ((string name, double value) in scene.MacroValues)
+            _macroValues[name] = Math.Clamp(value, 0.0, 1.0);
+    }
 
     public void SetLayerSource(int layer, VisualSourceRef source, Quantize when, int everyN = 1)
-        => LogDeferred(nameof(SetLayerSource));
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        MutateLayer(layer, current => current with { Source = source });
+    }
 
-    public void ToggleLayer(int layer) => LogDeferred(nameof(ToggleLayer));
+    public void ToggleLayer(int layer)
+        => MutateLayer(layer, current => current with { Opacity = current.Opacity > 0.0 ? 0.0 : 1.0 });
 
-    public void SetLayerOpacity(int layer, double opacity) => LogDeferred(nameof(SetLayerOpacity));
+    public void SetLayerOpacity(int layer, double opacity)
+    {
+        if (double.IsNaN(opacity))
+            throw new ArgumentOutOfRangeException(nameof(opacity), opacity, "Opacity must be a number.");
+        double clamped = Math.Clamp(opacity, 0.0, 1.0);
+        MutateLayer(layer, current => current with { Opacity = clamped });
+    }
 
     public void LaunchClip(int layer, string clipId, Quantize when, int everyN = 1)
         => LogDeferred(nameof(LaunchClip));
@@ -191,10 +235,6 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     /// <param name="height">Initial window height in pixels.</param>
     public void Run(string title = "Liveolator Visuals", int width = 1280, int height = 720)
     {
-        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers = LoadRenderableLayers();
-        if (layers.Count == 0)
-            throw new InvalidOperationException("The active scene has no renderable image layer to render.");
-
         var options = WindowOptions.Default with
         {
             Title = title,
@@ -209,16 +249,51 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         using IWindow window = Window.Create(options);
         GL? gl = null;
         LayeredQuadRenderer? renderer = null;
+        long renderedVersion = 0;
+        Vector2D<int> framebufferSize = new(width, height);
+
+        void SetViewport(Vector2D<int> size)
+        {
+            framebufferSize = size;
+            if (gl is null)
+                return;
+            gl.Viewport(0, 0, (uint)Math.Max(1, size.X), (uint)Math.Max(1, size.Y));
+        }
+
+        void RefreshRenderer()
+        {
+            if (gl is null)
+                return;
+
+            long targetVersion = CompositionVersion;
+            IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers = LoadRenderableLayers();
+            LayeredQuadRenderer? next = layers.Count > 0
+                ? new LayeredQuadRenderer(
+                    gl,
+                    layers,
+                    _effectRegistry,
+                    _macros,
+                    NullLogger<LayeredQuadRenderer>.Instance)
+                : null;
+
+            renderer?.Dispose();
+            renderer = next;
+            renderedVersion = targetVersion;
+            _logger.LogInformation(
+                "Visual composition refreshed ({Layers} renderable layer(s), version {Version}).",
+                renderer?.LayerCount ?? 0, renderedVersion);
+        }
 
         window.Load += () =>
         {
             try
             {
                 gl = GL.GetApi(window);
-                renderer = new LayeredQuadRenderer(gl, layers, NullLogger<LayeredQuadRenderer>.Instance);
+                SetViewport(window.FramebufferSize);
+                RefreshRenderer();
                 _logger.LogInformation(
                     "Visual compositor window loaded ({Width}x{Height}, {Layers} layer(s)).",
-                    width, height, renderer.LayerCount);
+                    window.FramebufferSize.X, window.FramebufferSize.Y, renderer?.LayerCount ?? 0);
             }
             catch (Exception ex)
             {
@@ -227,13 +302,30 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
             }
         };
 
+        window.FramebufferResize += SetViewport;
+
         window.Render += _ =>
         {
-            if (gl is null || renderer is null)
+            if (gl is null)
                 return;
             try
             {
-                renderer.Render(CurrentFrame());
+                if (renderedVersion != CompositionVersion)
+                    RefreshRenderer();
+
+                if (renderer is not null)
+                {
+                    renderer.Render(
+                        CurrentFrame(),
+                        framebufferSize.X,
+                        framebufferSize.Y,
+                        new Dictionary<string, double>(_macroValues));
+                }
+                else
+                {
+                    gl.ClearColor(0f, 0f, 0f, 1f);
+                    gl.Clear((uint)ClearBufferMask.ColorBufferBit);
+                }
             }
             catch (Exception ex)
             {
@@ -256,9 +348,31 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         // The window/renderer are owned for the lifetime of Run(); nothing persists after it returns.
     }
 
-    // The active scene of the active bank; richer per-pad scene selection arrives with LoadScene wiring.
     private VisualScene? ActiveScene()
-        => ActiveBank.Scenes.Count > 0 ? ActiveBank.Scenes[0] : null;
+    {
+        lock (_sceneGate)
+            return _activeScene;
+    }
+
+    private void MutateLayer(int layer, Func<VisualLayer, VisualLayer> mutate)
+    {
+        lock (_sceneGate)
+        {
+            if (_activeScene is null || layer < 0 || layer >= _activeScene.Layers.Count)
+            {
+                _logger.LogWarning(
+                    "Layer mutation ignored: index {Layer} is outside the active scene.", layer);
+                return;
+            }
+
+            VisualLayer[] layers = _activeScene.Layers.ToArray();
+            layers[layer] = mutate(layers[layer]);
+            _activeScene = _activeScene with { Layers = layers };
+            MarkCompositionDirty();
+        }
+    }
+
+    private void MarkCompositionDirty() => Interlocked.Increment(ref _compositionVersion);
 
     // Decodes every renderable (image) layer of the active scene in composite order. A layer whose
     // image fails to decode is dropped with a warning (doc 08 — a missing asset degrades that layer,

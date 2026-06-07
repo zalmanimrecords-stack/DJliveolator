@@ -22,7 +22,6 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     private readonly IManualBeatClockDriver? _clockDriver;
     private readonly IHostClock? _hostClock;
     private readonly ILiveBeatTimer? _timer;
-    private readonly MasterClockBridge? _syncBridge;
     private readonly PerformanceDeckSet _decks;
     private readonly bool _ownsDecks;
     private bool _disposed;
@@ -39,8 +38,6 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// view-model still constructs headless / under test.</param>
     /// <param name="visualBankNames">The visual engine's bank names (selection-index order) for the
     /// Scene Grid's bank tabs; null/empty falls back to the mock's phase labels (doc 22 C3).</param>
-    /// <param name="syncBridge">Pumps the beat-sync correction loop and the master-driven shared clock on
-    /// the render loop; null (headless / no realtime audio) leaves sync idle.</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
@@ -50,15 +47,12 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         IVisualStage? visualStage = null,
         IWaveformProvider? waveformProvider = null,
         PerformanceDeckSet? decks = null,
-        IReadOnlyList<string>? visualBankNames = null,
-        MasterClockBridge? syncBridge = null)
+        IReadOnlyList<string>? visualBankNames = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
         _hostClock = hostClock;
         _timer = timer;
-        _syncBridge = syncBridge;
-
         ProgramOut = new ProgramOutViewModel(visualStage);
         Beat = new BeatEngineViewModel(dispatcher, beatClock);
         _ownsDecks = decks is null;
@@ -108,14 +102,12 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     }
 
     // The render loop pumps the manual clock so phase + the pulse advance smoothly between taps, advances
-    // the continuous beat-sync correction loop and the master-driven shared clock (when realtime is up),
     // and advances the decks' playheads so the zoomed waveform follows playback (the decks are shared, so
-    // the DJ tab follows too). One host-time read stamps the whole tick so every consumer agrees.
+    // the DJ tab follows too). Sync correction runs independently on MasterClockPump, never on this UI timer.
     private void OnTimerTick(object? sender, EventArgs e)
     {
         long now = _hostClock!.NowTicks;
         _clockDriver?.Update(now);
-        _syncBridge?.Tick(now);
         _decks.UpdatePlayheads();
     }
 }

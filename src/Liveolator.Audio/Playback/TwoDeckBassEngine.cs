@@ -446,7 +446,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
             // what the listener hears.
             double posSeconds = _backend.GetDeckPositionSeconds(deck.Handle) - _phaseLock.OutputLatencySeconds;
             effectiveBpm = bpm;
-            continuousBeat = (posSeconds - _firstBeat[master]) / (60.0 / bpm);
+            continuousBeat = (posSeconds - _firstBeat[master]) / (60.0 / _baseBpm[master]);
             return true;
         }
     }

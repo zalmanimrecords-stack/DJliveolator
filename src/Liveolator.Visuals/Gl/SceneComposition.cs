@@ -31,6 +31,7 @@ public static class SceneComposition
                 layer.Source,
                 layer.Blend,
                 layer.Opacity,
+                layer.Effects,
                 Renderable: layer.Source.Kind == VisualSourceKind.Image));
         }
         return resolved;

@@ -145,6 +145,21 @@ public class TwoDeckBassEngineSyncTests
     }
 
     [Fact]
+    public void TryGetSyncMasterBeat_PitchedMaster_UsesBaseTempoForMediaPosition()
+    {
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.SetPitch(0, 1.0, relative: false); // master at +8%
+        engine.SetSyncLock(1, true);
+        SetBeatPhase(backend, 100, 2.5); // original-track position is still 2.5 beats
+
+        bool ok = engine.TryGetSyncMasterBeat(out double bpm, out double beat);
+
+        Assert.True(ok);
+        Assert.Equal(Bpm * 1.08, bpm, precision: 6);
+        Assert.Equal(2.5, beat, precision: 6);
+    }
+
+    [Fact]
     public void TryGetSyncMasterBeat_NoMaster_ReturnsFalse()
     {
         using var engine = NewSyncedPair(out _);

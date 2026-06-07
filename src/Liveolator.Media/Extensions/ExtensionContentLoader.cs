@@ -69,6 +69,7 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
                 .ConfigureAwait(false)
             ?? Array.Empty<VisualEffectDescriptor>();
 
+        var resolvedDescriptors = new List<VisualEffectDescriptor>(descriptors.Length);
         foreach (VisualEffectDescriptor descriptor in descriptors)
         {
             if (!string.Equals(descriptor.PackageId, extension.Manifest.PackageId, StringComparison.Ordinal))
@@ -90,8 +91,9 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
                     throw new InvalidDataException(
                         $"Shader for '{descriptor.EffectId}' is missing a declared uniform.");
             }
+            resolvedDescriptors.Add(descriptor with { ShaderPath = shader });
         }
-        _effects.ReplacePackage(extension.Manifest.PackageId, descriptors);
+        _effects.ReplacePackage(extension.Manifest.PackageId, resolvedDescriptors);
     }
 
     private async Task LoadThemesAsync(InstalledExtension extension, CancellationToken cancellationToken)

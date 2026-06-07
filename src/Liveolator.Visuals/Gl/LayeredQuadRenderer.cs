@@ -35,6 +35,8 @@ public sealed class LayeredQuadRenderer : IDisposable
     private readonly GL _gl;
     private readonly ILogger<LayeredQuadRenderer> _logger;
     private readonly IReadOnlyList<LayerTexture> _layers;
+    private readonly IVisualEffectRegistry _effectRegistry;
+    private readonly IReadOnlyList<VisualMacro> _macros;
 
     private uint _program;
     private uint _vao;
@@ -53,6 +55,8 @@ public sealed class LayeredQuadRenderer : IDisposable
     public LayeredQuadRenderer(
         GL gl,
         IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers,
+        IVisualEffectRegistry? effectRegistry = null,
+        IReadOnlyList<VisualMacro>? macros = null,
         ILogger<LayeredQuadRenderer>? logger = null)
     {
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
@@ -60,6 +64,8 @@ public sealed class LayeredQuadRenderer : IDisposable
         if (layers.Count == 0)
             throw new ArgumentException("At least one layer is required to render.", nameof(layers));
         _logger = logger ?? NullLogger<LayeredQuadRenderer>.Instance;
+        _effectRegistry = effectRegistry ?? new VisualEffectRegistry();
+        _macros = macros ?? Array.Empty<VisualMacro>();
 
         _program = BuildProgram();
         CacheUniformLocations();
@@ -71,7 +77,11 @@ public sealed class LayeredQuadRenderer : IDisposable
     public int LayerCount => _layers.Count;
 
     /// <summary>Clears and draws the layer stack bottom→top for one frame using the resolved uniforms.</summary>
-    public void Render(FrameUniforms uniforms)
+    public void Render(
+        FrameUniforms uniforms,
+        int viewportWidth,
+        int viewportHeight,
+        IReadOnlyDictionary<string, double>? macroValues = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -101,8 +111,22 @@ public sealed class LayeredQuadRenderer : IDisposable
                 _gl.BlendFunc(layer.Blend.SourceFactor, layer.Blend.DestFactor);
             }
 
+            IReadOnlyList<ResolvedEffectParameters> effectValues = EffectParameterResolver.Resolve(
+                i,
+                layer.Effects,
+                _effectRegistry,
+                _macros,
+                macroValues ?? new Dictionary<string, double>());
+            uint texture = layer.EffectChain.Apply(layer.Texture, effectValues, uniforms);
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            _gl.Viewport(0, 0, (uint)Math.Max(1, viewportWidth), (uint)Math.Max(1, viewportHeight));
+            _gl.UseProgram(_program);
+            _gl.BindVertexArray(_vao);
+            _gl.Uniform1(_uBrightness, uniforms.Brightness);
+            _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
+            _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
             _gl.Uniform1(_uOpacity, (float)layer.Opacity);
-            _gl.BindTexture(TextureTarget.Texture2D, layer.Texture);
+            _gl.BindTexture(TextureTarget.Texture2D, texture);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
         }
 
@@ -194,8 +218,9 @@ public sealed class LayeredQuadRenderer : IDisposable
         IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers)
     {
         var built = new List<LayerTexture>(layers.Count);
-        foreach ((ResolvedLayer layer, RgbaImage image) in layers)
+        for (int index = 0; index < layers.Count; index++)
         {
+            (ResolvedLayer layer, RgbaImage image) = layers[index];
             BlendMode blendMode = layer.Blend;
             if (!BlendModeGl.TryResolve(blendMode, out BlendModeGl blend))
             {
@@ -208,7 +233,19 @@ public sealed class LayeredQuadRenderer : IDisposable
             }
 
             uint texture = BuildTexture(image);
-            built.Add(new LayerTexture(texture, blend, layer.Opacity));
+            IReadOnlyList<ResolvedEffectParameters> effects = EffectParameterResolver.Resolve(
+                index,
+                layer.Effects,
+                _effectRegistry,
+                _macros,
+                new Dictionary<string, double>());
+            var effectChain = new EffectChainRenderer(
+                _gl,
+                image.Width,
+                image.Height,
+                effects,
+                _logger);
+            built.Add(new LayerTexture(texture, blend, layer.Opacity, layer.Effects, effectChain));
         }
 
         // The base layer must exist; BuildTexture validates each image and throws on a bad buffer,
@@ -255,6 +292,7 @@ public sealed class LayeredQuadRenderer : IDisposable
         {
             foreach (LayerTexture layer in _layers)
             {
+                layer.EffectChain.Dispose();
                 if (layer.Texture != 0)
                     _gl.DeleteTexture(layer.Texture);
             }
@@ -270,5 +308,10 @@ public sealed class LayeredQuadRenderer : IDisposable
     }
 
     // One uploaded layer: its texture handle, the resolved GL blend state, and its opacity uniform.
-    private readonly record struct LayerTexture(uint Texture, BlendModeGl Blend, double Opacity);
+    private readonly record struct LayerTexture(
+        uint Texture,
+        BlendModeGl Blend,
+        double Opacity,
+        IReadOnlyList<EffectRef> Effects,
+        EffectChainRenderer EffectChain);
 }

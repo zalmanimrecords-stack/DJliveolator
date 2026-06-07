@@ -6,10 +6,10 @@
 # BASS ships as per-platform zips from un4seen.com. This script downloads the right archives,
 # extracts only the native libraries we need, and places them under runtimes/<rid>/native/
 # using the canonical names ManagedBass probes for:
-#   win-x64    -> bass.dll      + bassmix.dll
-#   osx-x64    -> libbass.dylib + libbassmix.dylib   (the macOS dylib is universal: arm64 + x64)
-#   osx-arm64  -> libbass.dylib + libbassmix.dylib
-#   linux-x64  -> libbass.so    + libbassmix.so
+#   win-x64    -> bass.dll      + bassmix.dll      + bassflac.dll
+#   osx-x64    -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
+#   osx-arm64  -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
+#   linux-x64  -> libbass.so    + libbassmix.so    + libbassflac.so
 #
 # BASSmix is required by the two-deck engine (TwoDeckBassEngine): the two decks feed one BASSmix
 # master channel. Without it, realtime audio (and "Add to Deck") is disabled.
@@ -57,6 +57,7 @@ esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST_DIR="$REPO_ROOT/runtimes/$RID/native"
+MANIFEST="$REPO_ROOT/scripts/bass-libraries.manifest"
 mkdir -p "$DEST_DIR"
 
 fetch_lib() {
@@ -110,6 +111,23 @@ fetch_lib() {
   echo "  done   : extracted $(basename "$chosen") -> $dest_file"
 }
 
-# Core BASS + the BASSmix add-on (the two-deck master mixer).
-fetch_lib bass
-fetch_lib bassmix
+while IFS='|' read -r base requirement || [ -n "$base" ]; do
+  case "$base" in
+    ""|\#*) continue ;;
+  esac
+
+  case "$requirement" in
+    required)
+      fetch_lib "$base"
+      ;;
+    optional)
+      if ! fetch_lib "$base"; then
+        echo "Optional add-on '$base' could not be fetched; continuing." >&2
+      fi
+      ;;
+    *)
+      echo "Invalid BASS library manifest entry: '$base|$requirement'." >&2
+      exit 1
+      ;;
+  esac
+done < "$MANIFEST"

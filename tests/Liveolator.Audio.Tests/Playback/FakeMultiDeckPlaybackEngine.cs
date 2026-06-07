@@ -14,12 +14,16 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
 {
     private readonly string?[] _loaded;
     private readonly bool[] _playing;
+    private readonly double[] _baseBpm;
+    private readonly double[] _firstBeat;
 
     public FakeMultiDeckPlaybackEngine(int deckCount = 2)
     {
         DeckCount = deckCount;
         _loaded = new string?[deckCount];
         _playing = new bool[deckCount];
+        _baseBpm = new double[deckCount];
+        _firstBeat = new double[deckCount];
     }
 
     /// <summary>Ordered log of (operation, slot, arg) so a test can assert the exact sequence.</summary>
@@ -67,10 +71,10 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public double PitchPosition(int slot) => 0.5;
     public void SetPitch(int slot, double value, bool relative) { }
     public void Cue(int slot) { }
-    public double DeckBaseBpm(int slot) => 0;
-    public void SetDeckBaseBpm(int slot, double bpm) { }
-    public double DeckFirstBeat(int slot) => 0;
-    public void SetDeckFirstBeat(int slot, double firstBeatSeconds) { }
+    public double DeckBaseBpm(int slot) => _baseBpm[slot];
+    public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
+    public double DeckFirstBeat(int slot) => _firstBeat[slot];
+    public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
     public int? SyncMaster => null;

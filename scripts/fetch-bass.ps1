@@ -66,15 +66,24 @@ $ridPlan = switch ($Rid) {
 # add-on (FLAC decode for both realtime playback and the offline waveform/analysis; without it FLAC
 # tracks neither play nor draw a waveform). Add-ons are optional — a fetch failure for one is logged
 # and does not abort the others.
-$libs = @(
-    @{ Base = 'bass';     Required = $true },
-    @{ Base = 'bassmix';  Required = $true },
-    @{ Base = 'bassflac'; Required = $false }
-)
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $destDir = Join-Path $repoRoot "runtimes/$Rid/native"
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+$manifestPath = Join-Path $PSScriptRoot 'bass-libraries.manifest'
+$libs = Get-Content -LiteralPath $manifestPath |
+    Where-Object { $_ -and -not $_.TrimStart().StartsWith('#') } |
+    ForEach-Object {
+        $parts = $_.Split('|', 2)
+        if ($parts.Count -ne 2 -or $parts[1] -notin @('required', 'optional')) {
+            throw "Invalid BASS library manifest entry: '$_'."
+        }
+
+        @{
+            Base = $parts[0]
+            Required = $parts[1] -eq 'required'
+        }
+    }
 
 function Get-NativeLib($base) {
     $archive = "$base$Version$($ridPlan.Suffix).zip"

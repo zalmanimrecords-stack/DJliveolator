@@ -15,6 +15,17 @@
 > **Mixxx architecture study (`docs/23`)**. Per owner decision, all of those learnings are adopted
 > **except controller mapping**, which follows the **Ableton control-surface model** (Track D), not
 > Mixxx's per-control mapping.
+>
+> **Update (2026-06-07):** a ten-expert full-system review landed in **`docs/24-system-review-2026-06-07.md`**
+> (verified bug map + recommended next 10 steps; solution green at **1,279 tests**). Since this doc was
+> written, the in-flight wave built **A9 continuous leader/follower phase-lock** (`PhaseLockController`,
+> deck-driven shared clock via `DeckDrivenBeatClock`/`SwitchingBeatClock`/`MasterClockBridge`) and a first
+> slice of **A6 live-set persistence** (`ILiveSetStore`/`JsonLiveSetStore`, queue paths restored at
+> startup; loaded-deck state not yet snapshotted). **Doc 24 supersedes the priorities below for the next
+> wave** — in particular it found High-severity correctness/robustness bugs in the just-built sync path
+> (shared clock mis-scaled by master pitch; correction loop pumped from the UI thread) and several
+> "built-but-not-reachable" features (auto-advance loses BPM, GL render loop never re-reads the scene,
+> EQ-kill is only −24 dB, headphone Cue Level/Mix has no UI). Read doc 24 §5 before opening the next branch.
 
 ---
 

@@ -13,6 +13,9 @@ public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key, TimeSpan
 /// </summary>
 public sealed class TrackAnalyzer
 {
+    /// <summary>Increment when analyzer output semantics change and cached tracks must be refreshed.</summary>
+    public const int CurrentVersion = 1;
+
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
 

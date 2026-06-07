@@ -15,7 +15,9 @@ public sealed record MusicTrack(
     MediaAnalysisStatus Status,
     string? Error,
     TrackMetadata? Metadata = null,
-    MusicMediaKind Kind = MusicMediaKind.Track) : IMediaEntry
+    MusicMediaKind Kind = MusicMediaKind.Track,
+    int AnalyzerVersion = 0,
+    bool AnalysisIsManual = false) : IMediaEntry
 {
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>

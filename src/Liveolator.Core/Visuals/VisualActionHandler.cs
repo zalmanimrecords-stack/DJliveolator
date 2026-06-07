@@ -34,10 +34,6 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.VisualTransitionNow,
         PerformanceActionKind.VisualTransitionNextBeat,
         PerformanceActionKind.VisualTransitionNextBar,
-        // DEFERRED — PerformanceActionKind.VisualSetLayerSource: the PerformanceAction record carries
-        // only Slot/Value/Argument, which cannot express a VisualSourceRef (Kind + Reference). Claim it
-        // here once the action payload (or a source registry resolved by Argument id) exists; the engine
-        // seam (IVisualPerformanceEngine.SetLayerSource) is already in place.
     };
 
     /// <summary>The transition style this handler requests. A later increment can carry it on the action.</summary>

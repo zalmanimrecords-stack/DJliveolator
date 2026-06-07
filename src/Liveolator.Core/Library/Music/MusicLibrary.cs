@@ -41,7 +41,9 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             .ConfigureAwait(false);
         MediaAnalysisStatus status = TrackStatusPolicy.For(result);
         MusicMediaKind kind = SampleClassifier.Classify(file.Path, result.Duration, _sampleFolders);
-        return new MusicTrack(file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind);
+        return new MusicTrack(
+            file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind,
+            TrackAnalyzer.CurrentVersion);
     }
 
     // A track that fails to decode can still have readable tags, so capture metadata here too. With no
@@ -79,7 +81,33 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     public static bool NeedsAnalysis(MusicTrack track)
     {
         ArgumentNullException.ThrowIfNull(track);
-        return track.Status == MediaAnalysisStatus.Failed || track.Bpm is null;
+        return !track.AnalysisIsManual
+               && (track.Status == MediaAnalysisStatus.Failed
+                   || track.Bpm is null
+                   || track.AnalyzerVersion != TrackAnalyzer.CurrentVersion);
+    }
+
+    /// <summary>Applies a user-authored beat grid and protects it from automatic re-analysis.</summary>
+    public bool SetManualBeatGrid(string path, double bpm, double firstBeatSeconds)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (bpm <= 0)
+            throw new ArgumentOutOfRangeException(nameof(bpm));
+        if (firstBeatSeconds < 0)
+            throw new ArgumentOutOfRangeException(nameof(firstBeatSeconds));
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        double confidence = existing.Bpm?.Confidence ?? 1.0;
+        Upsert(existing with
+        {
+            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, confidence, firstBeatSeconds),
+            AnalyzerVersion = TrackAnalyzer.CurrentVersion,
+            AnalysisIsManual = true,
+        });
+        return true;
     }
 
     /// <summary>Paths of the catalogued tracks that still need analysis (Failed / no BPM).</summary>

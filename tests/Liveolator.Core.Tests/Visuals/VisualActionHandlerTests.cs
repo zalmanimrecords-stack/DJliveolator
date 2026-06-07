@@ -36,11 +36,10 @@ public class VisualActionHandlerTests
     [Fact]
     public void HandledKinds_CoverTheElevenWiredVisualActions()
     {
-        // Eleven Visual* kinds are wired; VisualSetLayerSource is deliberately deferred (no payload).
+        // Every declared Visual* kind has an owning handler.
         Assert.Equal(11, _handler.HandledKinds.Count);
         Assert.Contains(PerformanceActionKind.VisualLoadScene, _handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.VisualTransitionNextBar, _handler.HandledKinds);
-        Assert.DoesNotContain(PerformanceActionKind.VisualSetLayerSource, _handler.HandledKinds);
     }
 
     [Fact]

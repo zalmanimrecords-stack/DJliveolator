@@ -68,10 +68,10 @@ public sealed class BeatActionHandler : PerformanceActionHandlerBase
                 _clock.DoubleTempo(now);
                 break;
             case PerformanceActionKind.BeatNudgeForward:
-                _clock.Nudge(_nudgeBeats, now);
+                _clock.Nudge(ResolveNudge(action, direction: 1), now);
                 break;
             case PerformanceActionKind.BeatNudgeBackward:
-                _clock.Nudge(-_nudgeBeats, now);
+                _clock.Nudge(ResolveNudge(action, direction: -1), now);
                 break;
             case PerformanceActionKind.BeatResetGrid:
             case PerformanceActionKind.BeatSetDownbeat:
@@ -80,6 +80,12 @@ public sealed class BeatActionHandler : PerformanceActionHandlerBase
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
+    }
+
+    private double ResolveNudge(PerformanceAction action, int direction)
+    {
+        double steps = action.InputMode == ActionInputMode.Relative ? action.Value : 1;
+        return direction * steps * _nudgeBeats;
     }
 
     /// <inheritdoc />

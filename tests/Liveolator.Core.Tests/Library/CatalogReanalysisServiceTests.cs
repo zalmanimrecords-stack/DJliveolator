@@ -26,7 +26,8 @@ public class CatalogReanalysisServiceTests
         var key = new MusicalKey(0, KeyMode.Major, Camelot.Code(0, KeyMode.Major), 0.9);
         return new MusicTrack(
             new ScannedFile(path, 10, T), new BpmResult(bpm, 0.9), key,
-            TimeSpan.FromMinutes(4), TrackCues.None, MediaAnalysisStatus.Ok, null);
+            TimeSpan.FromMinutes(4), TrackCues.None, MediaAnalysisStatus.Ok, null,
+            AnalyzerVersion: TrackAnalyzer.CurrentVersion);
     }
 
     private static MusicLibrary LibraryWith(IAudioDecoder decoder, params MusicTrack[] tracks)
@@ -104,6 +105,28 @@ public class CatalogReanalysisServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RunAsync(progress, cts.Token));
 
         Assert.NotEmpty(store.Saved); // partial progress was saved (resumable on next run)
+    }
+
+    [Fact]
+    public void NeedsAnalysis_WhenAnalyzerVersionIsStale_ReturnsTrue()
+    {
+        MusicTrack stale = Analyzed("old.wav", 124.0) with { AnalyzerVersion = TrackAnalyzer.CurrentVersion - 1 };
+
+        Assert.True(MusicLibrary.NeedsAnalysis(stale));
+    }
+
+    [Fact]
+    public void SetManualBeatGrid_LocksTrackAgainstAutomaticReanalysis()
+    {
+        MusicLibrary library = LibraryWith(new MapAudioDecoder(new()), Analyzed("manual.wav", 124.0));
+
+        Assert.True(library.SetManualBeatGrid("manual.wav", bpm: 126.5, firstBeatSeconds: 0.375));
+
+        MusicTrack track = library.TryGet("manual.wav")!;
+        Assert.Equal(126.5, track.Bpm!.Bpm);
+        Assert.Equal(0.375, track.Bpm.FirstBeatSeconds);
+        Assert.True(track.AnalysisIsManual);
+        Assert.False(MusicLibrary.NeedsAnalysis(track with { AnalyzerVersion = 0 }));
     }
 }
 

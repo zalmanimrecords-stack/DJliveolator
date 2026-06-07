@@ -101,6 +101,23 @@ public class BeatActionHandlerTests
     }
 
     [Fact]
+    public void RelativeNudge_HonorsSignedEncoderMagnitude()
+    {
+        TapAt(0);
+        TapAt(500);
+        _host.NowTicks = 500;
+        _clock.Update(500);
+
+        _handler.Handle(new PerformanceAction(
+            PerformanceActionKind.BeatNudgeForward,
+            ActionInputMode.Relative,
+            Value: -3));
+
+        Assert.Equal(1.0 - (3 * BeatActionHandler.DefaultNudgeBeats),
+            _clock.Current.BeatPhase, precision: 6);
+    }
+
+    [Fact]
     public void ResetGrid_ReanchorsToNow()
     {
         TapAt(0);

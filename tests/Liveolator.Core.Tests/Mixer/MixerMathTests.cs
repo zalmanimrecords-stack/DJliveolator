@@ -114,6 +114,26 @@ public class MixerMathTests
         Assert.True(dcGain < 1.0, $"cut low band should lower DC gain, was {dcGain}");
     }
 
+    [Theory]
+    [InlineData(EqBand.Low, 100.0)]
+    [InlineData(EqBand.Mid, 1_000.0)]
+    [InlineData(EqBand.High, 8_000.0)]
+    public void EqBand_FullCut_IsARealKill(EqBand band, double frequency)
+    {
+        var killed = band switch
+        {
+            EqBand.Low => new EqBands(0.0, 0.5, 0.5),
+            EqBand.Mid => new EqBands(0.5, 0.0, 0.5),
+            _ => new EqBands(0.5, 0.5, 0.0),
+        };
+
+        BiquadCoefficients c = MixerMath.EqBandCoefficients(band, killed, 48_000);
+        double gain = FrequencyGain(c, frequency, 48_000);
+
+        Assert.True(gain <= Math.Pow(10.0, -48.0 / 20.0),
+            $"{band} kill should attenuate at least 48 dB at {frequency} Hz, gain was {gain}");
+    }
+
     // --- Filter coefficient design ---
 
     [Fact]
@@ -164,6 +184,16 @@ public class MixerMathTests
     // Response at Nyquist (alternating ±1, z=-1): (b0-b1+b2)/(1-a1+a2).
     private static double NyquistGain(BiquadCoefficients c)
         => Math.Abs((c.B0 - c.B1 + c.B2) / (1.0 - c.A1 + c.A2));
+
+    private static double FrequencyGain(BiquadCoefficients c, double frequency, int sampleRate)
+    {
+        double w = 2.0 * Math.PI * frequency / sampleRate;
+        var z1 = System.Numerics.Complex.FromPolarCoordinates(1.0, -w);
+        var z2 = z1 * z1;
+        System.Numerics.Complex numerator = c.B0 + (c.B1 * z1) + (c.B2 * z2);
+        System.Numerics.Complex denominator = 1.0 + (c.A1 * z1) + (c.A2 * z2);
+        return (numerator / denominator).Magnitude;
+    }
 
     private static bool ImpulseResponseDecays(BiquadCoefficients c)
     {

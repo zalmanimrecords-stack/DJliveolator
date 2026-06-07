@@ -10,13 +10,7 @@ namespace Liveolator.Core.Actions;
 public enum PerformanceActionKind
 {
     // Transport
-    TransportPlayPause,
     TransportStop,
-    TransportNextTrack,
-    TransportPreviousTrack,
-    TransportQueueTrack,
-    TransportLoadSelectedTrack,
-    TransportToggleAutoAdvance,
 
     // Beat
     BeatTapTempo,
@@ -33,7 +27,6 @@ public enum PerformanceActionKind
     VisualLoadScene,
     VisualSelectBank,
     VisualSetMacro,
-    VisualSetLayerSource,
     VisualToggleLayer,
     VisualSetLayerOpacity,
     VisualLaunchClip,
@@ -73,8 +66,6 @@ public enum PerformanceActionKind
     AudioFxLoadPreset,
 
     // Auto-mix (doc 11) — hands-free assist
-    AutoMixToggle,
-    AutoMixSkipToNext,
 
     // Playlist
     PlaylistInsertTrackNext,

@@ -44,6 +44,7 @@ public sealed class JsonCatalogStore : IMusicCatalogStore, IVisualCatalogStore
 
     private readonly string _directory;
     private readonly Action<string>? _onWarning;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public JsonCatalogStore(string? rootDirectory = null, Action<string>? onWarning = null)
     {
@@ -199,12 +200,24 @@ public sealed class JsonCatalogStore : IMusicCatalogStore, IVisualCatalogStore
 
     private async Task SaveAsync<T>(string path, T snapshot, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(_directory);
-        // Write to a temp file then move, so an interrupted write never corrupts the live cache.
-        string tempPath = path + ".tmp";
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, path, overwrite: true);
+        await _saveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        string? tempPath = null;
+        try
+        {
+            Directory.CreateDirectory(_directory);
+            // A unique temp file also keeps abandoned writes from colliding after cancellation.
+            tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+            await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
+                await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+            tempPath = null;
+        }
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+            _saveGate.Release();
+        }
     }
 
     private async Task<T?> LoadAsync<T>(string path, CancellationToken cancellationToken) where T : class
