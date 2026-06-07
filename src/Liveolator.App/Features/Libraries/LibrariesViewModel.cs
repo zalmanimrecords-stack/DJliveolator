@@ -293,11 +293,68 @@ public sealed class LibrariesViewModel : ViewModelBase
 
                 RefreshFolderStatuses();
             });
+
+            // The catalog may hold tracks that were never analyzed (e.g. scanned before a working decoder
+            // shipped, so they are Failed with no BPM). Re-analyze them on a background thread so the app
+            // comes up immediately and BPM/key fill in progressively (doc 16); the pass persists
+            // incrementally, so it resumes on the next run rather than restarting.
+            StartBackgroundReanalysis(cancellationToken);
         }
         catch (Exception ex)
         {
             RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not restore saved library: {ex.Message}");
         }
+    }
+
+    // Runs the re-analysis pass off the UI thread (fire-and-forget): the app stays responsive and comes
+    // up immediately while previously-unanalyzed tracks get a real BPM/key. A no-op when there is nothing
+    // to analyze or no store to persist to.
+    private void StartBackgroundReanalysis(CancellationToken cancellationToken)
+    {
+        if (_store is null || _library.PathsNeedingAnalysis().Count == 0)
+            return;
+
+        var service = new CatalogReanalysisService(
+            _library, _store,
+            onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e));
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var progress = new Progress<ReanalysisProgress>(p =>
+                    RxApp.MainThreadScheduler.Schedule(() =>
+                    {
+                        ScanStatus = p.Done >= p.Total
+                            ? $"Analysis complete — {p.Analyzed} tracks updated"
+                            : $"Analyzing library in background… {p.Done}/{p.Total}";
+                        // Surface freshly-analyzed BPM/key periodically without thrashing the UI per track.
+                        if (p.Done >= p.Total || p.Done % 25 == 0)
+                            RefreshRows();
+                    }));
+
+                await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+                RxApp.MainThreadScheduler.Schedule(RefreshRows);
+            }
+            catch (OperationCanceledException)
+            {
+                // App shutting down / cancelled — nothing to do.
+            }
+            catch (Exception ex)
+            {
+                RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Background analysis error: {ex.Message}");
+            }
+        }, cancellationToken);
+    }
+
+    // Re-projects the current catalog into the visible rows, facets and folder statuses. UI-thread only
+    // (mutates ObservableCollections); callers marshal via the main scheduler.
+    private void RefreshRows()
+    {
+        _all = BuildRows();
+        RebuildFacets();
+        ApplyFilter();
+        RefreshFolderStatuses();
     }
 
     /// <summary>Adds a folder root to scan (no-op if blank or already present), persisting the

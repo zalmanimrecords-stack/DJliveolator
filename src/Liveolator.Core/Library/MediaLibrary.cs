@@ -10,6 +10,9 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
 {
     private readonly IFileEnumerator _enumerator;
     private readonly Dictionary<string, TEntry> _byPath = new(StringComparer.OrdinalIgnoreCase);
+    // Guards _byPath: the catalog is read on the UI thread (All/TryGet) while a background re-analysis
+    // pass mutates it (Upsert), so every access is serialized to stay memory-safe.
+    private readonly object _gate = new();
 
     protected MediaLibrary(IFileEnumerator enumerator)
         => _enumerator = enumerator ?? throw new ArgumentNullException(nameof(enumerator));
@@ -25,9 +28,23 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     /// <summary>Builds a Failed entry when <see cref="CreateEntryAsync"/> throws.</summary>
     protected abstract TEntry CreateFailedEntry(ScannedFile file, string error);
 
-    public IReadOnlyCollection<TEntry> All => _byPath.Values.ToArray();
-    public int Count => _byPath.Count;
-    public TEntry? TryGet(string path) => _byPath.TryGetValue(path, out TEntry? entry) ? entry : null;
+    public IReadOnlyCollection<TEntry> All { get { lock (_gate) return _byPath.Values.ToArray(); } }
+    public int Count { get { lock (_gate) return _byPath.Count; } }
+
+    public TEntry? TryGet(string path)
+    {
+        lock (_gate)
+            return _byPath.TryGetValue(path, out TEntry? entry) ? entry : null;
+    }
+
+    /// <summary>Thread-safely inserts or replaces a single entry — used by the background re-analysis
+    /// pass to update one track's analysis without disturbing a concurrent UI read of the catalog.</summary>
+    protected void Upsert(TEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        lock (_gate)
+            _byPath[entry.File.Path] = entry;
+    }
 
     /// <summary>
     /// Seeds the catalog from a previously-persisted set (the doc 13 cache) so a following
@@ -37,9 +54,12 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     public void Restore(IEnumerable<TEntry> entries)
     {
         ArgumentNullException.ThrowIfNull(entries);
-        _byPath.Clear();
-        foreach (TEntry entry in entries)
-            _byPath[entry.File.Path] = entry;
+        lock (_gate)
+        {
+            _byPath.Clear();
+            foreach (TEntry entry in entries)
+                _byPath[entry.File.Path] = entry;
+        }
     }
 
     /// <summary>
@@ -54,16 +74,19 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
         ArgumentNullException.ThrowIfNull(folders);
 
         List<ScannedFile> current = _enumerator.Enumerate(folders, Extensions).ToList();
-        var known = _byPath.ToDictionary(
-            kv => kv.Key,
-            kv => FileFingerprint.Of(kv.Value.File),
-            StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, FileFingerprint> known;
+        lock (_gate)
+            known = _byPath.ToDictionary(
+                kv => kv.Key,
+                kv => FileFingerprint.Of(kv.Value.File),
+                StringComparer.OrdinalIgnoreCase);
 
         IReadOnlyList<ScanDelta> deltas = IncrementalScan.Diff(current, known);
 
         foreach (ScanDelta delta in deltas)
             if (delta.Change == ScanChange.Removed)
-                _byPath.Remove(delta.File.Path);
+                lock (_gate)
+                    _byPath.Remove(delta.File.Path);
 
         var toProcess = deltas
             .Where(d => d.Change is ScanChange.Added or ScanChange.Modified)
@@ -91,7 +114,8 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
                 entry = CreateFailedEntry(delta.File, ex.Message);
             }
 
-            _byPath[delta.File.Path] = entry;
+            lock (_gate)
+                _byPath[delta.File.Path] = entry;
             done++;
         }
 

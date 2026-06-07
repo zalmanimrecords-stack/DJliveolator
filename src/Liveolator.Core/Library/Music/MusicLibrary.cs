@@ -71,6 +71,52 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     public IReadOnlyList<MusicTrack> OfKind(MusicMediaKind kind)
         => All.Where(t => t.Kind == kind).ToList();
 
+    /// <summary>
+    /// A track still needs analysis when its decode/analysis failed or produced no tempo — e.g. the
+    /// catalog was built before a working decoder was available (doc 16). These are the input to the
+    /// background re-analysis pass.
+    /// </summary>
+    public static bool NeedsAnalysis(MusicTrack track)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        return track.Status == MediaAnalysisStatus.Failed || track.Bpm is null;
+    }
+
+    /// <summary>Paths of the catalogued tracks that still need analysis (Failed / no BPM).</summary>
+    public IReadOnlyList<string> PathsNeedingAnalysis()
+        => All.Where(NeedsAnalysis).Select(t => t.File.Path).ToList();
+
+    /// <summary>
+    /// Re-runs offline analysis for one already-catalogued track (e.g. one previously Failed because no
+    /// decoder was available) and replaces its entry in place. Returns true when the track is now
+    /// analyzed. An unknown or already-analyzed path is a no-op (returns false) so a good track is never
+    /// re-decoded; a decode failure is captured as a Failed entry rather than thrown (global #16/#26).
+    /// </summary>
+    public async Task<bool> ReanalyzeAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        MusicTrack? existing = TryGet(path);
+        if (existing is null || !NeedsAnalysis(existing))
+            return false;
+
+        MusicTrack rebuilt;
+        try
+        {
+            rebuilt = await CreateEntryAsync(existing.File, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            rebuilt = CreateFailedEntry(existing.File, ex.Message);
+        }
+
+        Upsert(rebuilt);
+        return !NeedsAnalysis(rebuilt);
+    }
+
     // The reader contract is "never throws", but guard anyway so a misbehaving reader
     // can never abort a scan — metadata simply degrades to null.
     private TrackMetadata? ReadMetadata(string path)
