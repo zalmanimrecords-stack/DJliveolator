@@ -707,7 +707,9 @@ subscribes to `NowChanged` and drives the underlying player.
   a bad track never crashes the show or stalls the queue (global #16/#26). Sequencing is unit-tested
   with fakes (no native BASS) — Audio `PlaylistAudioPlayerTests` + `NextTrackPreloaderTests`.
   **App-wired (`ServiceConfig.WirePlaylistAudio`):** the player binds deck A only when the realtime
-  engine is up; headless it stays a catalog browser and the queue still edits freely.
+  engine is up; headless it stays a catalog browser and the queue still edits freely. A persisted
+  `Now` track is restored into deck A paused at startup; later skips and end-of-track advances still
+  auto-play.
 - **End-of-track auto-advance now wired (A4):** `PlaylistAudioPlayer` also subscribes to the engine's
   new slot-tagged `DeckEnded` event and calls `ILivePlaylist.NotifyTrackEnded()` for its bound slot, so a
   deck running out auto-advances the queue (or stops when dry) instead of going silent. The bound-slot
