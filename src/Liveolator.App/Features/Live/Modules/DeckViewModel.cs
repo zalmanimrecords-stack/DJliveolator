@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
-using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 
@@ -18,8 +17,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), Sync Lock
-/// (<see cref="PerformanceActionKind.DeckSyncLockToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
+/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -47,9 +46,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly Func<string, DeckTrackInfo?>? _trackInfo;
     private readonly int _slot;
     private bool _isPlaying;
-    private bool _isSyncLocked;
-    private SyncLockState _syncState;
-    private bool _isMaster;
     private bool _isLooping;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
@@ -98,18 +94,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
-        // Sync Lock = tempo match (beatmatch by BPM, doc 11). The toggle's active state follows the
-        // handler's DeckSyncLockToggle feedback (the LED model), seeded from the current engine state.
+        // One-shot Sync beatmatches and phase-aligns this deck without engaging a persistent latch.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: slot)),
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: slot)),
             canEmit);
-        // Seed the full beat-lock state from the handler's DeckSyncLockToggle feedback: IsActive = engaged,
-        // Value = the SyncLockState ordinal, Argument = "master" on the sync-reference deck.
-        ActionFeedbackState? syncSeed = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot);
-        _isSyncLocked = syncSeed?.IsActive ?? false;
-        _syncState = syncSeed is { } s ? (SyncLockState)(int)Math.Round(s.Value) : SyncLockState.Off;
-        _isMaster = syncSeed?.Argument == "master";
-
         // Click-to-seek: the strip computes the clicked 0..1 fraction and passes it here; we emit an
         // absolute DeckSeek for this slot. The fraction is clamped at the seam (defence against a bad value).
         SeekCommand = ReactiveCommand.Create<double>(fraction =>
@@ -206,6 +194,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _beatGrid, value);
     }
 
+    public double? KickAnchorFraction =>
+        _durationSeconds > 0 ? Math.Clamp(_firstBeatSeconds / _durationSeconds, 0.0, 1.0) : null;
+
     /// <summary>
     /// Playhead position as a 0..1 fraction of the track. Updated from <c>DeckSeek</c> feedback (raised by
     /// the deck handler on seek/cue/load); a continuously advancing playhead during playback is a follow-up
@@ -254,27 +245,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         if (_dispatcher is null)
             return;
 
-        // Poll the sync state every tick (regardless of play state): the continuous lock loop transitions
-        // ACTIVE→LOCKED→DRIFTING with no action, and the MASTER badge must appear on the *other* deck —
-        // neither raises this deck's feedback event, so a poll is the only way the UI tracks them.
-        ActionFeedbackState sync = _dispatcher.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, _slot);
-        if (sync.IsAvailable)
-            ApplySyncFeedback(sync);
-
         if (!_isPlaying)
             return;
         ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
         if (position.IsAvailable)
             Progress = position.Value;
-    }
-
-    // Project the DeckSyncLockToggle feedback onto the engaged/state/master surface (shared by the event
-    // path and the per-tick poll).
-    private void ApplySyncFeedback(ActionFeedbackState state)
-    {
-        IsSyncLocked = state.IsActive;
-        SyncState = (SyncLockState)(int)Math.Round(state.Value);
-        IsMaster = state.Argument == "master";
     }
 
     private double ComputeZoomWindow()
@@ -292,41 +267,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         => BeatGrid = _durationSeconds > 0
             ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
             : Array.Empty<double>();
-
-    /// <summary>True while this deck has Sync engaged (the SYNC key's active highlight), from feedback.</summary>
-    public bool IsSyncLocked
-    {
-        get => _isSyncLocked;
-        private set => this.RaiseAndSetIfChanged(ref _isSyncLocked, value);
-    }
-
-    /// <summary>This deck's continuous beat-lock state — OFF/ACTIVE/LOCKED/DRIFTING — from feedback.</summary>
-    public SyncLockState SyncState
-    {
-        get => _syncState;
-        private set
-        {
-            if (_syncState == value)
-                return;
-            this.RaiseAndSetIfChanged(ref _syncState, value);
-            this.RaisePropertyChanged(nameof(SyncStateLabel));
-        }
-    }
-
-    /// <summary>Short label for the SYNC key reflecting <see cref="SyncState"/> (LOCK / DRIFT / SYNC).</summary>
-    public string SyncStateLabel => _syncState switch
-    {
-        SyncLockState.Locked => "LOCK",
-        SyncLockState.Drifting => "DRIFT",
-        _ => "SYNC",
-    };
-
-    /// <summary>True when this deck is the sync MASTER (the reference the other deck locks to), from feedback.</summary>
-    public bool IsMaster
-    {
-        get => _isMaster;
-        private set => this.RaiseAndSetIfChanged(ref _isMaster, value);
-    }
 
     /// <summary>True while this deck has an active loop (drives the LOOP key's active state), from feedback.</summary>
     public bool IsLooping
@@ -399,9 +339,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckPlayPause:
                     IsPlaying = e.State.IsActive;
                     break;
-                case PerformanceActionKind.DeckSyncLockToggle:
-                    ApplySyncFeedback(e.State);
-                    break;
                 case PerformanceActionKind.DeckSetLoop:
                     IsLooping = e.State.IsActive;
                     break;
@@ -419,6 +356,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     // beat/bar grid on it so the lines fall on the kicks (and match what Sync aligns to).
                     _firstBeatSeconds = e.State.Value;
                     RecomputeBeatGrid();
+                    this.RaisePropertyChanged(nameof(KickAnchorFraction));
                     break;
             }
         });
@@ -452,6 +390,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
+        this.RaisePropertyChanged(nameof(KickAnchorFraction));
         ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
         LoadWaveform(trackPath);
@@ -487,6 +426,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             // real time (so the follow view shows a consistent ~PlayingZoomSeconds regardless of length).
             _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
             RecomputeBeatGrid();
+            this.RaisePropertyChanged(nameof(KickAnchorFraction));
             ZoomWindow = ComputeZoomWindow();
         }
         catch (OperationCanceledException)

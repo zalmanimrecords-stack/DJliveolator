@@ -49,13 +49,13 @@ public class CmdStudio2AProfileTests
     }
 
     [Fact]
-    public void Default_MapsSyncToggle_PerDeck()
+    public void Default_MapsSyncOnce_PerDeck()
     {
-        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncLockToggle, slot: 0);
-        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncLockToggle, slot: 1);
+        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 0);
+        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 1);
 
-        Assert.Equal(ActionInputMode.Toggle, deckA.InputMode);
-        Assert.Equal(ActionInputMode.Toggle, deckB.InputMode);
+        Assert.Equal(ActionInputMode.Momentary, deckA.InputMode);
+        Assert.Equal(ActionInputMode.Momentary, deckB.InputMode);
     }
 
     [Fact]

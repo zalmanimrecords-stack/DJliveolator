@@ -359,6 +359,33 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         lock (_gate) _firstBeat[slot] = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
     }
 
+    public void SyncOnce(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck || _baseBpm[slot] <= 0.0)
+                return;
+
+            int leader = slot == 0 ? 1 : 0;
+            if (_decks[leader] is null || _baseBpm[leader] <= 0.0)
+                return;
+
+            double leaderRate = RateFor(_pitchPosition[leader]);
+            double targetRate = TempoSyncCalculator.RateFor(
+                _baseBpm[leader] * leaderRate,
+                _baseBpm[slot]);
+            _pitchPosition[slot] = PitchPositionFor(targetRate);
+            _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot]));
+            PhaseAlignToLeader(slot);
+            _logger.LogInformation(
+                "Deck slot {Slot} one-shot synced to deck {Leader} at rate {Rate:F5}.",
+                slot,
+                leader,
+                RateFor(_pitchPosition[slot]));
+        }
+    }
+
     public bool IsSyncLocked(int slot)
     {
         ValidateSlot(slot);
@@ -837,6 +864,12 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
     // Maps a normalized pitch position (0..1, 0.5 = centre) to a playback-rate multiplier within ±range.
     private static double RateFor(double normalizedPosition)
         => 1.0 + (Math.Clamp(normalizedPosition, 0.0, 1.0) - PitchCenter) * 2.0 * PitchRangePercent;
+
+    private static double PitchPositionFor(double rate)
+        => Math.Clamp(
+            PitchCenter + ((rate - 1.0) / (2.0 * PitchRangePercent)),
+            0.0,
+            1.0);
 
     // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel and the
     // track-specific hot-cues (a new track gets fresh cues).

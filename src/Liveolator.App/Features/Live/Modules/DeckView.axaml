@@ -33,11 +33,6 @@
           </StackPanel>
         </Panel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <!-- MASTER badge: shown on whichever deck is the sync reference (doc 11), from feedback. -->
-          <Border IsVisible="{Binding IsMaster}" Background="{StaticResource Accent}"
-                  CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-            <TextBlock Text="MASTER" FontSize="9" FontWeight="SemiBold" Foreground="White" />
-          </Border>
           <Button Classes="icon" Content="•••" FontSize="11" IsEnabled="False" />
         </StackPanel>
       </Grid>
@@ -74,9 +69,8 @@
         </Button>
         <Button Classes="key" Content="LOOP" Classes.on="{Binding IsLooping}"
                 Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" Margin="0,0,4,0" />
-        <!-- SYNC: label reflects the live beat-lock state (SYNC/LOCK/DRIFT); the `on` class highlights
-             while engaged. State + master are polled from DeckSyncLockToggle feedback each render tick. -->
-        <Button Classes="key" Content="{Binding SyncStateLabel}" Classes.on="{Binding IsSyncLocked}"
+        <!-- SYNC is a momentary one-shot beatmatch + phase alignment. -->
+        <Button Classes="key" Content="SYNC"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 

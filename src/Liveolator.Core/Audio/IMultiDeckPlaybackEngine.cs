@@ -35,7 +35,7 @@ public interface IMultiDeckPlaybackEngine
     void Stop(int slot);
 
     // --- Transport (doc 11): position scrub, pitch/tempo, cue, and per-deck sync/quantize toggles.
-    // Driven via DeckSeek/DeckPitch/DeckCue/DeckSyncLockToggle/DeckQuantizeToggle actions, never directly.
+    // Driven via DeckSeek/DeckPitch/DeckCue/DeckSyncOnce/DeckQuantizeToggle actions, never directly.
 
     /// <summary>Current playback position as a normalized 0..1 fraction of the track (0 if nothing loaded).</summary>
     double Position(int slot);
@@ -81,6 +81,12 @@ public interface IMultiDeckPlaybackEngine
     /// load (like base BPM). Negative = unknown.
     /// </summary>
     void SetDeckFirstBeat(int slot, double firstBeatSeconds);
+
+    /// <summary>
+    /// Beatmatches this deck to the other deck and snaps its analyzed kick/grid phase once.
+    /// The resulting tempo is stored as the deck's manual pitch; no continuous lock is engaged.
+    /// </summary>
+    void SyncOnce(int slot);
 
     /// <summary>True while the deck is sync-locked (beatmatched + phase-locked) to the master.</summary>
     bool IsSyncLocked(int slot);

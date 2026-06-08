@@ -70,14 +70,14 @@ tab, restart, then confirm:
 3. **Transport.** Press Deck A / Deck B play-pause pads → the matching deck toggles
    play/pause (needs native BASS for audible playback; otherwise verify the dispatcher
    feedback / UI deck state changes).
-4. **Sync.** Press the Deck A/B sync buttons → `DeckSyncLockToggle` latches; the Live-tab
-   SYNC button reflects it.
+4. **Sync.** Press the Deck A/B sync buttons → `DeckSyncOnce` beatmatches and phase-aligns
+   the selected deck without latching.
 5. **Mixer.** Move the crossfader, the two channel faders, the per-deck 3-band EQ knobs,
    and the filter knob → the mixer state / UI tracks each (`MixerCrossfade`,
    `MixerChannelGain`, `MixerEqBand` Low/Mid/High, `MixerFilter`).
 6. **Jog nudge.** Turn a jog wheel slowly → `BeatNudgeForward` fires (tempo/phase nudge).
-7. **LED feedback (if a feedback output was selected).** Toggling sync from the UI lights
-   the controller's sync LED; the LED follows the toggle state.
+7. **LED feedback (if a feedback output was selected).** Momentary action feedback reaches
+   the selected controller output.
 8. **MIDI learn override.** Arm learn for an action, move ANY control → that control
    rebinds (the default CC numbers are starting defaults, not gospel — doc 05/07).
 

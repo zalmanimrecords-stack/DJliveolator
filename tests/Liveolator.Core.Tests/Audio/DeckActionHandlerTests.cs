@@ -110,6 +110,7 @@ public class DeckActionHandlerTests
         public List<int> Stopped { get; } = new();
         public List<(int Slot, double Position, bool Relative)> Seeks { get; } = new();
         public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
+        public List<int> SyncOnceCalls { get; } = new();
         public List<int> Cues { get; } = new();
         public List<(int Slot, double Beats)> Loops { get; } = new();
         public List<int> LoopsCleared { get; } = new();
@@ -162,6 +163,7 @@ public class DeckActionHandlerTests
 
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+        public void SyncOnce(int slot) => SyncOnceCalls.Add(slot);
 
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
@@ -276,7 +278,7 @@ public class DeckActionHandlerTests
         Assert.Contains(PerformanceActionKind.DeckSeek, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckPitch, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckCue, handler.HandledKinds);
-        Assert.Contains(PerformanceActionKind.DeckSyncLockToggle, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckSyncOnce, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckQuantizeToggle, handler.HandledKinds);
     }
 
@@ -332,18 +334,15 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
-    public void SyncLockToggle_FlipsPerSlot_AndReportsFeedback()
+    public void SyncOnce_AlignsTheRequestedSlot_WithoutLatching()
     {
         var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);
 
-        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
-        Assert.True(engine.IsSyncLocked(1));
-        Assert.False(engine.IsSyncLocked(0));
-        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot: 1).IsActive);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: 1));
 
-        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
-        Assert.False(engine.IsSyncLocked(1));
+        Assert.Equal(1, Assert.Single(engine.SyncOnceCalls));
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncOnce, slot: 1).IsActive);
     }
 
     [Fact]
@@ -448,16 +447,16 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
-    public void TransportControls_RaiseFeedbackThroughDispatcher()
+    public void SyncOnce_RaisesMomentaryFeedbackThroughDispatcher()
     {
         var engine = new FakeMultiDeckEngine();
         var dispatcher = new PerformanceActionDispatcher(
             new[] { new DeckActionHandler(engine) },
             NullLogger<PerformanceActionDispatcher>.Instance);
 
-        dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncLockToggle, Slot: 1));
+        dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: 1));
 
-        Assert.True(dispatcher.GetFeedback(PerformanceActionKind.DeckSyncLockToggle, slot: 1).IsActive);
+        Assert.False(dispatcher.GetFeedback(PerformanceActionKind.DeckSyncOnce, slot: 1).IsActive);
     }
 
     // --- Loops (DeckSetLoop) ---

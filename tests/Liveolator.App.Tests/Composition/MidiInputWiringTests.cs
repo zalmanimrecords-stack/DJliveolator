@@ -95,10 +95,10 @@ public sealed class MidiInputWiringTests
         Assert.NotNull(pipeline);
         Assert.True(provider.OpenOutputCalled);
 
-        // A sync toggle is a Toggle binding — its feedback should light the bound control.
-        var sync = FindBinding(PerformanceActionKind.DeckSyncLockToggle, slot: 0);
+        // Momentary sync feedback is still routed to the bound control output.
+        var sync = FindBinding(PerformanceActionKind.DeckSyncOnce, slot: 0);
         dispatcher.RaiseFeedback(new ActionFeedbackChanged(
-            PerformanceActionKind.DeckSyncLockToggle, Slot: 0,
+            PerformanceActionKind.DeckSyncOnce, Slot: 0,
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0)));
 
         Assert.Contains(output.Sent, m => m.Data1 == sync.Data1 && m.Channel == sync.Channel);

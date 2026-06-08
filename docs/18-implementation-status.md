@@ -2,7 +2,7 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-07**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-08**.
 >
 > **See also `docs/24-system-review-2026-06-07.md`** — a ten-expert full-system review with a
 > verified bug map and the recommended next 10 steps. Where doc 24 and this file disagree on a
@@ -20,9 +20,10 @@
 
 ## Core test count
 
-Solution-wide: **1,279 passing, 0 failed, 0 skipped** across 8 test projects, measured
-**2026-06-07** (`dotnet test`): Core 650, App 234, Audio 162, Media 92, Visuals 66,
-Integration 25, MIDI 27, Online 23. The growth over the previously-recorded 851 reflects the
+Solution-wide: **1,286 passing, 0 failed, 0 skipped** across 8 test projects, measured
+**2026-06-08** (`dotnet test Liveolator.sln --configuration Release --no-restore`): Core 659,
+App 233, Audio 165, Media 83, Visuals 71, Integration 25, MIDI 27, Online 23. The growth over
+the previously-recorded 851 reflects the
 in-flight wave — continuous phase-lock sync (`PhaseLockController`, `PhaseAlignmentCalculator`),
 the deck-driven shared clock (`DeckDrivenBeatClock`/`SwitchingBeatClock`/`MasterClockBridge`),
 and live-set persistence (`ILiveSetStore`/`JsonLiveSetStore`) — all of which landed with
@@ -114,7 +115,7 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   present) wiring `MidiFeedbackPublisher` back out. The Core seam `IMidiDeviceProvider` gained
   `OpenInput`/`OpenOutput` (already implemented by `RtMidiDeviceProvider`) so the App opens a device
   through the seam without touching RtMidi types. `CmdStudio2AProfile.Default` maps the controller's
-  transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncLockToggle`), crossfader + per-deck gain
+  transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncOnce`), crossfader + per-deck gain
   (`MixerCrossfade`/`MixerChannelGain`), 3-band EQ (`MixerEqBand` Low/Mid/High) + filter
   (`MixerFilter`), and jog nudge (`BeatNudgeForward`) to the existing kinds — Deck A = channel 0/slot
   0, Deck B = channel 1/slot 1. **The CC/note numbers are documented defaults, not gospel:** every
@@ -585,7 +586,7 @@ view-models under `Features/Live/Modules/`, each driving the engines only throug
 |--------|------------|-----------------|
 | Program Out | `ProgramOutViewModel` | Show Visuals (`IVisualStage`); preview/REC/layers static |
 | Beat Engine | `BeatEngineViewModel` | Tap / Lock-toggle / ½× / 2× / Set / Nudge± / **Reset**; Auto disabled |
-| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncLockToggle` (tempo match), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
+| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncOnce` (one-shot tempo + phase match), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
 | Mixer | `MixerViewModel` | `MixerCrossfade`, `MixerChannelGain` (A/B); VU static |
 | Scene Grid | `SceneGridViewModel` + `ScenePadViewModel` | 8×8 `VisualLoadScene`, bank `VisualSelectBank`; pad state from feedback |
 | Master / FX | `MasterFxViewModel` | `VisualToggleStrobe`, `VisualBlackout`; Master/Swing disabled |

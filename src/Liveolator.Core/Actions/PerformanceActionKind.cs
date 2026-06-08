@@ -44,7 +44,7 @@ public enum PerformanceActionKind
     DeckSetLoop,
     DeckSeek,
     DeckPitch,
-    DeckSyncLockToggle,
+    DeckSyncOnce,
     DeckQuantizeToggle,
     DeckSetFirstBeat,
 

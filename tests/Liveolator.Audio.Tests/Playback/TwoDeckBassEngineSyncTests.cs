@@ -34,6 +34,27 @@ public class TwoDeckBassEngineSyncTests
         => backend.PositionFraction[handle] = beats * BeatSeconds / Length;
 
     [Fact]
+    public void SyncOnce_BeatmatchesAndAlignsKick_WithoutEngagingContinuousLock()
+    {
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.SetDeckBaseBpm(0, 126.0);
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckFirstBeat(0, 0.10);
+        engine.SetDeckFirstBeat(1, 0.30);
+        backend.PositionFraction[100] = 1.10 / Length;
+        backend.PositionFraction[101] = 1.30 / Length;
+
+        engine.SyncOnce(1);
+
+        Assert.False(engine.IsSyncLocked(1));
+        Assert.Null(engine.SyncMaster);
+        Assert.Equal(126.0 / 120.0, backend.Rate[101], 6);
+        var follower = new DeckPhase(backend.GetDeckPositionSeconds(101), 0.30, 126.0);
+        var leader = new DeckPhase(backend.GetDeckPositionSeconds(100), 0.10, 126.0);
+        Assert.Equal(0.0, PhaseAlignmentCalculator.BeatPhaseError(follower, leader), 6);
+    }
+
+    [Fact]
     public void EngagingSync_MakesTheOtherDeckTheMaster()
     {
         using var engine = NewSyncedPair(out _);

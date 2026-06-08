@@ -68,6 +68,7 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
     public double DeckFirstBeat(int slot) { EnsureSlot(slot); return 0; }
 
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => EnsureSlot(slot);
+    public void SyncOnce(int slot) => EnsureSlot(slot);
 
     public bool IsSyncLocked(int slot) { EnsureSlot(slot); return false; }
 

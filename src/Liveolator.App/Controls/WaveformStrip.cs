@@ -53,6 +53,9 @@ public sealed class WaveformStrip : Control
     public static readonly StyledProperty<IReadOnlyList<double>?> BeatGridProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<double>?>(nameof(BeatGrid));
 
+    public static readonly StyledProperty<double?> KickAnchorProperty =
+        AvaloniaProperty.Register<WaveformStrip, double?>(nameof(KickAnchor));
+
     /// <summary>Playhead position as a 0..1 fraction of the track.</summary>
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<WaveformStrip, double>(nameof(Progress));
@@ -74,7 +77,8 @@ public sealed class WaveformStrip : Control
     {
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
-            PeaksProperty, KickPeaksProperty, BeatGridProperty, ProgressProperty, ZoomWindowProperty);
+            PeaksProperty, KickPeaksProperty, BeatGridProperty, KickAnchorProperty,
+            ProgressProperty, ZoomWindowProperty);
     }
 
     public WaveformStrip()
@@ -90,6 +94,7 @@ public sealed class WaveformStrip : Control
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
+    public double? KickAnchor { get => GetValue(KickAnchorProperty); set => SetValue(KickAnchorProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public double ZoomWindow { get => GetValue(ZoomWindowProperty); set => SetValue(ZoomWindowProperty, value); }
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
@@ -123,6 +128,13 @@ public sealed class WaveformStrip : Control
         return (start, zoomWindow);
     }
 
+    public static double? MarkerX(double fraction, double start, double span, double width)
+    {
+        if (span <= 0 || width <= 0 || fraction < start || fraction > start + span)
+            return null;
+        return (fraction - start) / span * width;
+    }
+
     public override void Render(DrawingContext context)
     {
         Rect b = Bounds;
@@ -141,11 +153,24 @@ public sealed class WaveformStrip : Control
         (double start, double span) = VisibleWindow(Progress, ZoomWindow);
 
         RenderBeatGrid(context, b, start, span);
+        RenderKickAnchor(context, b, start, span);
         RenderWaveform(context, b, peaks, start, span);
         // Kick/bass band drawn ON TOP, glowing, so the kick transients pop — the anchor a DJ aligns for sync.
         IReadOnlyList<float>? kick = KickPeaks;
         if (kick is { Count: > 0 })
             RenderKickBand(context, b, kick, start, span);
+    }
+
+    private void RenderKickAnchor(DrawingContext context, Rect b, double start, double span)
+    {
+        if (KickAnchor is not { } anchor || MarkerX(anchor, start, span, b.Width) is not { } x)
+            return;
+
+        Color kick = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xF2, 0xA8, 0x3B);
+        var halo = new Pen(new ImmutableSolidColorBrush(kick, 0.35), 5);
+        var core = new Pen(new ImmutableSolidColorBrush(Lighten(kick, 0.35)), 2);
+        context.DrawLine(halo, new Point(x, 0), new Point(x, b.Height));
+        context.DrawLine(core, new Point(x, 0), new Point(x, b.Height));
     }
 
     // Maps a visible-window column x to its 0..1 track fraction.

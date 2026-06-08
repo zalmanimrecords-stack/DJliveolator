@@ -64,4 +64,11 @@ public sealed class WaveformStripTests
         Assert.Equal(expectedStart, start, 6);
         Assert.Equal(0.10, span, 6);
     }
+
+    [Fact]
+    public void MarkerX_MapsTheKickAnchorIntoTheVisibleWindow()
+    {
+        Assert.Equal(50.0, WaveformStrip.MarkerX(0.50, start: 0.45, span: 0.10, width: 100)!.Value, 6);
+        Assert.Null(WaveformStrip.MarkerX(0.20, start: 0.45, span: 0.10, width: 100));
+    }
 }

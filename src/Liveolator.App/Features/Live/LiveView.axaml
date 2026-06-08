@@ -27,6 +27,7 @@
                                       KickBrush="{StaticResource Kick}"
                                       Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
                                       BeatGrid="{Binding DeckA.BeatGrid}"
+                                      KickAnchor="{Binding DeckA.KickAnchorFraction}"
                                       SeekCommand="{Binding DeckA.SeekCommand}" />
             </Border>
           </Grid>
@@ -39,6 +40,7 @@
                                       KickBrush="{StaticResource Kick}"
                                       Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
                                       BeatGrid="{Binding DeckB.BeatGrid}"
+                                      KickAnchor="{Binding DeckB.KickAnchorFraction}"
                                       SeekCommand="{Binding DeckB.SeekCommand}" />
             </Border>
           </Grid>

@@ -75,6 +75,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
     public double DeckFirstBeat(int slot) => _firstBeat[slot];
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+    public void SyncOnce(int slot) => Calls.Add($"SyncOnce({slot})");
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
     public int? SyncMaster => null;

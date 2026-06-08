@@ -79,7 +79,7 @@ public static class CmdStudio2AProfile
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, SyncNote,
-            PerformanceActionKind.DeckSyncLockToggle, ActionInputMode.Toggle, slot));
+            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, slot));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, CueNote,
