@@ -24,6 +24,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckSeek,
         PerformanceActionKind.DeckPitch,
         PerformanceActionKind.DeckBpm,
+        PerformanceActionKind.DeckBpmNudge,
         PerformanceActionKind.DeckCue,
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckQuantizeToggle,
@@ -33,6 +34,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
+    private readonly ActionFeedbackState[] _loadedTracks;
 
     /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
     public DeckActionHandler(IAudioPlaybackEngine engine)
@@ -44,6 +46,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     public DeckActionHandler(IMultiDeckPlaybackEngine engine)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
     }
 
     /// <inheritdoc />
@@ -66,7 +69,8 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 // analyzed BPM via Value (0 = unknown) so the deck can derive a beat-grid overlay.
                 RaiseFeedback(
                     PerformanceActionKind.DeckLoadTrack, slot,
-                    new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: action.Value, Argument: action.Argument));
+                    _loadedTracks[slot] = new ActionFeedbackState(
+                        IsActive: true, IsAvailable: true, Value: action.Value, Argument: action.Argument));
                 break;
             case PerformanceActionKind.DeckSetLoop:
                 SetLoop(slot, action);
@@ -98,6 +102,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckBpm:
                 _engine.SetDeckBpm(slot, action.Value);
+                RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+                RaiseBpmFeedback(slot);
+                break;
+            case PerformanceActionKind.DeckBpmNudge:
+                // Relative delta in BPM (+0.1 / -0.1 from nudge buttons). The engine's SetDeckBpm
+                // clamps to the ±8% pitch range, so no explicit clamp is needed here.
+                _engine.SetDeckBpm(slot, _engine.DeckBpm(slot) + action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
                 break;
@@ -195,6 +206,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         return kind switch
         {
             PerformanceActionKind.DeckPlayPause => ActiveFeedback(_engine.IsPlaying(slot)),
+            PerformanceActionKind.DeckLoadTrack => _loadedTracks[slot],
             PerformanceActionKind.DeckSeek => ValueFeedback(_engine.Position(slot)),
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
             PerformanceActionKind.DeckBpm => BpmFeedback(slot),

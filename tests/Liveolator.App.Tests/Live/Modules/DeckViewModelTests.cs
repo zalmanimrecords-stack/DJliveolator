@@ -412,6 +412,26 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public void Constructor_RestoresTrackFromExistingLoadFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(
+            PerformanceActionKind.DeckLoadTrack,
+            1,
+            new ActionFeedbackState(
+                IsActive: true,
+                IsAvailable: true,
+                Value: 126,
+                Argument: @"C:\music\Restored Track.mp3"));
+
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        Assert.Equal("Restored Track", vm.Title);
+        Assert.Equal("126.0 BPM", vm.Meta);
+        Assert.True(vm.HasTrackMeta);
+    }
+
+    [Fact]
     public void BpmFeedback_AfterSync_UpdatesTheDisplayedTempo()
     {
         var dispatcher = new FakeDispatcher();
@@ -497,5 +517,116 @@ public sealed class DeckViewModelTests
         }
         vm.PropertyChanged += Handler;
         return tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    // --- BpmFaderValue ---
+
+    [Fact]
+    public void BpmFaderValue_ReturnsCentre_WhenNoTrackLoaded()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        // MinimumBpm == MaximumBpm == 0 → degenerate range → safe centre
+        Assert.Equal(0.5, vm.BpmFaderValue, precision: 6);
+    }
+
+    [Fact]
+    public void BpmFaderValue_NormalizesCurrentBpmInRange()
+    {
+        var dispatcher = new FakeDispatcher();
+        // Simulate feedback: BPM = 120, range = 110.4..129.6
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckBpm, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 120.0,
+                Argument: "110.4|129.6"));
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // 120 is the midpoint of 110.4..129.6 → fader ≈ 0.5
+        Assert.Equal(0.5, vm.BpmFaderValue, precision: 3);
+    }
+
+    [Fact]
+    public void BpmFaderValue_Setter_DispatchesDeckBpm_WithDenormalizedValue()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckBpm, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 120.0,
+                Argument: "110.0|130.0"));
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.Dispatched.Clear();
+
+        vm.BpmFaderValue = 1.0; // full right = MaximumBpm = 130
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckBpm, action.Kind);
+        Assert.Equal(130.0, action.Value, precision: 3);
+    }
+
+    [Fact]
+    public void BpmFaderValue_RaisesPropertyChanged_WhenBpmChangesViaFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckBpm, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 120.0,
+                Argument: "110.0|130.0"));
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        var raised = false;
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.BpmFaderValue)) raised = true; };
+
+        // Simulate engine feedback: BPM changed
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 125.0,
+                Argument: "110.0|130.0"));
+
+        Assert.True(raised);
+    }
+
+    // --- NudgeLeft / NudgeRight ---
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task NudgeLeft_EmitsDeckBpmNudge_WithNegativeDelta(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot, dispatcher);
+
+        await vm.NudgeLeftCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckBpmNudge, action.Kind);
+        Assert.Equal(ActionInputMode.Relative, action.InputMode);
+        Assert.True(action.Value < 0, "nudge left should carry a negative delta");
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task NudgeRight_EmitsDeckBpmNudge_WithPositiveDelta(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot, dispatcher);
+
+        await vm.NudgeRightCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckBpmNudge, action.Kind);
+        Assert.Equal(ActionInputMode.Relative, action.InputMode);
+        Assert.True(action.Value > 0, "nudge right should carry a positive delta");
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public async Task NudgeLeft_And_NudgeRight_UseSymmetricStep()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        await vm.NudgeLeftCommand.Execute().ToTask();
+        await vm.NudgeRightCommand.Execute().ToTask();
+
+        double left = dispatcher.Dispatched[0].Value;
+        double right = dispatcher.Dispatched[1].Value;
+        Assert.Equal(-left, right, precision: 6);
     }
 }

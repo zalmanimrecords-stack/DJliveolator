@@ -42,6 +42,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Hot-cue pad count shown on the deck (the mock's 1·2·3·4 row).</summary>
     private const int HotCueCount = 4;
 
+    /// <summary>BPM step per nudge button press (±0.1 BPM — fine enough for manual beat-sync).</summary>
+    private const double NudgeBpmStep = 0.1;
+
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IWaveformProvider? _waveformProvider;
     private readonly Func<string, DeckTrackInfo?>? _trackInfo;
@@ -104,6 +107,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         SyncCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: slot)),
             canEmit);
+
+        // Nudge buttons: ±0.1 BPM relative delta via DeckBpmNudge — manual beat-sync fine-tuning.
+        // Emitting Relative mode lets the controller-mapping layer use the same action from a jog wheel.
+        NudgeLeftCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: -NudgeBpmStep, Slot: slot)),
+            canEmit);
+        NudgeRightCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: +NudgeBpmStep, Slot: slot)),
+            canEmit);
         // Click-to-seek: the strip computes the clicked 0..1 fraction and passes it here; we emit an
         // absolute DeckSeek for this slot. The fraction is clamped at the seam (defence against a bad value).
         SeekCommand = ReactiveCommand.Create<double>(fraction =>
@@ -142,6 +156,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckBpm, slot) is { } bpmFeedback)
             ApplyBpmFeedback(bpmFeedback);
+
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot)
+            is { IsAvailable: true, Argument: { Length: > 0 } trackPath } loadedTrack)
+        {
+            OnTrackLoaded(trackPath, loadedTrack.Value);
+            ActionFeedbackState firstBeat =
+                _dispatcher.GetFeedback(PerformanceActionKind.DeckSetFirstBeat, slot);
+            if (firstBeat.IsAvailable)
+                _firstBeatSeconds = firstBeat.Value;
+        }
 
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged += OnFeedback;
@@ -255,6 +279,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 : value;
             decimal previous = _bpm;
             this.RaiseAndSetIfChanged(ref _bpm, clamped);
+            if (_bpm != previous)
+                this.RaisePropertyChanged(nameof(BpmFaderValue));
             if (!_applyingBpmFeedback && _isBpmEnabled && clamped != previous)
             {
                 _dispatcher?.Dispatch(new PerformanceAction(
@@ -263,6 +289,28 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     Value: decimal.ToDouble(clamped),
                     Slot: _slot));
             }
+        }
+    }
+
+    /// <summary>
+    /// BPM expressed as a 0..1 fader position (0 = MinimumBpm, 1 = MaximumBpm).
+    /// Used by the horizontal <c>Fader</c> control; writing it back dispatches a
+    /// <see cref="PerformanceActionKind.DeckBpm"/> action via the <see cref="Bpm"/> setter.
+    /// Returns 0.5 (centre) when no track is loaded or the range is degenerate.
+    /// </summary>
+    public double BpmFaderValue
+    {
+        get
+        {
+            decimal range = _maximumBpm - _minimumBpm;
+            if (range <= 0) return 0.5;
+            return (double)((_bpm - _minimumBpm) / range);
+        }
+        set
+        {
+            decimal range = _maximumBpm - _minimumBpm;
+            if (range <= 0) return;
+            Bpm = _minimumBpm + (decimal)Math.Clamp(value, 0.0, 1.0) * range;
         }
     }
 
@@ -328,6 +376,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+    /// <summary>Nudges the deck BPM down by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
+    public ReactiveCommand<Unit, Unit> NudgeLeftCommand { get; }
+    /// <summary>Nudges the deck BPM up by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
+    public ReactiveCommand<Unit, Unit> NudgeRightCommand { get; }
 
     /// <summary>Click-to-seek: invoked by the waveform strip with the clicked 0..1 fraction.</summary>
     public ReactiveCommand<double, Unit> SeekCommand { get; }
@@ -442,6 +494,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         finally
         {
             _applyingBpmFeedback = false;
+            // Min/Max changed inside feedback; notify the fader so it repositions its thumb.
+            this.RaisePropertyChanged(nameof(BpmFaderValue));
         }
     }
 

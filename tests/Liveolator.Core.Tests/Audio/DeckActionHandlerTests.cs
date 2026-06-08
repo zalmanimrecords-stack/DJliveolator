@@ -472,6 +472,27 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
+    public void LoadTrack_RemainsAvailableThroughFeedback_ForLateUiSubscribers()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack,
+            ActionInputMode.Absolute,
+            Value: 128.0,
+            Argument: @"C:\song.flac",
+            Slot: 1));
+
+        ActionFeedbackState feedback =
+            handler.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot: 1);
+
+        Assert.True(feedback.IsAvailable);
+        Assert.Equal(@"C:\song.flac", feedback.Argument);
+        Assert.Equal(128.0, feedback.Value, precision: 3);
+        Assert.False(handler.GetFeedback(
+            PerformanceActionKind.DeckLoadTrack, slot: 0).IsAvailable);
+    }
+
+    [Fact]
     public void HotCue_IsInHandledKinds()
     {
         var handler = new DeckActionHandler(new FakeMultiDeckEngine());
@@ -579,5 +600,102 @@ public class DeckActionHandlerTests
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: 0.347, Slot: 1));
 
         Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    // --- DeckBpmNudge ---
+
+    [Fact]
+    public void DeckBpmNudge_IsInHandledKinds()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+        Assert.Contains(PerformanceActionKind.DeckBpmNudge, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void DeckBpmNudge_PositiveDelta_IncreasesDecBpmByDelta()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0); // range = 110.4..129.6
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: 0.1, Slot: 0));
+
+        Assert.Equal(120.1, engine.DeckBpm(0), precision: 6);
+    }
+
+    [Fact]
+    public void DeckBpmNudge_NegativeDelta_ReducesDeckBpmByDelta()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0);
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: -0.1, Slot: 0));
+
+        Assert.Equal(119.9, engine.DeckBpm(0), precision: 6);
+    }
+
+    [Fact]
+    public void DeckBpmNudge_ClampsAtMaximum_WhenDeltaWouldExceedRange()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0); // max = 129.6
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: 50.0, Slot: 0));
+
+        // engine.SetDeckBpm clamps internally to MaximumDeckBpm
+        Assert.Equal(engine.MaximumDeckBpm(0), engine.DeckBpm(0), precision: 6);
+    }
+
+    [Fact]
+    public void DeckBpmNudge_ClampsAtMinimum_WhenDeltaWouldGoBelowRange()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0); // min = 110.4
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: -50.0, Slot: 0));
+
+        Assert.Equal(engine.MinimumDeckBpm(0), engine.DeckBpm(0), precision: 6);
+    }
+
+    [Fact]
+    public void DeckBpmNudge_IsPerSlot_DoesNotAffectOtherDeck()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: 1.0, Slot: 0));
+
+        Assert.Equal(121.0, engine.DeckBpm(0), precision: 6);
+        Assert.Equal(128.0, engine.DeckBpm(1), precision: 6); // untouched
+    }
+
+    [Fact]
+    public void DeckBpmNudge_RaisesBpmFeedback_WithUpdatedValue()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(0, 120.0);
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackChanged? raised = null;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckBpm && e.Slot == 0)
+                raised = e;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpmNudge, ActionInputMode.Relative, Value: 0.5, Slot: 0));
+
+        Assert.NotNull(raised);
+        Assert.Equal(120.5, raised!.State.Value, precision: 6);
     }
 }

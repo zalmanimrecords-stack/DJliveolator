@@ -74,23 +74,31 @@
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 
+      <!-- BPM: horizontal fader (0..1 normalised via BpmFaderValue) + nudge buttons for manual beat-sync -->
       <Border Classes="hardware-well" Padding="10,8">
-        <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
-          <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
-          <NumericUpDown Grid.Column="1"
-                         Margin="12,0"
-                         Minimum="{Binding MinimumBpm}"
-                         Maximum="{Binding MaximumBpm}"
-                         Increment="0.1"
-                         FormatString="0.0"
-                         Value="{Binding Bpm}"
-                         IsEnabled="{Binding IsBpmEnabled}"
-                         HorizontalContentAlignment="Center" />
-          <TextBlock Grid.Column="2"
-                     Classes="tick"
-                     VerticalAlignment="Center"
-                     Text="±8%" />
-        </Grid>
+        <StackPanel Spacing="6">
+          <!-- row 1: label · current value · range hint -->
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
+            <TextBlock Grid.Column="1" Classes="mono"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
+                       IsEnabled="{Binding IsBpmEnabled}" />
+            <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
+          </Grid>
+          <!-- row 2: nudge left · slider · nudge right -->
+          <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
+            <Button Grid.Column="0" Classes="key" Content="◄" Width="34" Height="26"
+                    Command="{Binding NudgeLeftCommand}"
+                    ToolTip.Tip="Nudge BPM −0.1 (manual beat-sync)" />
+            <controls:Fader Grid.Column="1" Margin="6,0" Height="26"
+                            Orientation="Horizontal"
+                            Value="{Binding BpmFaderValue}" />
+            <Button Grid.Column="2" Classes="key" Content="►" Width="34" Height="26"
+                    Command="{Binding NudgeRightCommand}"
+                    ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
+          </Grid>
+        </StackPanel>
       </Border>
 
       <!-- EQ / filter / pitch knobs -->

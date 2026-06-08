@@ -45,6 +45,9 @@ public enum PerformanceActionKind
     DeckSeek,
     DeckPitch,
     DeckBpm,
+    /// <summary>Relative BPM nudge: Value is the signed delta in BPM (e.g. +0.1 or -0.1).
+    /// Clamped to the engine's ±8% range. Use for manual beat-sync fine-tuning.</summary>
+    DeckBpmNudge,
     DeckSyncOnce,
     DeckQuantizeToggle,
     DeckSetFirstBeat,
