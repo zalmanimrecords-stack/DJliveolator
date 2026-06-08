@@ -15,16 +15,17 @@ namespace Liveolator.Core.Mapping;
 /// Pure orchestration over Core seams (no UI, no native), so it unit-tests with fakes. Opening is
 /// best-effort and tolerant: a missing/unmatched device, an absent native library, or a load error
 /// leaves the session idle (logged) rather than crashing startup — mirroring the realtime audio
-/// engine's graceful fallback. With no saved profile the pipeline still runs on an empty profile, so
-/// the activity cue flashes on every message even before any mapping is authored (MIDI learn is a
-/// separate increment). Device changes apply on the next start (the App composes from saved settings).
+/// engine's graceful fallback. With no saved profile, a matching shipped default is selected before
+/// falling back to an empty profile, so known controllers work immediately while unknown devices still
+/// report activity and remain ready for MIDI learn. Device changes apply whenever the session restarts.
 /// </remarks>
-public sealed class MidiControlSession : IMidiControlStatus, IDisposable
+public sealed class MidiControlSession : IMidiControlSession, IDisposable
 {
     private readonly IMidiDeviceProvider _provider;
     private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly ILiveProfileStore _profileStore;
     private readonly IMidiLearnSession _learn;
+    private readonly IReadOnlyList<ControllerMappingProfile> _defaultProfiles;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<MidiControlSession> _logger;
 
@@ -40,12 +41,15 @@ public sealed class MidiControlSession : IMidiControlStatus, IDisposable
         IPerformanceActionDispatcher dispatcher,
         ILiveProfileStore profileStore,
         IMidiLearnSession learn,
+        IEnumerable<ControllerMappingProfile> defaultProfiles,
         ILoggerFactory loggerFactory)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
         _learn = learn ?? throw new ArgumentNullException(nameof(learn));
+        _defaultProfiles = defaultProfiles?.ToList()
+            ?? throw new ArgumentNullException(nameof(defaultProfiles));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = loggerFactory.CreateLogger<MidiControlSession>();
     }
@@ -95,6 +99,7 @@ public sealed class MidiControlSession : IMidiControlStatus, IDisposable
 
             ControllerMappingProfile profile =
                 await _profileStore.LoadMappingProfileAsync(input.DeviceName, cancellationToken).ConfigureAwait(false)
+                ?? MidiProfileSelector.Select(input.DeviceName, _defaultProfiles)
                 ?? ControllerMappingProfile.Empty(input.DeviceName, input.DeviceName);
 
             var mapper = new ControllerMapper(profile, _dispatcher, _loggerFactory.CreateLogger<ControllerMapper>());

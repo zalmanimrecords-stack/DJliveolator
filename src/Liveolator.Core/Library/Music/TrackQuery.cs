@@ -17,7 +17,8 @@ public sealed record TrackFilter(
     string? Camelot = null,
     int? Year = null,
     string? FileType = null,
-    MediaAnalysisStatus? Status = null);
+    MediaAnalysisStatus? Status = null,
+    TimeSpan? MinDuration = null);
 
 /// <summary>
 /// Pure, reusable filtering of a catalogued track set — free text (title / artist / file name),
@@ -92,6 +93,8 @@ public static class TrackQuery
             query = query.Where(t => string.Equals(t.FileType, filter.FileType, StringComparison.OrdinalIgnoreCase));
         if (filter.Status is { } status)
             query = query.Where(t => t.Status == status);
+        if (filter.MinDuration is { } minDuration)
+            query = query.Where(t => t.Duration is null || t.Duration >= minDuration);
 
         return query
             .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)

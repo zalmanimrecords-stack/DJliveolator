@@ -12,7 +12,12 @@ public class TrackQueryTests
     private static readonly DateTime T = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private static MusicTrack Track(
-        string path, double? bpm = null, string? camelot = null, string? title = null, string? artist = null)
+        string path,
+        double? bpm = null,
+        string? camelot = null,
+        string? title = null,
+        string? artist = null,
+        TimeSpan? duration = null)
     {
         TrackMetadata? metadata = title is null && artist is null
             ? null
@@ -22,7 +27,7 @@ public class TrackQueryTests
             new ScannedFile(path, 1000, T),
             bpm is null ? null : new BpmResult(bpm.Value, 0.9),
             camelot is null ? null : new MusicalKey(0, KeyMode.Major, camelot, 0.9),
-            TimeSpan.FromMinutes(4),
+            duration ?? TimeSpan.FromMinutes(4),
             TrackCues.None,
             MediaAnalysisStatus.Ok,
             null,
@@ -112,6 +117,27 @@ public class TrackQueryTests
         IReadOnlyList<MusicTrack> result = TrackQuery.Search(tracks, text: "strobe", minBpm: 120, camelot: "8B");
 
         Assert.Equal("Deep Strobe", Assert.Single(result).Title);
+    }
+
+    [Fact]
+    public void Apply_MinDuration_HidesShortTracksButKeepsBoundaryAndUnknownDuration()
+    {
+        MusicTrack unknown = Track("unknown.mp3") with { Duration = null };
+        var tracks = new[]
+        {
+            Track("short.mp3", duration: TimeSpan.FromSeconds(59)),
+            Track("boundary.mp3", duration: TimeSpan.FromMinutes(1)),
+            Track("long.mp3", duration: TimeSpan.FromMinutes(4)),
+            unknown,
+        };
+
+        IReadOnlyList<MusicTrack> result = TrackQuery.Apply(
+            tracks,
+            new TrackFilter(MinDuration: TimeSpan.FromMinutes(1)));
+
+        Assert.Equal(
+            new[] { "boundary.mp3", "long.mp3", "unknown.mp3" },
+            result.Select(t => Path.GetFileName(t.File.Path)));
     }
 
     [Fact]

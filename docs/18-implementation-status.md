@@ -126,15 +126,16 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   `CmdStudio2AProfileTests` 11 + `MidiInputPipelineTests` 7; App `MidiInputWiringTests` 5 — graceful
   degradation with a fake provider). **Real-hardware behaviour is a documented MANUAL checklist**
   (`Liveolator.Midi/CLAUDE.md`), not automatable in CI.
-- **App-wired (`ServiceConfig.WireMidiInput`):** the composition root opens the SETTINGS-chosen
-  controller (`AppSettings.Midi`) via the shared `RtMidiDeviceProvider` and registers the resulting
-  `MidiInputPipeline` so DI disposes it (closing the device) at shutdown. **Degrades gracefully**
+- **App-wired (`MidiControlSession`):** the composition root opens the SETTINGS-chosen controller
+  (`AppSettings.Midi`) via the shared `RtMidiDeviceProvider` and registers the live session so DI
+  disposes it (closing the device) at shutdown. When no persisted mapping exists, a known controller
+  receives its matching shipped default profile instead of an empty profile; Settings Save also
+  reconnects the selected input/output immediately without requiring a restart. **Degrades gracefully**
   (global standards #16/#26): no controller selected, no matching device, or a native open failure all
   log + leave the app running WITHOUT MIDI — never throw at startup. The Settings tab reuses the same
   provider instance.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
-  `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists — wiring it in is next); runtime
-  re-open on a Settings device change (currently applied at startup only); the Push 1 profile + SysEx
+  `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
   chart (until then the defaults are learn-overridable best-effort).
 
@@ -699,7 +700,9 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
   filter/sort logic funnels through one `ApplyFilter` in `LibrariesViewModel` over the **pure Core**
   `TrackQuery.Apply` + a new pure `TrackSort` (`TrackSortKey`; missing values sort last either
   direction, Title is the stable tie-break, `Camelot.SortIndex` orders the key column around the
-  wheel). Facets rebuild from the catalog on scan/restore and drop stale selections. Tested: Core
+  wheel). The Libraries view also applies a one-minute minimum duration, hiding known-short files
+  while retaining tracks whose duration could not be determined. Facets rebuild from the catalog on
+  scan/restore and drop stale selections. Tested: Core
   `TrackSortTests` (7), App `LibrariesViewModelFilterSortTests` (8).
 - **Per-track re-analysis and manual corrections:** every track context menu can force a fresh local
   BPM/key analysis and optionally cross-check GetSongBPM/AcoustID for BPM/key/genre. The App activates

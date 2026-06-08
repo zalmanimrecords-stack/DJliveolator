@@ -22,6 +22,8 @@ namespace Liveolator.App.Features.Libraries;
 /// </summary>
 public sealed class LibrariesViewModel : ViewModelBase
 {
+    private static readonly TimeSpan MinimumVisibleDuration = TimeSpan.FromMinutes(1);
+
     private readonly MusicLibrary _library;
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IBeatClock? _beatClock;
@@ -584,7 +586,8 @@ public sealed class LibrariesViewModel : ViewModelBase
             Genre: SelectedGenre,
             Year: SelectedYear,
             FileType: SelectedFileType,
-            Status: SelectedStatus);
+            Status: SelectedStatus,
+            MinDuration: MinimumVisibleDuration);
 
         IReadOnlyList<MusicTrack> filtered = TrackQuery.Apply(rowByTrack.Keys, filter, TrackQuery.MaxResults);
         IReadOnlyList<MusicTrack> ordered = TrackSort.Apply(filtered, SortKey, SortDescending);

@@ -48,6 +48,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly ISettingsStore _store;
     private readonly AudioReinitCoordinator? _audioReinit;
     private readonly ICaptureSourceController? _captureController;
+    private readonly IMidiControlSession? _midiControlSession;
     private readonly IExtensionCatalog? _extensions;
     private readonly IExtensionInstaller? _extensionInstaller;
     private readonly IUiThemeManager? _themes;
@@ -75,6 +76,7 @@ public sealed class SettingsViewModel : ViewModelBase
         ISettingsStore store,
         AudioReinitCoordinator? audioReinit = null,
         ICaptureSourceController? captureController = null,
+        IMidiControlSession? midiControlSession = null,
         IExtensionCatalog? extensions = null,
         IExtensionInstaller? extensionInstaller = null,
         IUiThemeManager? themes = null,
@@ -87,6 +89,7 @@ public sealed class SettingsViewModel : ViewModelBase
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _audioReinit = audioReinit;
         _captureController = captureController;
+        _midiControlSession = midiControlSession;
         _extensions = extensions;
         _extensionInstaller = extensionInstaller;
         _themes = themes;
@@ -294,7 +297,23 @@ public sealed class SettingsViewModel : ViewModelBase
         // Apply the (normalized) zoom + nudge step to the live decks so the change takes effect without a restart.
         _decks?.SetWaveformZoom(_loadedSettings.Visuals.WaveformZoomSeconds);
         _decks?.SetNudgeSeconds(_loadedSettings.Visuals.NudgeSeconds);
-        Status = ApplyToRunningEngine(settings.Audio.Normalized());
+        string engineStatus = ApplyToRunningEngine(settings.Audio.Normalized());
+        string midiStatus = await ApplyMidiAsync(_loadedSettings.Midi, cancellationToken).ConfigureAwait(false);
+        Status = string.IsNullOrEmpty(midiStatus) ? engineStatus : $"{engineStatus} {midiStatus}";
+    }
+
+    private async Task<string> ApplyMidiAsync(MidiSettings settings, CancellationToken cancellationToken)
+    {
+        if (_midiControlSession is null)
+            return string.Empty;
+
+        await _midiControlSession.StartAsync(settings, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(settings.ControllerInputName))
+            return "MIDI controller disconnected.";
+
+        return _midiControlSession.IsInputConnected
+            ? "MIDI controller connected."
+            : "MIDI controller could not be opened.";
     }
 
     // Applies the saved audio choice to the live engine (when present) and reports a performer-facing

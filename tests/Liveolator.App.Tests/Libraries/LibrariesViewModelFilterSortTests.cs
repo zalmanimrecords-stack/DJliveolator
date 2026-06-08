@@ -49,6 +49,7 @@ public sealed class LibrariesViewModelFilterSortTests
             status: MediaAnalysisStatus.PartiallyAnalyzed),
         Track("/music/d.flac", "Justice", "Electronic", null, null, 2007, durationSeconds: 180,
             status: MediaAnalysisStatus.Failed),
+        Track("/music/short.mp3", "One Shot", "Sample", 128, "2A", 2026, durationSeconds: 59),
     };
 
     private static async Task<LibrariesViewModel> SeededViewModelAsync()
@@ -73,6 +74,7 @@ public sealed class LibrariesViewModelFilterSortTests
         // The "(All)" sentinels lead each list so a fresh tab shows everything.
         Assert.Null(vm.SelectedArtist);
         Assert.Equal(4, vm.Tracks.Count);
+        Assert.DoesNotContain(vm.Tracks, row => row.Track.File.Path.EndsWith("short.mp3"));
     }
 
     [Fact]

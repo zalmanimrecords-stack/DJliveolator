@@ -1,6 +1,7 @@
 using Liveolator.Core.Actions;
 using Liveolator.Core.Autopilot;
 using Liveolator.Core.Mapping;
+using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
@@ -22,8 +23,15 @@ public sealed class MidiControlSessionTests
     private readonly FakeLiveProfileStore _store = new();
     private readonly FakeMidiDeviceProvider _provider = new();
 
-    private MidiControlSession NewSession()
-        => new(_provider, _dispatcher, _store, new MidiLearnSession(), NullLoggerFactory.Instance);
+    private MidiControlSession NewSession(
+        IEnumerable<ControllerMappingProfile>? defaultProfiles = null)
+        => new(
+            _provider,
+            _dispatcher,
+            _store,
+            new MidiLearnSession(),
+            defaultProfiles ?? Array.Empty<ControllerMappingProfile>(),
+            NullLoggerFactory.Instance);
 
     [Fact]
     public async Task StartAsync_OpensAndConnectsTheSelectedController()
@@ -88,6 +96,20 @@ public sealed class MidiControlSessionTests
         Assert.Equal(1, activity);
         Assert.Empty(_dispatcher.Dispatched);
         Assert.Empty(session.ActiveProfile!.Bindings);
+    }
+
+    [Fact]
+    public async Task NoProfileOnDisk_KnownDevice_UsesMatchingDefaultProfile()
+    {
+        _provider.InputToReturn = new FakeMidiInput("BEHRINGER CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A" });
+        _provider.LastInput!.Emit(new MidiMessage(MidiMessageType.NoteOn, 0, 59, 127));
+
+        PerformanceAction action = Assert.Single(_dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPlayPause, action.Kind);
+        Assert.Equal(CmdStudio2AProfile.ProfileName, session.ActiveProfile!.Name);
     }
 
     [Fact]

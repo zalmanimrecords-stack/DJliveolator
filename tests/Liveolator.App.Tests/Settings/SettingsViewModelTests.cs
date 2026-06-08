@@ -93,16 +93,41 @@ public sealed class SettingsViewModelTests
         }
     }
 
+    private sealed class FakeMidiControlSession : IMidiControlSession
+    {
+        public MidiSettings? LastStartedWith { get; private set; }
+        public bool IsInputConnected { get; set; } = true;
+        public string? InputDeviceName { get; set; } = "CMD STUDIO 2A";
+        public bool IsOutputConnected { get; set; }
+        public string? OutputDeviceName { get; set; }
+        public event EventHandler? ActivityDetected
+        {
+            add { }
+            remove { }
+        }
+
+        public Task StartAsync(MidiSettings settings, CancellationToken cancellationToken = default)
+        {
+            LastStartedWith = settings;
+            return Task.CompletedTask;
+        }
+
+        public void Stop()
+        {
+        }
+    }
+
     private static SettingsViewModel NewVm(
         FakeOutputCatalog? outputs = null,
         FakeCaptureCatalog? captures = null,
         FakeMidiProvider? midi = null,
         FakeSettingsStore? store = null,
         AudioReinitCoordinator? reinit = null,
-        ICaptureSourceController? captureController = null)
+        ICaptureSourceController? captureController = null,
+        IMidiControlSession? midiControlSession = null)
         => new(outputs ?? new FakeOutputCatalog(), captures ?? new FakeCaptureCatalog(),
                midi ?? new FakeMidiProvider(), store ?? new FakeSettingsStore(),
-               reinit, captureController);
+               reinit, captureController, midiControlSession: midiControlSession);
 
     [Fact]
     public void Construct_PopulatesDeviceListsWithSentinels()
@@ -205,6 +230,21 @@ public sealed class SettingsViewModelTests
         Assert.Equal(100, store.Saved.Audio.BufferMilliseconds);
         Assert.Equal("CMD STUDIO 2A", store.Saved.Midi.ControllerInputName);
         Assert.Equal("Ableton Push", store.Saved.Midi.FeedbackOutputName);
+    }
+
+    [Fact]
+    public async Task Save_ReconnectsMidiSessionWithSelectedDevices()
+    {
+        var session = new FakeMidiControlSession();
+        var vm = NewVm(midiControlSession: session);
+        vm.SelectedMidiInput = "CMD STUDIO 2A";
+        vm.SelectedMidiOutput = "Ableton Push";
+
+        await vm.SaveAsync();
+
+        Assert.Equal("CMD STUDIO 2A", session.LastStartedWith!.ControllerInputName);
+        Assert.Equal("Ableton Push", session.LastStartedWith.FeedbackOutputName);
+        Assert.Contains("MIDI controller connected", vm.Status);
     }
 
     [Fact]

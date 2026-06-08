@@ -314,7 +314,12 @@ public static class ServiceConfig
         // TryOpenMidiPipeline for the controller-profile-capture increment (doc 22 step A8).
         var midiProvider = midiProviderOverride ?? new RtMidiDeviceProvider();
         var midiSession = new MidiControlSession(
-            midiProvider, dispatcher, liveProfileStore, new MidiLearnSession(), NullLoggerFactory.Instance);
+            midiProvider,
+            dispatcher,
+            liveProfileStore,
+            new MidiLearnSession(),
+            AvailableMidiProfiles(),
+            NullLoggerFactory.Instance);
         try
         {
             midiSession.StartAsync(appSettings.Midi).GetAwaiter().GetResult();
@@ -324,6 +329,7 @@ public static class ServiceConfig
             System.Diagnostics.Trace.TraceWarning($"MIDI control session could not start: {ex.Message}.");
         }
         services.AddSingleton(midiSession);
+        services.AddSingleton<IMidiControlSession>(midiSession);
         services.AddSingleton<IMidiControlStatus>(midiSession);
 
         // Shared decks + crossfader (doc 11/12): ONE PerformanceDeckSet drives both the Live tab and the
@@ -425,6 +431,7 @@ public static class ServiceConfig
                     new SwitchableAudioSource(),
                     NullLogger<CaptureSourceController>.Instance)
                 : null,
+            sp.GetRequiredService<IMidiControlSession>(),
             sp.GetRequiredService<IExtensionCatalog>(),
             sp.GetRequiredService<IExtensionInstaller>(),
             sp.GetRequiredService<IUiThemeManager>(),
