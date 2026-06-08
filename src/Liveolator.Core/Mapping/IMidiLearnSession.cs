@@ -16,7 +16,9 @@ public interface IMidiLearnSession
         PerformanceActionKind action,
         int slot = 0,
         string? argument = null,
-        ActionInputMode? preferredInputMode = null);
+        ActionInputMode? preferredInputMode = null,
+        double relativeTicksPerRevolution = 1.0,
+        bool invert = false);
 
     /// <summary>Feeds an inbound message; when armed, the first one is captured into a binding.</summary>
     void Observe(MidiMessage message);

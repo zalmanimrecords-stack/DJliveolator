@@ -1,6 +1,7 @@
 using Liveolator.Core.Actions;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Mapping.Profiles;
 using Microsoft.Extensions.Logging;
 
 namespace Liveolator.Core.Mapping;
@@ -109,6 +110,13 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
                     : null)
                 ?? ControllerMappingProfile.Empty(input.DeviceName, input.DeviceName);
 
+            ControllerMappingProfile upgradedProfile = CmdStudio2AProfile.UpgradeLegacyJogBindings(profile);
+            if (!ReferenceEquals(upgradedProfile, profile))
+            {
+                profile = upgradedProfile;
+                await _profileStore.SaveMappingProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+            }
+
             var mapper = new ControllerMapper(profile, _dispatcher, _loggerFactory.CreateLogger<ControllerMapper>());
             var router = new MidiControllerRouter(input, mapper, _learn, _loggerFactory.CreateLogger<MidiControllerRouter>());
             var monitor = new MidiActivityMonitor(input);
@@ -161,12 +169,14 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
         PerformanceActionKind action,
         int slot = 0,
         string? argument = null,
-        ActionInputMode? preferredInputMode = null)
+        ActionInputMode? preferredInputMode = null,
+        double relativeTicksPerRevolution = 1.0,
+        bool invert = false)
     {
         if (!IsInputConnected)
             throw new InvalidOperationException("A MIDI input must be connected before learning a control.");
 
-        _learn.Begin(action, slot, argument, preferredInputMode);
+        _learn.Begin(action, slot, argument, preferredInputMode, relativeTicksPerRevolution, invert);
     }
 
     public void CancelLearn() => _learn.Cancel();

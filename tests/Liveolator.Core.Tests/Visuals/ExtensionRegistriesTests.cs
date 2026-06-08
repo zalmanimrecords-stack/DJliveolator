@@ -31,6 +31,8 @@ public sealed class ExtensionRegistriesTests
             new Dictionary<string, string>
             {
                 ["AccentColor"] = "#3366FF",
+                ["AccentLightColor"] = "#6699FF",
+                ["WaveformColor"] = "#FFAA22",
                 ["PanelRadius"] = "16",
                 ["UiFontFamily"] = "Inter",
             });

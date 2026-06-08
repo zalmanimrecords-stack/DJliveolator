@@ -1,5 +1,6 @@
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio.Sync;
+using Liveolator.Core.Settings;
 
 namespace Liveolator.Core.Audio;
 
@@ -22,6 +23,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckPlayPause,
         PerformanceActionKind.TransportStop,
         PerformanceActionKind.DeckSeek,
+        PerformanceActionKind.DeckJog,
         PerformanceActionKind.DeckPitch,
         PerformanceActionKind.DeckBpm,
         PerformanceActionKind.DeckBpmNudge,
@@ -34,18 +36,20 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
+    private readonly JogWheelSettings _jogSettings;
     private readonly ActionFeedbackState[] _loadedTracks;
 
     /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
     public DeckActionHandler(IAudioPlaybackEngine engine)
-        : this(new SingleDeckEngineAdapter(engine ?? throw new ArgumentNullException(nameof(engine))))
+        : this(new SingleDeckEngineAdapter(engine ?? throw new ArgumentNullException(nameof(engine))), null)
     {
     }
 
     /// <summary>Drives a two-deck engine directly, addressing decks by action slot.</summary>
-    public DeckActionHandler(IMultiDeckPlaybackEngine engine)
+    public DeckActionHandler(IMultiDeckPlaybackEngine engine, JogWheelSettings? jogSettings = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _jogSettings = (jogSettings ?? JogWheelSettings.Default).Normalized();
         _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
     }
 
@@ -93,6 +97,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckSeek:
                 _engine.Seek(slot, action.Value, action.InputMode == ActionInputMode.Relative);
+                RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+                break;
+            case PerformanceActionKind.DeckJog:
+                double secondsPerRevolution = _engine.IsPlaying(slot)
+                    ? _jogSettings.PlayingSecondsPerRevolution
+                    : _jogSettings.PausedSecondsPerRevolution;
+                _engine.Jog(slot, action.Value * secondsPerRevolution);
                 RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
                 break;
             case PerformanceActionKind.DeckPitch:

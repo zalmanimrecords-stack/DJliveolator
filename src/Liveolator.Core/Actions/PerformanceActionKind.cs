@@ -76,4 +76,10 @@ public enum PerformanceActionKind
     PlaylistMoveTrack,
     PlaylistRemoveFutureTrack,
     PlaylistSkipOnNextBar,
+
+    /// <summary>
+    /// Relative jog-wheel motion. Value is a signed fraction of one physical wheel revolution;
+    /// the deck handler converts it to a time delta using the current playing/paused sensitivity.
+    /// </summary>
+    DeckJog,
 }

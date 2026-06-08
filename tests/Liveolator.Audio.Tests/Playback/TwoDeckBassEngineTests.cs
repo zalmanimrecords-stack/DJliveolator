@@ -246,6 +246,33 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void Jog_MovesBySecondsIndependentOfTrackLength()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.LengthSeconds[100] = 300.0;
+        backend.PositionFraction[100] = 0.5;
+
+        engine.Jog(0, 1.8);
+
+        Assert.Equal(151.8 / 300.0, backend.PositionFraction[100], 6);
+    }
+
+    [Theory]
+    [InlineData(0.01, -5.0, 0.0)]
+    [InlineData(0.99, 5.0, 1.0)]
+    public void Jog_ClampsAtTrackBoundaries(double start, double deltaSeconds, double expected)
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(1, @"C:\b.wav");
+        backend.PositionFraction[100] = start;
+
+        engine.Jog(1, deltaSeconds);
+
+        Assert.Equal(expected, backend.PositionFraction[100], 6);
+    }
+
+    [Fact]
     public void Pitch_Center_IsOriginalRate_AndEndsMapToPlusMinus8Percent()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

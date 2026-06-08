@@ -22,7 +22,9 @@ public interface IMidiControlSession : IMidiControlStatus
         PerformanceActionKind action,
         int slot = 0,
         string? argument = null,
-        ActionInputMode? preferredInputMode = null);
+        ActionInputMode? preferredInputMode = null,
+        double relativeTicksPerRevolution = 1.0,
+        bool invert = false);
 
     void CancelLearn();
 

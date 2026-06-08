@@ -47,6 +47,12 @@ public interface IMultiDeckPlaybackEngine
     /// </summary>
     void Seek(int slot, double position, bool relative);
 
+    /// <summary>
+    /// Move the playhead by a signed number of seconds. Used by jog wheels so sensitivity is
+    /// independent of track length. The engine clamps the result to the loaded track.
+    /// </summary>
+    void Jog(int slot, double deltaSeconds);
+
     /// <summary>Normalized pitch position 0..1 where 0.5 = original tempo (the engine owns the % range).</summary>
     double PitchPosition(int slot);
 

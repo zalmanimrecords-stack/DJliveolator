@@ -7,6 +7,7 @@ using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
+using Liveolator.App.Theme;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
@@ -91,6 +92,7 @@ public static class ServiceConfig
             extensionValidator, extensionCatalog, appSettings.Extensions.DeveloperMode);
         var visualEffects = new VisualEffectRegistry();
         var uiThemes = new UiThemeManager();
+        BuiltInUiThemes.Register(uiThemes);
         string shaderProbeName = OperatingSystem.IsWindows()
             ? "liveolator-shader-probe.exe"
             : "liveolator-shader-probe";

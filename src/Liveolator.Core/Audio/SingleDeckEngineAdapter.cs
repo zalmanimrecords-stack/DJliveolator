@@ -53,6 +53,8 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void Seek(int slot, double position, bool relative) => EnsureSlot(slot);
 
+    public void Jog(int slot, double deltaSeconds) => EnsureSlot(slot);
+
     public double PitchPosition(int slot) { EnsureSlot(slot); return 0.5; }
 
     public void SetPitch(int slot, double value, bool relative) => EnsureSlot(slot);

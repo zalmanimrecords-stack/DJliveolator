@@ -21,6 +21,12 @@ public static class UiThemeApplier
             ["AccentColor"] = "Accent",
             ["AccentInkColor"] = "AccentInk",
             ["RedColor"] = "Red",
+            ["GreenColor"] = "Green",
+            ["AmberColor"] = "Amber",
+            ["VioletColor"] = "Violet",
+            ["MidiActiveColor"] = "MidiActive",
+            ["WaveformColor"] = "Waveform",
+            ["KickColor"] = "Kick",
         };
 
     public static void Apply(Application application, UiThemeDefinition theme)
@@ -36,6 +42,8 @@ public static class UiThemeApplier
                 application.Resources[key] = color;
                 if (BrushKeys.TryGetValue(key, out string? brushKey))
                     application.Resources[brushKey] = new SolidColorBrush(color);
+                if (key == "WaveformColor")
+                    application.Resources["WaveformAhead"] = new SolidColorBrush(color, 0.5);
             }
             else if (key.EndsWith("FontFamily", StringComparison.Ordinal))
             {

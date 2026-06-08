@@ -107,14 +107,31 @@ public class CmdStudio2AProfileTests
     }
 
     [Fact]
-    public void Default_MapsJogWheels_AsRelativeBeatNudge_PerDeck()
+    public void Default_MapsJogWheels_AsRelativeDeckJog_PerDeck()
     {
-        // Slow jog = tempo/phase nudge (doc 07); an endless jog encodes as a relative control.
         foreach (int slot in new[] { 0, 1 })
         {
-            ControllerBinding jog = SingleFor(PerformanceActionKind.BeatNudgeForward, slot);
+            ControllerBinding jog = SingleFor(PerformanceActionKind.DeckJog, slot);
             Assert.Equal(ActionInputMode.Relative, jog.InputMode);
+            Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
         }
+    }
+
+    [Fact]
+    public void UpgradeLegacyJogBindings_PreservesPhysicalControlAndTargetsDeckJog()
+    {
+        ControllerBinding legacy = new(
+            MidiMessageType.ControlChange, Channel: 0, Data1: 0x21,
+            PerformanceActionKind.BeatNudgeForward, ActionInputMode.Relative, Slot: 0);
+        var profile = new ControllerMappingProfile("saved", "CMD Studio 2A", [legacy]);
+
+        ControllerMappingProfile upgraded = CmdStudio2AProfile.UpgradeLegacyJogBindings(profile);
+
+        ControllerBinding jog = Assert.Single(upgraded.Bindings);
+        Assert.Equal(PerformanceActionKind.DeckJog, jog.Action);
+        Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
+        Assert.Equal(legacy.Channel, jog.Channel);
+        Assert.Equal(legacy.Data1, jog.Data1);
     }
 
     [Fact]

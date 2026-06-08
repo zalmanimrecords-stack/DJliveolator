@@ -16,6 +16,11 @@ namespace Liveolator.Core.Mapping;
 /// <param name="Argument">Free-form argument carried into the action (e.g. a macro name).</param>
 /// <param name="Curve">Scaling applied to absolute values.</param>
 /// <param name="Relative">Encoder encoding applied to relative values.</param>
+/// <param name="RelativeTicksPerRevolution">
+/// Number of relative encoder ticks in one physical revolution. A value of 1 preserves the raw
+/// relative step used by non-jog encoders.
+/// </param>
+/// <param name="Invert">Reverses the relative control direction.</param>
 public sealed record ControllerBinding(
     MidiMessageType TriggerType,
     int Channel,
@@ -25,4 +30,6 @@ public sealed record ControllerBinding(
     int Slot = 0,
     string? Argument = null,
     ValueCurve Curve = ValueCurve.Linear,
-    RelativeEncoding Relative = RelativeEncoding.TwosComplement);
+    RelativeEncoding Relative = RelativeEncoding.TwosComplement,
+    double RelativeTicksPerRevolution = 1.0,
+    bool Invert = false);

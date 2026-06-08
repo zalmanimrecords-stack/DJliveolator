@@ -68,6 +68,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     // --- Unused transport surface for these tests (the binding only loads/plays/stops). ---
     public double Position(int slot) => 0;
     public void Seek(int slot, double position, bool relative) { }
+    public void Jog(int slot, double deltaSeconds) { }
     public double PitchPosition(int slot) => 0.5;
     public void SetPitch(int slot, double value, bool relative) { }
     public double DeckBpm(int slot) => _baseBpm[slot];

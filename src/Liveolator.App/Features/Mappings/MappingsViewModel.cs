@@ -61,7 +61,12 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
 
         try
         {
-            _session.BeginLearn(SelectedTarget.Action, SelectedTarget.Slot);
+            _session.BeginLearn(
+                SelectedTarget.Action,
+                SelectedTarget.Slot,
+                preferredInputMode: SelectedTarget.PreferredInputMode,
+                relativeTicksPerRevolution: SelectedTarget.RelativeTicksPerRevolution,
+                invert: SelectedTarget.Invert);
             Status = $"Learning {SelectedTarget.Label}: move or press the control now.";
         }
         catch (InvalidOperationException ex)
@@ -117,12 +122,16 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Deck A: Play / Pause", PerformanceActionKind.DeckPlayPause, 0),
             new("Deck A: Cue", PerformanceActionKind.DeckCue, 0),
             new("Deck A: Sync", PerformanceActionKind.DeckSyncOnce, 0),
+            new("Deck A: Jog / track position", PerformanceActionKind.DeckJog, 0,
+                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck A: Channel fader", PerformanceActionKind.MixerChannelGain, 0),
             new("Deck A: Filter", PerformanceActionKind.MixerFilter, 0),
             new("Deck A: Headphone cue", PerformanceActionKind.MixerCueToggle, 0),
             new("Deck B: Play / Pause", PerformanceActionKind.DeckPlayPause, 1),
             new("Deck B: Cue", PerformanceActionKind.DeckCue, 1),
             new("Deck B: Sync", PerformanceActionKind.DeckSyncOnce, 1),
+            new("Deck B: Jog / track position", PerformanceActionKind.DeckJog, 1,
+                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck B: Channel fader", PerformanceActionKind.MixerChannelGain, 1),
             new("Deck B: Filter", PerformanceActionKind.MixerFilter, 1),
             new("Deck B: Headphone cue", PerformanceActionKind.MixerCueToggle, 1),

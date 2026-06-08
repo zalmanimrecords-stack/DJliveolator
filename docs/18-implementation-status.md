@@ -20,9 +20,17 @@
 
 ## Core test count
 
-Solution-wide: **1,290 passing, 0 failed, 0 skipped** across 8 test projects, measured
+Solution-wide CI baseline: **1,290 passing, 0 failed, 0 skipped** across 8 test projects, measured
 **2026-06-08** (`dotnet test Liveolator.sln --configuration Release --no-restore`): Core 660,
-App 235, Audio 166, Media 83, Visuals 71, Integration 25, MIDI 27, Online 23. The growth over
+App 235, Audio 166, Media 83, Visuals 71, Integration 25, MIDI 27, Online 23.
+
+The **visual add-on standard + VU meter** wave (doc 26) added: Core +76 (audio-level envelope/meter,
+generator-source + effect-role model — Core now ~734), Visuals +4 (audio-level frame uniforms +
+generator renderability — now 75), App +2 (level-source + built-in-generator wiring). *Local note:*
+on some Windows boxes ~6–10 `LibrariesViewModel*` tests fail from a **pre-existing** ReactiveUI
+global-scheduler isolation issue (confirmed failing at the parent commit, unrelated to this wave; CI green).
+
+The growth over
 the previously-recorded 851 reflects the
 in-flight wave — continuous phase-lock sync (`PhaseLockController`, `PhaseAlignmentCalculator`),
 the deck-driven shared clock (`DeckDrivenBeatClock`/`SwitchingBeatClock`/`MasterClockBridge`),
@@ -119,7 +127,7 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   through the seam without touching RtMidi types. `CmdStudio2AProfile.Default` maps the controller's
   transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncOnce`), crossfader + per-deck gain
   (`MixerCrossfade`/`MixerChannelGain`), 3-band EQ (`MixerEqBand` Low/Mid/High) + filter
-  (`MixerFilter`), and jog nudge (`BeatNudgeForward`) to the existing kinds — Deck A = channel 0/slot
+  (`MixerFilter`), and track-position jog (`DeckJog`) to the existing kinds — Deck A = channel 0/slot
   0, Deck B = channel 1/slot 1. **The CC/note numbers are documented defaults, not gospel:** every
   binding is a plain `ControllerBinding` that `MidiLearnSession` can re-capture, and
   `MappingConflictDetector` proves the default layout is collision-free. +23 tests (Core
@@ -150,6 +158,12 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
 - Continuous MIDI feedback now reaches the visible controls: mixer channel gain, EQ bands, filter,
   cue level/mix, crossfader, deck pitch/seek, and visual macro values publish through
   `FeedbackChanged`; the matching UI control applies the value without re-dispatching it.
+- **DJ jog-wheel transport:** jog bindings are relative and carry encoder encoding, inversion, and
+  ticks-per-revolution in `ControllerBinding`. `DeckJog` converts wheel revolutions to real track
+  seconds (independent of track length): one full turn scrubs 1.8 s while paused and a fine 0.2 s
+  while playing. The engine clamps at track boundaries and immediately publishes `DeckSeek`
+  feedback so the on-screen playhead/waveform follows the hardware. Existing saved CMD profiles
+  using the former beat-clock jog mapping are upgraded in place.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
@@ -584,6 +598,40 @@ no GL.
   (`SceneGridViewModel` → `LiveViewModel` → `ServiceConfig`), so selecting a tab maps `VisualSelectBank`
   to actual bank data — the engine then switches its active bank. **Remaining GL-render piece:** lighting
   an individual pad's scene into the GL output (`LoadScene`) still needs a display to verify (above).
+
+### ✅ Visual add-on standard — generators + live audio level — `docs/26` (Core + Visuals + App)
+
+The public contract for third-party visual add-ons (the **VU meter** is its first reference add-on,
+shipped built-in and live). Two gaps the old "effect = texture post-process" model could not serve are
+now closed: **generative** shaders that draw from uniforms, and **live audio amplitude** reaching shaders.
+
+| Built | File |
+|-------|------|
+| Live audio level snapshot + VU ballistics (pure, dt from frame timestamps) | `VisualAudioLevel`, `AudioLevelEnvelope` (Core/Audio) |
+| Level read seam + frame-driven meter + headless fallback | `IVisualAudioLevelSource`, `FrameAudioLevelMeter`, `SilentVisualAudioLevelSource` (Core/Audio) |
+| Generative source kind + effect role on the descriptor (default Effect) | `VisualSourceKind.Generator`, `VisualEffectRole`, `VisualEffectDescriptor.Role` (Core/Visuals) |
+| Audio uniforms in the per-frame model (`uRms`/`uPeak`/`uLevel`) | `FrameUniforms` (Visuals/Gl) |
+| Generator pass (viewport FBO, re-rendered each frame, no input texture) | `GeneratorPass` (Visuals/Gl) |
+| Generator-layer compositing + audio/`uResolution` uniforms in the effect chain | `LayeredQuadRenderer`, `EffectChainRenderer`, `SceneComposition` (Visuals/Gl) |
+| Built-in VU-meter generator (shader + descriptor, the reference add-on) | `VuMeterAddon` (Visuals/Gl) |
+
+- **Pure, tested off the GPU:** the envelope ballistics (attack faster than release, RMS/peak, NaN/empty
+  guards), the frame meter (tracks frames, silent before any, disposes its subscription), the descriptor
+  role JSON round-trip (default `Effect`), generator renderability in `SceneComposition`, and the audio
+  level flowing through `FrameUniforms.Resolve`. +~25 tests (Core `AudioLevelEnvelopeTests`,
+  `FrameAudioLevelMeterTests`, `VisualEffectDescriptorTests`; Visuals `SceneCompositionTests`/`FrameUniformsTests`;
+  App `ServiceConfigTests`).
+- **The engine reads `IVisualAudioLevelSource.Current` from the render thread**, exactly like it already
+  reads `IBeatClock.Current` (a level/clock sample is the read path, not the dispatcher command path). The
+  level meter taps the **same master-mix frames** the beat clock reads (`MasterMixPlaybackEngine.FrameProvider`);
+  headless it is `SilentVisualAudioLevelSource`. Published via a `volatile` whole-record swap of an
+  immutable `VisualAudioLevel` (single audio-thread writer, lock-free render-thread read).
+- **Out of the box:** `ServiceConfig` registers the built-in VU generator into the effect registry and the
+  starter bank carries a `Generator` layer, so a fresh install shows the analog meter; its needle swings
+  with the master `uLevel` (verified manually — GL needs a display; see `Liveolator.Visuals/CLAUDE.md` step 8).
+- **Deferred:** per-band spectrum uniforms (only RMS/peak/VU level now); a generator that *also* has a
+  post-effect chain uses a fixed chain size (the VU has none); Push/MIDI mapping of generator parameters
+  end-to-end (the macro plumbing is reused, a dedicated mapping is later).
 
 ### ✅ Visual library / VJ tab — asset browser — `Liveolator.App/Features/VisualLibrary/` (doc 08/13, Track C **C1**)
 

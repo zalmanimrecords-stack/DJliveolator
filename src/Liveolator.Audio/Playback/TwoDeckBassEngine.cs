@@ -283,6 +283,29 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         }
     }
 
+    public void Jog(int slot, double deltaSeconds)
+    {
+        ValidateSlot(slot);
+        if (!double.IsFinite(deltaSeconds))
+            return;
+
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return;
+
+            double lengthSeconds = _backend.GetDeckLengthSeconds(deck.Handle);
+            if (lengthSeconds <= 0.0)
+                return;
+
+            double targetSeconds = Math.Clamp(
+                _backend.GetDeckPositionSeconds(deck.Handle) + deltaSeconds,
+                0.0,
+                lengthSeconds);
+            _backend.SetDeckPositionFraction(deck.Handle, targetSeconds / lengthSeconds);
+        }
+    }
+
     public double PitchPosition(int slot)
     {
         ValidateSlot(slot);

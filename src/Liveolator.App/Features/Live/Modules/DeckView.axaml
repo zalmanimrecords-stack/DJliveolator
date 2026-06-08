@@ -10,14 +10,16 @@
 
       <!-- header: badge · title · menu -->
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="10" VerticalAlignment="Center">
+        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="3"
+                BorderBrush="{StaticResource AccentLightColor}" BorderThickness="1"
+                VerticalAlignment="Center">
           <Border.Background>
             <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-              <GradientStop Color="#2E74E6" Offset="0" />
-              <GradientStop Color="#1A4FB8" Offset="1" />
+              <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
+              <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
             </LinearGradientBrush>
           </Border.Background>
-          <TextBlock Foreground="White" FontWeight="SemiBold" FontSize="15"
+          <TextBlock Foreground="{StaticResource AccentInk}" FontWeight="SemiBold" FontSize="15"
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
         <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">

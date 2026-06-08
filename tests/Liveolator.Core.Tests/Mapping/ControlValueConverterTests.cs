@@ -87,6 +87,27 @@ public class ControlValueConverterTests
         Assert.Equal(-1.0, value, precision: 6);
     }
 
+    [Theory]
+    [InlineData(1, false, 0.0078125)]
+    [InlineData(3, false, 0.0234375)]
+    [InlineData(10, false, 0.078125)]
+    [InlineData(127, false, -0.0078125)]
+    [InlineData(1, true, -0.0078125)]
+    public void Relative_JogNormalizesMagnitudeToWheelRevolutions(
+        int data2, bool invert, double expected)
+    {
+        ControllerBinding binding = Binding(ActionInputMode.Relative) with
+        {
+            RelativeTicksPerRevolution = 128.0,
+            Invert = invert,
+        };
+
+        double value = ControlValueConverter.ToActionValue(
+            new MidiMessage(MidiMessageType.ControlChange, 0, 10, data2), binding);
+
+        Assert.Equal(expected, value, precision: 6);
+    }
+
     [Fact]
     public void Momentary_NoteExposesVelocity_ButCcIsZero()
     {

@@ -48,6 +48,7 @@ public static class CmdStudio2AProfile
     private const int EqLowCc = 0x12;
     private const int FilterCc = 0x13;
     private const int JogCc = 0x21;            // jog wheel (relative / endless)
+    private const double JogTicksPerRevolution = 128.0;
 
     /// <summary>The default CMD STUDIO 2A mapping profile.</summary>
     public static ControllerMappingProfile Default { get; } = Build();
@@ -103,10 +104,43 @@ public static class CmdStudio2AProfile
             MidiMessageType.ControlChange, channel, FilterCc,
             PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, slot));
 
-        // Slow jog = tempo/phase nudge (doc 07). The endless jog encoder reports a relative delta;
-        // ControlValueConverter decodes it per the binding's RelativeEncoding.
+        // The endless jog reports relative ticks. Conversion normalizes them to a fraction of a
+        // wheel revolution; DeckActionHandler then applies DJ-appropriate playing/paused sensitivity.
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, JogCc,
-            PerformanceActionKind.BeatNudgeForward, ActionInputMode.Relative, slot));
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, slot,
+            RelativeTicksPerRevolution: JogTicksPerRevolution));
+    }
+
+    /// <summary>
+    /// Upgrades the shipped profile's former jog-to-beat-clock mapping without disturbing learned
+    /// controls. The exact legacy channel/CC/slot tuple identifies only the old default binding.
+    /// </summary>
+    public static ControllerMappingProfile UpgradeLegacyJogBindings(ControllerMappingProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        bool changed = false;
+        IReadOnlyList<ControllerBinding> bindings = profile.Bindings.Select(binding =>
+        {
+            bool isLegacyJog =
+                binding.TriggerType == MidiMessageType.ControlChange
+                && binding.Data1 == JogCc
+                && binding.InputMode == ActionInputMode.Relative
+                && binding.Action == PerformanceActionKind.BeatNudgeForward
+                && ((binding.Channel == DeckAChannel && binding.Slot == DeckASlot)
+                    || (binding.Channel == DeckBChannel && binding.Slot == DeckBSlot));
+
+            if (!isLegacyJog)
+                return binding;
+
+            changed = true;
+            return binding with
+            {
+                Action = PerformanceActionKind.DeckJog,
+                RelativeTicksPerRevolution = JogTicksPerRevolution,
+            };
+        }).ToList();
+
+        return changed ? profile with { Bindings = bindings } : profile;
     }
 }

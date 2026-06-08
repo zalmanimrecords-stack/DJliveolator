@@ -14,6 +14,8 @@ public sealed class MidiLearnSession : IMidiLearnSession
     private int _slot;
     private string? _argument;
     private ActionInputMode? _preferredInputMode;
+    private double _relativeTicksPerRevolution = 1.0;
+    private bool _invert;
 
     /// <inheritdoc />
     public bool IsArmed { get; private set; }
@@ -26,12 +28,16 @@ public sealed class MidiLearnSession : IMidiLearnSession
         PerformanceActionKind action,
         int slot = 0,
         string? argument = null,
-        ActionInputMode? preferredInputMode = null)
+        ActionInputMode? preferredInputMode = null,
+        double relativeTicksPerRevolution = 1.0,
+        bool invert = false)
     {
         _action = action;
         _slot = slot;
         _argument = argument;
         _preferredInputMode = preferredInputMode;
+        _relativeTicksPerRevolution = relativeTicksPerRevolution;
+        _invert = invert;
         IsArmed = true;
     }
 
@@ -59,6 +65,8 @@ public sealed class MidiLearnSession : IMidiLearnSession
             ?? (isNote ? ActionInputMode.Momentary : ActionInputMode.Absolute);
 
         return new ControllerBinding(
-            triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument);
+            triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument,
+            RelativeTicksPerRevolution: _relativeTicksPerRevolution,
+            Invert: _invert);
     }
 }

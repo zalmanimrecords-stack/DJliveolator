@@ -7,7 +7,9 @@ public sealed class UiThemeManager : IUiThemeManager
     private static readonly IReadOnlySet<string> ColorTokens = new HashSet<string>(StringComparer.Ordinal)
     {
         "BgColor", "S1Color", "S2Color", "S3Color", "S4Color", "HairColor", "TextColor",
-        "DimColor", "FaintColor", "AccentColor", "AccentInkColor", "RedColor",
+        "DimColor", "FaintColor", "AccentColor", "AccentLightColor", "AccentDarkColor",
+        "AccentWellColor", "AccentInkColor", "RedColor", "GreenColor", "AmberColor",
+        "VioletColor", "MidiActiveColor", "WaveformColor", "KickColor",
     };
 
     private static readonly IReadOnlySet<string> NumericTokens = new HashSet<string>(StringComparer.Ordinal)

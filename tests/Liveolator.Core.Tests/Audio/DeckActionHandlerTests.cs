@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
+using Liveolator.Core.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -110,6 +111,7 @@ public class DeckActionHandlerTests
         public List<int> PlayPaused { get; } = new();
         public List<int> Stopped { get; } = new();
         public List<(int Slot, double Position, bool Relative)> Seeks { get; } = new();
+        public List<(int Slot, double DeltaSeconds)> Jogs { get; } = new();
         public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
         public List<(int Slot, double Bpm)> Bpms { get; } = new();
         public List<int> SyncOnceCalls { get; } = new();
@@ -146,6 +148,12 @@ public class DeckActionHandlerTests
         {
             Seeks.Add((slot, position, relative));
             _position[slot] = relative ? Math.Clamp(_position[slot] + position, 0, 1) : Math.Clamp(position, 0, 1);
+        }
+
+        public void Jog(int slot, double deltaSeconds)
+        {
+            Jogs.Add((slot, deltaSeconds));
+            _position[slot] = Math.Clamp(_position[slot] + deltaSeconds / 100.0, 0, 1);
         }
 
         public double PitchPosition(int slot) => _pitch[slot];
@@ -292,6 +300,7 @@ public class DeckActionHandlerTests
         var handler = new DeckActionHandler(new FakeMultiDeckEngine());
 
         Assert.Contains(PerformanceActionKind.DeckSeek, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckJog, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckPitch, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckBpm, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckCue, handler.HandledKinds);
@@ -321,6 +330,43 @@ public class DeckActionHandlerTests
             PerformanceActionKind.DeckSeek, ActionInputMode.Relative, Value: -0.1, Slot: 0));
 
         Assert.Equal((0, -0.1, true), Assert.Single(engine.Seeks));
+    }
+
+    [Fact]
+    public void Jog_WhilePaused_UsesPlatterScrubSensitivityAndRaisesSeekFeedback()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(
+            engine,
+            new JogWheelSettings(PausedSecondsPerRevolution: 1.8, PlayingSecondsPerRevolution: 0.2));
+        ActionFeedbackChanged? feedback = null;
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckSeek)
+                feedback = change;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: 1.0, Slot: 1));
+
+        Assert.Equal((1, 1.8), Assert.Single(engine.Jogs));
+        Assert.NotNull(feedback);
+        Assert.Equal(1, feedback!.Slot);
+    }
+
+    [Fact]
+    public void Jog_WhilePlaying_UsesFineSensitivity()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetPlaying(0, true);
+        var handler = new DeckActionHandler(
+            engine,
+            new JogWheelSettings(PausedSecondsPerRevolution: 1.8, PlayingSecondsPerRevolution: 0.2));
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: -0.5, Slot: 0));
+
+        Assert.Equal((0, -0.1), Assert.Single(engine.Jogs));
     }
 
     [Fact]

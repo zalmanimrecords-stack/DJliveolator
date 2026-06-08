@@ -22,7 +22,7 @@ public static class ControlValueConverter
         return binding.InputMode switch
         {
             ActionInputMode.Absolute => Absolute(message, binding.Curve),
-            ActionInputMode.Relative => DecodeRelative(message.Data2, binding.Relative),
+            ActionInputMode.Relative => Relative(message.Data2, binding),
             // Momentary/Toggle ignore magnitude, but note velocity is still made available.
             _ => message.Type is MidiMessageType.NoteOn or MidiMessageType.NoteOff
                 ? Normalize(message.Data2)
@@ -39,6 +39,16 @@ public static class ControlValueConverter
         RelativeEncoding.SignedBit => (data2 & 0x40) != 0 ? -(data2 & 0x3F) : data2 & 0x3F,
         _ => 0,
     };
+
+    private static double Relative(int data2, ControllerBinding binding)
+    {
+        double ticksPerRevolution =
+            double.IsFinite(binding.RelativeTicksPerRevolution) && binding.RelativeTicksPerRevolution > 0.0
+                ? binding.RelativeTicksPerRevolution
+                : 1.0;
+        double direction = binding.Invert ? -1.0 : 1.0;
+        return DecodeRelative(data2, binding.Relative) * direction / ticksPerRevolution;
+    }
 
     /// <summary>Applies a curve to a normalized 0..1 value.</summary>
     public static double ApplyCurve(double normalized, ValueCurve curve) => curve switch

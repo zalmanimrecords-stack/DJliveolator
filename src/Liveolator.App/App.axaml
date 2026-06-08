@@ -23,6 +23,9 @@
     <Color x:Key="DimColor">#8B95A7</Color>
     <Color x:Key="FaintColor">#5A6573</Color>
     <Color x:Key="AccentColor">#2F80F6</Color>   <!-- the one accent — active / signal (blue) -->
+    <Color x:Key="AccentLightColor">#69A7FF</Color>
+    <Color x:Key="AccentDarkColor">#1E5EC5</Color>
+    <Color x:Key="AccentWellColor">#10294E</Color>
     <Color x:Key="AccentInkColor">#FFFFFF</Color>
     <Color x:Key="RedColor">#E5544A</Color>      <!-- the one reserved — blackout / strobe -->
     <Color x:Key="GreenColor">#2F80F6</Color>    <!-- unified to the blue accent -->

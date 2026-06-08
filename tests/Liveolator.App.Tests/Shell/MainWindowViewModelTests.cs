@@ -72,7 +72,9 @@ public sealed class MainWindowViewModelTests
             Liveolator.Core.Actions.PerformanceActionKind action,
             int slot = 0,
             string? argument = null,
-            Liveolator.Core.Actions.ActionInputMode? preferredInputMode = null) { }
+            Liveolator.Core.Actions.ActionInputMode? preferredInputMode = null,
+            double relativeTicksPerRevolution = 1.0,
+            bool invert = false) { }
         public void CancelLearn() { }
         public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
