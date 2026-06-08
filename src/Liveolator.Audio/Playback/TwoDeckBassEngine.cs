@@ -65,6 +65,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
     // sync/quantize toggles where they were set when swapping tracks). Position is read live from the
     // backend, so it is not stored here.
     private readonly double[] _pitchPosition = new double[Decks];
+    private readonly double[] _playbackRate = new double[Decks];
     private readonly bool[] _syncLocked = new bool[Decks];
     private readonly bool[] _quantize = new bool[Decks];
 
@@ -142,6 +143,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
 
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TwoDeckBassEngine>();
         Array.Fill(_pitchPosition, PitchCenter);
+        Array.Fill(_playbackRate, 1.0);
         for (int slot = 0; slot < Decks; slot++)
             _hotCues[slot] = new double?[HotCuesPerDeck];
 
@@ -210,7 +212,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
                 // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
                 // load action supplies the new track's base BPM via SetDeckBaseBpm).
                 if (!_syncLocked[slot])
-                    _backend.SetDeckRate(handle, RateFor(_pitchPosition[slot]));
+                    _backend.SetDeckRate(handle, _playbackRate[slot]);
                 // Restore the track's persisted hot cues (A3). Tolerant: a missing/unreadable store
                 // leaves the slot with the fresh (empty) cue bank UnloadSlot cleared — never a throw.
                 LoadPersistedHotCues(slot, handle, trackPath);
@@ -290,11 +292,12 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         {
             double next = Math.Clamp(relative ? _pitchPosition[slot] + value : value, 0.0, 1.0);
             _pitchPosition[slot] = next;
+            _playbackRate[slot] = RateFor(next);
             // While Sync is engaged the synced rate owns the deck (doc 11: Sync is an assist; manual
             // nudging of a synced deck is a later increment). The position is still stored so it takes
             // effect the moment Sync is released.
             if (_decks[slot] is { } deck && !_syncLocked[slot])
-                _backend.SetDeckRate(deck.Handle, RateFor(next));
+                _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
             // This deck may be the sync leader — pull any synced follower to the new tempo.
             ReapplySyncedFollowers();
         }
@@ -371,18 +374,53 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
             if (_decks[leader] is null || _baseBpm[leader] <= 0.0)
                 return;
 
-            double leaderRate = RateFor(_pitchPosition[leader]);
+            double leaderRate = _playbackRate[leader];
             double targetRate = TempoSyncCalculator.RateFor(
                 _baseBpm[leader] * leaderRate,
                 _baseBpm[slot]);
+            _playbackRate[slot] = targetRate;
             _pitchPosition[slot] = PitchPositionFor(targetRate);
-            _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot]));
+            _backend.SetDeckRate(deck.Handle, targetRate);
             PhaseAlignToLeader(slot);
             _logger.LogInformation(
                 "Deck slot {Slot} one-shot synced to deck {Leader} at rate {Rate:F5}.",
                 slot,
                 leader,
-                RateFor(_pitchPosition[slot]));
+                targetRate);
+        }
+    }
+
+    public double DeckBpm(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return EffectiveBpm(slot);
+    }
+
+    public double MinimumDeckBpm(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _baseBpm[slot] > 0.0 ? _baseBpm[slot] * (1.0 - PitchRangePercent) : 0.0;
+    }
+
+    public double MaximumDeckBpm(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _baseBpm[slot] > 0.0 ? _baseBpm[slot] * (1.0 + PitchRangePercent) : 0.0;
+    }
+
+    public void SetDeckBpm(int slot, double bpm)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_baseBpm[slot] <= 0.0 || bpm <= 0.0)
+                return;
+
+            _pitchPosition[slot] = PitchPositionFor(bpm / _baseBpm[slot]);
+            _playbackRate[slot] = RateFor(_pitchPosition[slot]);
+            if (_decks[slot] is { } deck && !_syncLocked[slot])
+                _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
+            ReapplySyncedFollowers();
         }
     }
 
@@ -411,7 +449,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
             else
             {
                 if (_decks[slot] is { } deck)
-                    _backend.SetDeckRate(deck.Handle, RateFor(_pitchPosition[slot])); // back to the manual fader
+                    _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
                 SetSyncStateLocked(slot, SyncLockState.Off);
             }
         }
@@ -577,8 +615,8 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
             return;
         }
 
-        // The leader's audible tempo is its natural BPM scaled by its own pitch fader.
-        double leaderEffectiveBpm = _baseBpm[leader] * RateFor(_pitchPosition[leader]);
+        // A prior one-shot sync can put the leader beyond the manual pitch fader's display range.
+        double leaderEffectiveBpm = _baseBpm[leader] * _playbackRate[leader];
         double rate = TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
         _backend.SetDeckRate(deck.Handle, rate);
     }
@@ -648,13 +686,13 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
             "Deck slot {Slot} quantize: phase-aligned by {Nudge:F4}s to the leader grid.", slot, nudgeSeconds);
     }
 
-    // Caller holds _gate. A deck's audible tempo: when Sync owns the deck it plays at the synced rate
-    // (matching the leader), otherwise its natural BPM scaled by its pitch fader. 0 when base BPM unknown.
+    // Caller holds _gate. A one-shot sync may exceed the manual pitch fader's display range, so audible
+    // tempo follows the separately retained playback rate. 0 when base BPM is unknown.
     private double EffectiveBpm(int slot)
     {
         if (_baseBpm[slot] <= 0.0)
             return 0.0;
-        double rate = _syncLocked[slot] ? SyncedRateFor(slot) : RateFor(_pitchPosition[slot]);
+        double rate = _syncLocked[slot] ? SyncedRateFor(slot) : _playbackRate[slot];
         return _baseBpm[slot] * rate;
     }
 
@@ -664,8 +702,8 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
     {
         int leader = slot == 0 ? 1 : 0;
         if (_baseBpm[slot] <= 0.0 || _decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
-            return RateFor(_pitchPosition[slot]);
-        double leaderEffectiveBpm = _baseBpm[leader] * RateFor(_pitchPosition[leader]);
+            return _playbackRate[slot];
+        double leaderEffectiveBpm = _baseBpm[leader] * _playbackRate[leader];
         return TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
     }
 

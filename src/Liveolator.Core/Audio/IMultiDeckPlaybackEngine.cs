@@ -35,7 +35,7 @@ public interface IMultiDeckPlaybackEngine
     void Stop(int slot);
 
     // --- Transport (doc 11): position scrub, pitch/tempo, cue, and per-deck sync/quantize toggles.
-    // Driven via DeckSeek/DeckPitch/DeckCue/DeckSyncOnce/DeckQuantizeToggle actions, never directly.
+    // Driven via DeckSeek/DeckPitch/DeckBpm/DeckCue/DeckSyncOnce/DeckQuantizeToggle actions, never directly.
 
     /// <summary>Current playback position as a normalized 0..1 fraction of the track (0 if nothing loaded).</summary>
     double Position(int slot);
@@ -56,6 +56,21 @@ public interface IMultiDeckPlaybackEngine
     /// to its tempo range.
     /// </summary>
     void SetPitch(int slot, double value, bool relative);
+
+    /// <summary>The deck's current audible tempo after pitch/rate adjustment, or 0 when BPM is unknown.</summary>
+    double DeckBpm(int slot);
+
+    /// <summary>The minimum BPM reachable through the deck's configured pitch range, or 0 when unknown.</summary>
+    double MinimumDeckBpm(int slot);
+
+    /// <summary>The maximum BPM reachable through the deck's configured pitch range, or 0 when unknown.</summary>
+    double MaximumDeckBpm(int slot);
+
+    /// <summary>
+    /// Set the deck's audible tempo in BPM. The engine clamps it to the configured pitch range and updates
+    /// the same rate state used by <see cref="SetPitch"/>.
+    /// </summary>
+    void SetDeckBpm(int slot, double bpm);
 
     /// <summary>Jump the playhead to the deck's cue point (defaults to the track start) and pause there.</summary>
     void Cue(int slot);
@@ -84,7 +99,8 @@ public interface IMultiDeckPlaybackEngine
 
     /// <summary>
     /// Beatmatches this deck to the other deck and snaps its analyzed kick/grid phase once.
-    /// The resulting tempo is stored as the deck's manual pitch; no continuous lock is engaged.
+    /// The resulting audible tempo is retained until the performer changes pitch/tempo again; no
+    /// continuous lock is engaged. The matched rate may exceed the manual pitch fader's display range.
     /// </summary>
     void SyncOnce(int slot);
 

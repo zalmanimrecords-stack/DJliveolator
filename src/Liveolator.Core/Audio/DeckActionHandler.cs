@@ -23,6 +23,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.TransportStop,
         PerformanceActionKind.DeckSeek,
         PerformanceActionKind.DeckPitch,
+        PerformanceActionKind.DeckBpm,
         PerformanceActionKind.DeckCue,
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckQuantizeToggle,
@@ -93,6 +94,12 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckPitch:
                 _engine.SetPitch(slot, action.Value, action.InputMode == ActionInputMode.Relative);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+                RaiseBpmFeedback(slot);
+                break;
+            case PerformanceActionKind.DeckBpm:
+                _engine.SetDeckBpm(slot, action.Value);
+                RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+                RaiseBpmFeedback(slot);
                 break;
             case PerformanceActionKind.DeckCue:
                 _engine.Cue(slot);
@@ -101,6 +108,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckSyncOnce:
                 _engine.SyncOnce(slot);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+                RaiseBpmFeedback(slot);
                 RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
                 break;
             case PerformanceActionKind.DeckQuantizeToggle:
@@ -120,6 +128,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         // Value carries the track's analyzed BPM (0 = unknown), feeding the deck's Sync reference tempo so
         // beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
         _engine.SetDeckBaseBpm(slot, action.Value);
+        RaiseBpmFeedback(slot);
         // The first-beat (downbeat) anchor — BpmResult.FirstBeatSeconds — feeds phase-match the same way
         // base BPM feeds tempo-match. The single-Value load action carries the BPM only, so the anchor is
         // supplied separately via SetDeckFirstBeat by the composition root that holds the full BpmResult
@@ -166,6 +175,17 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     private static ActionFeedbackState ActiveFeedback(bool active)
         => new(IsActive: active, IsAvailable: true, Value: 0);
 
+    private void RaiseBpmFeedback(int slot)
+        => RaiseFeedback(PerformanceActionKind.DeckBpm, slot, BpmFeedback(slot));
+
+    private ActionFeedbackState BpmFeedback(int slot)
+        => new(
+            IsActive: false,
+            IsAvailable: _engine.DeckBpm(slot) > 0.0,
+            Value: _engine.DeckBpm(slot),
+            Argument: FormattableString.Invariant(
+                $"{_engine.MinimumDeckBpm(slot):0.###}|{_engine.MaximumDeckBpm(slot):0.###}"));
+
     /// <inheritdoc />
     public override ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot)
     {
@@ -177,6 +197,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckPlayPause => ActiveFeedback(_engine.IsPlaying(slot)),
             PerformanceActionKind.DeckSeek => ValueFeedback(_engine.Position(slot)),
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
+            PerformanceActionKind.DeckBpm => BpmFeedback(slot),
             PerformanceActionKind.DeckSyncOnce => ActiveFeedback(false),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),

@@ -20,9 +20,9 @@
 
 ## Core test count
 
-Solution-wide: **1,286 passing, 0 failed, 0 skipped** across 8 test projects, measured
-**2026-06-08** (`dotnet test Liveolator.sln --configuration Release --no-restore`): Core 659,
-App 233, Audio 165, Media 83, Visuals 71, Integration 25, MIDI 27, Online 23. The growth over
+Solution-wide: **1,290 passing, 0 failed, 0 skipped** across 8 test projects, measured
+**2026-06-08** (`dotnet test Liveolator.sln --configuration Release --no-restore`): Core 660,
+App 235, Audio 166, Media 83, Visuals 71, Integration 25, MIDI 27, Online 23. The growth over
 the previously-recorded 851 reflects the
 in-flight wave — continuous phase-lock sync (`PhaseLockController`, `PhaseAlignmentCalculator`),
 the deck-driven shared clock (`DeckDrivenBeatClock`/`SwitchingBeatClock`/`MasterClockBridge`),
@@ -82,6 +82,8 @@ The action-layer seam: every input source drives engines through one dispatcher.
   **`VisualActionHandler`** (see Visual action handler), **`DeckActionHandler`** (see Realtime audio —
   load/play-pause/stop **+ seek/pitch/cue/sync-lock/quantize/hot-cue/loop**, slot-addressed), and
   **`MixerActionHandler`** (see Software mixer — Crossfade/ChannelGain/EqBand/Filter/CueToggle).
+  Deck tempo can be controlled directly in audible BPM via `DeckBpm`; it shares the same rate state
+  as `DeckPitch`, clamps to the engine's ±8% pitch range, and reports the effective BPM back to UI/MIDI.
   **All Deck kinds are now claimed:** `DeckSetLoop` arrives via the handler (`Value` = beat length;
   `> 0` sets a beat-length loop at the playhead, `<= 0` clears it) and the engine converts beats → a
   time region using the per-deck base BPM threaded in by `SetDeckBaseBpm`; hot-cues are done (cue index

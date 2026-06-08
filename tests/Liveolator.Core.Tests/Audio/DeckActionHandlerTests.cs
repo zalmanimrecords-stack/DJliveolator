@@ -102,6 +102,7 @@ public class DeckActionHandlerTests
         private readonly double[] _position;
         private readonly double[] _pitch;
         private readonly double[] _baseBpm;
+        private readonly double[] _bpm;
         private readonly double[] _firstBeat;
         private readonly double[] _loopBeats;
 
@@ -110,6 +111,7 @@ public class DeckActionHandlerTests
         public List<int> Stopped { get; } = new();
         public List<(int Slot, double Position, bool Relative)> Seeks { get; } = new();
         public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
+        public List<(int Slot, double Bpm)> Bpms { get; } = new();
         public List<int> SyncOnceCalls { get; } = new();
         public List<int> Cues { get; } = new();
         public List<(int Slot, double Beats)> Loops { get; } = new();
@@ -123,6 +125,7 @@ public class DeckActionHandlerTests
             _position = new double[deckCount];
             _pitch = new double[deckCount];
             _baseBpm = new double[deckCount];
+            _bpm = new double[deckCount];
             _firstBeat = new double[deckCount];
             _loopBeats = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
@@ -152,6 +155,15 @@ public class DeckActionHandlerTests
             _pitch[slot] = relative ? Math.Clamp(_pitch[slot] + value, 0, 1) : Math.Clamp(value, 0, 1);
         }
 
+        public double DeckBpm(int slot) => _bpm[slot];
+        public double MinimumDeckBpm(int slot) => _baseBpm[slot] * 0.92;
+        public double MaximumDeckBpm(int slot) => _baseBpm[slot] * 1.08;
+        public void SetDeckBpm(int slot, double bpm)
+        {
+            Bpms.Add((slot, bpm));
+            _bpm[slot] = Math.Clamp(bpm, MinimumDeckBpm(slot), MaximumDeckBpm(slot));
+        }
+
         public void Cue(int slot)
         {
             Cues.Add(slot);
@@ -159,7 +171,11 @@ public class DeckActionHandlerTests
         }
 
         public double DeckBaseBpm(int slot) => _baseBpm[slot];
-        public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
+        public void SetDeckBaseBpm(int slot, double bpm)
+        {
+            _baseBpm[slot] = bpm;
+            _bpm[slot] = bpm;
+        }
 
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
@@ -277,6 +293,7 @@ public class DeckActionHandlerTests
 
         Assert.Contains(PerformanceActionKind.DeckSeek, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckPitch, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckBpm, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckCue, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckSyncOnce, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckQuantizeToggle, handler.HandledKinds);
@@ -343,6 +360,22 @@ public class DeckActionHandlerTests
 
         Assert.Equal(1, Assert.Single(engine.SyncOnceCalls));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncOnce, slot: 1).IsActive);
+    }
+
+    [Fact]
+    public void Bpm_RoutesAbsoluteTempoToSlot_AndReportsClampedValue()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetDeckBaseBpm(1, 120.0);
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckBpm, ActionInputMode.Absolute, Value: 140.0, Slot: 1));
+
+        Assert.Equal((1, 140.0), Assert.Single(engine.Bpms));
+        ActionFeedbackState feedback = handler.GetFeedback(PerformanceActionKind.DeckBpm, slot: 1);
+        Assert.Equal(129.6, feedback.Value, 6);
+        Assert.Equal("110.4|129.6", feedback.Argument);
     }
 
     [Fact]

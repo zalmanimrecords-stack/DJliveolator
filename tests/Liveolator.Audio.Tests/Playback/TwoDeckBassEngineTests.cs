@@ -393,6 +393,26 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void SetDeckBpm_UpdatesPitchRate_AndClampsToDeckRange()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+
+        engine.SetDeckBpm(0, 126.0);
+
+        Assert.Equal(126.0, engine.DeckBpm(0), 6);
+        Assert.Equal(1.05, backend.Rate[100], 6);
+
+        engine.SetDeckBpm(0, 150.0);
+
+        Assert.Equal(129.6, engine.DeckBpm(0), 6);
+        Assert.Equal(1.08, backend.Rate[100], 6);
+        Assert.Equal(110.4, engine.MinimumDeckBpm(0), 6);
+        Assert.Equal(129.6, engine.MaximumDeckBpm(0), 6);
+    }
+
+    [Fact]
     public void Sync_MatchesFollowerRateToLeaderBpm()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

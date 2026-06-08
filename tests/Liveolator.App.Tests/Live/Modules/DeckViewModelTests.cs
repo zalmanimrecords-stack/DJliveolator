@@ -190,6 +190,43 @@ public sealed class DeckViewModelTests
         Assert.Equal(0.65, action.Value);
     }
 
+    [Fact]
+    public void Bpm_EmitsDeckBpm_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(
+            PerformanceActionKind.DeckBpm,
+            slot: 1,
+            new ActionFeedbackState(false, true, 120.0, "110.4|129.6"));
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        vm.Bpm = 126.5m;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckBpm, action.Kind);
+        Assert.Equal(ActionInputMode.Absolute, action.InputMode);
+        Assert.Equal(1, action.Slot);
+        Assert.Equal(126.5, action.Value, 6);
+    }
+
+    [Fact]
+    public void Bpm_FeedbackUpdatesValueAndRange_WithoutRedispatching()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckBpm,
+            slot: 0,
+            new ActionFeedbackState(false, true, 128.0, "117.76|138.24"));
+
+        Assert.True(vm.IsBpmEnabled);
+        Assert.Equal(128.0m, vm.Bpm);
+        Assert.Equal(117.76m, vm.MinimumBpm);
+        Assert.Equal(138.24m, vm.MaximumBpm);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
     [Theory]
     [InlineData(0.42)]
     [InlineData(0.0)]
@@ -372,6 +409,23 @@ public sealed class DeckViewModelTests
         // A deck must never hide its tempo: with no catalog entry the meta still shows the analyzed BPM.
         Assert.True(vm.HasTrackMeta);
         Assert.Equal("126.0 BPM", vm.Meta);
+    }
+
+    [Fact]
+    public void BpmFeedback_AfterSync_UpdatesTheDisplayedTempo()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("T", "120.0", "1A", "5:00"));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
+            new ActionFeedbackState(false, true, 120, @"C:\music\x.mp3"));
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, 1,
+            new ActionFeedbackState(false, true, 132, "110.4|129.6"));
+
+        Assert.Equal(132, vm.Bpm);
+        Assert.Contains("132.0 BPM", vm.Meta);
+        Assert.DoesNotContain("120.0 BPM", vm.Meta);
     }
 
     [Fact]

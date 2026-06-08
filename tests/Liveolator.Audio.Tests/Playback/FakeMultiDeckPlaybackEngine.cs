@@ -70,6 +70,10 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void Seek(int slot, double position, bool relative) { }
     public double PitchPosition(int slot) => 0.5;
     public void SetPitch(int slot, double value, bool relative) { }
+    public double DeckBpm(int slot) => _baseBpm[slot];
+    public double MinimumDeckBpm(int slot) => _baseBpm[slot] * 0.92;
+    public double MaximumDeckBpm(int slot) => _baseBpm[slot] * 1.08;
+    public void SetDeckBpm(int slot, double bpm) { }
     public void Cue(int slot) { }
     public double DeckBaseBpm(int slot) => _baseBpm[slot];
     public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;

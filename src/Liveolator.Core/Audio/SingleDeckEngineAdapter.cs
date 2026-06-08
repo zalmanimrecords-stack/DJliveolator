@@ -57,6 +57,11 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void SetPitch(int slot, double value, bool relative) => EnsureSlot(slot);
 
+    public double DeckBpm(int slot) { EnsureSlot(slot); return 0; }
+    public double MinimumDeckBpm(int slot) { EnsureSlot(slot); return 0; }
+    public double MaximumDeckBpm(int slot) { EnsureSlot(slot); return 0; }
+    public void SetDeckBpm(int slot, double bpm) => EnsureSlot(slot);
+
     public void Cue(int slot) => EnsureSlot(slot);
 
     // The single-deck engine has no sync — there is no second deck to match against — so base BPM and

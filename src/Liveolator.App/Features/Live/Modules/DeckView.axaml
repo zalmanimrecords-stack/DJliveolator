@@ -74,6 +74,25 @@
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
       </UniformGrid>
 
+      <Border Classes="hardware-well" Padding="10,8">
+        <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
+          <NumericUpDown Grid.Column="1"
+                         Margin="12,0"
+                         Minimum="{Binding MinimumBpm}"
+                         Maximum="{Binding MaximumBpm}"
+                         Increment="0.1"
+                         FormatString="0.0"
+                         Value="{Binding Bpm}"
+                         IsEnabled="{Binding IsBpmEnabled}"
+                         HorizontalContentAlignment="Center" />
+          <TextBlock Grid.Column="2"
+                     Classes="tick"
+                     VerticalAlignment="Center"
+                     Text="±8%" />
+        </Grid>
+      </Border>
+
       <!-- EQ / filter / pitch knobs -->
       <UniformGrid Columns="5">
         <StackPanel Spacing="6" HorizontalAlignment="Center">

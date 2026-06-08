@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reactive;
 using System.Reactive.Concurrency;
@@ -57,6 +58,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private double _firstBeatSeconds;
     private double _durationSeconds;
     private double _zoomWindow;
+    private decimal _bpm;
+    private decimal _minimumBpm;
+    private decimal _maximumBpm;
+    private bool _isBpmEnabled;
+    private bool _applyingBpmFeedback;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -133,6 +139,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Pitch = new ContinuousControlViewModel(
             "Pitch", Seed(PerformanceActionKind.DeckPitch, PitchCentre),
             enabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
+
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckBpm, slot) is { } bpmFeedback)
+            ApplyBpmFeedback(bpmFeedback);
 
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged += OnFeedback;
@@ -233,6 +242,46 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _zoomWindow;
         private set => this.RaiseAndSetIfChanged(ref _zoomWindow, value);
+    }
+
+    /// <summary>The deck's current audible BPM. User edits emit <see cref="PerformanceActionKind.DeckBpm"/>.</summary>
+    public decimal Bpm
+    {
+        get => _bpm;
+        set
+        {
+            decimal clamped = _isBpmEnabled && !_applyingBpmFeedback
+                ? Math.Clamp(value, _minimumBpm, _maximumBpm)
+                : value;
+            decimal previous = _bpm;
+            this.RaiseAndSetIfChanged(ref _bpm, clamped);
+            if (!_applyingBpmFeedback && _isBpmEnabled && clamped != previous)
+            {
+                _dispatcher?.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckBpm,
+                    ActionInputMode.Absolute,
+                    Value: decimal.ToDouble(clamped),
+                    Slot: _slot));
+            }
+        }
+    }
+
+    public decimal MinimumBpm
+    {
+        get => _minimumBpm;
+        private set => this.RaiseAndSetIfChanged(ref _minimumBpm, value);
+    }
+
+    public decimal MaximumBpm
+    {
+        get => _maximumBpm;
+        private set => this.RaiseAndSetIfChanged(ref _maximumBpm, value);
+    }
+
+    public bool IsBpmEnabled
+    {
+        get => _isBpmEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isBpmEnabled, value);
     }
 
     /// <summary>
@@ -336,6 +385,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckPitch:
                     Pitch.SetFromFeedback(e.State.Value);
                     break;
+                case PerformanceActionKind.DeckBpm:
+                    ApplyBpmFeedback(e.State);
+                    break;
                 case PerformanceActionKind.DeckPlayPause:
                     IsPlaying = e.State.IsActive;
                     break;
@@ -360,6 +412,49 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
             }
         });
+    }
+
+    private void ApplyBpmFeedback(ActionFeedbackState state)
+    {
+        decimal minimum = 0;
+        decimal maximum = 0;
+        string[] range = state.Argument?.Split('|', StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+        if (range.Length == 2)
+        {
+            decimal.TryParse(range[0], NumberStyles.Float, CultureInfo.InvariantCulture, out minimum);
+            decimal.TryParse(range[1], NumberStyles.Float, CultureInfo.InvariantCulture, out maximum);
+        }
+
+        _applyingBpmFeedback = true;
+        try
+        {
+            MinimumBpm = minimum;
+            MaximumBpm = maximum;
+            IsBpmEnabled = state.IsAvailable && state.Value > 0.0 && maximum >= minimum;
+            Bpm = state.Value > 0.0 ? (decimal)state.Value : 0;
+            if (_title != "No track loaded" && state.Value > 0.0)
+            {
+                _trackBpm = state.Value;
+                Meta = ReplaceDisplayedBpm(Meta, state.Value);
+                RecomputeBeatGrid();
+            }
+        }
+        finally
+        {
+            _applyingBpmFeedback = false;
+        }
+    }
+
+    private static string ReplaceDisplayedBpm(string meta, double bpm)
+    {
+        int suffix = meta.IndexOf(" BPM", StringComparison.Ordinal);
+        if (suffix < 0)
+            return $"{bpm:0.0} BPM";
+
+        int start = suffix;
+        while (start > 0 && (char.IsDigit(meta[start - 1]) || meta[start - 1] == '.'))
+            start--;
+        return $"{meta[..start]}{bpm:0.0}{meta[suffix..]}";
     }
 
     // The hot-cue index rides in the feedback Argument (the deck is addressed by slot); update only the

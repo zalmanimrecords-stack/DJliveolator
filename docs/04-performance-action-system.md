@@ -41,7 +41,7 @@ public enum PerformanceActionKind
     VisualTransitionNow, VisualTransitionNextBeat, VisualTransitionNextBar,
     // Deck / DJ (doc 11) — driven only via actions
     DeckLoadTrack, DeckPlayPause, DeckCue, DeckHotCue, DeckSetLoop, DeckSeek,
-    DeckPitch, DeckSyncOnce, DeckQuantizeToggle,
+    DeckPitch, DeckBpm, DeckSyncOnce, DeckQuantizeToggle,
     // Mixer (doc 11)
     MixerCrossfade, MixerChannelGain, MixerEqBand, MixerFilter, MixerCueToggle,
     // Auto-mix (doc 11) — hands-free assist
