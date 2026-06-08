@@ -8,7 +8,7 @@
         Width="860" Height="600"
         MinWidth="680" MinHeight="420"
         Title="Playlists — build a set"
-        Background="{StaticResource Bg}">
+        Background="{DynamicResource Bg}">
 
   <DockPanel Margin="16" LastChildFill="True">
 

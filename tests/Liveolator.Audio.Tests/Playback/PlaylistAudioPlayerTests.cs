@@ -124,6 +124,41 @@ public sealed class PlaylistAudioPlayerTests
     }
 
     [Fact]
+    public void Construction_WhenExistingNowAutoPlayOff_LoadsPaused()
+    {
+        var playlist = new FakeLivePlaylist { Now = Entry("restored.wav") };
+        var engine = new FakeMultiDeckPlaybackEngine();
+
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            engine,
+            slot: 0,
+            autoPlayExistingNow: false);
+
+        Assert.Equal(new[] { "Load(0,restored.wav)" }, engine.Calls);
+        Assert.Equal("restored.wav", engine.LoadedOn(0));
+        Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void NowChanged_AfterExistingNowAutoPlayOff_StillAutoPlays()
+    {
+        var playlist = new FakeLivePlaylist { Now = Entry("restored.wav") };
+        var engine = new FakeMultiDeckPlaybackEngine();
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            engine,
+            slot: 0,
+            autoPlayExistingNow: false);
+        engine.Calls.Clear();
+
+        playlist.RaiseNowChanged(Entry("next.wav"));
+
+        Assert.Equal(new[] { "Load(0,next.wav)", "PlayPause(0)" }, engine.Calls);
+        Assert.True(engine.IsPlaying(0));
+    }
+
+    [Fact]
     public void Dispose_UnsubscribesFromNowChanged()
     {
         var playlist = new FakeLivePlaylist();

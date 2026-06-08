@@ -32,12 +32,12 @@
       <!-- pulse -->
       <StackPanel Orientation="Horizontal" Spacing="24" HorizontalAlignment="Center" Margin="0,4">
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <Ellipse Width="44" Height="44" HorizontalAlignment="Center" Fill="{StaticResource Accent}"
+          <Ellipse Width="44" Height="44" HorizontalAlignment="Center" Fill="{DynamicResource Accent}"
                    Opacity="{Binding IsBeat, Converter={x:Static live:PulseOpacityConverter.Instance}}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="BEAT" />
         </StackPanel>
         <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <Ellipse Width="44" Height="44" HorizontalAlignment="Center" Fill="{StaticResource Red}"
+          <Ellipse Width="44" Height="44" HorizontalAlignment="Center" Fill="{DynamicResource Red}"
                    Opacity="{Binding IsDownbeat, Converter={x:Static live:PulseOpacityConverter.Instance}}" />
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="DOWNBEAT" />
         </StackPanel>

@@ -58,5 +58,31 @@ public static class UiThemeApplier
                 application.Resources[key] = number;
             }
         }
+
+        ApplyFluentAccent(application, theme.Tokens);
+    }
+
+    private static void ApplyFluentAccent(
+        Application application,
+        IReadOnlyDictionary<string, string> tokens)
+    {
+        if (!tokens.TryGetValue("AccentColor", out string? accentValue))
+            return;
+
+        Color accent = Color.Parse(accentValue);
+        Color light = tokens.TryGetValue("AccentLightColor", out string? lightValue)
+            ? Color.Parse(lightValue)
+            : accent;
+        Color dark = tokens.TryGetValue("AccentDarkColor", out string? darkValue)
+            ? Color.Parse(darkValue)
+            : accent;
+
+        application.Resources["SystemAccentColor"] = accent;
+        application.Resources["SystemAccentColorDark1"] = dark;
+        application.Resources["SystemAccentColorDark2"] = dark;
+        application.Resources["SystemAccentColorDark3"] = dark;
+        application.Resources["SystemAccentColorLight1"] = light;
+        application.Resources["SystemAccentColorLight2"] = light;
+        application.Resources["SystemAccentColorLight3"] = light;
     }
 }

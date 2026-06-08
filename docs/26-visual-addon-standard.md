@@ -244,11 +244,19 @@ The full source is `src/Liveolator.Visuals/Gl/VuMeterAddon.cs` (the host emits i
 
 1. Enable **Developer Mode** in Settings (lets you install unsigned packs).
 2. Build the ZIP with `manifest.json` (correct hashes/sizes), `visual-effects.json`, and your shader.
-3. Install it through the Extensions UI (or `IExtensionInstaller`). The loader runs the **isolated shader
-   probe**, validates declared uniforms, and registers the effect/generator.
+3. Install it through the Extensions UI (or `IExtensionInstaller`). On install the loader runs the
+   **isolated shader probe**, validates that every declared uniform exists in the compiled shader, and
+   registers the effect/generator.
 4. Reference your generator from a scene layer (§5) and open the visuals window — it renders live and
    reacts to the master audio.
 5. For distribution, sign the manifest with your ECDSA key and register your public key with users.
+
+> **Shader-probe helper is required to activate installed packs.** The isolated probe runs the native
+> `liveolator-shader-probe` helper (a distribution artifact not stored in the repo, doc 21). When it is
+> **absent, an installed pack's shaders are rejected, not silently run** — extension shaders are simply
+> not activated (a deliberate safety default). The built-in VU meter is unaffected because it is registered
+> in-process, bypassing the probe. So: ship/install the probe helper alongside the host to load third-party
+> visual packs; without it, only built-in generators render.
 
 ## 8. Limits & current edges
 

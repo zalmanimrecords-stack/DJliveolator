@@ -45,7 +45,7 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
 
-      <Border Width="1" Background="{StaticResource Hair}" Margin="4,2" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
 
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />
       <ComboBox ItemsSource="{Binding SortKeys}" SelectedItem="{Binding SortKey}"

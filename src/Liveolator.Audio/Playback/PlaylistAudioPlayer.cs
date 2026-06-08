@@ -32,11 +32,14 @@ public sealed class PlaylistAudioPlayer : IDisposable
     /// <param name="engine">The deck engine driven on each <c>NowChanged</c>.</param>
     /// <param name="slot">The deck slot the queue plays on (defaults to A = 0).</param>
     /// <param name="autoPlay">When true the loaded track starts immediately; otherwise it is loaded paused.</param>
+    /// <param name="autoPlayExistingNow">When false, a track already in <c>Now</c> when the binding is
+    /// constructed is loaded paused. Later queue changes still follow <paramref name="autoPlay"/>.</param>
     public PlaylistAudioPlayer(
         ILivePlaylist playlist,
         IMultiDeckPlaybackEngine engine,
         int slot = 0,
         bool autoPlay = true,
+        bool autoPlayExistingNow = true,
         ILogger<PlaylistAudioPlayer>? logger = null)
         : this(
             playlist,
@@ -47,6 +50,7 @@ public sealed class PlaylistAudioPlayer : IDisposable
             analysisResolver: null,
             slot: slot,
             autoPlay: autoPlay,
+            autoPlayExistingNow: autoPlayExistingNow,
             logger: logger)
     {
     }
@@ -58,6 +62,7 @@ public sealed class PlaylistAudioPlayer : IDisposable
         Func<string, BpmResult?>? analysisResolver = null,
         int slot = 0,
         bool autoPlay = true,
+        bool autoPlayExistingNow = true,
         ILogger<PlaylistAudioPlayer>? logger = null)
     {
         _playlist = playlist ?? throw new ArgumentNullException(nameof(playlist));
@@ -78,10 +83,10 @@ public sealed class PlaylistAudioPlayer : IDisposable
 
         // Pick up a track that is already Now (the queue may have been loaded before binding).
         if (_playlist.Now is { } current)
-            GoToTrack(current);
+            GoToTrack(current, _autoPlay && autoPlayExistingNow);
     }
 
-    private void OnNowChanged(object? sender, QueueEntry? now) => GoToTrack(now);
+    private void OnNowChanged(object? sender, QueueEntry? now) => GoToTrack(now, _autoPlay);
 
     // The deck reached the end of its track. Only the slot this player drives advances the queue; an end
     // on another deck (slot) is ignored. Tolerant: a queue-advance failure is logged, never thrown back
@@ -103,7 +108,7 @@ public sealed class PlaylistAudioPlayer : IDisposable
 
     // Drives the engine to the given Now track. Tolerant: a failed load/play is logged and dropped so
     // the queue keeps advancing. A null Now (queue exhausted) stops the deck without an error.
-    private void GoToTrack(QueueEntry? now)
+    private void GoToTrack(QueueEntry? now, bool shouldAutoPlay)
     {
         if (now is null)
         {
@@ -133,7 +138,7 @@ public sealed class PlaylistAudioPlayer : IDisposable
                 ActionInputMode.Absolute,
                 Value: analysis?.FirstBeatSeconds ?? 0.0,
                 Slot: _slot));
-            if (_autoPlay && !_engine.IsPlaying(_slot))
+            if (shouldAutoPlay && !_engine.IsPlaying(_slot))
                 _dispatcher.Dispatch(new PerformanceAction(
                     PerformanceActionKind.DeckPlayPause, Slot: _slot));
         }

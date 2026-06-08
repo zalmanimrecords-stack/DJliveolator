@@ -9,19 +9,19 @@
         WindowState="FullScreen"
         SystemDecorations="None"
         Title="Liveolator"
-        Background="{StaticResource Bg}">
+        Background="{DynamicResource Bg}">
 
   <Window.Styles>
     <!-- Connection LED: faint when no device, dim when linked-idle, green on live MIDI signal.
          .live is listed last so it wins over .linked when a message is arriving. -->
     <Style Selector="Ellipse.led">
-      <Setter Property="Fill" Value="{StaticResource Faint}" />
+      <Setter Property="Fill" Value="{DynamicResource Faint}" />
     </Style>
     <Style Selector="Ellipse.led.linked">
-      <Setter Property="Fill" Value="{StaticResource Dim}" />
+      <Setter Property="Fill" Value="{DynamicResource Dim}" />
     </Style>
     <Style Selector="Ellipse.led.live">
-      <Setter Property="Fill" Value="{StaticResource MidiActive}" />
+      <Setter Property="Fill" Value="{DynamicResource MidiActive}" />
     </Style>
   </Window.Styles>
 
@@ -29,14 +29,14 @@
 
     <!-- top status strip: where audio is routed + which MIDI gear is connected (green on signal) -->
     <Border DockPanel.Dock="Top"
-            BorderBrush="{StaticResource Hair}"
+            BorderBrush="{DynamicResource Hair}"
             BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,8">
 
         <!-- audio routing -->
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <TextBlock Classes="mono faint" Text="OUT" />
-          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.AudioOutputName}" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.AudioOutputName}" />
         </StackPanel>
 
         <!-- CPU / memory of the running app -->
@@ -44,9 +44,9 @@
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     IsVisible="{Binding Status.HasMetrics}">
           <TextBlock Classes="mono faint" Text="CPU" />
-          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.CpuText}" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.CpuText}" />
           <TextBlock Classes="mono faint" Text="RAM" Margin="8,0,0,0" />
-          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.MemoryText}" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MemoryText}" />
         </StackPanel>
 
         <!-- MIDI connectivity + activity -->
@@ -56,7 +56,7 @@
                    Classes="led"
                    Classes.linked="{Binding Status.MidiInputConnected}"
                    Classes.live="{Binding Status.MidiActive}" />
-          <TextBlock Classes="mono" Foreground="{StaticResource Dim}" Text="{Binding Status.MidiInputName}" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MidiInputName}" />
           <TextBlock Classes="mono faint"
                      Text="{Binding Status.MidiFeedbackName, StringFormat='· LED {0}'}"
                      IsVisible="{Binding Status.MidiFeedbackName, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
@@ -79,7 +79,7 @@
 
     <!-- tab strip -->
     <Border DockPanel.Dock="Top"
-            BorderBrush="{StaticResource Hair}"
+            BorderBrush="{DynamicResource Hair}"
             BorderThickness="0,0,0,1">
       <ListBox Classes="tabs"
                ItemsSource="{Binding Tabs}"
@@ -93,10 +93,10 @@
     </Border>
 
     <Border DockPanel.Dock="Bottom"
-            Background="{StaticResource Accent}"
+            Background="{DynamicResource Accent}"
             Padding="14,8"
             IsVisible="{Binding MidiLearn.IsEnabled}">
-      <TextBlock Foreground="{StaticResource AccentInk}"
+      <TextBlock Foreground="{DynamicResource AccentInk}"
                  HorizontalAlignment="Center"
                  Text="{Binding MidiLearn.Status}" />
     </Border>

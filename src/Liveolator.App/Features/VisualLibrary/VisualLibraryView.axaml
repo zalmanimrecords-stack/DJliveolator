@@ -37,7 +37,7 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
 
-      <Border Width="1" Background="{StaticResource Hair}" Margin="4,2" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
 
       <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
               ToolTip.Tip="Reset all filters" />

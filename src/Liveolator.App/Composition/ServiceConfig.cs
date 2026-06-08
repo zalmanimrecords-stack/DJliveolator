@@ -751,14 +751,16 @@ public static class ServiceConfig
         if (deckEngine is null)
             return; // catalog-browser mode: no deck to bind the queue to.
 
-        // Deck A (slot 0) hosts the auto-advancing live queue; auto-play so a skip/advance starts at once.
+        // Deck A (slot 0) hosts the auto-advancing live queue. A restored Now track loads paused at
+        // startup; later skips and end-of-track advances still auto-play immediately.
         services.AddSingleton(sp => new PlaylistAudioPlayer(
             livePlaylist,
             dispatcher,
             deckEngine,
             path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
             slot: 0,
-            autoPlay: true));
+            autoPlay: true,
+            autoPlayExistingNow: false));
     }
 
     // --- Capture sources: system loopback + sound-card/line input (doc 01 Phase 1b, task 8) ---

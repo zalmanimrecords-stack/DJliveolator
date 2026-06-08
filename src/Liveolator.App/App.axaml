@@ -40,26 +40,26 @@
     <Color x:Key="WaveformColor">#F0C23C</Color>
     <Color x:Key="KickColor">#27C56A</Color>
 
-    <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
-    <SolidColorBrush x:Key="S1" Color="{StaticResource S1Color}" />
-    <SolidColorBrush x:Key="S2" Color="{StaticResource S2Color}" />
-    <SolidColorBrush x:Key="S3" Color="{StaticResource S3Color}" />
-    <SolidColorBrush x:Key="S4" Color="{StaticResource S4Color}" />
-    <SolidColorBrush x:Key="Hair" Color="{StaticResource HairColor}" />
-    <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
-    <SolidColorBrush x:Key="Dim" Color="{StaticResource DimColor}" />
-    <SolidColorBrush x:Key="Faint" Color="{StaticResource FaintColor}" />
-    <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
-    <SolidColorBrush x:Key="AccentInk" Color="{StaticResource AccentInkColor}" />
-    <SolidColorBrush x:Key="Red" Color="{StaticResource RedColor}" />
-    <SolidColorBrush x:Key="Green" Color="{StaticResource GreenColor}" />
-    <SolidColorBrush x:Key="Amber" Color="{StaticResource AmberColor}" />
-    <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
-    <SolidColorBrush x:Key="MidiActive" Color="{StaticResource MidiActiveColor}" />
-    <SolidColorBrush x:Key="Kick" Color="{StaticResource KickColor}" />
+    <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
+    <SolidColorBrush x:Key="S1" Color="{DynamicResource S1Color}" />
+    <SolidColorBrush x:Key="S2" Color="{DynamicResource S2Color}" />
+    <SolidColorBrush x:Key="S3" Color="{DynamicResource S3Color}" />
+    <SolidColorBrush x:Key="S4" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="Hair" Color="{DynamicResource HairColor}" />
+    <SolidColorBrush x:Key="Text" Color="{DynamicResource TextColor}" />
+    <SolidColorBrush x:Key="Dim" Color="{DynamicResource DimColor}" />
+    <SolidColorBrush x:Key="Faint" Color="{DynamicResource FaintColor}" />
+    <SolidColorBrush x:Key="Accent" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentInk" Color="{DynamicResource AccentInkColor}" />
+    <SolidColorBrush x:Key="Red" Color="{DynamicResource RedColor}" />
+    <SolidColorBrush x:Key="Green" Color="{DynamicResource GreenColor}" />
+    <SolidColorBrush x:Key="Amber" Color="{DynamicResource AmberColor}" />
+    <SolidColorBrush x:Key="Violet" Color="{DynamicResource VioletColor}" />
+    <SolidColorBrush x:Key="MidiActive" Color="{DynamicResource MidiActiveColor}" />
+    <SolidColorBrush x:Key="Kick" Color="{DynamicResource KickColor}" />
     <!-- Waveform body: opaque for the played portion, half-transparent for the part still ahead of the playhead. -->
-    <SolidColorBrush x:Key="Waveform" Color="{StaticResource WaveformColor}" />
-    <SolidColorBrush x:Key="WaveformAhead" Color="{StaticResource WaveformColor}" Opacity="0.5" />
+    <SolidColorBrush x:Key="Waveform" Color="{DynamicResource WaveformColor}" />
+    <SolidColorBrush x:Key="WaveformAhead" Color="{DynamicResource WaveformColor}" Opacity="0.5" />
 
     <!-- Retint Fluent's accent so standard controls (combobox, scrollbar, selection, etc.) follow the blue line. -->
     <Color x:Key="SystemAccentColor">#2F80F6</Color>

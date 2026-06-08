@@ -6,7 +6,7 @@
         Width="520" Height="440"
         MinWidth="420" MinHeight="280"
         Title="Folders — update status"
-        Background="{StaticResource Bg}">
+        Background="{DynamicResource Bg}">
 
   <DockPanel Margin="16" LastChildFill="True">
 

@@ -38,19 +38,19 @@
 
   <!-- rotary knob + linear fader default brushes (themed from the tokens) -->
   <Style Selector="controls|Knob">
-    <Setter Property="ArcBrush" Value="{StaticResource Accent}" />
-    <Setter Property="TrackBrush" Value="{StaticResource S4}" />
-    <Setter Property="CapBrush" Value="{StaticResource S2}" />
-    <Setter Property="PointerBrush" Value="{StaticResource Text}" />
+    <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
+    <Setter Property="TrackBrush" Value="{DynamicResource S4}" />
+    <Setter Property="CapBrush" Value="{DynamicResource S2}" />
+    <Setter Property="PointerBrush" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="controls|Knob:disabled">
-    <Setter Property="ArcBrush" Value="{StaticResource S4}" />
+    <Setter Property="ArcBrush" Value="{DynamicResource S4}" />
     <Setter Property="Opacity" Value="0.7" />
   </Style>
   <Style Selector="controls|Fader">
-    <Setter Property="FillBrush" Value="{StaticResource Accent}" />
-    <Setter Property="TrackBrush" Value="{StaticResource S4}" />
-    <Setter Property="ThumbBrush" Value="{StaticResource Text}" />
+    <Setter Property="FillBrush" Value="{DynamicResource Accent}" />
+    <Setter Property="TrackBrush" Value="{DynamicResource S4}" />
+    <Setter Property="ThumbBrush" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="controls|Fader:disabled">
     <Setter Property="Opacity" Value="0.6" />
@@ -58,34 +58,34 @@
 
   <!-- dB / range tick label beside faders and under knobs (Dim, not Faint — legible at 9px) -->
   <Style Selector="TextBlock.tick">
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="FontFamily" Value="Consolas, 'JetBrains Mono', monospace" />
     <Setter Property="FontSize" Value="9" />
   </Style>
 
   <Style Selector="Window">
-    <Setter Property="Background" Value="{StaticResource Bg}" />
+    <Setter Property="Background" Value="{DynamicResource Bg}" />
   </Style>
 
   <Style Selector="TextBlock">
-    <Setter Property="Foreground" Value="{StaticResource Text}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
     <Setter Property="FontSize" Value="12" />
   </Style>
 
   <!-- section header (mirrors the mockup's small uppercase title) -->
   <Style Selector="TextBlock.section">
-    <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    <Setter Property="Foreground" Value="{DynamicResource Faint}" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="LetterSpacing" Value="1.6" />
   </Style>
   <Style Selector="TextBlock.muted">
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
   </Style>
   <Style Selector="TextBlock.faint">
-    <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    <Setter Property="Foreground" Value="{DynamicResource Faint}" />
   </Style>
   <Style Selector="TextBlock.accent">
-    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+    <Setter Property="Foreground" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="TextBlock.mono">
     <Setter Property="FontFamily" Value="Consolas, 'JetBrains Mono', monospace" />
@@ -95,18 +95,18 @@
   <Style Selector="Border.panel">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S1Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S1Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="16" />
   </Style>
 
   <Style Selector="Border.hardware-well">
-    <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="10" />
     <Setter Property="BoxShadow" Value="inset 0 2 5 0 #99000000, inset 0 -1 0 0 #1FFFFFFF" />
@@ -116,15 +116,15 @@
   <Style Selector="Button.icon">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="3" />
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Width" Value="34" />
     <Setter Property="Height" Value="34" />
     <Setter Property="Padding" Value="0" />
@@ -139,12 +139,12 @@
   <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S4Color}" Offset="0.55" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0.55" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="Button.icon:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
@@ -168,7 +168,7 @@
     <Setter Property="LetterSpacing" Value="1.6" />
   </Style>
   <Style Selector="ListBox.tabs ListBoxItem">
-    <Setter Property="Foreground" Value="{StaticResource Faint}" />
+    <Setter Property="Foreground" Value="{DynamicResource Faint}" />
     <Setter Property="Cursor" Value="Hand" />
     <Setter Property="Template">
       <ControlTemplate>
@@ -186,13 +186,13 @@
     </Setter>
   </Style>
   <Style Selector="ListBox.tabs ListBoxItem:pointerover">
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
   </Style>
   <Style Selector="ListBox.tabs ListBoxItem:selected">
-    <Setter Property="Foreground" Value="{StaticResource Text}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="ListBox.tabs ListBoxItem:selected /template/ Border#PART_Bd">
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
 
   <!-- ============ row list (ListBox.rows) ============ -->
@@ -218,26 +218,26 @@
     </Setter>
   </Style>
   <Style Selector="ListBox.rows ListBoxItem:pointerover /template/ Border#PART_Bd">
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
   </Style>
   <Style Selector="ListBox.rows ListBoxItem:selected /template/ Border#PART_Bd">
-    <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
 
   <!-- ============ buttons ============ -->
   <Style Selector="Button.spartan">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="3" />
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
     <Setter Property="Cursor" Value="Hand" />
@@ -249,28 +249,28 @@
   <Style Selector="Button.spartan:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
-    <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Faint}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="Button.spartan:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BoxShadow" Value="inset 0 2 3 0 #B3000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <Style Selector="Button.accent">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
-        <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+        <GradientStop Color="{DynamicResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
     <Setter Property="BorderBrush" Value="#6C9BD8" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="3" />
@@ -280,8 +280,8 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.accent /template/ Border#PART_Well">
-    <Setter Property="Background" Value="{StaticResource AccentWellColor}" />
-    <Setter Property="BorderBrush" Value="{StaticResource AccentDarkColor}" />
+    <Setter Property="Background" Value="{DynamicResource AccentWellColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
   <Style Selector="Button.accent /template/ ContentPresenter#PART_Face">
     <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C000000" />
@@ -289,9 +289,9 @@
   <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
-        <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+        <GradientStop Color="{DynamicResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BoxShadow" Value="0 2 2 0 #66000000, inset 0 1 0 0 #5CFFFFFF, inset 0 -1 0 0 #8C000000" />
@@ -303,17 +303,17 @@
 
   <!-- ============ text input ============ -->
   <Style Selector="TextBox.spartan">
-    <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="8" />
-    <Setter Property="Foreground" Value="{StaticResource Text}" />
+    <Setter Property="Foreground" Value="{DynamicResource Text}" />
   </Style>
 
   <!-- ============ progress / phase bars ============ -->
   <Style Selector="ProgressBar">
-    <Setter Property="Foreground" Value="{StaticResource Accent}" />
-    <Setter Property="Background" Value="{StaticResource S4}" />
+    <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+    <Setter Property="Background" Value="{DynamicResource S4}" />
     <Setter Property="MinHeight" Value="5" />
     <Setter Property="CornerRadius" Value="3" />
   </Style>
@@ -322,15 +322,15 @@
   <Style Selector="Button.key">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="3" />
-    <Setter Property="Foreground" Value="{StaticResource Dim}" />
+    <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Padding" Value="8,9" />
     <Setter Property="FontSize" Value="10" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -345,34 +345,34 @@
   <Style Selector="Button.key:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S4Color}" Offset="0.48" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0.48" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
-    <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Faint}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="Button.key:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BoxShadow" Value="inset 0 2 4 0 #C7000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <!-- active toggle: the single accent carries the on-state (paired with text, never color-only) -->
   <Style Selector="Button.key.on">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
-        <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+        <GradientStop Color="{DynamicResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.key.on /template/ Border#PART_Well">
-    <Setter Property="Background" Value="{StaticResource AccentWellColor}" />
-    <Setter Property="BorderBrush" Value="{StaticResource AccentDarkColor}" />
+    <Setter Property="Background" Value="{DynamicResource AccentWellColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
   <Style Selector="Button.key.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
@@ -381,12 +381,12 @@
   <Style Selector="Button.key.on:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.4" />
-        <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+        <GradientStop Color="{DynamicResource AccentColor}" Offset="0.4" />
+        <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="TextElement.Foreground" Value="{StaticResource AccentInk}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource AccentInk}" />
   </Style>
   <Style Selector="Button.key.on:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
@@ -401,12 +401,12 @@
   <Style Selector="Button.play">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Padding" Value="8,9" />
@@ -422,24 +422,24 @@
   <Style Selector="Button.play:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S4Color}" Offset="0.48" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0.48" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
   </Style>
   <Style Selector="Button.play:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BoxShadow" Value="inset 0 2 4 0 #C7000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <Style Selector="Button.play.on">
-    <Setter Property="Background" Value="{StaticResource S4}" />
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="Background" Value="{DynamicResource S4}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.play.on /template/ Border#PART_Well">
-    <Setter Property="Background" Value="{StaticResource AccentWellColor}" />
-    <Setter Property="BorderBrush" Value="{StaticResource AccentDarkColor}" />
+    <Setter Property="Background" Value="{DynamicResource AccentWellColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
   <Style Selector="Button.play.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 1px)" />
@@ -450,12 +450,12 @@
   <Style Selector="Button.pad">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S3Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="0.18" />
-        <GradientStop Color="{StaticResource BgColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource BgColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="CornerRadius" Value="2" />
     <Setter Property="Height" Value="22" />
@@ -471,12 +471,12 @@
   <Style Selector="Button.pad:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.5" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="1" />
+        <GradientStop Color="{DynamicResource S4Color}" Offset="0" />
+        <GradientStop Color="{DynamicResource S3Color}" Offset="0.5" />
+        <GradientStop Color="{DynamicResource S2Color}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Faint}" />
   </Style>
   <Style Selector="Button.pad:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
@@ -484,22 +484,22 @@
   </Style>
   <!-- loaded cell (has a scene) -->
   <Style Selector="Button.pad.has">
-    <Setter Property="Background" Value="{StaticResource S2}" />
+    <Setter Property="Background" Value="{DynamicResource S2}" />
   </Style>
   <!-- active scene -->
   <Style Selector="Button.pad.on">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource AccentLightColor}" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
-        <GradientStop Color="{StaticResource AccentDarkColor}" Offset="1" />
+        <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+        <GradientStop Color="{DynamicResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.pad.on /template/ Border#PART_Well">
-    <Setter Property="Background" Value="{StaticResource AccentWellColor}" />
-    <Setter Property="BorderBrush" Value="{StaticResource AccentDarkColor}" />
+    <Setter Property="Background" Value="{DynamicResource AccentWellColor}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
   <Style Selector="Button.pad.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 1px)" />
@@ -512,19 +512,19 @@
 
   <!-- Keep keyboard focus visible without flattening the hardware shadows. -->
   <Style Selector="Button.spartan:focus-visible">
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.accent:focus-visible">
-    <Setter Property="BorderBrush" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Text}" />
   </Style>
   <Style Selector="Button.key:focus-visible">
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.play:focus-visible">
-    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
   </Style>
   <Style Selector="Button.pad:focus-visible">
-    <Setter Property="BorderBrush" Value="{StaticResource Text}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Text}" />
   </Style>
 
 </Styles>
