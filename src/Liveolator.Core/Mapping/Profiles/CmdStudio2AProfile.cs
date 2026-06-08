@@ -80,7 +80,7 @@ public static class CmdStudio2AProfile
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, SyncNote,
-            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, slot));
+            PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, slot));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, CueNote,
@@ -138,6 +138,26 @@ public static class CmdStudio2AProfile
             {
                 Action = PerformanceActionKind.DeckJog,
                 RelativeTicksPerRevolution = JogTicksPerRevolution,
+            };
+        }).ToList();
+
+        return changed ? profile with { Bindings = bindings } : profile;
+    }
+
+    public static ControllerMappingProfile UpgradeLegacySyncBindings(ControllerMappingProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        bool changed = false;
+        IReadOnlyList<ControllerBinding> bindings = profile.Bindings.Select(binding =>
+        {
+            if (binding.Action != PerformanceActionKind.DeckSyncOnce || binding.Slot is < 0 or > 1)
+                return binding;
+
+            changed = true;
+            return binding with
+            {
+                Action = PerformanceActionKind.DeckSyncToggle,
+                InputMode = ActionInputMode.Toggle,
             };
         }).ToList();
 

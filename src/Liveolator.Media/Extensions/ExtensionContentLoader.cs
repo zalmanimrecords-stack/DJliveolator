@@ -50,8 +50,15 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
                 await LoadEffectsAsync(extension, cancellationToken).ConfigureAwait(false);
                 await LoadThemesAsync(extension, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or ArgumentException)
+            catch (Exception ex) when (
+                ex is IOException or JsonException or UnauthorizedAccessException or ArgumentException
+                or InvalidDataException)
             {
+                // InvalidDataException (wrong package id, too many params, a shader missing a declared
+                // uniform, probe rejection) is NOT an IOException, so it must be listed explicitly —
+                // otherwise one malformed third-party pack would abort loading every pack and could throw
+                // at startup (ReloadAsync runs in the composition root). One bad pack is skipped + logged,
+                // the rest still load (doc 21 tolerance; global standards #16/#26).
                 _onWarning?.Invoke(
                     $"Extension content for '{extension.Manifest.PackageId}' was ignored ({ex.Message}).");
             }

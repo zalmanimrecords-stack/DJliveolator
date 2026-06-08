@@ -305,6 +305,7 @@ public class DeckActionHandlerTests
         Assert.Contains(PerformanceActionKind.DeckBpm, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckCue, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckSyncOnce, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckSyncToggle, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckQuantizeToggle, handler.HandledKinds);
     }
 
@@ -406,6 +407,21 @@ public class DeckActionHandlerTests
 
         Assert.Equal(1, Assert.Single(engine.SyncOnceCalls));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncOnce, slot: 1).IsActive);
+    }
+
+    [Fact]
+    public void SyncToggle_LatchesAndUnlatchesTheRequestedSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
+        Assert.True(engine.IsSyncLocked(1));
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
+        Assert.False(engine.IsSyncLocked(1));
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
     }
 
     [Fact]

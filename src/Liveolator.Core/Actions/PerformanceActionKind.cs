@@ -82,4 +82,7 @@ public enum PerformanceActionKind
     /// the deck handler converts it to a time delta using the current playing/paused sensitivity.
     /// </summary>
     DeckJog,
+
+    /// <summary>Toggle persistent deck tempo/phase synchronization to the other deck.</summary>
+    DeckSyncToggle,
 }

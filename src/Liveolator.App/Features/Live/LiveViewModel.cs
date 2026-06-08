@@ -2,13 +2,15 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Beat;
+using Liveolator.Core.Extensions;
+using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 
 namespace Liveolator.App.Features.Live;
 
 /// <summary>
 /// The Live performance tab — a composition root over the performance modules that mirror the mock
-/// (<c>design/mockups/live-mode-clean.html</c>): Program Out, Beat Engine, Deck A / Mixer / Deck B,
+/// (<c>design/mockups/live-mode-clean.html</c>): Program Out, Visual Control, Deck A / Mixer / Deck B,
 /// Visual Scene Grid, Master/FX and the Push encoder macros. Each module is its own view-model and
 /// drives the engines only through the one <see cref="IPerformanceActionDispatcher"/> (doc 04 — the UI
 /// is just another action source). This parent owns the render-loop timer that pumps the shared
@@ -47,14 +49,24 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         IVisualStage? visualStage = null,
         IWaveformProvider? waveformProvider = null,
         PerformanceDeckSet? decks = null,
-        IReadOnlyList<string>? visualBankNames = null)
+        IReadOnlyList<string>? visualBankNames = null,
+        IVisualEffectRegistry? visualEffectRegistry = null,
+        IExtensionCatalog? extensionCatalog = null,
+        IExtensionInstaller? extensionInstaller = null,
+        IExtensionContentReloader? extensionContentReloader = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
         _hostClock = hostClock;
         _timer = timer;
         ProgramOut = new ProgramOutViewModel(visualStage);
-        Beat = new BeatEngineViewModel(dispatcher, beatClock);
+        VisualControl = new VisualControlViewModel(
+            dispatcher,
+            visualStage,
+            visualEffectRegistry,
+            extensionCatalog,
+            extensionInstaller,
+            extensionContentReloader);
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
         SceneGrid = new SceneGridViewModel(dispatcher, visualBankNames);
@@ -72,7 +84,7 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     public bool IsLiveModeEnabled => _dispatcher is not null;
 
     public ProgramOutViewModel ProgramOut { get; }
-    public BeatEngineViewModel Beat { get; }
+    public VisualControlViewModel VisualControl { get; }
     public DeckViewModel DeckA => _decks.DeckA;
     public DeckViewModel DeckB => _decks.DeckB;
     public MixerViewModel Mixer => _decks.Mixer;
@@ -96,7 +108,6 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
             _timer.Stop();
         }
 
-        Beat.Dispose();
         // Only dispose the decks this view-model created; a shared set is owned by the composition root.
         if (_ownsDecks)
             _decks.Dispose();

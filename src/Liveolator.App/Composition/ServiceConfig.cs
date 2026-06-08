@@ -728,7 +728,11 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<PerformanceDeckSet>(),
             // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
-            sp.GetService<IVisualPerformanceEngine>()?.BankNames));
+            sp.GetService<IVisualPerformanceEngine>()?.BankNames,
+            sp.GetService<IVisualEffectRegistry>(),
+            sp.GetService<IExtensionCatalog>(),
+            sp.GetService<IExtensionInstaller>(),
+            sp.GetService<IExtensionContentReloader>()));
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------

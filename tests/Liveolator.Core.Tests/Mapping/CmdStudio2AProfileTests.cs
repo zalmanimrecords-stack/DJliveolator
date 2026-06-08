@@ -51,11 +51,11 @@ public class CmdStudio2AProfileTests
     [Fact]
     public void Default_MapsSyncOnce_PerDeck()
     {
-        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 0);
-        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 1);
+        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 0);
+        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 1);
 
-        Assert.Equal(ActionInputMode.Momentary, deckA.InputMode);
-        Assert.Equal(ActionInputMode.Momentary, deckB.InputMode);
+        Assert.Equal(ActionInputMode.Toggle, deckA.InputMode);
+        Assert.Equal(ActionInputMode.Toggle, deckB.InputMode);
     }
 
     [Fact]
@@ -132,6 +132,23 @@ public class CmdStudio2AProfileTests
         Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
         Assert.Equal(legacy.Channel, jog.Channel);
         Assert.Equal(legacy.Data1, jog.Data1);
+    }
+
+    [Fact]
+    public void UpgradeLegacySyncBindings_PreservesLearnedButtonAndTargetsToggle()
+    {
+        ControllerBinding legacy = new(
+            MidiMessageType.NoteOn, Channel: 3, Data1: 4,
+            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: 0);
+        var profile = new ControllerMappingProfile("saved", "CMD Studio 2A", [legacy]);
+
+        ControllerBinding sync = Assert.Single(
+            CmdStudio2AProfile.UpgradeLegacySyncBindings(profile).Bindings);
+
+        Assert.Equal(PerformanceActionKind.DeckSyncToggle, sync.Action);
+        Assert.Equal(ActionInputMode.Toggle, sync.InputMode);
+        Assert.Equal(3, sync.Channel);
+        Assert.Equal(4, sync.Data1);
     }
 
     [Fact]

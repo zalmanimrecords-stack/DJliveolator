@@ -111,6 +111,7 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
                 ?? ControllerMappingProfile.Empty(input.DeviceName, input.DeviceName);
 
             ControllerMappingProfile upgradedProfile = CmdStudio2AProfile.UpgradeLegacyJogBindings(profile);
+            upgradedProfile = CmdStudio2AProfile.UpgradeLegacySyncBindings(upgradedProfile);
             if (!ReferenceEquals(upgradedProfile, profile))
             {
                 profile = upgradedProfile;
@@ -122,7 +123,13 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
             var monitor = new MidiActivityMonitor(input);
             monitor.ActivityDetected += OnActivityDetected;
 
-            TryOpenFeedback(settings.FeedbackOutputName, mapper);
+            // Class-compliant DJ controllers commonly expose matching input/output ports under the
+            // same name. When no explicit feedback output was selected, try the connected input name
+            // so button LEDs still mirror dispatcher state; failure remains graceful.
+            string feedbackOutputName = string.IsNullOrWhiteSpace(settings.FeedbackOutputName)
+                ? input.DeviceName
+                : settings.FeedbackOutputName;
+            TryOpenFeedback(feedbackOutputName, mapper);
 
             // Subscriptions (router + monitor) are attached before opening, so no early message is missed.
             input.Open();

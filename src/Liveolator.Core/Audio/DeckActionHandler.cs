@@ -29,6 +29,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckBpmNudge,
         PerformanceActionKind.DeckCue,
         PerformanceActionKind.DeckSyncOnce,
+        PerformanceActionKind.DeckSyncToggle,
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckHotCue,
         PerformanceActionKind.DeckSetLoop,
@@ -133,6 +134,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseBpmFeedback(slot);
                 RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
                 break;
+            case PerformanceActionKind.DeckSyncToggle:
+                ToggleSync(slot);
+                break;
             case PerformanceActionKind.DeckQuantizeToggle:
                 ToggleQuantize(slot);
                 break;
@@ -178,6 +182,22 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         RaiseFeedback(PerformanceActionKind.DeckQuantizeToggle, slot, ActiveFeedback(next));
     }
 
+    private void ToggleSync(int slot)
+    {
+        _engine.SetSyncLock(slot, !_engine.IsSyncLocked(slot));
+        RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncFeedback(slot));
+        RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+        RaiseBpmFeedback(slot);
+        RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+    }
+
+    private ActionFeedbackState SyncFeedback(int slot)
+        => new(
+            IsActive: _engine.IsSyncLocked(slot),
+            IsAvailable: true,
+            Value: (double)_engine.SyncState(slot),
+            Argument: _engine.SyncState(slot).ToString());
+
     private void TriggerHotCue(int slot, PerformanceAction action)
     {
         // The deck is addressed by Slot, so the hot-cue index rides in Argument (the action record has no
@@ -222,6 +242,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
             PerformanceActionKind.DeckBpm => BpmFeedback(slot),
             PerformanceActionKind.DeckSyncOnce => ActiveFeedback(false),
+            PerformanceActionKind.DeckSyncToggle => SyncFeedback(slot),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),

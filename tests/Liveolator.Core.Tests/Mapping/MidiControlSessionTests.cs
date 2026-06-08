@@ -160,6 +160,17 @@ public sealed class MidiControlSessionTests
     }
 
     [Fact]
+    public async Task FeedbackOutput_WhenNotConfigured_FallsBackToConnectedInputName()
+    {
+        using var session = NewSession();
+
+        await session.StartAsync(new MidiSettings { ControllerInputName = "Push" });
+
+        Assert.True(session.IsOutputConnected);
+        Assert.Equal("Ableton Push", _provider.LastOutputRequest);
+    }
+
+    [Fact]
     public async Task Stop_ClosesAndDisposesInput_AndStopsActivity()
     {
         using var session = NewSession();
@@ -184,6 +195,7 @@ public sealed class MidiControlSessionTests
         public FakeMidiOutput? OutputToReturn { get; set; } = new("Ableton Push");
 
         public FakeMidiInput? LastInput { get; private set; }
+        public string? LastOutputRequest { get; private set; }
 
         public IReadOnlyList<string> GetInputDeviceNames() => new[] { "Ableton Push" };
         public IReadOnlyList<string> GetOutputDeviceNames() => new[] { "Ableton Push" };
@@ -194,7 +206,11 @@ public sealed class MidiControlSessionTests
             return InputToReturn;
         }
 
-        public IMidiOutput? OpenOutput(string deviceName) => OutputToReturn;
+        public IMidiOutput? OpenOutput(string deviceName)
+        {
+            LastOutputRequest = deviceName;
+            return OutputToReturn;
+        }
     }
 
     /// <summary>Returns a single configured mapping profile (or null); other Live data is unused here.</summary>

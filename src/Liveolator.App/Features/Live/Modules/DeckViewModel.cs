@@ -19,8 +19,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
-/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), persistent Sync
+/// (<see cref="PerformanceActionKind.DeckSyncToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -50,6 +50,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
+    private bool _isSyncEnabled;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
@@ -114,10 +115,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
-        // One-shot Sync beatmatches and phase-aligns this deck without engaging a persistent latch.
+        // Persistent Sync is shared by the UI and MIDI controller through one toggle action.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: slot)),
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: slot)),
             canEmit);
+        _isSyncEnabled = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot).IsActive ?? false;
 
         // Nudge buttons: ±0.1 BPM relative delta via DeckBpmNudge — manual beat-sync fine-tuning.
         // Emitting Relative mode lets the controller-mapping layer use the same action from a jog wheel.
@@ -416,6 +418,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _isLooping, value);
     }
 
+    public bool IsSyncEnabled
+    {
+        get => _isSyncEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncEnabled, value);
+    }
+
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
@@ -509,6 +517,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.DeckSetLoop:
                     IsLooping = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckSyncToggle:
+                    IsSyncEnabled = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);

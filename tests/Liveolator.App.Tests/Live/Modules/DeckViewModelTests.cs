@@ -352,7 +352,7 @@ public sealed class DeckViewModelTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task Sync_EmitsDeckSyncOnce_ForItsSlot(int slot)
+    public async Task Sync_EmitsDeckSyncToggle_ForItsSlot(int slot)
     {
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
@@ -361,8 +361,21 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSyncOnce, action.Kind);
+        Assert.Equal(PerformanceActionKind.DeckSyncToggle, action.Kind);
         Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public void IsSyncEnabled_FollowsSyncFeedbackForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckSyncToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 1));
+
+        Assert.True(vm.IsSyncEnabled);
     }
 
     [Fact]

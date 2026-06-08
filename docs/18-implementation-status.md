@@ -164,6 +164,12 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   while playing. The engine clamps at track boundaries and immediately publishes `DeckSeek`
   feedback so the on-screen playhead/waveform follows the hardware. Existing saved CMD profiles
   using the former beat-clock jog mapping are upgraded in place.
+- **SYNC UI/controller state is shared:** deck SYNC uses the persistent `DeckSyncToggle` action.
+  Pressing either the on-screen button or its learned MIDI button toggles the same engine sync lock;
+  feedback lights the UI button and sends the matching MIDI note velocity for the controller LED.
+  Existing learned `DeckSyncOnce` buttons are upgraded in place without changing their note/channel.
+  If no feedback output is selected, the session automatically tries an output matching the connected
+  input device name, which covers class-compliant bidirectional DJ controllers such as the CMD.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
@@ -665,7 +671,7 @@ view-models under `Features/Live/Modules/`, each driving the engines only throug
 | Module | View-model | Wired action(s) |
 |--------|------------|-----------------|
 | Program Out | `ProgramOutViewModel` | Show Visuals (`IVisualStage`); preview/REC/layers static |
-| Beat Engine | `BeatEngineViewModel` | Tap / Lock-toggle / ½× / 2× / Set / Nudge± / **Reset**; Auto disabled |
+| Visual Control | `VisualControlViewModel` | Show output; transition Now/Beat/Bar; toggle layers 1-4; enable/disable installed visual add-ons; list loaded effects/generators |
 | Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncOnce` (one-shot tempo + phase match), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
 | Mixer | `MixerViewModel` | `MixerCrossfade`, `MixerChannelGain` (A/B); VU static |
 | Scene Grid | `SceneGridViewModel` + `ScenePadViewModel` | 8×8 `VisualLoadScene`, bank `VisualSelectBank`; pad state from feedback |

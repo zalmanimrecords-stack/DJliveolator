@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.VisualControlView"
+             x:DataType="m:VisualControlViewModel">
+
+  <Border Classes="panel">
+    <StackPanel Margin="16" Spacing="12">
+      <TextBlock Classes="section" Text="VISUAL CONTROL" />
+
+      <Button Classes="accent" Content="SHOW VISUALS" Command="{Binding ShowVisualsCommand}" />
+
+      <TextBlock Classes="faint" Text="TRANSITION" />
+      <UniformGrid Columns="3">
+        <Button Classes="key" Content="NOW" Command="{Binding TransitionNowCommand}" Margin="0,0,6,0" />
+        <Button Classes="key" Content="BEAT" Command="{Binding TransitionBeatCommand}" Margin="0,0,6,0" />
+        <Button Classes="key" Content="BAR" Command="{Binding TransitionBarCommand}" />
+      </UniformGrid>
+
+      <TextBlock Classes="faint" Text="LAYERS" />
+      <UniformGrid Columns="4">
+        <Button Classes="key" Content="1" Command="{Binding ToggleLayer1Command}" Margin="0,0,6,0" />
+        <Button Classes="key" Content="2" Command="{Binding ToggleLayer2Command}" Margin="0,0,6,0" />
+        <Button Classes="key" Content="3" Command="{Binding ToggleLayer3Command}" Margin="0,0,6,0" />
+        <Button Classes="key" Content="4" Command="{Binding ToggleLayer4Command}" />
+      </UniformGrid>
+
+      <TextBlock Classes="faint" Text="VISUAL ADD-ONS" />
+      <ListBox ItemsSource="{Binding Addons}" SelectedItem="{Binding SelectedAddon}" MaxHeight="105">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="m:VisualAddonViewModel">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="mono" Text="{Binding PackageId}" />
+              <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding State}" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+      <TextBlock Classes="faint" IsVisible="{Binding !HasAddons}" Text="No installed visual add-ons" />
+      <Button Classes="key" Content="ENABLE / DISABLE" Command="{Binding ToggleAddonCommand}" />
+
+      <TextBlock Classes="faint" Text="LOADED EFFECTS / GENERATORS" />
+      <ItemsControl ItemsSource="{Binding LoadedEffects}" MaxHeight="70">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Classes="mono faint" Text="{Binding}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Classes="mono faint" Text="{Binding Status}" TextWrapping="Wrap" />
+    </StackPanel>
+  </Border>
+</UserControl>
