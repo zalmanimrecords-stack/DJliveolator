@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Visuals;
 using Microsoft.Extensions.Logging;
@@ -32,6 +33,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
 
     private readonly VisualMacro _brightnessMacro;
     private readonly IBeatClock _beatClock;
+    private readonly IVisualAudioLevelSource _audioLevel;
     private readonly SkiaImageLoader _imageLoader;
     private readonly ILogger<GlVisualPerformanceEngine> _logger;
     private readonly double _flashStrength;
@@ -63,9 +65,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         SkiaImageLoader? imageLoader = null,
         ILogger<GlVisualPerformanceEngine>? logger = null,
         IVisualEffectRegistry? effectRegistry = null,
-        IReadOnlyList<VisualMacro>? macros = null)
+        IReadOnlyList<VisualMacro>? macros = null,
+        IVisualAudioLevelSource? audioLevel = null)
         : this(new[] { initialBank ?? throw new ArgumentNullException(nameof(initialBank)) },
-               brightnessMacro, beatClock, flashStrength, imageLoader, logger, effectRegistry, macros)
+               brightnessMacro, beatClock, flashStrength, imageLoader, logger, effectRegistry, macros, audioLevel)
     {
     }
 
@@ -82,7 +85,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         SkiaImageLoader? imageLoader = null,
         ILogger<GlVisualPerformanceEngine>? logger = null,
         IVisualEffectRegistry? effectRegistry = null,
-        IReadOnlyList<VisualMacro>? macros = null)
+        IReadOnlyList<VisualMacro>? macros = null,
+        IVisualAudioLevelSource? audioLevel = null)
     {
         ArgumentNullException.ThrowIfNull(banks);
         if (banks.Count == 0)
@@ -96,6 +100,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         _compositionVersion = 1;
         _brightnessMacro = brightnessMacro ?? throw new ArgumentNullException(nameof(brightnessMacro));
         _beatClock = beatClock ?? throw new ArgumentNullException(nameof(beatClock));
+        _audioLevel = audioLevel ?? new SilentVisualAudioLevelSource();
         if (flashStrength < 0 || double.IsNaN(flashStrength))
             throw new ArgumentOutOfRangeException(nameof(flashStrength), flashStrength, "Flash strength must be >= 0.");
 
@@ -129,7 +134,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     public FrameUniforms CurrentFrame()
     {
         double normalized = _macroValues.TryGetValue(BrightnessMacro, out double v) ? v : NormalizeDefault(_brightnessMacro);
-        return FrameUniforms.Resolve(_brightnessMacro, normalized, _beatClock.Current, _flashStrength, _blackout);
+        return FrameUniforms.Resolve(
+            _brightnessMacro, normalized, _beatClock.Current, _flashStrength, _blackout, _audioLevel.Current);
     }
 
     /// <summary>
@@ -266,7 +272,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
                 return;
 
             long targetVersion = CompositionVersion;
-            IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers = LoadRenderableLayers();
+            IReadOnlyList<(ResolvedLayer Layer, RgbaImage? Image)> layers = LoadRenderableLayers();
             LayeredQuadRenderer? next = layers.Count > 0
                 ? new LayeredQuadRenderer(
                     gl,
@@ -374,14 +380,22 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
 
     private void MarkCompositionDirty() => Interlocked.Increment(ref _compositionVersion);
 
-    // Decodes every renderable (image) layer of the active scene in composite order. A layer whose
-    // image fails to decode is dropped with a warning (doc 08 — a missing asset degrades that layer,
-    // it does not crash the show); video/camera layers are non-renderable and skipped silently.
-    private IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> LoadRenderableLayers()
+    // Resolves every renderable layer of the active scene in composite order. An image layer is decoded
+    // to an RgbaImage; a generator layer (doc 26) carries a null image (its descriptor/shader is resolved
+    // by the renderer from the registry). A layer whose image fails to decode is dropped with a warning
+    // (doc 08 — a missing asset degrades that layer, it does not crash the show); video/camera layers are
+    // non-renderable and skipped silently.
+    private IReadOnlyList<(ResolvedLayer Layer, RgbaImage? Image)> LoadRenderableLayers()
     {
-        var loaded = new List<(ResolvedLayer, RgbaImage)>();
+        var loaded = new List<(ResolvedLayer, RgbaImage?)>();
         foreach (ResolvedLayer layer in SceneComposition.RenderableLayers(ActiveScene()))
         {
+            if (layer.Source.Kind == VisualSourceKind.Generator)
+            {
+                loaded.Add((layer, null));
+                continue;
+            }
+
             try
             {
                 RgbaImage image = _imageLoader.Load(layer.Source.Reference);

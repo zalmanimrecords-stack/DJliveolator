@@ -51,6 +51,42 @@ public class MidiLearnSessionTests
     }
 
     [Fact]
+    public void Observe_CcButton_PreservesPreferredMomentaryMode()
+    {
+        _session.Begin(
+            PerformanceActionKind.DeckPlayPause,
+            preferredInputMode: ActionInputMode.Momentary);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 22, 127));
+
+        Assert.Equal(ActionInputMode.Momentary, _learned!.InputMode);
+    }
+
+    [Fact]
+    public void Observe_Slider_PreservesPreferredAbsoluteMode()
+    {
+        _session.Begin(
+            PerformanceActionKind.MixerChannelGain,
+            preferredInputMode: ActionInputMode.Absolute);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 7, 48));
+
+        Assert.Equal(ActionInputMode.Absolute, _learned!.InputMode);
+    }
+
+    [Fact]
+    public void Observe_Encoder_PreservesPreferredRelativeMode()
+    {
+        _session.Begin(
+            PerformanceActionKind.BeatNudgeForward,
+            preferredInputMode: ActionInputMode.Relative);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 33, 127));
+
+        Assert.Equal(ActionInputMode.Relative, _learned!.InputMode);
+    }
+
+    [Fact]
     public void Observe_PreservesActionArgument()
     {
         _session.Begin(PerformanceActionKind.DeckHotCue, slot: 1, argument: "4");

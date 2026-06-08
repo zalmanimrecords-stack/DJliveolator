@@ -70,6 +70,24 @@ public class MixerActionHandlerTests
         Assert.Equal(0.5 * Math.Sqrt(0.5), mixer.DeckGain[MixerState.DeckA], 1e-6);
     }
 
+    [Fact]
+    public void ChannelGain_RaisesValueFeedbackForUiAndMidi()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        ActionFeedbackChanged? feedback = null;
+        handler.FeedbackChanged += (_, e) => feedback = e;
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerChannelGain,
+            ActionInputMode.Absolute,
+            Value: 0.25,
+            Slot: MixerState.DeckB));
+
+        Assert.Equal(PerformanceActionKind.MixerChannelGain, feedback!.Kind);
+        Assert.Equal(MixerState.DeckB, feedback.Slot);
+        Assert.Equal(0.25, feedback.State.Value, Tol);
+    }
+
     [Theory]
     [InlineData("Low", EqBand.Low)]
     [InlineData("Mid", EqBand.Mid)]
@@ -93,6 +111,25 @@ public class MixerActionHandlerTests
     }
 
     [Fact]
+    public void EqBand_RaisesValueAndBandFeedback()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        ActionFeedbackChanged? feedback = null;
+        handler.FeedbackChanged += (_, e) => feedback = e;
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqBand,
+            ActionInputMode.Absolute,
+            Value: 0.7,
+            Slot: MixerState.DeckA,
+            Argument: "Mid"));
+
+        Assert.Equal(PerformanceActionKind.MixerEqBand, feedback!.Kind);
+        Assert.Equal("Mid", feedback.State.Argument);
+        Assert.Equal(0.7, feedback.State.Value, Tol);
+    }
+
+    [Fact]
     public void EqBand_MissingOrBadArgument_Throws()
     {
         MixerActionHandler handler = NewHandler(out _);
@@ -113,6 +150,22 @@ public class MixerActionHandlerTests
 
         Assert.Equal(0.1, handler.State.Channel(MixerState.DeckA).Filter, Tol);
         Assert.True(mixer.Filter.ContainsKey(MixerState.DeckA));
+    }
+
+    [Fact]
+    public void Filter_RaisesValueFeedback()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        ActionFeedbackChanged? feedback = null;
+        handler.FeedbackChanged += (_, e) => feedback = e;
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerFilter,
+            ActionInputMode.Absolute,
+            Value: 0.8,
+            Slot: MixerState.DeckA));
+
+        Assert.Equal(0.8, feedback!.State.Value, Tol);
     }
 
     [Fact]

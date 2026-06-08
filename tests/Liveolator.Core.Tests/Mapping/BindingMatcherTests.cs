@@ -43,6 +43,30 @@ public class BindingMatcherTests
         Assert.False(BindingMatcher.Matches(binding, message));
     }
 
+    [Theory]
+    [InlineData(127, true)]
+    [InlineData(1, true)]
+    [InlineData(0, false)]
+    public void Matches_MomentaryCc_FiresOnPressButNotRelease(int value, bool expected)
+    {
+        var binding = Binding(MidiMessageType.ControlChange, 0, 10);
+        var message = new MidiMessage(MidiMessageType.ControlChange, 0, 10, value);
+
+        Assert.Equal(expected, BindingMatcher.Matches(binding, message));
+    }
+
+    [Fact]
+    public void Matches_AbsoluteCc_AcceptsZeroPosition()
+    {
+        var binding = new ControllerBinding(
+            MidiMessageType.ControlChange, 0, 10,
+            PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute);
+
+        Assert.True(BindingMatcher.Matches(
+            binding,
+            new MidiMessage(MidiMessageType.ControlChange, 0, 10, 0)));
+    }
+
     [Fact]
     public void Matches_PitchBend_IgnoresData1()
     {

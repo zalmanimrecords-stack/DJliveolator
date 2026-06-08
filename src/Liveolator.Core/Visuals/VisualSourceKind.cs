@@ -11,4 +11,12 @@ public enum VisualSourceKind
 
     /// <summary>A live camera / capture device.</summary>
     Camera,
+
+    /// <summary>
+    /// A generator: the layer's pixels are produced by a GLSL generator shader rather than decoded from
+    /// an asset (doc 26 — the basis for generative add-ons such as a VU meter). The owning
+    /// <see cref="VisualSourceRef.Reference"/> holds the generator effect id, resolved against the
+    /// <see cref="IVisualEffectRegistry"/> to a <see cref="VisualEffectRole.Generator"/> descriptor.
+    /// </summary>
+    Generator,
 }

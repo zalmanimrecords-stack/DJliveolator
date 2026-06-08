@@ -56,6 +56,35 @@ public sealed class SceneCompositionTests
     }
 
     [Fact]
+    public void Resolve_marks_generator_layers_renderable()
+    {
+        VisualScene scene = Scene(
+            Layer("img", VisualSourceKind.Image),
+            Layer("vu", VisualSourceKind.Generator, reference: "core/vu-meter"));
+
+        IReadOnlyList<ResolvedLayer> resolved = SceneComposition.Resolve(scene);
+
+        Assert.True(resolved[0].Renderable);
+        Assert.True(resolved[1].Renderable);
+        Assert.Equal("core/vu-meter", resolved[1].Source.Reference);
+    }
+
+    [Fact]
+    public void RenderableLayers_keeps_image_and_generator_layers_skipping_video()
+    {
+        VisualScene scene = Scene(
+            Layer("img", VisualSourceKind.Image),
+            Layer("clip", VisualSourceKind.VideoClip),
+            Layer("vu", VisualSourceKind.Generator, reference: "core/vu-meter"));
+
+        IReadOnlyList<ResolvedLayer> renderable = SceneComposition.RenderableLayers(scene);
+
+        Assert.Equal(2, renderable.Count);
+        Assert.Equal("img", renderable[0].Name);
+        Assert.Equal("vu", renderable[1].Name);
+    }
+
+    [Fact]
     public void Resolve_carries_the_ordered_effect_chain_to_the_renderer()
     {
         var first = new EffectRef("core/first", new Dictionary<string, double>());

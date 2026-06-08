@@ -71,7 +71,8 @@ public sealed class MainWindowViewModelTests
         public void BeginLearn(
             Liveolator.Core.Actions.PerformanceActionKind action,
             int slot = 0,
-            string? argument = null) { }
+            string? argument = null,
+            Liveolator.Core.Actions.ActionInputMode? preferredInputMode = null) { }
         public void CancelLearn() { }
         public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default)
             => Task.CompletedTask;

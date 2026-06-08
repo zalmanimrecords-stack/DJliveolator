@@ -10,6 +10,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Visuals;
+using Liveolator.Visuals.Gl;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -143,6 +144,33 @@ public sealed class ServiceConfigTests
         using var provider = BuildForTest();
 
         Assert.NotNull(provider.GetService<IVisualPerformanceEngine>());
+    }
+
+    [Fact]
+    public void Build_RegistersTheLiveAudioLevelSource_SilentWhenHeadless()
+    {
+        // No native BASS in CI ⇒ no master mix ⇒ the visual level source falls back to silence rather
+        // than the visual engine taking an optional dependency (doc 26 headless rule).
+        using var provider = BuildForTest();
+
+        var level = provider.GetService<IVisualAudioLevelSource>();
+
+        Assert.NotNull(level);
+        Assert.Equal(VisualAudioLevel.Silent, level!.Current);
+    }
+
+    [Fact]
+    public void Build_RegistersTheBuiltInVuMeterGenerator()
+    {
+        // The reference generator add-on (doc 26) is registered out of the box so a generator layer can
+        // reference it and render a live meter.
+        using var provider = BuildForTest();
+
+        var registry = provider.GetRequiredService<IVisualEffectRegistry>();
+        bool found = registry.TryGet(VuMeterAddon.EffectId, version: null, out VisualEffectDescriptor descriptor);
+
+        Assert.True(found);
+        Assert.Equal(VisualEffectRole.Generator, descriptor.Role);
     }
 
     private static ServiceProvider BuildForTest() =>

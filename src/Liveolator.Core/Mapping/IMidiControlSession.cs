@@ -18,7 +18,11 @@ public interface IMidiControlSession : IMidiControlStatus
 
     void Stop();
 
-    void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null);
+    void BeginLearn(
+        PerformanceActionKind action,
+        int slot = 0,
+        string? argument = null,
+        ActionInputMode? preferredInputMode = null);
 
     void CancelLearn();
 

@@ -3,19 +3,19 @@
         xmlns:controls="clr-namespace:Liveolator.App.Controls">
 
   <Styles.Resources>
-    <!-- A separate stationary well under the moving face makes a press read as travel,
-         rather than as a flat color change. -->
+    <!-- A recessed chassis well and a short-travel face make buttons read like
+         powder-coated hardware controls instead of glossy software pills. -->
     <ControlTemplate x:Key="HardwareButtonTemplate" TargetType="Button">
       <Grid>
         <Border Name="PART_Well"
-                Margin="0,4,0,0"
-                Background="#070A0F"
-                BorderBrush="#263243"
+                Margin="0,3,0,0"
+                Background="#05070A"
+                BorderBrush="#35404D"
                 BorderThickness="1"
                 CornerRadius="{TemplateBinding CornerRadius}"
-                BoxShadow="inset 0 2 4 0 #B3000000" />
+                BoxShadow="inset 0 2 3 0 #D9000000, inset 0 -1 0 0 #1FFFFFFF" />
         <ContentPresenter Name="PART_Face"
-                          Margin="0,0,0,4"
+                          Margin="0,0,0,3"
                           Background="{TemplateBinding Background}"
                           BorderBrush="{TemplateBinding BorderBrush}"
                           BorderThickness="{TemplateBinding BorderThickness}"
@@ -112,18 +112,18 @@
     <Setter Property="BoxShadow" Value="inset 0 2 5 0 #99000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
 
-  <!-- small round icon button (e.g. the deck "..." menu) -->
+  <!-- Compact square utility key (e.g. the deck "..." menu). -->
   <Style Selector="Button.icon">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.48" />
-        <GradientStop Color="#111722" Offset="1" />
+        <GradientStop Color="#303741" Offset="0" />
+        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
+        <GradientStop Color="#11151B" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="18" />
+    <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Foreground" Value="{StaticResource Dim}" />
     <Setter Property="Width" Value="34" />
     <Setter Property="Height" Value="34" />
@@ -134,7 +134,7 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.icon /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 3 0 #80000000, inset 0 1 0 0 #38FFFFFF, inset 0 -2 3 0 #52000000" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #2BFFFFFF, inset 0 -1 0 0 #80000000" />
   </Style>
   <Style Selector="Button.icon:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
@@ -147,8 +147,8 @@
     <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
   </Style>
   <Style Selector="Button.icon:pressed /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
-    <Setter Property="BoxShadow" Value="0 1 1 0 #66000000, inset 0 2 4 0 #99000000" />
+    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
+    <Setter Property="BoxShadow" Value="inset 0 2 3 0 #B3000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
 
   <!-- ============ tab strip (ListBox.tabs) ============ -->
@@ -229,14 +229,14 @@
   <Style Selector="Button.spartan">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="{StaticResource S4Color}" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.46" />
-        <GradientStop Color="#111722" Offset="1" />
+        <GradientStop Color="#303741" Offset="0" />
+        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
+        <GradientStop Color="#11151B" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
+    <Setter Property="BorderBrush" Value="#46515E" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Foreground" Value="{StaticResource Dim}" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
@@ -244,36 +244,36 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.spartan /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 3 0 #80000000, inset 0 1 0 0 #38FFFFFF, inset 0 -2 3 0 #52000000" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #2BFFFFFF, inset 0 -1 0 0 #80000000" />
   </Style>
   <Style Selector="Button.spartan:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#354154" Offset="0" />
-        <GradientStop Color="{StaticResource S4Color}" Offset="0.55" />
-        <GradientStop Color="#19212D" Offset="1" />
+        <GradientStop Color="#3A424D" Offset="0" />
+        <GradientStop Color="#29313C" Offset="0.18" />
+        <GradientStop Color="#151A21" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Faint}" />
     <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
   </Style>
   <Style Selector="Button.spartan:pressed /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
+    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
     <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BoxShadow" Value="0 1 1 0 #66000000, inset 0 2 4 0 #99000000" />
+    <Setter Property="BoxShadow" Value="inset 0 2 3 0 #B3000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <Style Selector="Button.accent">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#69A7FF" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.42" />
-        <GradientStop Color="#1E5EC5" Offset="1" />
+        <GradientStop Color="#4B91EF" Offset="0" />
+        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="#174D9C" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
-    <Setter Property="BorderBrush" Value="#70FFFFFF" />
+    <Setter Property="BorderBrush" Value="#6C9BD8" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
     <Setter Property="Cursor" Value="Hand" />
@@ -284,21 +284,21 @@
     <Setter Property="BorderBrush" Value="#1B559F" />
   </Style>
   <Style Selector="Button.accent /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 5 0 #802F80F6, inset 0 1 0 0 #8CFFFFFF, inset 0 -3 4 0 #4D0B3475" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C0B3475" />
   </Style>
   <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#82B6FF" Offset="0" />
-        <GradientStop Color="#3E8BFA" Offset="0.42" />
-        <GradientStop Color="#2468D3" Offset="1" />
+        <GradientStop Color="#5A9AF2" Offset="0" />
+        <GradientStop Color="#347FEC" Offset="0.18" />
+        <GradientStop Color="#1A55A8" Offset="1" />
       </LinearGradientBrush>
     </Setter>
-    <Setter Property="BoxShadow" Value="0 3 8 0 #992F80F6, inset 0 1 0 0 #A6FFFFFF, inset 0 -3 4 0 #4D0B3475" />
+    <Setter Property="BoxShadow" Value="0 2 2 0 #802F80F6, inset 0 1 0 0 #5CFFFFFF, inset 0 -1 0 0 #8C0B3475" />
   </Style>
   <Style Selector="Button.accent:pressed /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
-    <Setter Property="BoxShadow" Value="0 1 3 0 #662F80F6, inset 0 3 5 0 #66123664" />
+    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
+    <Setter Property="BoxShadow" Value="inset 0 2 4 0 #8C123664, inset 0 -1 0 0 #334B91EF" />
   </Style>
 
   <!-- ============ text input ============ -->
@@ -322,14 +322,14 @@
   <Style Selector="Button.key">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#303B4D" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.42" />
-        <GradientStop Color="#101620" Offset="1" />
+        <GradientStop Color="#343C47" Offset="0" />
+        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
+        <GradientStop Color="#0D1117" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Foreground" Value="{StaticResource Dim}" />
     <Setter Property="Padding" Value="8,9" />
     <Setter Property="FontSize" Value="10" />
@@ -340,7 +340,7 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.key /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 4 0 #80000000, inset 0 1 0 0 #47FFFFFF, inset 0 -3 4 0 #66000000" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #33FFFFFF, inset 0 -1 0 0 #99000000" />
   </Style>
   <Style Selector="Button.key:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
@@ -354,17 +354,17 @@
     <Setter Property="TextElement.Foreground" Value="{StaticResource Text}" />
   </Style>
   <Style Selector="Button.key:pressed /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
+    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
     <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BoxShadow" Value="0 1 1 0 #66000000, inset 0 3 5 0 #A6000000" />
+    <Setter Property="BoxShadow" Value="inset 0 2 4 0 #C7000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <!-- active toggle: the single accent carries the on-state (paired with text, never color-only) -->
   <Style Selector="Button.key.on">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#64A4FF" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.4" />
-        <GradientStop Color="#1D5DBF" Offset="1" />
+        <GradientStop Color="#4B91EF" Offset="0" />
+        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="#174D9C" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
@@ -376,7 +376,7 @@
   </Style>
   <Style Selector="Button.key.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
-    <Setter Property="BoxShadow" Value="0 1 5 0 #992F80F6, inset 0 1 0 0 #70FFFFFF, inset 0 2 5 0 #52123664" />
+    <Setter Property="BoxShadow" Value="0 1 2 0 #802F80F6, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C0B3475" />
   </Style>
   <Style Selector="Button.key.on:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
@@ -401,14 +401,14 @@
   <Style Selector="Button.play">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#303B4D" Offset="0" />
-        <GradientStop Color="{StaticResource S3Color}" Offset="0.42" />
-        <GradientStop Color="#101620" Offset="1" />
+        <GradientStop Color="#343C47" Offset="0" />
+        <GradientStop Color="{StaticResource S3Color}" Offset="0.18" />
+        <GradientStop Color="#0D1117" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="3" />
     <Setter Property="Padding" Value="8,9" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
     <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -417,7 +417,7 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.play /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 4 0 #80000000, inset 0 1 0 0 #47FFFFFF, inset 0 -3 4 0 #66000000" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #33FFFFFF, inset 0 -1 0 0 #99000000" />
   </Style>
   <Style Selector="Button.play:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
@@ -429,9 +429,9 @@
     </Setter>
   </Style>
   <Style Selector="Button.play:pressed /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
+    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
     <Setter Property="Background" Value="{StaticResource S2}" />
-    <Setter Property="BoxShadow" Value="0 1 1 0 #66000000, inset 0 3 5 0 #A6000000" />
+    <Setter Property="BoxShadow" Value="inset 0 2 4 0 #C7000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <Style Selector="Button.play.on">
     <Setter Property="Background" Value="{StaticResource S4}" />
@@ -450,14 +450,14 @@
   <Style Selector="Button.pad">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#202936" Offset="0" />
-        <GradientStop Color="{StaticResource S2Color}" Offset="0.5" />
-        <GradientStop Color="#070A0F" Offset="1" />
+        <GradientStop Color="#29313A" Offset="0" />
+        <GradientStop Color="{StaticResource S2Color}" Offset="0.18" />
+        <GradientStop Color="#06080B" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="2" />
     <Setter Property="Height" Value="22" />
     <Setter Property="MinHeight" Value="22" />
     <Setter Property="Padding" Value="0" />
@@ -466,7 +466,7 @@
     <Setter Property="Template" Value="{StaticResource HardwareButtonTemplate}" />
   </Style>
   <Style Selector="Button.pad /template/ ContentPresenter#PART_Face">
-    <Setter Property="BoxShadow" Value="0 2 3 0 #80000000, inset 0 1 0 0 #3DFFFFFF, inset 0 -2 3 0 #73000000" />
+    <Setter Property="BoxShadow" Value="0 2 1 0 #A6000000, inset 0 1 0 0 #2BFFFFFF, inset 0 -1 0 0 #99000000" />
   </Style>
   <Style Selector="Button.pad:pointerover /template/ ContentPresenter#PART_Face">
     <Setter Property="Background">
@@ -480,7 +480,7 @@
   </Style>
   <Style Selector="Button.pad:pressed /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
-    <Setter Property="BoxShadow" Value="0 1 1 0 #66000000, inset 0 2 4 0 #A6000000" />
+    <Setter Property="BoxShadow" Value="inset 0 2 3 0 #C7000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
   <!-- loaded cell (has a scene) -->
   <Style Selector="Button.pad.has">
@@ -490,9 +490,9 @@
   <Style Selector="Button.pad.on">
     <Setter Property="Background">
       <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Color="#72AEFF" Offset="0" />
-        <GradientStop Color="{StaticResource AccentColor}" Offset="0.45" />
-        <GradientStop Color="#1C58B6" Offset="1" />
+        <GradientStop Color="#4B91EF" Offset="0" />
+        <GradientStop Color="{StaticResource AccentColor}" Offset="0.18" />
+        <GradientStop Color="#174D9C" Offset="1" />
       </LinearGradientBrush>
     </Setter>
     <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
@@ -503,7 +503,7 @@
   </Style>
   <Style Selector="Button.pad.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 1px)" />
-    <Setter Property="BoxShadow" Value="0 1 6 0 #A62F80F6, inset 0 1 0 0 #80FFFFFF, inset 0 2 5 0 #52123664" />
+    <Setter Property="BoxShadow" Value="0 1 2 0 #802F80F6, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C0B3475" />
   </Style>
   <Style Selector="Button.pad:disabled">
     <Setter Property="Opacity" Value="0.5" />

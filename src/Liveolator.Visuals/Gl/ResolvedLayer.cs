@@ -14,9 +14,10 @@ namespace Liveolator.Visuals.Gl;
 /// <param name="Opacity">Effective opacity in 0..1.</param>
 /// <param name="Effects">Ordered GLSL effect instances applied before the layer is composited.</param>
 /// <param name="Renderable">
-/// True when this slice can draw the layer (an <see cref="VisualSourceKind.Image"/> source). Video and
-/// camera sources are deferred, so they resolve as non-renderable and the renderer skips them rather
-/// than crashing the show.
+/// True when this slice can draw the layer: an <see cref="VisualSourceKind.Image"/> source (decoded to a
+/// texture) or a <see cref="VisualSourceKind.Generator"/> source (drawn by a generator shader, doc 26).
+/// Video and camera sources are deferred, so they resolve as non-renderable and the renderer skips them
+/// rather than crashing the show.
 /// </param>
 public readonly record struct ResolvedLayer(
     string Name,

@@ -40,6 +40,13 @@ The GL compositor lives in `Gl/`:
   `CurrentFrame`/`CurrentComposition` are pure observable state (unit-tested off the GPU); `Run()`
   opens the window and renders the active scene's blended layer stack. Video/camera sources,
   quantized launch, and transitions are **deferred** logged no-ops — they grow into this class.
+- **Generator layers + audio reactivity (doc 26):** a `VisualSourceKind.Generator` layer renders from a
+  GLSL generator shader (`VisualEffectRole.Generator`) via `GeneratorPass` — a viewport-sized FBO
+  re-rendered each frame, no input texture — then composited like an image layer. The engine **reads**
+  `IVisualAudioLevelSource.Current` directly from the render thread (just as it reads `IBeatClock.Current`
+  — sampling a clock/level is the engine's read path, not the dispatcher command path) and feeds
+  `uRms`/`uPeak`/`uLevel` plus the beat uniforms into both generator and effect shaders. The built-in
+  `VuMeterAddon` is the reference generator.
 
 **Manual visual verification (no headless path — GL needs a display):**
 
@@ -57,6 +64,10 @@ The GL compositor lives in `Gl/`:
 7. **Live-clock binding:** with realtime audio up (BASS present), the window pulses on the audible
    master beat; headless, it pulses on the Live tab tap clock. (Composition picks the clock via
    `LiveClockSelector` in `ServiceConfig.WireVisuals`.)
+8. **VU meter (generator + audio level, doc 26):** the starter bank ships a `VuMeterAddon` generator
+   layer. With BASS present and a track playing, the **needle swings with the music** (fast attack,
+   slow release) and the peak dot rides the arc; in silence it rests at the floor. Headless (no BASS)
+   the meter renders at rest (the level source is `SilentVisualAudioLevelSource`) — no crash.
 
 **App wiring:** `ServiceConfig.WireVisuals` registers the engine as `IVisualPerformanceEngine`, joins
 its `VisualActionHandler` to the one dispatcher, and binds the engine to the `LiveClockSelector`-chosen

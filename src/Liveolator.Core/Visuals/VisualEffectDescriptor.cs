@@ -7,13 +7,30 @@ public sealed record VisualEffectParameter(
     double Max,
     double Default);
 
-/// <summary>Validated metadata for a GLSL fragment effect supplied by an extension package.</summary>
+/// <summary>How a GLSL fragment shader is used by the compositor (doc 26).</summary>
+public enum VisualEffectRole
+{
+    /// <summary>
+    /// A post-process effect: samples the layer's existing texture (<c>uTexture</c>) and transforms it.
+    /// This is the default so older <c>visual-effects.json</c> without a role still load as effects.
+    /// </summary>
+    Effect = 0,
+
+    /// <summary>
+    /// A generator: draws the layer's pixels from uniforms alone (no input texture). Referenced as a
+    /// layer source via <see cref="VisualSourceKind.Generator"/> — e.g. a VU meter.
+    /// </summary>
+    Generator = 1,
+}
+
+/// <summary>Validated metadata for a GLSL fragment shader supplied by an extension package.</summary>
 public sealed record VisualEffectDescriptor(
     string EffectId,
     string Version,
     string PackageId,
     string ShaderPath,
     IReadOnlyList<VisualEffectParameter> Parameters,
+    VisualEffectRole Role = VisualEffectRole.Effect,
     int MinimumOpenGlMajor = 3,
     int MinimumOpenGlMinor = 3);
 

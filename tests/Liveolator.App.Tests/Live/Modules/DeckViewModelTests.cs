@@ -76,6 +76,30 @@ public sealed class DeckViewModelTests
         Assert.Equal(0.2, action.Value);
     }
 
+    [Theory]
+    [InlineData("High", 0.2)]
+    [InlineData("Mid", 0.4)]
+    [InlineData("Low", 0.8)]
+    public void EqFeedback_UpdatesMatchingKnob(string band, double value)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.MixerEqBand,
+            slot: 0,
+            new ActionFeedbackState(false, true, value, band));
+
+        ContinuousControlViewModel knob = band switch
+        {
+            "High" => vm.EqHigh,
+            "Mid" => vm.EqMid,
+            _ => vm.EqLow,
+        };
+        Assert.Equal(value, knob.Value);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
     [Fact]
     public void DeckControls_AreEnabled_WhenAnEngineBacksTheDeck()
     {

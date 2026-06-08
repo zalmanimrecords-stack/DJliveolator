@@ -31,6 +31,7 @@ public sealed class GlobalMidiLearnCoordinatorTests
         Assert.Equal(PerformanceActionKind.DeckHotCue, session.LearnedAction);
         Assert.Equal(1, session.LearnedSlot);
         Assert.Equal("4", session.LearnedArgument);
+        Assert.Equal(ActionInputMode.Momentary, session.LearnedInputMode);
         Assert.True(coordinator.IsWaitingForMidi);
     }
 
@@ -87,6 +88,7 @@ public sealed class GlobalMidiLearnCoordinatorTests
         public PerformanceActionKind? LearnedAction { get; private set; }
         public int LearnedSlot { get; private set; }
         public string? LearnedArgument { get; private set; }
+        public ActionInputMode? LearnedInputMode { get; private set; }
         public bool CancelCalled { get; private set; }
         public ControllerMappingProfile? ActiveProfile => null;
         public bool IsLearnArmed { get; private set; }
@@ -102,11 +104,16 @@ public sealed class GlobalMidiLearnCoordinatorTests
 
         public void Stop() { }
 
-        public void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null)
+        public void BeginLearn(
+            PerformanceActionKind action,
+            int slot = 0,
+            string? argument = null,
+            ActionInputMode? preferredInputMode = null)
         {
             LearnedAction = action;
             LearnedSlot = slot;
             LearnedArgument = argument;
+            LearnedInputMode = preferredInputMode;
             IsLearnArmed = true;
         }
 

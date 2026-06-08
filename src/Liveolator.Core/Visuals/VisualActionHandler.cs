@@ -158,6 +158,14 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         }
 
         _engine.SetMacro(action.Argument, action.Value);
+        RaiseFeedback(
+            PerformanceActionKind.VisualSetMacro,
+            action.Slot,
+            new ActionFeedbackState(
+                IsActive: false,
+                IsAvailable: true,
+                Value: action.Value,
+                Argument: action.Argument));
     }
 
     private void LaunchClip(PerformanceAction action)

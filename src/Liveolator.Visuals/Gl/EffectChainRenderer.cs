@@ -119,6 +119,11 @@ internal sealed class EffectChainRenderer : IDisposable
         Set(program.BarPhaseLocation, frame.BarPhase);
         Set(program.ConfidenceLocation, frame.Confidence);
         Set(program.BeatFlashLocation, frame.BeatFlash);
+        Set(program.RmsLocation, frame.Rms);
+        Set(program.PeakLocation, frame.Peak);
+        Set(program.LevelLocation, frame.Level);
+        if (program.ResolutionLocation >= 0)
+            _gl.Uniform2(program.ResolutionLocation, (float)_width, (float)_height);
     }
 
     private void Set(int location, int value)
@@ -165,6 +170,10 @@ internal sealed class EffectChainRenderer : IDisposable
             _gl.GetUniformLocation(program, "uBarPhase"),
             _gl.GetUniformLocation(program, "uConfidence"),
             _gl.GetUniformLocation(program, "uBeatFlash"),
+            _gl.GetUniformLocation(program, "uRms"),
+            _gl.GetUniformLocation(program, "uPeak"),
+            _gl.GetUniformLocation(program, "uLevel"),
+            _gl.GetUniformLocation(program, "uResolution"),
             parameters);
     }
 
@@ -264,5 +273,9 @@ internal sealed class EffectChainRenderer : IDisposable
         int BarPhaseLocation,
         int ConfidenceLocation,
         int BeatFlashLocation,
+        int RmsLocation,
+        int PeakLocation,
+        int LevelLocation,
+        int ResolutionLocation,
         IReadOnlyDictionary<string, int> ParameterLocations);
 }

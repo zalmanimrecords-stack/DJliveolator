@@ -114,6 +114,19 @@ public class VisualActionHandlerTests
     }
 
     [Fact]
+    public void SetMacro_RaisesValueFeedbackForUi()
+    {
+        ActionFeedbackChanged? feedback = null;
+        _handler.FeedbackChanged += (_, e) => feedback = e;
+
+        Handle(PerformanceActionKind.VisualSetMacro, value: 0.7, argument: "echo.feedback");
+
+        Assert.Equal(PerformanceActionKind.VisualSetMacro, feedback!.Kind);
+        Assert.Equal(0.7, feedback.State.Value);
+        Assert.Equal("echo.feedback", feedback.State.Argument);
+    }
+
+    [Fact]
     public void SetMacro_WithoutName_DoesNotCallEngine()
     {
         Handle(PerformanceActionKind.VisualSetMacro, value: 0.5, argument: null);

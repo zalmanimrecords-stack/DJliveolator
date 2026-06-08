@@ -1,12 +1,19 @@
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
+using System.Reactive.Concurrency;
+using ReactiveUI;
 using Xunit;
 
 namespace Liveolator.App.Tests.Live.Modules;
 
 public sealed class MacroEncodersViewModelTests
 {
+    public MacroEncodersViewModelTests()
+    {
+        RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
+    }
+
     [Fact]
     public void Exposes_Eight_Encoders_InMockOrder()
     {
@@ -39,5 +46,20 @@ public sealed class MacroEncodersViewModelTests
 
         Assert.False(vm.IsEnabled);
         Assert.All(vm.Encoders, e => Assert.False(e.IsEnabled));
+    }
+
+    [Fact]
+    public void MacroFeedback_UpdatesMatchingEncoderWithoutRedispatch()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MacroEncodersViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.VisualSetMacro,
+            slot: 0,
+            new ActionFeedbackState(false, true, 0.25, "echo"));
+
+        Assert.Equal(0.25, vm.Encoders[2].Value);
+        Assert.Empty(dispatcher.Dispatched);
     }
 }

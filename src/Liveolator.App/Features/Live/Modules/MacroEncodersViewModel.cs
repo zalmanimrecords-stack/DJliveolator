@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Reactive.Concurrency;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using ReactiveUI;
 
 namespace Liveolator.App.Features.Live.Modules;
 
@@ -12,7 +14,7 @@ namespace Liveolator.App.Features.Live.Modules;
 /// so the on-screen row and the hardware stay in lockstep. Macros the engine has not registered yet are
 /// no-ops on the engine side (logged), but the action layer is fully wired here.
 /// </summary>
-public sealed class MacroEncodersViewModel : ViewModelBase
+public sealed class MacroEncodersViewModel : ViewModelBase, IDisposable
 {
     // Label → macro name (the Argument the VisualActionHandler forwards to the engine), with the
     // mock's starting positions for visual fidelity.
@@ -39,6 +41,9 @@ public sealed class MacroEncodersViewModel : ViewModelBase
             Specs.Select(spec => new ContinuousControlViewModel(
                 spec.Label, spec.Initial,
                 enabled ? value => Emit(spec.Macro, value) : null)));
+
+        if (_dispatcher is not null)
+            _dispatcher.FeedbackChanged += OnFeedback;
     }
 
     /// <summary>True when the visual handler is wired; the UI disables the encoders otherwise.</summary>
@@ -50,4 +55,25 @@ public sealed class MacroEncodersViewModel : ViewModelBase
     private void Emit(string macro, double value)
         => _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.VisualSetMacro, ActionInputMode.Absolute, Value: value, Argument: macro));
+
+    private void OnFeedback(object? sender, ActionFeedbackChanged e)
+    {
+        if (e.Kind != PerformanceActionKind.VisualSetMacro || string.IsNullOrWhiteSpace(e.State.Argument))
+            return;
+
+        RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            int index = Array.FindIndex(
+                Specs,
+                spec => string.Equals(spec.Macro, e.State.Argument, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+                Encoders[index].SetFromFeedback(e.State.Value);
+        });
+    }
+
+    public void Dispose()
+    {
+        if (_dispatcher is not null)
+            _dispatcher.FeedbackChanged -= OnFeedback;
+    }
 }

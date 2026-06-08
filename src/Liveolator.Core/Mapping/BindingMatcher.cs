@@ -1,3 +1,5 @@
+using Liveolator.Core.Actions;
+
 namespace Liveolator.Core.Mapping;
 
 /// <summary>
@@ -32,6 +34,15 @@ public static class BindingMatcher
         // Pitch bend carries no note/CC address; it is identified by type + channel alone.
         if (binding.TriggerType == MidiMessageType.PitchBend)
             return true;
-        return binding.Data1 == message.Data1;
+        if (binding.Data1 != message.Data1)
+            return false;
+
+        // Controllers that expose buttons as CC commonly send 127 on press and 0 on release.
+        // Momentary/toggle bindings fire on the press only; otherwise one physical click toggles twice.
+        if (binding.TriggerType == MidiMessageType.ControlChange
+            && binding.InputMode is ActionInputMode.Momentary or ActionInputMode.Toggle)
+            return message.Data2 > 0;
+
+        return true;
     }
 }

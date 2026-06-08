@@ -45,6 +45,12 @@ public sealed class MasterMixPlaybackEngine : IDisposable
     /// <summary>The live beat clock fed by the master mix; stable for the engine's lifetime.</summary>
     public IBeatClock BeatClock => _beatClock;
 
+    /// <summary>
+    /// The shared analysis frames feeding the clock — the same master-mix frames a visual audio-level
+    /// meter (doc 26) subscribes to, so the metered level matches the audible signal the visuals lock to.
+    /// </summary>
+    public IAudioFrameProvider FrameProvider => _pipeline;
+
     public void Dispose()
     {
         if (_disposed)

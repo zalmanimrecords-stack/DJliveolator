@@ -1,3 +1,4 @@
+using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Visuals;
 
@@ -15,13 +16,19 @@ namespace Liveolator.Visuals.Gl;
 /// beats; peaks on <see cref="BeatClockState.IsBeat"/> scaled by detection confidence.
 /// </param>
 /// <param name="Blackout">When true the shader outputs black regardless of the other values.</param>
+/// <param name="Rms">Live master RMS level, 0..1 (doc 26 — the <c>uRms</c> shader uniform).</param>
+/// <param name="Peak">Live master peak level, 0..1 (the <c>uPeak</c> shader uniform).</param>
+/// <param name="Level">VU-ballistics level, 0..1 (the <c>uLevel</c> shader uniform — a meter's needle).</param>
 public readonly record struct FrameUniforms(
     float Brightness,
     float BeatFlash,
     bool Blackout,
     float BeatPhase = 0,
     float BarPhase = 0,
-    float Confidence = 0)
+    float Confidence = 0,
+    float Rms = 0,
+    float Peak = 0,
+    float Level = 0)
 {
     /// <summary>The neutral pass-through frame: full brightness, no flash, not blacked out.</summary>
     public static FrameUniforms Neutral { get; } = new(Brightness: 1f, BeatFlash: 0f, Blackout: false);
@@ -40,12 +47,17 @@ public readonly record struct FrameUniforms(
     /// <param name="beat">The latest immutable beat snapshot.</param>
     /// <param name="flashStrength">Peak extra brightness on a fully-confident beat (>= 0).</param>
     /// <param name="blackout">Whether blackout is engaged.</param>
+    /// <param name="level">
+    /// The live audio level the meter/reactive shaders read (doc 26). Null → <see cref="VisualAudioLevel.Silent"/>,
+    /// so headless rendering still resolves a frame with the meter at its floor.
+    /// </param>
     public static FrameUniforms Resolve(
         VisualMacro? brightnessMacro,
         double normalizedBrightness,
         BeatClockState beat,
         double flashStrength,
-        bool blackout)
+        bool blackout,
+        VisualAudioLevel? level = null)
     {
         ArgumentNullException.ThrowIfNull(beat);
         if (flashStrength < 0 || double.IsNaN(flashStrength))
@@ -56,6 +68,7 @@ public readonly record struct FrameUniforms(
             brightness = 0;
 
         double flash = ResolveFlash(beat, flashStrength);
+        VisualAudioLevel audio = level ?? VisualAudioLevel.Silent;
 
         return new FrameUniforms(
             (float)brightness,
@@ -63,7 +76,10 @@ public readonly record struct FrameUniforms(
             blackout,
             (float)beat.BeatPhase,
             (float)beat.BarPhase,
-            (float)beat.Confidence);
+            (float)beat.Confidence,
+            (float)audio.Rms,
+            (float)audio.Peak,
+            (float)audio.Vu);
     }
 
     // The flash peaks on the beat frame and decays linearly across the beat via BeatPhase, gated by

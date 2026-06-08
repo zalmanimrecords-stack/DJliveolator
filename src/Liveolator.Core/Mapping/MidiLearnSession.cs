@@ -13,6 +13,7 @@ public sealed class MidiLearnSession : IMidiLearnSession
     private PerformanceActionKind _action;
     private int _slot;
     private string? _argument;
+    private ActionInputMode? _preferredInputMode;
 
     /// <inheritdoc />
     public bool IsArmed { get; private set; }
@@ -21,11 +22,16 @@ public sealed class MidiLearnSession : IMidiLearnSession
     public event EventHandler<ControllerBinding>? Learned;
 
     /// <inheritdoc />
-    public void Begin(PerformanceActionKind action, int slot = 0, string? argument = null)
+    public void Begin(
+        PerformanceActionKind action,
+        int slot = 0,
+        string? argument = null,
+        ActionInputMode? preferredInputMode = null)
     {
         _action = action;
         _slot = slot;
         _argument = argument;
+        _preferredInputMode = preferredInputMode;
         IsArmed = true;
     }
 
@@ -48,7 +54,9 @@ public sealed class MidiLearnSession : IMidiLearnSession
         // Note presses and releases both learn as a momentary NoteOn binding (the canonical press).
         bool isNote = message.Type is MidiMessageType.NoteOn or MidiMessageType.NoteOff;
         MidiMessageType triggerType = isNote ? MidiMessageType.NoteOn : message.Type;
-        ActionInputMode inputMode = isNote ? ActionInputMode.Momentary : ActionInputMode.Absolute;
+        ActionInputMode inputMode =
+            _preferredInputMode
+            ?? (isNote ? ActionInputMode.Momentary : ActionInputMode.Absolute);
 
         return new ControllerBinding(
             triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument);

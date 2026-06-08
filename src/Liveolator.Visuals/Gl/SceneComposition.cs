@@ -32,7 +32,7 @@ public static class SceneComposition
                 layer.Blend,
                 layer.Opacity,
                 layer.Effects,
-                Renderable: layer.Source.Kind == VisualSourceKind.Image));
+                Renderable: layer.Source.Kind is VisualSourceKind.Image or VisualSourceKind.Generator));
         }
         return resolved;
     }

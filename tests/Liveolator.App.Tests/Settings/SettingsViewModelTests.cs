@@ -124,7 +124,11 @@ public sealed class SettingsViewModelTests
         {
         }
 
-        public void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null)
+        public void BeginLearn(
+            PerformanceActionKind action,
+            int slot = 0,
+            string? argument = null,
+            ActionInputMode? preferredInputMode = null)
             => IsLearnArmed = true;
 
         public void CancelLearn() => IsLearnArmed = false;

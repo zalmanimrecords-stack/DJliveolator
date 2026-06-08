@@ -107,6 +107,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             _state = _state.WithChannel(slot, _state.Channel(slot) with { Gain = Math.Clamp(gain, 0.0, 1.0) });
             PushDeckGain(slot);
         }
+        RaiseFeedback(
+            PerformanceActionKind.MixerChannelGain, slot,
+            ValueFeedback(State.Channel(slot).Gain));
     }
 
     private void ApplyEqBand(PerformanceAction action)
@@ -121,6 +124,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             _state = _state.WithChannel(slot, _state.Channel(slot) with { Eq = next });
             _mixer.SetEqBand(slot, band, MixerMath.EqBandCoefficients(band, next, _sampleRate));
         }
+        RaiseFeedback(
+            PerformanceActionKind.MixerEqBand, slot,
+            ValueFeedback(BandValue(State.Channel(slot).Eq, band), band.ToString()));
     }
 
     private void ApplyFilter(PerformanceAction action)
@@ -133,6 +139,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             _state = _state.WithChannel(slot, _state.Channel(slot) with { Filter = knob });
             _mixer.SetFilter(slot, MixerMath.FilterCoefficients(knob, _sampleRate));
         }
+        RaiseFeedback(
+            PerformanceActionKind.MixerFilter, slot,
+            ValueFeedback(State.Channel(slot).Filter));
     }
 
     private void ApplyCueToggle(PerformanceAction action)
@@ -226,6 +235,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
 
     private static double ResolveAbsoluteOrDelta(PerformanceAction action, double current)
         => action.InputMode == ActionInputMode.Relative ? current + action.Value : action.Value;
+
+    private static ActionFeedbackState ValueFeedback(double value, string? argument = null)
+        => new(IsActive: false, IsAvailable: true, Value: value, Argument: argument);
 
     private static int ValidateSlot(int slot)
     {

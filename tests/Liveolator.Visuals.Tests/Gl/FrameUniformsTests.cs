@@ -1,3 +1,4 @@
+using Liveolator.Core.Audio;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Visuals;
 using Liveolator.Visuals.Gl;
@@ -18,6 +19,28 @@ public sealed class FrameUniformsTests
             BeatPhase = beatPhase,
             IsBeat = isBeat,
         };
+
+    [Fact]
+    public void Resolve_passes_audio_level_through_to_uniforms()
+    {
+        var level = new VisualAudioLevel(Rms: 0.4, Peak: 0.9, Vu: 0.55);
+
+        FrameUniforms u = FrameUniforms.Resolve(Brightness(), 0.5, Beat(), flashStrength: 0, blackout: false, level: level);
+
+        Assert.Equal(0.4f, u.Rms, 5);
+        Assert.Equal(0.9f, u.Peak, 5);
+        Assert.Equal(0.55f, u.Level, 5);
+    }
+
+    [Fact]
+    public void Resolve_defaults_audio_level_to_silent_when_omitted()
+    {
+        FrameUniforms u = FrameUniforms.Resolve(Brightness(), 0.5, Beat(), flashStrength: 0, blackout: false);
+
+        Assert.Equal(0f, u.Rms);
+        Assert.Equal(0f, u.Peak);
+        Assert.Equal(0f, u.Level);
+    }
 
     [Fact]
     public void Resolve_maps_macro_through_its_range()

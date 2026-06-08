@@ -101,6 +101,11 @@ public static class ServiceConfig
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         extensionContent.ReloadAsync().GetAwaiter().GetResult();
 
+        // Register the built-in VU-meter generator (doc 26 reference add-on) AFTER the extension reload
+        // so it is not removed, and under its own package id so it never collides with an installed pack.
+        // A generator layer can then render out of the box and react to the live master level.
+        VuMeterAddon.TryRegister(visualEffects, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);
         services.AddSingleton<IExtensionValidator>(extensionValidator);
@@ -217,8 +222,17 @@ public static class ServiceConfig
         IBeatClock visualBaseClock = LiveClockSelector.Select(masterMix?.BeatClock, sharedLiveClock);
         var deckBeatClock = new DeckDrivenBeatClock(hostClock.TicksPerSecond);
         var sharedVisualClock = new SwitchingBeatClock(visualBaseClock);
+
+        // The live master level feeding reactive shaders (doc 26). When realtime audio is up the meter
+        // taps the same master-mix frames the beat clock reads; headless it rests at silence. Registered
+        // as a singleton so DI disposes the frame subscription at shutdown.
+        IVisualAudioLevelSource audioLevel = masterMix is not null
+            ? new FrameAudioLevelMeter(masterMix.FrameProvider)
+            : new SilentVisualAudioLevelSource();
+        services.AddSingleton<IVisualAudioLevelSource>(audioLevel);
+
         VisualActionHandler visualHandler =
-            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects);
+            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -579,7 +593,8 @@ public static class ServiceConfig
         IServiceCollection services,
         IBeatClock liveClock,
         ILiveProfileStore profileStore,
-        IVisualEffectRegistry effectRegistry)
+        IVisualEffectRegistry effectRegistry,
+        IVisualAudioLevelSource audioLevel)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
@@ -602,7 +617,8 @@ public static class ServiceConfig
             brightnessMacro,
             liveClock,
             effectRegistry: effectRegistry,
-            macros: macros);
+            macros: macros,
+            audioLevel: audioLevel);
         var visualHandler = new VisualActionHandler(visualEngine);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
@@ -626,15 +642,24 @@ public static class ServiceConfig
         try
         {
             string imagePath = StarterImage.EnsureCreated();
-            var layer = new VisualLayer(
+            var background = new VisualLayer(
                 name: "Starter",
                 source: new VisualSourceRef(VisualSourceKind.Image, imagePath),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
                 opacity: 1.0);
+            // The built-in VU meter (doc 26 reference generator) composited over the background, so a
+            // fresh install shows a live, audio-reactive visual. Its shader fills the frame; if the
+            // generator failed to register the renderer skips it and the background still shows.
+            var vuMeter = new VisualLayer(
+                name: "VU Meter",
+                source: new VisualSourceRef(VisualSourceKind.Generator, VuMeterAddon.EffectId),
+                effects: Array.Empty<EffectRef>(),
+                blend: BlendMode.Normal,
+                opacity: 1.0);
             var scene = new VisualScene(
                 name: "Starter",
-                layers: new[] { layer },
+                layers: new[] { background, vuMeter },
                 macroValues: new Dictionary<string, double>(),
                 transition: TransitionStyle.Cut,
                 beatBehavior: BeatBehavior.None);

@@ -79,6 +79,12 @@ public enum Quantize { Immediate, NextBeat, NextBar, EveryNBars }  // shared w/ 
 - **VisualMacro** — a named continuous parameter driven by Push knobs (doc 06), UI sliders,
   or autopilot, mapped to a concrete layer/effect target.
 - **VisualQuantize** — *when* an action takes effect, resolved via `IBeatScheduler` (doc 03).
+- **Generator source** — besides image/video/camera, a layer source can be `VisualSourceKind.Generator`:
+  its pixels come from a GLSL generator shader (`VisualEffectRole.Generator`) with no input texture
+  (e.g. a VU meter). It composites with blend/opacity like any layer. The third-party contract for
+  generator + effect add-ons — package format, the GLSL boilerplate, and the **automatic audio-reactive
+  uniforms** (`uRms`/`uPeak`/`uLevel` alongside the beat uniforms, sourced from the master mix via
+  `IVisualAudioLevelSource`) — is the **visual add-on standard, `docs/26`**.
 
 ## The visual engine
 

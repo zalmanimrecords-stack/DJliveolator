@@ -157,12 +157,16 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
 
     private void OnActivityDetected(object? sender, EventArgs e) => ActivityDetected?.Invoke(this, EventArgs.Empty);
 
-    public void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null)
+    public void BeginLearn(
+        PerformanceActionKind action,
+        int slot = 0,
+        string? argument = null,
+        ActionInputMode? preferredInputMode = null)
     {
         if (!IsInputConnected)
             throw new InvalidOperationException("A MIDI input must be connected before learning a control.");
 
-        _learn.Begin(action, slot, argument);
+        _learn.Begin(action, slot, argument, preferredInputMode);
     }
 
     public void CancelLearn() => _learn.Cancel();

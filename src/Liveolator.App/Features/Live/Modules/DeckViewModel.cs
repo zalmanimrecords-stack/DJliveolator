@@ -492,6 +492,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         {
             switch (e.Kind)
             {
+                case PerformanceActionKind.MixerEqBand:
+                    ApplyEqFeedback(e.State);
+                    break;
                 case PerformanceActionKind.MixerFilter:
                     Filter.SetFromFeedback(e.State.Value);
                     break;
@@ -525,6 +528,22 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
             }
         });
+    }
+
+    private void ApplyEqFeedback(ActionFeedbackState state)
+    {
+        switch (state.Argument)
+        {
+            case "High":
+                EqHigh.SetFromFeedback(state.Value);
+                break;
+            case "Mid":
+                EqMid.SetFromFeedback(state.Value);
+                break;
+            case "Low":
+                EqLow.SetFromFeedback(state.Value);
+                break;
+        }
     }
 
     private void ApplyBpmFeedback(ActionFeedbackState state)

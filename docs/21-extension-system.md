@@ -46,6 +46,11 @@ revalidates that immutable copy, extracts to staging, then atomically renames it
 
 - `visual-effects.json` is an array of `VisualEffectDescriptor`. Effect ids are package-qualified;
   shader paths stay inside the package; parameter uniforms must exist in the isolated probe result.
+  Each descriptor declares a `Role` — `Effect` (default; post-processes `uTexture`) or `Generator`
+  (draws from uniforms with no input texture, e.g. a VU meter). The **visual add-on standard** (the
+  full third-party shader contract, automatic uniforms, and a worked VU-meter example) is `docs/26`.
+- Every shader receives automatic per-frame uniforms: beat (`uBeatPhase`/`uBarPhase`/`uConfidence`/
+  `uBeatFlash`), live master audio level (`uRms`/`uPeak`/`uLevel`), and `uResolution`.
 - `EffectRef` persists effect id, version, and a stable instance id.
 - `MacroTarget` addresses a layer, optional effect instance id, and parameter.
 - UI themes contain only approved color, numeric layout, and font tokens. XAML, templates, bindings,

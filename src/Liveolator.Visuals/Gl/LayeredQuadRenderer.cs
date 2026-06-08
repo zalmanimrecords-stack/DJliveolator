@@ -32,6 +32,16 @@ public sealed class LayeredQuadRenderer : IDisposable
          1f,  1f,   1f, 0f,
     };
 
+    // Fallback render size for a generator's optional post-effect chain (the built-in VU generator has
+    // none). Real generator output tracks the live viewport via GeneratorPass.
+    private const int DefaultEffectChainWidth = 1280;
+    private const int DefaultEffectChainHeight = 720;
+
+    private static readonly IReadOnlyDictionary<string, double> EmptyMacroValues =
+        new Dictionary<string, double>();
+    private static readonly IReadOnlyDictionary<string, float> EmptyGeneratorParameters =
+        new Dictionary<string, float>();
+
     private readonly GL _gl;
     private readonly ILogger<LayeredQuadRenderer> _logger;
     private readonly IReadOnlyList<LayerTexture> _layers;
@@ -49,12 +59,13 @@ public sealed class LayeredQuadRenderer : IDisposable
     private bool _disposed;
 
     /// <param name="layers">
-    /// The renderable layers in composite order (bottom→top), each paired with its decoded image. The
-    /// first is the opaque base; the rest blend over it. Must contain at least one layer.
+    /// The renderable layers in composite order (bottom→top). An <b>image</b> layer carries its decoded
+    /// image; a <b>generator</b> layer (doc 26) carries a null image and is drawn each frame from its
+    /// shader. The first is the opaque base; the rest blend over it. Must contain at least one layer.
     /// </param>
     public LayeredQuadRenderer(
         GL gl,
-        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers,
+        IReadOnlyList<(ResolvedLayer Layer, RgbaImage? Image)> layers,
         IVisualEffectRegistry? effectRegistry = null,
         IReadOnlyList<VisualMacro>? macros = null,
         ILogger<LayeredQuadRenderer>? logger = null)
@@ -111,13 +122,30 @@ public sealed class LayeredQuadRenderer : IDisposable
                 _gl.BlendFunc(layer.Blend.SourceFactor, layer.Blend.DestFactor);
             }
 
+            IReadOnlyDictionary<string, double> resolvedMacros = macroValues ?? EmptyMacroValues;
+
+            // A generator layer draws its texture from its shader each frame (the needle moves); an image
+            // layer reuses its uploaded static texture. Either becomes the input to the effect chain.
+            uint source;
+            if (layer.Generator is { IsValid: true } generator)
+            {
+                IReadOnlyDictionary<string, float> generatorParameters = ResolveGeneratorParameters(
+                    i, layer.GeneratorRef, resolvedMacros);
+                source = generator.Render(
+                    Math.Max(1, viewportWidth), Math.Max(1, viewportHeight), uniforms, generatorParameters);
+            }
+            else
+            {
+                source = layer.Texture;
+            }
+
             IReadOnlyList<ResolvedEffectParameters> effectValues = EffectParameterResolver.Resolve(
                 i,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
-                macroValues ?? new Dictionary<string, double>());
-            uint texture = layer.EffectChain.Apply(layer.Texture, effectValues, uniforms);
+                resolvedMacros);
+            uint texture = layer.EffectChain.Apply(source, effectValues, uniforms);
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             _gl.Viewport(0, 0, (uint)Math.Max(1, viewportWidth), (uint)Math.Max(1, viewportHeight));
             _gl.UseProgram(_program);
@@ -215,12 +243,12 @@ public sealed class LayeredQuadRenderer : IDisposable
     }
 
     private IReadOnlyList<LayerTexture> BuildLayerTextures(
-        IReadOnlyList<(ResolvedLayer Layer, RgbaImage Image)> layers)
+        IReadOnlyList<(ResolvedLayer Layer, RgbaImage? Image)> layers)
     {
         var built = new List<LayerTexture>(layers.Count);
         for (int index = 0; index < layers.Count; index++)
         {
-            (ResolvedLayer layer, RgbaImage image) = layers[index];
+            (ResolvedLayer layer, RgbaImage? image) = layers[index];
             BlendMode blendMode = layer.Blend;
             if (!BlendModeGl.TryResolve(blendMode, out BlendModeGl blend))
             {
@@ -232,25 +260,78 @@ public sealed class LayeredQuadRenderer : IDisposable
                 blend = BlendModeGl.Resolve(BlendMode.Normal);
             }
 
-            uint texture = BuildTexture(image);
+            uint texture = 0;
+            GeneratorPass? generator = null;
+            EffectRef? generatorRef = null;
+            int effectChainWidth;
+            int effectChainHeight;
+
+            if (image is not null)
+            {
+                texture = BuildTexture(image);
+                effectChainWidth = image.Width;
+                effectChainHeight = image.Height;
+            }
+            else
+            {
+                // Generator layer (doc 26): resolve its descriptor from the registry and build the pass.
+                if (!_effectRegistry.TryGet(layer.Source.Reference, version: null, out VisualEffectDescriptor descriptor)
+                    || descriptor.Role != VisualEffectRole.Generator)
+                {
+                    _logger.LogWarning(
+                        "Layer '{Layer}' references generator '{Generator}' which is not a registered generator effect; skipping.",
+                        layer.Name, layer.Source.Reference);
+                    continue;
+                }
+
+                var pass = new GeneratorPass(_gl, descriptor, _logger);
+                if (!pass.IsValid)
+                {
+                    pass.Dispose();
+                    continue;
+                }
+                generator = pass;
+                // A stable instance id (the effect id) so a macro can target this generator's parameters.
+                generatorRef = new EffectRef(descriptor.EffectId, descriptor.Version, descriptor.EffectId,
+                    new Dictionary<string, double>());
+
+                // Generator post-effect chains use the initial render size; the VU-meter reference add-on
+                // has no chain (the common case), so this only matters for a generator that also declares
+                // effects — a documented limitation, not used by the built-in generator.
+                effectChainWidth = DefaultEffectChainWidth;
+                effectChainHeight = DefaultEffectChainHeight;
+            }
+
             IReadOnlyList<ResolvedEffectParameters> effects = EffectParameterResolver.Resolve(
                 index,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
-                new Dictionary<string, double>());
+                EmptyMacroValues);
             var effectChain = new EffectChainRenderer(
                 _gl,
-                image.Width,
-                image.Height,
+                effectChainWidth,
+                effectChainHeight,
                 effects,
                 _logger);
-            built.Add(new LayerTexture(texture, blend, layer.Opacity, layer.Effects, effectChain));
+            built.Add(new LayerTexture(texture, generator, generatorRef, blend, layer.Opacity, layer.Effects, effectChain));
         }
 
-        // The base layer must exist; BuildTexture validates each image and throws on a bad buffer,
-        // so a fully-empty stack here is a programming error the ctor guard already prevents.
         return built;
+    }
+
+    // Resolves a generator layer's declared parameters (descriptor defaults + any macro overrides) into
+    // shader uniforms, reusing the same machinery effects use. Returns an empty map when the generator
+    // declares no parameters or has no synthetic reference.
+    private IReadOnlyDictionary<string, float> ResolveGeneratorParameters(
+        int layerIndex, EffectRef? generatorRef, IReadOnlyDictionary<string, double> macroValues)
+    {
+        if (generatorRef is null)
+            return EmptyGeneratorParameters;
+
+        IReadOnlyList<ResolvedEffectParameters> resolved = EffectParameterResolver.Resolve(
+            layerIndex, new[] { generatorRef }, _effectRegistry, _macros, macroValues);
+        return resolved.Count > 0 ? resolved[0].Uniforms : EmptyGeneratorParameters;
     }
 
     private unsafe uint BuildTexture(RgbaImage image)
@@ -293,6 +374,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             foreach (LayerTexture layer in _layers)
             {
                 layer.EffectChain.Dispose();
+                layer.Generator?.Dispose();
                 if (layer.Texture != 0)
                     _gl.DeleteTexture(layer.Texture);
             }
@@ -307,9 +389,13 @@ public sealed class LayeredQuadRenderer : IDisposable
         }
     }
 
-    // One uploaded layer: its texture handle, the resolved GL blend state, and its opacity uniform.
+    // One resolved layer. An image layer carries a static Texture and a null Generator; a generator layer
+    // carries a GeneratorPass (Texture is 0) plus a synthetic GeneratorRef for per-frame parameter
+    // resolution. Both share the blend state, opacity, and optional post-effect chain.
     private readonly record struct LayerTexture(
         uint Texture,
+        GeneratorPass? Generator,
+        EffectRef? GeneratorRef,
         BlendModeGl Blend,
         double Opacity,
         IReadOnlyList<EffectRef> Effects,

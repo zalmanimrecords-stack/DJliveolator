@@ -51,7 +51,7 @@ public sealed class GlobalMidiLearnCoordinator : ViewModelBase, IDisposable
 
         try
         {
-            _session.BeginLearn(action.Kind, action.Slot, action.Argument);
+            _session.BeginLearn(action.Kind, action.Slot, action.Argument, action.InputMode);
             IsWaitingForMidi = true;
             Status = $"Now use the controller for {Describe(action)}. Esc exits.";
         }

@@ -143,6 +143,13 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   argument) to arm the hardware capture, and suppresses the UI action itself. The next controller
   message is applied and persisted, then the mode returns to waiting for another UI control. `Esc`
   cancels the pending capture and exits Learn mode.
+- Learn preserves the UI control's input semantics instead of guessing from MIDI message type:
+  buttons remain momentary/toggle even when hardware sends CC, while sliders and positional knobs
+  remain absolute. Momentary/toggle CC bindings ignore the zero-valued release message, preventing
+  one physical click from firing twice; absolute controls still accept zero as a valid endpoint.
+- Continuous MIDI feedback now reaches the visible controls: mixer channel gain, EQ bands, filter,
+  cue level/mix, crossfader, deck pitch/seek, and visual macro values publish through
+  `FeedbackChanged`; the matching UI control applies the value without re-dispatching it.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation

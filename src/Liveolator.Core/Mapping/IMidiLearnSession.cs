@@ -12,7 +12,11 @@ public interface IMidiLearnSession
     bool IsArmed { get; }
 
     /// <summary>Arms capture for <paramref name="action"/> at <paramref name="slot"/>.</summary>
-    void Begin(PerformanceActionKind action, int slot = 0, string? argument = null);
+    void Begin(
+        PerformanceActionKind action,
+        int slot = 0,
+        string? argument = null,
+        ActionInputMode? preferredInputMode = null);
 
     /// <summary>Feeds an inbound message; when armed, the first one is captured into a binding.</summary>
     void Observe(MidiMessage message);
