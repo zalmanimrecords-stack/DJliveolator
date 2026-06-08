@@ -193,6 +193,10 @@ seams + composition live in Core; the native BASS backend lives in the Audio bin
   44.1/48/96 kHz sources. Opt-in via the `analysisSampleRate` constructor parameter; omitted = native
   rate (original behaviour). Frames are stamped with the analysis rate and stay timestamp-continuous,
   so `AudioBeatClock` envelope-rate derivation is unchanged.
+- **Half-time ambiguity correction:** `TempoEstimator` checks the double-time harmonic when a result
+  below 100 BPM has a supported intermediate-beat peak. Fast tracks with alternating strong/weak
+  beats no longer collapse to half tempo, while genuinely slow tracks without intermediate onsets
+  remain at their detected BPM. The same estimator serves offline analysis and the realtime clock.
 - **Native BASS setup wired:** `scripts/fetch-bass.(ps1|sh)` fetch the per-platform un4seen BASS lib
   into `runtimes/<rid>/native/` (git-ignored; commercial license — see `docs/01`), and the App build
   (`CopyBassNative` target) copies it next to the output, warning when absent. `ServiceConfig.Build()`
@@ -240,6 +244,15 @@ the next increment.
   path and its tests are unchanged; a two-deck engine implements the new `IMultiDeckPlaybackEngine`.
 - **App:** `ServiceConfig` wires `BassMixer` + `MixerActionHandler` into the dispatcher and registers
   `IMixer`, so UI/controllers can drive the mixer now.
+- **Loaded decks persist across restarts:** `IDeckSessionStore` / `JsonDeckSessionStore` save Deck A
+  and Deck B under `live/deck-session.json` (track path, analyzed BPM, and first-beat anchor).
+  `DeckSessionPersistence` restores them through the shared dispatcher without auto-playing, ignores
+  missing files, and keeps later loads saved. `DeckActionHandler` retains load feedback so deck UI
+  instances created after startup still show the restored title, tempo, and waveform.
+- **Per-deck level meters are live:** each `BassMixerChannel` measures post-gain/EQ/filter/effect peak
+  and RMS without allocating on the audio path. `IDeckLevelMeter` exposes snapshots to the shared
+  mixer view-model, and each channel fader renders a segmented green/amber/red meter that updates on
+  the existing UI timer and clears when its deck stops.
 - **Headphone cue (PFL) is now audible (A2):** `CueMixMath` (pure, Core) carries the cue-bus math —
   per-deck pre-fade send, equal-power cue/master blend, level-scaled headphone gains, and the per-deck
   cue contribution (`DeckCueContributionGain`). `BassMixerBackend` now feeds **both** legs of the cue

@@ -17,7 +17,7 @@ namespace Liveolator.Audio.Playback;
 /// channel is registered, calls for that slot are logged and dropped rather than crashing the audio
 /// path (global standard #26 — never fail silently).
 /// </remarks>
-public sealed class BassMixer : IMixer
+public sealed class BassMixer : IMixer, IDeckLevelMeter
 {
     private readonly IBassMixerChannel?[] _channels;
     private readonly ILogger _logger;
@@ -89,6 +89,12 @@ public sealed class BassMixer : IMixer
         }
 
         cueOutput.SetCueOutputGains(cueGain, masterGain);
+    }
+
+    public DeckLevel GetLevel(int slot)
+    {
+        EnsureSlot(slot);
+        return _channels[slot]?.Level ?? DeckLevel.Silent;
     }
 
     private bool TryChannel(int slot, string op, out IBassMixerChannel channel)

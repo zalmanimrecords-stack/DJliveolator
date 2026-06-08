@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Mixer;
 using ReactiveUI;
 using Xunit;
 
@@ -11,6 +12,14 @@ namespace Liveolator.App.Tests.Live.Modules;
 
 public sealed class MixerViewModelTests
 {
+    private sealed class FakeLevelMeter : IDeckLevelMeter
+    {
+        public DeckLevel A { get; set; }
+        public DeckLevel B { get; set; }
+
+        public DeckLevel GetLevel(int slot) => slot == 0 ? A : B;
+    }
+
     public MixerViewModelTests()
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
@@ -139,5 +148,38 @@ public sealed class MixerViewModelTests
 
         Assert.Equal(0.8, vm.CueMix.Value);
         Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
+    public void UpdateLevels_ReadsEachDeckPeak()
+    {
+        var meter = new FakeLevelMeter
+        {
+            A = new DeckLevel(0.75, 0.4),
+            B = new DeckLevel(0.25, 0.1),
+        };
+        var vm = new MixerViewModel(levelMeter: meter);
+
+        vm.UpdateLevels(deckAPlaying: true, deckBPlaying: true);
+
+        Assert.Equal(0.75, vm.LevelA);
+        Assert.Equal(0.25, vm.LevelB);
+    }
+
+    [Fact]
+    public void UpdateLevels_ClearsStoppedDeck()
+    {
+        var meter = new FakeLevelMeter
+        {
+            A = new DeckLevel(0.75, 0.4),
+            B = new DeckLevel(0.25, 0.1),
+        };
+        var vm = new MixerViewModel(levelMeter: meter);
+
+        vm.UpdateLevels(deckAPlaying: true, deckBPlaying: true);
+        vm.UpdateLevels(deckAPlaying: false, deckBPlaying: true);
+
+        Assert.Equal(0, vm.LevelA);
+        Assert.Equal(0.25, vm.LevelB);
     }
 }

@@ -116,6 +116,7 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
 /// <summary>Test double for a per-deck BASS_FX control; records the last applied values.</summary>
 internal sealed class FakeBassMixerChannel : IBassMixerChannel
 {
+    public DeckLevel Level { get; set; } = DeckLevel.Silent;
     public FakeBassMixerChannel(int deckHandle) => DeckHandle = deckHandle;
 
     public int DeckHandle { get; }

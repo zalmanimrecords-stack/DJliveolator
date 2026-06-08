@@ -54,6 +54,20 @@ public class BassMixerChannelTests
         channel.Process(buffer, channels: 2);
 
         Assert.All(buffer, s => Assert.Equal(0f, s, 6));
+        Assert.Equal(DeckLevel.Silent, channel.Level);
+    }
+
+    [Fact]
+    public void Process_PublishesPostGainPeakAndRms()
+    {
+        var channel = new BassMixerChannel(channels: 1);
+        channel.SetVolume(0.5);
+        float[] buffer = [1.0f, -0.5f, 0.0f, 0.5f];
+
+        channel.Process(buffer, channels: 1);
+
+        Assert.Equal(0.5, channel.Level.Peak, 5);
+        Assert.Equal(Math.Sqrt(0.375 / 4.0), channel.Level.Rms, 5);
     }
 
     [Fact]

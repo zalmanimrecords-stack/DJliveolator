@@ -50,7 +50,9 @@ public class TwoDeckBassEngineSyncTests
         Assert.Null(engine.SyncMaster);
         Assert.Equal(132.0 / 120.0, backend.Rate[101], 6);
         Assert.Equal(132.0, engine.DeckBpm(1), 6);
-        var follower = new DeckPhase(backend.GetDeckPositionSeconds(101), 0.30, 132.0);
+        // Deck positions and first-beat anchors are media-time coordinates. Even though the follower
+        // now sounds at 132 BPM, its kick grid remains spaced at its source 120 BPM in those coordinates.
+        var follower = new DeckPhase(backend.GetDeckPositionSeconds(101), 0.30, 120.0);
         var leader = new DeckPhase(backend.GetDeckPositionSeconds(100), 0.10, 132.0);
         Assert.Equal(0.0, PhaseAlignmentCalculator.BeatPhaseError(follower, leader), 6);
     }

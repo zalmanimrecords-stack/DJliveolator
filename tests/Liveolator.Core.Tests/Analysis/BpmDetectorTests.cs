@@ -21,6 +21,18 @@ public class BpmDetectorTests
     }
 
     [Fact]
+    public void Detect_AccentedFastTrack_DoesNotCollapseToHalfTempo()
+    {
+        const int sr = 44100;
+        float[] signal = AccentedClickTrain(
+            bpm: 150.0, sampleRate: sr, seconds: 12, strong: 1.0f, weak: 0.35f);
+
+        BpmResult result = new BpmDetector().Detect(signal, sr);
+
+        Assert.InRange(result.Bpm, 147.0, 153.0);
+    }
+
+    [Fact]
     public void Detect_ClickOnTheBeat_AnchorsFirstBeatNearZero()
     {
         const int sr = 44100;
@@ -59,5 +71,24 @@ public class BpmDetectorTests
     {
         var buffer = new float[2048];
         Assert.Throws<ArgumentOutOfRangeException>(() => new BpmDetector().Detect(buffer, 0));
+    }
+
+    private static float[] AccentedClickTrain(
+        double bpm,
+        int sampleRate,
+        double seconds,
+        float strong,
+        float weak)
+    {
+        var signal = new float[(int)(sampleRate * seconds)];
+        double samplesPerBeat = 60.0 / bpm * sampleRate;
+        for (double position = 0, beat = 0; position < signal.Length; position += samplesPerBeat, beat++)
+        {
+            float amplitude = ((int)beat & 1) == 0 ? strong : weak;
+            int start = (int)position;
+            for (int sample = 0; sample < 16 && start + sample < signal.Length; sample++)
+                signal[start + sample] = amplitude;
+        }
+        return signal;
     }
 }

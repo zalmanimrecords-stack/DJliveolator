@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Mixer;
 using Liveolator.Core.Waveform;
 
 namespace Liveolator.App.Features.Live.Modules;
@@ -24,12 +25,13 @@ public sealed class PerformanceDeckSet : IDisposable
     public PerformanceDeckSet(
         IPerformanceActionDispatcher? dispatcher = null,
         IWaveformProvider? waveformProvider = null,
-        MusicLibrary? library = null)
+        MusicLibrary? library = null,
+        IDeckLevelMeter? levelMeter = null)
     {
         _library = library;
         DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo);
         DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo);
-        Mixer = new MixerViewModel(dispatcher);
+        Mixer = new MixerViewModel(dispatcher, levelMeter);
     }
 
     public DeckViewModel DeckA { get; }
@@ -42,6 +44,7 @@ public sealed class PerformanceDeckSet : IDisposable
     {
         DeckA.UpdatePlayhead();
         DeckB.UpdatePlayhead();
+        Mixer.UpdateLevels(DeckA.IsPlaying, DeckB.IsPlaying);
     }
 
     public void Dispose()

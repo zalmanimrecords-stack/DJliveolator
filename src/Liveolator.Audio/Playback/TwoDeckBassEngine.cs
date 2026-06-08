@@ -551,9 +551,7 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         if (_decks[slot] is not { } deck || _decks[leader] is not { } leaderDeck)
             return;
 
-        double slaveBpm = EffectiveBpm(slot);
-        double leaderBpm = EffectiveBpm(leader);
-        if (slaveBpm <= 0.0 || leaderBpm <= 0.0)
+        if (_baseBpm[slot] <= 0.0 || _baseBpm[leader] <= 0.0)
         {
             SetSyncStateLocked(slot, SyncLockState.Active);
             return;
@@ -563,8 +561,13 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         // deck-to-deck phase it cancels (they share one output path) — kept explicit for correctness and
         // for any future split routing; it primarily aligns the shared clock / visuals to audible output.
         double lat = _phaseLock.OutputLatencySeconds;
-        var slavePhase = new DeckPhase(_backend.GetDeckPositionSeconds(deck.Handle) - lat, _firstBeat[slot], slaveBpm);
-        var masterPhase = new DeckPhase(_backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, _firstBeat[leader], leaderBpm);
+        // Position and first-beat are source-media coordinates. Their grid spacing is therefore the
+        // analyzed base BPM; playback rate changes how quickly the playhead crosses that grid, not the
+        // distance between kick markers in the source.
+        var slavePhase = new DeckPhase(
+            _backend.GetDeckPositionSeconds(deck.Handle) - lat, _firstBeat[slot], _baseBpm[slot]);
+        var masterPhase = new DeckPhase(
+            _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, _firstBeat[leader], _baseBpm[leader]);
 
         double beatmatchedRate = SyncedRateFor(slot); // the tempo-matched base rate, before phase correction
         PhaseLockCorrection correction =
@@ -656,24 +659,26 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
         if (_decks[slot] is not { } deck)
             return;
 
-        double slotBpm = EffectiveBpm(slot);
-        if (slotBpm <= 0.0)
+        if (_baseBpm[slot] <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} quantize: own tempo unknown; phase unchanged.", slot);
             return;
         }
 
         int leader = slot == 0 ? 1 : 0;
-        double leaderBpm = EffectiveBpm(leader);
-        if (_decks[leader] is null || leaderBpm <= 0.0)
+        if (_decks[leader] is null || _baseBpm[leader] <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} quantize: no valid leader; phase unchanged.", slot);
             return;
         }
 
-        var followerPhase = new DeckPhase(_backend.GetDeckPositionSeconds(deck.Handle), _firstBeat[slot], slotBpm);
+        // Deck positions and anchors are measured in source-media seconds, so phase must use each
+        // track's analyzed base BPM. Effective BPM describes wall-clock playback speed and would skew
+        // the kick grid whenever Sync changes the deck rate.
+        var followerPhase = new DeckPhase(
+            _backend.GetDeckPositionSeconds(deck.Handle), _firstBeat[slot], _baseBpm[slot]);
         var leaderPhase = new DeckPhase(
-            _backend.GetDeckPositionSeconds(_decks[leader]!.Handle), _firstBeat[leader], leaderBpm);
+            _backend.GetDeckPositionSeconds(_decks[leader]!.Handle), _firstBeat[leader], _baseBpm[leader]);
 
         double nudgeSeconds = PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
         double length = _backend.GetDeckLengthSeconds(deck.Handle);

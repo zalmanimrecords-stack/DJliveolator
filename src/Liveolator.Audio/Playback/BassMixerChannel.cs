@@ -24,6 +24,8 @@ internal sealed class BassMixerChannel : IBassMixerChannel
     private readonly StatefulBiquad _filter;
     private readonly IAudioEffectRack? _effects;
     private volatile float _gain = 1.0f;
+    private volatile float _peak;
+    private volatile float _rms;
 
     public BassMixerChannel(int channels, IAudioEffectRack? effects = null)
     {
@@ -39,6 +41,8 @@ internal sealed class BassMixerChannel : IBassMixerChannel
 
     /// <summary>True while this deck is routed to the headphone cue (PFL) bus.</summary>
     public bool CueEnabled { get; private set; }
+
+    public DeckLevel Level => new(_peak, _rms);
 
     public void SetVolume(double linearGain) => _gain = (float)linearGain;
 
@@ -74,6 +78,19 @@ internal sealed class BassMixerChannel : IBassMixerChannel
             }
         }
         _effects?.Process(interleaved, channels);
+
+        double peak = 0;
+        double sumSquares = 0;
+        for (int i = 0; i < interleaved.Length; i++)
+        {
+            double magnitude = Math.Abs(interleaved[i]);
+            peak = Math.Max(peak, magnitude);
+            sumSquares += magnitude * magnitude;
+        }
+        _peak = (float)Math.Clamp(peak, 0.0, 1.0);
+        _rms = interleaved.Length == 0
+            ? 0
+            : (float)Math.Clamp(Math.Sqrt(sumSquares / interleaved.Length), 0.0, 1.0);
     }
 
     private StatefulBiquad Band(EqBand band) => band switch

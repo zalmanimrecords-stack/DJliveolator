@@ -3,6 +3,7 @@ using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Mixer;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Live.Modules;
@@ -10,9 +11,9 @@ namespace Liveolator.App.Features.Live.Modules;
 /// <summary>
 /// The Mixer module (the mock's centre column / doc 11): the A↔B crossfader and the two per-deck
 /// channel-gain faders. Each fader drives the <see cref="MixerActionHandler"/> through the dispatcher
-/// (doc 04). VU meter levels have no live-input source yet (doc 18) and are rendered as a static
-/// placeholder in the view. Initial fader positions are seeded from dispatcher feedback so the UI
-/// reflects the authoritative mixer state.
+/// (doc 04). Per-deck peak meters read post-processing samples through <see cref="IDeckLevelMeter"/>.
+/// Initial fader positions are seeded from dispatcher feedback so the UI reflects the authoritative
+/// mixer state.
 /// </summary>
 public sealed class MixerViewModel : ViewModelBase, IDisposable
 {
@@ -22,13 +23,19 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private const double DefaultCueMix = 0.0; // 0 = full cue (PFL), 1 = full master
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
+    private readonly IDeckLevelMeter? _levelMeter;
     private bool _isCueA;
     private bool _isCueB;
+    private double _levelA;
+    private double _levelB;
     private bool _disposed;
 
-    public MixerViewModel(IPerformanceActionDispatcher? dispatcher = null)
+    public MixerViewModel(
+        IPerformanceActionDispatcher? dispatcher = null,
+        IDeckLevelMeter? levelMeter = null)
     {
         _dispatcher = dispatcher;
+        _levelMeter = levelMeter;
         bool enabled = dispatcher is not null;
 
         Crossfader = new ContinuousControlViewModel(
@@ -69,6 +76,26 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel Crossfader { get; }
     public ContinuousControlViewModel ChannelGainA { get; }
     public ContinuousControlViewModel ChannelGainB { get; }
+
+    public double LevelA
+    {
+        get => _levelA;
+        private set => this.RaiseAndSetIfChanged(ref _levelA, value);
+    }
+
+    public double LevelB
+    {
+        get => _levelB;
+        private set => this.RaiseAndSetIfChanged(ref _levelB, value);
+    }
+
+    public void UpdateLevels(bool deckAPlaying, bool deckBPlaying)
+    {
+        if (_levelMeter is null)
+            return;
+        LevelA = deckAPlaying ? _levelMeter.GetLevel(0).Peak : 0;
+        LevelB = deckBPlaying ? _levelMeter.GetLevel(1).Peak : 0;
+    }
 
     /// <summary>Headphone-cue (PFL) bus output level (MixerCueLevel).</summary>
     public ContinuousControlViewModel CueLevel { get; }

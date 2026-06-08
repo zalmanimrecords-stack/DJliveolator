@@ -41,6 +41,9 @@ public sealed class Fader : Control
     public static readonly StyledProperty<IBrush> ThumbBrushProperty =
         AvaloniaProperty.Register<Fader, IBrush>(nameof(ThumbBrush), new SolidColorBrush(Color.FromRgb(0xE8, 0xEE, 0xF6)));
 
+    public static readonly StyledProperty<double> LevelProperty =
+        AvaloniaProperty.Register<Fader, double>(nameof(Level), defaultValue: 0.0, coerce: CoerceUnit);
+
     private static readonly IBrush SlotBrush = new SolidColorBrush(Color.FromRgb(0x05, 0x08, 0x0D));
     private static readonly IBrush CapRim = new SolidColorBrush(Color.FromRgb(0x33, 0x3F, 0x52));
 
@@ -50,7 +53,9 @@ public sealed class Fader : Control
 
     static Fader()
     {
-        AffectsRender<Fader>(ValueProperty, OrientationProperty, TrackBrushProperty, FillBrushProperty, ThumbBrushProperty, IsEnabledProperty);
+        AffectsRender<Fader>(
+            ValueProperty, LevelProperty, OrientationProperty, TrackBrushProperty,
+            FillBrushProperty, ThumbBrushProperty, IsEnabledProperty);
     }
 
     public Fader()
@@ -65,6 +70,7 @@ public sealed class Fader : Control
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
     public IBrush FillBrush { get => GetValue(FillBrushProperty); set => SetValue(FillBrushProperty, value); }
     public IBrush ThumbBrush { get => GetValue(ThumbBrushProperty); set => SetValue(ThumbBrushProperty, value); }
+    public double Level { get => GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
 
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
@@ -87,6 +93,7 @@ public sealed class Fader : Control
             double length = Math.Max(1, bottom - top);
             double thumbY = bottom - (value * length);
 
+            DrawVerticalLevelMeter(context, cx, top, bottom, Math.Clamp(Level, 0, 1));
             DrawVerticalTicks(context, cx, top, length);
             DrawSlot(context, new Point(cx, top), new Point(cx, bottom), trackWidth, vertical: true);
             DrawIlluminatedFill(context, new Point(cx, thumbY), new Point(cx, bottom), fill, trackWidth);
@@ -113,6 +120,39 @@ public sealed class Fader : Control
             DrawCapShadow(context, cap, vertical: false);
             DrawCap(context, cap, centreLine, vertical: false);
         }
+    }
+
+    private static void DrawVerticalLevelMeter(
+        DrawingContext context, double centreX, double top, double bottom, double level)
+    {
+        const int segments = 16;
+        const double width = 5;
+        const double gap = 2;
+        double height = bottom - top;
+        double segmentHeight = Math.Max(1, (height - ((segments - 1) * gap)) / segments);
+        double x = centreX + 16;
+        int lit = (int)Math.Ceiling(level * segments);
+
+        for (int index = 0; index < segments; index++)
+        {
+            double y = bottom - ((index + 1) * segmentHeight) - (index * gap);
+            var rect = new Rect(x, y, width, segmentHeight);
+            IBrush brush = index < lit
+                ? MeterBrush(index, segments)
+                : new SolidColorBrush(Color.FromArgb(0x70, 0x18, 0x20, 0x29));
+            context.DrawRectangle(brush, null, rect, 1, 1);
+        }
+    }
+
+    private static IBrush MeterBrush(int index, int count)
+    {
+        double fraction = (double)(index + 1) / count;
+        Color color = fraction > 0.875
+            ? Color.FromRgb(0xE5, 0x54, 0x4A)
+            : fraction > 0.68
+                ? Color.FromRgb(0xFF, 0xA2, 0x2B)
+                : Color.FromRgb(0x29, 0xC4, 0x67);
+        return new SolidColorBrush(color);
     }
 
     private void DrawSlot(DrawingContext context, Point start, Point end, double width, bool vertical)

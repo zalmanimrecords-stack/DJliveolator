@@ -7,6 +7,10 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// </summary>
 public sealed class TempoEstimator
 {
+    private const double DoubleTimeCeilingBpm = 100.0;
+    private const double DoubleTimeEvidenceRatio = 0.2;
+    private const int HarmonicSearchRadius = 2;
+
     private readonly double _minBpm;
     private readonly double _maxBpm;
 
@@ -46,6 +50,7 @@ public sealed class TempoEstimator
         double zeroLag = 0;
         for (int i = 0; i < n; i++) zeroLag += x[i] * x[i];
 
+        var correlations = new double[maxLag + 1];
         double bestVal = double.NegativeInfinity;
         int bestLag = minLag;
         double sum = 0;
@@ -55,6 +60,7 @@ public sealed class TempoEstimator
             double acc = 0;
             for (int i = lag; i < n; i++)
                 acc += x[i] * x[i - lag];
+            correlations[lag] = acc;
             sum += acc;
             count++;
             if (acc > bestVal)
@@ -64,12 +70,47 @@ public sealed class TempoEstimator
             }
         }
 
+        bestLag = PreferSupportedDoubleTime(
+            bestLag, bestVal, correlations, minLag, maxLag, envelopeRateHz);
+        bestVal = correlations[bestLag];
         double bpm = 60.0 * envelopeRateHz / bestLag;
         double meanAcc = count > 0 ? sum / count : 0;
         double confidence = zeroLag > 0
             ? Math.Clamp((bestVal - meanAcc) / zeroLag, 0.0, 1.0)
             : 0.0;
         return new TempoEstimate(bpm, confidence);
+    }
+
+    private int PreferSupportedDoubleTime(
+        int bestLag,
+        double bestValue,
+        IReadOnlyList<double> correlations,
+        int minLag,
+        int maxLag,
+        double envelopeRateHz)
+    {
+        double selectedBpm = 60.0 * envelopeRateHz / bestLag;
+        double doubleTimeBpm = selectedBpm * 2.0;
+        if (selectedBpm >= DoubleTimeCeilingBpm || doubleTimeBpm > _maxBpm || bestValue <= 0.0)
+            return bestLag;
+
+        int halfLag = (int)Math.Round(bestLag / 2.0);
+        double strongestDoubleTime = double.NegativeInfinity;
+        int doubleTimeLag = halfLag;
+        int from = Math.Max(minLag, halfLag - HarmonicSearchRadius);
+        int to = Math.Min(maxLag, halfLag + HarmonicSearchRadius);
+        for (int lag = from; lag <= to; lag++)
+        {
+            if (correlations[lag] > strongestDoubleTime)
+            {
+                strongestDoubleTime = correlations[lag];
+                doubleTimeLag = lag;
+            }
+        }
+
+        return strongestDoubleTime >= bestValue * DoubleTimeEvidenceRatio
+            ? doubleTimeLag
+            : bestLag;
     }
 }
 

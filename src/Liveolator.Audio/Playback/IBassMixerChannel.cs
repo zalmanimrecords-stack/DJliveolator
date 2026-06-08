@@ -10,6 +10,9 @@ namespace Liveolator.Audio.Playback;
 /// </summary>
 internal interface IBassMixerChannel
 {
+    /// <summary>Latest post-processing signal level for this channel.</summary>
+    DeckLevel Level { get; }
+
     /// <summary>Set the channel's linear output volume (0..1).</summary>
     void SetVolume(double linearGain);
 

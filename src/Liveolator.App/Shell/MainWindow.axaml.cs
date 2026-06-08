@@ -17,6 +17,13 @@ public partial class MainWindow : Window
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F11)
+        {
+            ToggleFullScreen();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key != Key.Tab || DataContext is not MainWindowViewModel vm)
         {
             return;
@@ -32,5 +39,20 @@ public partial class MainWindow : Window
         }
 
         e.Handled = true;
+    }
+
+    private void OnFullScreenClick(object? sender, RoutedEventArgs e)
+        => ToggleFullScreen();
+
+    internal void ToggleFullScreen()
+    {
+        bool enterFullScreen = WindowState != WindowState.FullScreen;
+        SystemDecorations = enterFullScreen
+            ? SystemDecorations.None
+            : SystemDecorations.Full;
+        WindowState = enterFullScreen
+            ? WindowState.FullScreen
+            : WindowState.Normal;
+        FullScreenButton.Content = enterFullScreen ? "WINDOW" : "FULL";
     }
 }

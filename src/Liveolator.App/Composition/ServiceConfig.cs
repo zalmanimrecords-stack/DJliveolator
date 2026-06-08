@@ -185,6 +185,7 @@ public static class ServiceConfig
         // So the mixer model + DSP math drive from the UI headless; native FX routing lands later.
         var mixer = new BassMixer();
         services.AddSingleton<IMixer>(mixer);
+        services.AddSingleton<IDeckLevelMeter>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
 
         // --- Realtime audio engine (docs 01/02/11): built BEFORE the visual engine so its beat clock,
@@ -229,6 +230,10 @@ public static class ServiceConfig
         services.AddSingleton<ILiveSetStore>(liveSetStore);
         RestoreAndPersistLiveSet(livePlaylist, liveSetStore);
 
+        var deckSessionStore =
+            new JsonDeckSessionStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IDeckSessionStore>(deckSessionStore);
+
         var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
 
         // Register the realtime engine seams (constructed above, before the visual engine). Registering
@@ -271,6 +276,13 @@ public static class ServiceConfig
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
 
+        if (realtimeUp)
+        {
+            var deckSession = new DeckSessionPersistence(
+                dispatcher, deckSessionStore, deckEngine!.DeckCount);
+            services.AddSingleton(deckSession);
+        }
+
         WirePlaylistAudio(services, livePlaylist, dispatcher, deckEngine);
 
         // --- MIDI controller → dispatcher (doc 05/07) ---
@@ -302,7 +314,8 @@ public static class ServiceConfig
         services.AddSingleton<PerformanceDeckSet>(sp => new PerformanceDeckSet(
             sp.GetService<IPerformanceActionDispatcher>(),
             sp.GetService<IWaveformProvider>(),
-            sp.GetRequiredService<MusicLibrary>()));
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetService<IDeckLevelMeter>()));
 
         WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
         WireLiveTab(services, sharedLiveClock, hostClock);

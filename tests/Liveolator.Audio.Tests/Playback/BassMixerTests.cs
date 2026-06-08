@@ -10,6 +10,7 @@ public class BassMixerTests
 {
     private sealed class FakeChannel : IBassMixerChannel
     {
+        public DeckLevel Level { get; set; } = DeckLevel.Silent;
         public double? Volume { get; private set; }
         public Dictionary<EqBand, BiquadCoefficients> Eq { get; } = new();
         public BiquadCoefficients? Filter { get; private set; }
@@ -19,6 +20,17 @@ public class BassMixerTests
         public void SetEqBand(EqBand band, BiquadCoefficients coefficients) => Eq[band] = coefficients;
         public void SetFilter(BiquadCoefficients coefficients) => Filter = coefficients;
         public void SetCue(bool enabled) => Cue = enabled;
+    }
+
+    [Fact]
+    public void GetLevel_ReturnsRegisteredChannelSnapshot_OrSilence()
+    {
+        var mixer = new BassMixer(deckCount: 2);
+        var deckA = new FakeChannel { Level = new DeckLevel(0.8, 0.4) };
+        mixer.SetChannel(0, deckA);
+
+        Assert.Equal(deckA.Level, mixer.GetLevel(0));
+        Assert.Equal(DeckLevel.Silent, mixer.GetLevel(1));
     }
 
     [Fact]
