@@ -90,6 +90,11 @@
                       <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
                                 IsVisible="{Binding Menu.CanLoadToDeckB}" />
                       <Separator />
+                      <MenuItem Header="Analyze again + online lookup"
+                                Command="{Binding Menu.AnalyzeAgainCommand}" />
+                      <MenuItem Header="Edit BPM / key / genre / notes"
+                                Command="{Binding Menu.EditMetadataCommand}" />
+                      <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>
                           <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
@@ -206,7 +211,15 @@
                   <TextBlock Grid.Column="0" Classes="faint" Text="Codec" />
                   <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.Codec}" />
                 </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Notes" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Notes}"
+                             TextWrapping="Wrap" />
+                </Grid>
               </StackPanel>
+              <Button Classes="spartan" HorizontalAlignment="Left"
+                      Content="Online metadata: GetSongBPM.com"
+                      Click="OnOpenGetSongBpm" />
             </StackPanel>
 
             <StackPanel Spacing="8">
@@ -220,6 +233,11 @@
                           <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
                           <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
                                     IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                          <Separator />
+                          <MenuItem Header="Analyze again + online lookup"
+                                    Command="{Binding Menu.AnalyzeAgainCommand}" />
+                          <MenuItem Header="Edit BPM / key / genre / notes"
+                                    Command="{Binding Menu.EditMetadataCommand}" />
                           <Separator />
                           <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                             <MenuItem.ItemContainerTheme>

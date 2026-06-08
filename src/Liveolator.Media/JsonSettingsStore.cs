@@ -20,7 +20,9 @@ public sealed record SettingsSnapshot(
     string? CaptureDeviceId = null,
     CaptureSourceKind? CaptureSource = null,
     bool DeveloperMode = false,
-    string? ActiveUiThemeId = null)
+    string? ActiveUiThemeId = null,
+    double? WaveformZoomSeconds = null,
+    double? NudgeSeconds = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -97,6 +99,10 @@ public sealed class JsonSettingsStore : ISettingsStore
                 DeveloperMode = snapshot.DeveloperMode,
                 ActiveUiThemeId = snapshot.ActiveUiThemeId,
             },
+            // Fields written before they existed read null → their defaults (back-compat, #20/#22).
+            Visuals = new VisualsSettings(
+                snapshot.WaveformZoomSeconds ?? VisualsSettings.DefaultZoomSeconds,
+                snapshot.NudgeSeconds ?? VisualsSettings.DefaultNudgeSeconds),
         }.Normalized();
     }
 
@@ -116,7 +122,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Audio.CaptureDeviceId,
             normalized.Audio.CaptureSource,
             normalized.Extensions.DeveloperMode,
-            normalized.Extensions.ActiveUiThemeId);
+            normalized.Extensions.ActiveUiThemeId,
+            normalized.Visuals.WaveformZoomSeconds,
+            normalized.Visuals.NudgeSeconds);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

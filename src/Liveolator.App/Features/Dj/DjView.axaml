@@ -15,12 +15,22 @@
          so the downbeats line up by eye for sync. Click a strip to seek that deck. -->
     <Border Grid.Row="0" Classes="panel" Margin="0,0,0,16">
       <StackPanel Margin="14,12" Spacing="10">
+        <!-- Shared ZOOM knob — zooms BOTH waveforms in seconds so the kicks line up vertically (drag up =
+             zoom in, fully down = whole-track overview). Pair with the deck ±0.5 s nudge to align A over B. -->
+        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock Classes="faint" VerticalAlignment="Center" Text="ZOOM" />
+          <controls:Knob Width="40" Height="40" DefaultValue="0.55"
+                         ArcBrush="{StaticResource Accent}"
+                         Value="{Binding Decks.WaveformZoom}"
+                         ToolTip.Tip="Zoom both waveforms — drag up to zoom in (see the kicks), down for the whole track" />
+        </StackPanel>
         <Grid ColumnDefinitions="26,*">
           <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                      VerticalAlignment="Center" Text="A" />
           <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
                   BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
             <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                    BarBrush="{StaticResource WaveformAhead}" PlayedBrush="{StaticResource Waveform}"
                                     KickBrush="{StaticResource Kick}"
                                     Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
                                     BeatGrid="{Binding DeckA.BeatGrid}"
@@ -33,6 +43,7 @@
           <Border Grid.Column="1" Height="84" Background="{StaticResource S2}"
                   BorderBrush="{StaticResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
             <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                    BarBrush="{StaticResource WaveformAhead}" PlayedBrush="{StaticResource Waveform}"
                                     KickBrush="{StaticResource Kick}"
                                     Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
                                     BeatGrid="{Binding DeckB.BeatGrid}"
@@ -76,6 +87,11 @@
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
                       <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
                                 IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Analyze again + online lookup"
+                                Command="{Binding Menu.AnalyzeAgainCommand}" />
+                      <MenuItem Header="Edit BPM / key / genre / notes"
+                                Command="{Binding Menu.EditMetadataCommand}" />
                       <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>

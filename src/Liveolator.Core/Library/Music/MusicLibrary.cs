@@ -1,5 +1,6 @@
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Enrichment;
 
 namespace Liveolator.Core.Library.Music;
 
@@ -144,6 +145,115 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         Upsert(rebuilt);
         return !NeedsAnalysis(rebuilt);
     }
+
+    public async Task<bool> ForceReanalyzeAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        try
+        {
+            TrackAnalysisResult result = await _analyzer
+                .AnalyzeAsync(_decoder, path, cancellationToken)
+                .ConfigureAwait(false);
+            Upsert(existing with
+            {
+                Bpm = result.Bpm,
+                Key = result.Key,
+                Duration = result.Duration,
+                Cues = result.Cues,
+                Status = TrackStatusPolicy.For(result),
+                Error = null,
+                AnalyzerVersion = TrackAnalyzer.CurrentVersion,
+                AnalysisIsManual = false,
+            });
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Upsert(existing with { Status = MediaAnalysisStatus.Failed, Error = ex.Message });
+            return false;
+        }
+    }
+
+    public bool UpdateManualDetails(
+        string path,
+        double bpm,
+        string camelot,
+        string? genre,
+        string? comment)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (bpm <= 0)
+            throw new ArgumentOutOfRangeException(nameof(bpm));
+        if (!Camelot.TryToMusicalKey(camelot, out MusicalKey? key))
+            throw new ArgumentException("Camelot key must be between 1A and 12B.", nameof(camelot));
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        TrackMetadata metadata = (existing.Metadata ?? TrackMetadata.Empty) with
+        {
+            Genre = Normalize(genre),
+            Comment = Normalize(comment),
+        };
+        Upsert(existing with
+        {
+            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(
+                bpm, Confidence: 1.0, existing.Bpm?.FirstBeatSeconds ?? 0),
+            Key = key,
+            Metadata = metadata,
+            Status = MediaAnalysisStatus.Ok,
+            Error = null,
+            AnalyzerVersion = TrackAnalyzer.CurrentVersion,
+            AnalysisIsManual = true,
+        });
+        return true;
+    }
+
+    public bool ApplyOnlineDetails(string path, OnlineTrackMetadata online)
+    {
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        EnrichedBpm enriched =
+            MetadataMergePolicy.MergeBpm(existing.Bpm, online.Bpm, existing.Status);
+        Liveolator.Core.Analysis.Bpm.BpmResult? bpm = enriched.Bpm is { } value
+            ? new Liveolator.Core.Analysis.Bpm.BpmResult(
+                value,
+                enriched.Confidence,
+                existing.Bpm?.FirstBeatSeconds ?? 0)
+            : existing.Bpm;
+
+        MusicalKey? key = existing.Key;
+        if ((key is null || key.Confidence < 0.2)
+            && Camelot.TryToMusicalKey(online.Camelot, out MusicalKey? onlineKey))
+            key = onlineKey;
+
+        Upsert(existing with
+        {
+            Bpm = bpm,
+            Key = key,
+            Status = enriched.Status,
+            Metadata = string.IsNullOrWhiteSpace(online.Genre)
+                ? existing.Metadata
+                : (existing.Metadata ?? TrackMetadata.Empty) with { Genre = online.Genre.Trim() },
+        });
+        return true;
+    }
+
+    private static string? Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // The reader contract is "never throws", but guard anyway so a misbehaving reader
     // can never abort a scan — metadata simply degrades to null.

@@ -44,6 +44,7 @@ Hardware / UI / Autopilot
 | 13 | [Data and persistence](13-data-and-persistence.md) | Storage | Carries over |
 | 14 | [Testing and validation](14-testing-and-validation.md) | Quality | Carries over |
 | 15 | [Phased roadmap](15-phased-roadmap.md) | Delivery | Carries over (visual phases reframed) |
+| 25 | [Track-linked media and VJ foundation](25-track-linked-media-and-vj-foundation.md) | Media / Visuals | Detailed implementation plan |
 
 ## Confirmed hardware targets
 

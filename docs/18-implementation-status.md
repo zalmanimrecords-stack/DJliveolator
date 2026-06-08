@@ -701,6 +701,13 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
   direction, Title is the stable tie-break, `Camelot.SortIndex` orders the key column around the
   wheel). Facets rebuild from the catalog on scan/restore and drop stale selections. Tested: Core
   `TrackSortTests` (7), App `LibrariesViewModelFilterSortTests` (8).
+- **Per-track re-analysis and manual corrections:** every track context menu can force a fresh local
+  BPM/key analysis and optionally cross-check GetSongBPM/AcoustID for BPM/key/genre. The App activates
+  lookup from `LIVEOLATOR_GETSONGBPM_KEY` plus optional `LIVEOLATOR_ACOUSTID_KEY` and
+  `LIVEOLATOR_FPCALC_PATH`; without keys, local analysis still runs. A track editor persists manual
+  BPM, Camelot key/scale, genre, and notes to the music catalog and marks the analysis manual so
+  background re-analysis does not overwrite it. The Libraries detail panel shows notes and the
+  required GetSongBPM attribution link.
 - **✅ Sample-folder designation UI (doc 22 B2):** each row in the Folders window has a "Samples"
   checkbox (`FolderStatusViewModel.IsSampleFolder`) that calls through to `MusicLibrary.SetSampleFolders`,
   reclassifies the cached catalog in place (Track ↔ Sample, no re-decode), refreshes rows + facets, and
@@ -714,6 +721,21 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
   `LivePlaylist` engine and all audio paths are untouched. Tested: App `DjViewModelPlayedHistoryTests` (4).
 
 ## Cross-cutting decisions made while building the above
+
+### Track-linked visual programs - model and persistence foundation (doc 25, Milestone 1 partial)
+
+The authored-data foundation for linking images/video clips to a music track is built:
+
+- `TrackVisualProgram`, `TrackVisualCue`, track/asset references, fit/playback/fallback enums, and
+  strict validation live in `Liveolator.Core/Visuals/TrackPrograms/`.
+- `TrackVisualCueResolver` resolves the active cue and maps original track time to source time,
+  including loop wrapping and once-mode end clamping.
+- `ITrackVisualProgramStore` is implemented by `JsonTrackVisualProgramStore`, storing one versioned,
+  atomic file per normalized-track-path SHA-256 under `live/track-visuals/`.
+- Concurrent saves are serialized; corrupt, mismatched, and incompatible snapshots degrade to a
+  warning plus no program. The store is registered in `ServiceConfig`.
+- **Deferred:** assignment/editor UI, deck coordinator, image autoplay, video decoding, and
+  crossfader-driven deck visual layers (doc 25 Milestones 2+).
 
 - `Liveolator.Core` now references **`Microsoft.Extensions.Logging.Abstractions`** (abstractions
   only — keeps Core pure managed) to satisfy the mandatory-logging standard. Concrete providers

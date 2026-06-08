@@ -35,6 +35,23 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void Load_WhenTheNewTrackFailsToOpen_KeepsThePreviousTrackLoadedAndPlayable()
+    {
+        // Regression: a stale live-queue / restored entry pointing at a missing file must NOT wipe a deck
+        // that already holds a good, playable track (the "Deck A shows a track but won't play" bug).
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\good.wav"); // opens handle 100, plugged into slot 0
+
+        backend.OpenOverride = _ => throw new InvalidOperationException("file not found");
+        Assert.Throws<InvalidOperationException>(() => engine.Load(0, @"C:\missing.wav"));
+
+        // The good track is still loaded (never unplugged) and the deck still plays.
+        Assert.DoesNotContain(100, backend.Unplugged);
+        engine.PlayPause(0);
+        Assert.True(engine.IsPlaying(0));
+    }
+
+    [Fact]
     public void Ctor_ArmsMasterTapOnce()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
@@ -107,8 +124,12 @@ public class TwoDeckBassEngineTests
 
         Assert.Contains(100, backend.Unplugged);
         // After replacement, slot 0 routes to the new channel (handle 101), not the old one.
+        // Capture old channel's volume before the explicit gain update: SetChannel already applied
+        // the default unity gain (1.0) on initial load, so it will be non-null here.
+        double? oldVolumeBeforeGainUpdate = backend.Channels[100].Volume;
         mixer.SetDeckGain(0, 0.25);
-        Assert.Null(backend.Channels[100].Volume);
+        // Old channel must not have received the 0.25 update — its stored volume is unchanged.
+        Assert.Equal(oldVolumeBeforeGainUpdate, backend.Channels[100].Volume);
         Assert.Equal(0.25, backend.Channels[101].Volume);
     }
 

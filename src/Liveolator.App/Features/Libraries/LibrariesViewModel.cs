@@ -64,6 +64,11 @@ public sealed class LibrariesViewModel : ViewModelBase
         _store = store;
         _contextActions = contextActions;
         PlaylistBuilder = playlistBuilder;
+        if (_contextActions is not null)
+        {
+            _contextActions.TrackChanged += OnTrackChanged;
+            _contextActions.StatusChanged += OnTrackStatusChanged;
+        }
 
         ScanCommand = ReactiveCommand.CreateFromTask(
             RunScanAsync,
@@ -356,6 +361,19 @@ public sealed class LibrariesViewModel : ViewModelBase
         ApplyFilter();
         RefreshFolderStatuses();
     }
+
+    private void OnTrackChanged(object? sender, string trackPath)
+    {
+        string? selectedPath = SelectedTrack?.Track.File.Path;
+        RefreshRows();
+        if (selectedPath is not null)
+            SelectedTrack = Tracks.FirstOrDefault(
+                row => string.Equals(
+                    row.Track.File.Path, selectedPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OnTrackStatusChanged(object? sender, string message)
+        => ScanStatus = message;
 
     /// <summary>Adds a folder root to scan (no-op if blank or already present), persisting the
     /// updated set so it survives a restart even before the next scan.</summary>

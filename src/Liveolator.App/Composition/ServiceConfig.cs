@@ -18,6 +18,7 @@ using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Beat;
+using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
@@ -33,6 +34,7 @@ using Liveolator.Core.Waveform;
 using Liveolator.Media;
 using Liveolator.Media.Extensions;
 using Liveolator.Midi;
+using Liveolator.Online;
 using Liveolator.Platform;
 using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
@@ -71,6 +73,9 @@ public static class ServiceConfig
         // a saved visual bank is loaded at startup below to feed the visual engine (scenes → banks).
         var liveProfileStore = new LiveProfileStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<ILiveProfileStore>(liveProfileStore);
+        services.AddSingleton<ITrackVisualProgramStore>(
+            _ => new JsonTrackVisualProgramStore(
+                onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
 
         // --- Declarative extension packages -----------------------------------------------------
         // Trust is read from a separate user-controlled file; packages cannot add their own keys.
@@ -151,6 +156,7 @@ public static class ServiceConfig
             sp.GetRequiredService<IAudioDecoder>()));
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
+        WireOnlineEnrichment(services);
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
         // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
         // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
@@ -276,6 +282,20 @@ public static class ServiceConfig
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
 
+        // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
+        // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the
+        // crossfader, because SetDeckGain is only called on action dispatch — never on construction.
+        // This push stores the correct gains in BassMixer._gains[] so SetChannel can re-apply them
+        // the moment a track is loaded (doc 11 / crossfader-before-load invariant).
+        if (realtimeUp)
+        {
+            dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.MixerCrossfade,
+                ActionInputMode.Absolute,
+                Value: mixerHandler.State.Crossfader,
+                Slot: 0));
+        }
+
         if (realtimeUp)
         {
             var deckSession = new DeckSessionPersistence(
@@ -315,7 +335,9 @@ public static class ServiceConfig
             sp.GetService<IPerformanceActionDispatcher>(),
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<MusicLibrary>(),
-            sp.GetService<IDeckLevelMeter>()));
+            sp.GetService<IDeckLevelMeter>(),
+            appSettings.Visuals.WaveformZoomSeconds,
+            appSettings.Visuals.NudgeSeconds));
 
         WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -327,7 +349,13 @@ public static class ServiceConfig
         services.AddSingleton<TrackContextActions>(sp => new TrackContextActions(
             realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetRequiredService<IPlaylistStore>(),
-            onStatus: w => System.Diagnostics.Trace.TraceInformation(w)));
+            onStatus: w => System.Diagnostics.Trace.TraceInformation(w),
+            library: sp.GetRequiredService<MusicLibrary>(),
+            catalogStore: sp.GetRequiredService<IMusicCatalogStore>(),
+            metadataProvider: sp.GetService<IMetadataProvider>(),
+            fingerprinter: sp.GetService<IAudioFingerprinter>(),
+            editor: sp.GetRequiredService<ITrackEditor>()));
+        services.AddSingleton<ITrackEditor, TrackEditor>();
 
         // Libraries playback is gated on the realtime engine, not merely the dispatcher: without
         // native BASS there is no deck to play, so pass the dispatcher only when the engine is up
@@ -400,7 +428,9 @@ public static class ServiceConfig
             sp.GetRequiredService<IExtensionCatalog>(),
             sp.GetRequiredService<IExtensionInstaller>(),
             sp.GetRequiredService<IUiThemeManager>(),
-            sp.GetRequiredService<IExtensionContentReloader>()));
+            sp.GetRequiredService<IExtensionContentReloader>(),
+            // The shared decks so a saved waveform-zoom change applies live (without a restart).
+            sp.GetRequiredService<PerformanceDeckSet>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the
@@ -445,6 +475,35 @@ public static class ServiceConfig
             System.Diagnostics.Trace.TraceWarning($"Realtime audio disabled: {ex.Message}.");
             return null;
         }
+    }
+
+    private static void WireOnlineEnrichment(IServiceCollection services)
+    {
+        services.AddSingleton<IAudioFingerprinter>(_ => new FpcalcFingerprinter(
+            Environment.GetEnvironmentVariable("LIVEOLATOR_FPCALC_PATH")));
+
+        string? getSongBpmKey =
+            Environment.GetEnvironmentVariable("LIVEOLATOR_GETSONGBPM_KEY");
+        if (string.IsNullOrWhiteSpace(getSongBpmKey))
+            return;
+
+        var bpmClient = new GetSongBpmClient(
+            new HttpClient { BaseAddress = new Uri("https://api.getsong.co/") },
+            getSongBpmKey);
+        services.AddSingleton<IGetSongBpmClient>(bpmClient);
+
+        string? acoustIdKey =
+            Environment.GetEnvironmentVariable("LIVEOLATOR_ACOUSTID_KEY");
+        IAcoustIdClient? acoustId = string.IsNullOrWhiteSpace(acoustIdKey)
+            ? null
+            : new AcoustIdClient(
+                new HttpClient { BaseAddress = new Uri("https://api.acoustid.org/") },
+                acoustIdKey);
+        if (acoustId is not null)
+            services.AddSingleton(acoustId);
+
+        services.AddSingleton<IMetadataProvider>(
+            new OnlineMetadataProvider(bpmClient, acoustId));
     }
 
     // --- Live set restore + autosave (doc 09/13) --------------------------------------------------

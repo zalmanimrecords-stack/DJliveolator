@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Shell;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Extensions;
@@ -51,6 +52,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IExtensionInstaller? _extensionInstaller;
     private readonly IUiThemeManager? _themes;
     private readonly IExtensionContentReloader? _contentReloader;
+    private readonly PerformanceDeckSet? _decks;
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
@@ -63,6 +65,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private ExtensionItemViewModel? _selectedExtension;
     private bool _developerMode;
     private string? _activeUiThemeId;
+    private double _waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds;
+    private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
@@ -74,7 +78,8 @@ public sealed class SettingsViewModel : ViewModelBase
         IExtensionCatalog? extensions = null,
         IExtensionInstaller? extensionInstaller = null,
         IUiThemeManager? themes = null,
-        IExtensionContentReloader? contentReloader = null)
+        IExtensionContentReloader? contentReloader = null,
+        PerformanceDeckSet? decks = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
@@ -86,6 +91,7 @@ public sealed class SettingsViewModel : ViewModelBase
         _extensionInstaller = extensionInstaller;
         _themes = themes;
         _contentReloader = contentReloader;
+        _decks = decks;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
@@ -177,6 +183,32 @@ public sealed class SettingsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _activeUiThemeId, value);
     }
 
+    /// <summary>Deck waveform zoom — seconds of audio shown in the zoomed (playing) view; lower = more
+    /// zoomed in. Persisted on Save and applied to both decks live.</summary>
+    public double WaveformZoomSeconds
+    {
+        get => _waveformZoomSeconds;
+        set => this.RaiseAndSetIfChanged(ref _waveformZoomSeconds, value);
+    }
+
+    /// <summary>Slider lower bound (seconds) for <see cref="WaveformZoomSeconds"/> — the most zoomed-in.</summary>
+    public double WaveformZoomMin => VisualsSettings.MinZoomSeconds;
+
+    /// <summary>Slider upper bound (seconds) for <see cref="WaveformZoomSeconds"/> — the least zoomed-in.</summary>
+    public double WaveformZoomMax => VisualsSettings.MaxZoomSeconds;
+
+    /// <summary>Seconds the deck track-nudge buttons (◄ / ►) move the playhead per press. Persisted on
+    /// Save and applied to both decks live.</summary>
+    public double NudgeSeconds
+    {
+        get => _nudgeSeconds;
+        set => this.RaiseAndSetIfChanged(ref _nudgeSeconds, value);
+    }
+
+    /// <summary>Slider bounds (seconds) for <see cref="NudgeSeconds"/>.</summary>
+    public double NudgeMin => VisualsSettings.MinNudgeSeconds;
+    public double NudgeMax => VisualsSettings.MaxNudgeSeconds;
+
     public ReactiveCommand<Unit, Unit> RefreshDevicesCommand { get; }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
@@ -254,10 +286,14 @@ public sealed class SettingsViewModel : ViewModelBase
                 DeveloperMode = DeveloperMode,
                 ActiveUiThemeId = ActiveUiThemeId == "Spartan" ? null : ActiveUiThemeId,
             },
+            Visuals = new VisualsSettings(WaveformZoomSeconds, NudgeSeconds),
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
         _loadedSettings = settings.Normalized();
+        // Apply the (normalized) zoom + nudge step to the live decks so the change takes effect without a restart.
+        _decks?.SetWaveformZoom(_loadedSettings.Visuals.WaveformZoomSeconds);
+        _decks?.SetNudgeSeconds(_loadedSettings.Visuals.NudgeSeconds);
         Status = ApplyToRunningEngine(settings.Audio.Normalized());
     }
 
@@ -315,6 +351,8 @@ public sealed class SettingsViewModel : ViewModelBase
             ? output : NoDevice;
         DeveloperMode = settings.Extensions.DeveloperMode;
         ActiveUiThemeId = settings.Extensions.ActiveUiThemeId ?? "Spartan";
+        WaveformZoomSeconds = settings.Visuals.WaveformZoomSeconds;
+        NudgeSeconds = settings.Visuals.NudgeSeconds;
 
         UiThemeIds.Clear();
         UiThemeIds.Add("Spartan");

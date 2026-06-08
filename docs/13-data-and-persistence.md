@@ -49,6 +49,7 @@ equivalent elsewhere — see `JsonCatalogStore.DefaultRoot`):
     mappings/<name>.json        # ControllerMappingProfile / Push / DJ profiles      [implemented]
     scenes/<name>.json          # VisualBank (contains its VisualScenes)             [implemented]
     macros.json                 # VisualMacro definitions                            [implemented]
+    track-visuals/<hash>.json   # authored per-track image/video timeline             [implemented]
     autopilot/<name>.json       # AutopilotRuleSet                                   [implemented]
     sessions/<name>.json        # LivePerformanceSession (setlists/shows)            [planned]
     cache/track-analysis.json   # TrackAnalysisCache (regenerable)                   [planned]
@@ -62,6 +63,12 @@ The four `[implemented]` families are persisted by `LiveProfileStore`
 missing file returns null/empty with no warning; a corrupt or older-version file returns
 null/empty **and** reports a warning, never throwing (global standards #16/#26). Profile
 names are sanitized to a flat `<safe-name>.json` so a name can never escape its folder.
+
+Track-linked visual programs are persisted separately by `JsonTrackVisualProgramStore`,
+behind the Core `ITrackVisualProgramStore` seam. Each track has one versioned file whose
+name is a SHA-256 hash of its normalized path; the full path and file fingerprint remain
+inside the authored program for validation and future relinking. Saves are serialized and
+atomic, while corrupt or incompatible files are ignored with a warning.
 
 ## Persistence rules (from the plan)
 

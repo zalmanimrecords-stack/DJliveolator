@@ -56,6 +56,11 @@
                       <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
                                 IsVisible="{Binding Menu.CanLoadToDeckB}" />
                       <Separator />
+                      <MenuItem Header="Analyze again + online lookup"
+                                Command="{Binding Menu.AnalyzeAgainCommand}" />
+                      <MenuItem Header="Edit BPM / key / genre / notes"
+                                Command="{Binding Menu.EditMetadataCommand}" />
+                      <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>
                           <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
@@ -96,6 +101,11 @@
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
                       <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
                                 IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Analyze again + online lookup"
+                                Command="{Binding Menu.AnalyzeAgainCommand}" />
+                      <MenuItem Header="Edit BPM / key / genre / notes"
+                                Command="{Binding Menu.EditMetadataCommand}" />
                       <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>

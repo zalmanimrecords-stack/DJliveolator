@@ -117,6 +117,7 @@ public sealed class ServiceConfigTests
         // The Live-Mode profile store (mapping profiles / scenes / macros / autopilot rule-sets, doc 13)
         // needs no native deps, so it is always wired for the host to load/save snapshots.
         Assert.NotNull(provider.GetService<ILiveProfileStore>());
+        Assert.NotNull(provider.GetService<ITrackVisualProgramStore>());
     }
 
     [Fact]

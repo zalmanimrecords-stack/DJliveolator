@@ -22,6 +22,18 @@ public sealed class DecodedWaveformProvider : IWaveformProvider
     /// <summary>Default decode rate for the overview — enough to catch transients, cheap to hold.</summary>
     public const int DefaultOverviewSampleRate = 8_000;
 
+    /// <summary>
+    /// Target overview resolution in buckets PER SECOND. A fixed total bucket count makes long tracks
+    /// coarse (a 6-min track at 6000 buckets ≈ 17 buckets/s ≈ 60 ms/bucket — the kick attack quantizes and
+    /// smears when zoomed in). A fixed density (≈ one bucket per 6–7 ms) keeps each kick its own crisp
+    /// column at performance zoom regardless of track length. The caller's requested count is treated as a
+    /// floor, so short tracks still get a smooth strip.
+    /// </summary>
+    public const int TargetBucketsPerSecond = 150;
+
+    /// <summary>Hard ceiling on the bucket count so a pathologically long/corrupt file can't allocate unbounded.</summary>
+    public const int MaxBuckets = 250_000;
+
     private readonly IAudioDecoder _decoder;
     private readonly int _overviewSampleRate;
     private readonly ILogger<DecodedWaveformProvider> _logger;
@@ -61,10 +73,17 @@ public sealed class DecodedWaveformProvider : IWaveformProvider
                 Append(samples, block);
             }
 
+            // Resolution by DENSITY, not a fixed count: derive buckets from the decoded duration so each
+            // kick stays a crisp column at zoom (the caller's count is only a floor). Capped so a huge file
+            // can't allocate without bound.
+            int densityBuckets = (int)Math.Min(
+                MaxBuckets, (long)Math.Ceiling((double)samples.Count / _overviewSampleRate * TargetBucketsPerSecond));
+            int effectiveBuckets = Math.Clamp(Math.Max(bucketCount, densityBuckets), 1, MaxBuckets);
+
             // Pass the overview rate so WaveformBuilder also derives the low-frequency (kick) band, which
             // the deck strip draws as a distinct overlay for beat alignment (sync by eye).
             WaveformOverview overview = WaveformBuilder.Build(
-                CollectionsMarshal.AsSpan(samples), bucketCount, _overviewSampleRate);
+                CollectionsMarshal.AsSpan(samples), effectiveBuckets, _overviewSampleRate);
             // Duration from the mono sample count at the (known) overview rate, so the deck can place a
             // beat-grid overlay without a second decode. Empty overviews stay Empty (no duration).
             return overview.IsEmpty

@@ -88,4 +88,78 @@ public class BassMixerTests
 
         Assert.Equal(1.0, deckA.Volume!.Value, 6);
     }
+
+    // --- SetChannel re-applies gain (crossfader-before-load bug) ---
+
+    [Fact]
+    public void SetDeckGain_BeforeChannelRegistered_IsAppliedWhenChannelArrives()
+    {
+        // Reproduce: user sets crossfader to deck B, then loads a track on deck A.
+        // Without the fix, deck A plays at raw volume (1.0) until the crossfader is moved.
+        var mixer = new BassMixer(deckCount: 2);
+
+        // Crossfader fully on deck B — deck A gain = 0
+        mixer.SetDeckGain(0, 0.0);
+
+        // Now load deck A (no channel was registered when the gain was set)
+        var deckA = new FakeChannel();
+        mixer.SetChannel(0, deckA);
+
+        // Channel must receive the stored gain immediately — not wait for the next knob move
+        Assert.Equal(0.0, deckA.Volume!.Value, 6);
+    }
+
+    [Fact]
+    public void SetChannel_WithPriorGain_AppliesGainImmediately()
+    {
+        var mixer = new BassMixer(deckCount: 2);
+        mixer.SetDeckGain(0, 0.42);
+
+        var channel = new FakeChannel();
+        mixer.SetChannel(0, channel);
+
+        Assert.Equal(0.42, channel.Volume!.Value, 6);
+    }
+
+    [Fact]
+    public void SetChannel_WithNullChannel_DoesNotThrow()
+    {
+        // Unloading a deck clears the channel — must be safe
+        var mixer = new BassMixer(deckCount: 2);
+        mixer.SetDeckGain(0, 0.5);
+        mixer.SetChannel(0, new FakeChannel());
+
+        var ex = Record.Exception(() => mixer.SetChannel(0, null));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void SetDeckGain_UpdatesStoredGain_AfterChannelIsRegistered()
+    {
+        // After the channel is registered, a subsequent gain update must still reach the channel.
+        var mixer = new BassMixer(deckCount: 2);
+        var channel = new FakeChannel();
+        mixer.SetChannel(0, channel);
+
+        mixer.SetDeckGain(0, 0.8);
+
+        Assert.Equal(0.8, channel.Volume!.Value, 6);
+    }
+
+    [Fact]
+    public void ReplacingChannel_AppliesCurrentStoredGainToNewChannel()
+    {
+        // When a new track is loaded on a slot that already had a channel, the new channel must
+        // also receive the current gain so there's no momentary volume pop.
+        var mixer = new BassMixer(deckCount: 2);
+        var first = new FakeChannel();
+        mixer.SetChannel(0, first);
+        mixer.SetDeckGain(0, 0.3);
+
+        // Reload: new channel registered
+        var second = new FakeChannel();
+        mixer.SetChannel(0, second);
+
+        Assert.Equal(0.3, second.Volume!.Value, 6);
+    }
 }

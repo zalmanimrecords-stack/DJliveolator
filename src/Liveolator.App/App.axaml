@@ -31,9 +31,11 @@
     <!-- Deliberate exception to the single-blue line: a true green reserved for live MIDI activity
          (the top-bar signal LED), so an incoming controller signal reads at a glance. -->
     <Color x:Key="MidiActiveColor">#29C467</Color>
-    <!-- Deliberate exception: a glowing amber for the kick (low-frequency) band on the deck waveform,
-         so the kick transients pop against the blue waveform and a DJ can align downbeats by eye for sync. -->
-    <Color x:Key="KickColor">#FFA22B</Color>
+    <!-- Deck waveform (a deliberate exception to the single-blue line, for beat-align readability): the
+         body is a warm yellow and the kick (low-frequency, ≤150 Hz) band a vivid green glow drawn over it,
+         so the kick transients pop in green against the yellow body and a DJ can align downbeats by eye. -->
+    <Color x:Key="WaveformColor">#F0C23C</Color>
+    <Color x:Key="KickColor">#27C56A</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
     <SolidColorBrush x:Key="S1" Color="{StaticResource S1Color}" />
@@ -52,6 +54,9 @@
     <SolidColorBrush x:Key="Violet" Color="{StaticResource VioletColor}" />
     <SolidColorBrush x:Key="MidiActive" Color="{StaticResource MidiActiveColor}" />
     <SolidColorBrush x:Key="Kick" Color="{StaticResource KickColor}" />
+    <!-- Waveform body: opaque for the played portion, half-transparent for the part still ahead of the playhead. -->
+    <SolidColorBrush x:Key="Waveform" Color="{StaticResource WaveformColor}" />
+    <SolidColorBrush x:Key="WaveformAhead" Color="{StaticResource WaveformColor}" Opacity="0.5" />
 
     <!-- Retint Fluent's accent so standard controls (combobox, scrollbar, selection, etc.) follow the blue line. -->
     <Color x:Key="SystemAccentColor">#2F80F6</Color>

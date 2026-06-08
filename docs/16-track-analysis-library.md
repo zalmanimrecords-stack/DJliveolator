@@ -201,9 +201,11 @@ An **optional, offline-first** enrichment that augments local analysis with onli
 - **Tests:** Core `MetadataMergePolicyTests` (6); Online `AcoustIdClientTests`/`GetSongBpmClientTests`/
   `OnlineMetadataProviderTests`/`FpcalcOutputParserTests` (23). HTTP behind injected `HttpClient` (fake
   handler), fpcalc parsing pure — no network/native in CI.
-- **Status: BUILT** (2026-06-06). **Pending live activation:** user-supplied API keys (AcoustID +
-  GetSongBPM) + the `fpcalc` native binary fetched per-platform; and the App-side "Fetch online" button
-  (with attribution) + optional scan-time cross-check wiring.
+- **Status: BUILT + App-activated** (2026-06-08). Every track context menu now offers forced local
+  re-analysis plus online lookup. Runtime activation uses `LIVEOLATOR_GETSONGBPM_KEY`, optional
+  `LIVEOLATOR_ACOUSTID_KEY`, and optional `LIVEOLATOR_FPCALC_PATH`; without keys the same command
+  still performs local BPM/key analysis. Manual BPM/Camelot/genre/notes editing is persisted in the
+  catalog and protected from background re-analysis.
 
 ## Phase
 

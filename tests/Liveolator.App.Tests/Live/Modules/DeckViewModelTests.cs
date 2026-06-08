@@ -246,6 +246,61 @@ public sealed class DeckViewModelTests
     }
 
     [Theory]
+    [InlineData(true, 0.1 / 4.0)]    // forward one default nudge step (0.1 s) of a 4 s track
+    [InlineData(false, -0.1 / 4.0)]  // back 0.1 s
+    public async Task SeekNudge_WithKnownDuration_EmitsRelativeDeckSeek_ByTheNudgeStep(bool forward, double expectedFraction)
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 4);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider); // default nudge step = 0.1 s
+
+        // Load so the overview decodes and the deck learns the 4 s duration (the nudge needs it to convert).
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await gridSet;
+        dispatcher.Dispatched.Clear();
+
+        await (forward ? vm.SeekForwardCommand : vm.SeekBackCommand).Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSeek, action.Kind);
+        Assert.Equal(ActionInputMode.Relative, action.InputMode);
+        Assert.Equal(0, action.Slot);
+        Assert.Equal(expectedFraction, action.Value, precision: 6);
+    }
+
+    [Fact]
+    public async Task SeekNudge_WithUnknownDuration_DoesNothing()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no waveform provider → duration unknown
+
+        await vm.SeekForwardCommand.Execute().ToTask();
+        await vm.SeekBackCommand.Execute().ToTask();
+
+        Assert.Empty(dispatcher.Dispatched); // no guessed jump until the track length is known
+    }
+
+    [Fact]
+    public async Task SetNudgeSeconds_ChangesTheStepAppliedPerPress()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 4);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await gridSet;
+        dispatcher.Dispatched.Clear();
+
+        vm.SetNudgeSeconds(0.5); // a coarser step from Settings
+        await vm.SeekForwardCommand.Execute().ToTask();
+
+        Assert.Equal(0.5 / 4.0, Assert.Single(dispatcher.Dispatched).Value, precision: 6);
+    }
+
+    [Theory]
     [InlineData(-0.5, 0.0)]
     [InlineData(1.7, 1.0)]
     public async Task Seek_ClampsTheFraction_ToTheUnitRange(double input, double expected)
@@ -462,23 +517,43 @@ public sealed class DeckViewModelTests
         Assert.False(vm.HasTrackMeta);
     }
 
-    // --- Zoom-follow during playback (doc 22 — scrolling waveform for kick-sync by eye) ---
+    // --- Waveform zoom (doc 22 — see/align kicks while cued, via the shared ZOOM knob) ---
 
     [Fact]
-    public void Play_ZoomsTheWaveform_AndPauseReturnsToOverview()
+    public async Task WaveformZoom_AppliesEvenWhenPaused_SoKicksResolveForAlignment()
     {
         var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 0, dispatcher);
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 40);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider, waveformZoomSeconds: 8.0);
 
-        Assert.Equal(0.0, vm.ZoomWindow, 6); // stopped → whole-track overview
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await gridSet;
 
-        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
-        Assert.True(vm.ZoomWindow > 0, "play should zoom the waveform into a follow window.");
+        Assert.False(vm.IsPlaying);                 // paused / cued...
+        Assert.Equal(8.0 / 40.0, vm.ZoomWindow, 6); // ...yet the waveform is zoomed to the 8 s window
+    }
 
-        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0));
-        Assert.Equal(0.0, vm.ZoomWindow, 6); // pause → back to the overview
+    [Fact]
+    public async Task SetWaveformZoomSeconds_TighterWindow_ZoomsInFurther_AndZeroIsOverview()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 40);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await gridSet;
+
+        vm.SetWaveformZoomSeconds(4);
+        Assert.Equal(4.0 / 40.0, vm.ZoomWindow, 6);
+        vm.SetWaveformZoomSeconds(8);
+        Assert.Equal(8.0 / 40.0, vm.ZoomWindow, 6); // wider window = less zoom
+
+        vm.SetWaveformZoomSeconds(0);               // knob fully out
+        Assert.Equal(0.0, vm.ZoomWindow, 6);        // whole-track overview
     }
 
     [Fact]

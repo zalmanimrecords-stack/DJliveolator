@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using System.Diagnostics;
 using Liveolator.App.Features.Playlists;
 
 namespace Liveolator.App.Features.Libraries;
@@ -81,5 +82,20 @@ public partial class LibrariesView : UserControl
             window.Show(owner);
         else
             window.Show();
+    }
+
+    private void OnOpenGetSongBpm(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://getsongbpm.com/")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // The attribution remains visible even when the OS cannot open a browser.
+        }
     }
 }

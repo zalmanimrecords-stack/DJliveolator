@@ -67,6 +67,7 @@ public sealed class TrackRowViewModel
     public string Genre => Track.Metadata?.Genre ?? None;
     public string Year => Track.Metadata?.Year?.ToString() ?? None;
     public string TrackNo => Track.Metadata?.TrackNumber?.ToString() ?? None;
+    public string Notes => Track.Metadata?.Comment ?? None;
 
     public string SampleRate =>
         Track.Metadata?.SampleRateHz is { } hz ? $"{hz / 1000.0:0.#} kHz" : None;

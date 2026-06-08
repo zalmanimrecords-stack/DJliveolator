@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Reactive.Concurrency;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Enrichment;
+using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using ReactiveUI;
@@ -20,15 +22,30 @@ public sealed class TrackContextActions
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IPlaylistStore _store;
     private readonly Action<string>? _onStatus;
+    private readonly MusicLibrary? _library;
+    private readonly IMusicCatalogStore? _catalogStore;
+    private readonly IMetadataProvider? _metadataProvider;
+    private readonly IAudioFingerprinter? _fingerprinter;
+    private readonly ITrackEditor? _editor;
 
     public TrackContextActions(
         IPerformanceActionDispatcher? dispatcher,
         IPlaylistStore store,
-        Action<string>? onStatus = null)
+        Action<string>? onStatus = null,
+        MusicLibrary? library = null,
+        IMusicCatalogStore? catalogStore = null,
+        IMetadataProvider? metadataProvider = null,
+        IAudioFingerprinter? fingerprinter = null,
+        ITrackEditor? editor = null)
     {
         _dispatcher = dispatcher;
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _onStatus = onStatus;
+        _library = library;
+        _catalogStore = catalogStore;
+        _metadataProvider = metadataProvider;
+        _fingerprinter = fingerprinter;
+        _editor = editor;
 
         CanLoadToDeckA = DeckSlotAvailable(0);
         CanLoadToDeckB = DeckSlotAvailable(1);
@@ -40,6 +57,82 @@ public sealed class TrackContextActions
     /// <summary>True when deck slot A / B is backed by the engine (drives the deck menu items).</summary>
     public bool CanLoadToDeckA { get; }
     public bool CanLoadToDeckB { get; }
+    public bool CanAnalyze => _library is not null && _catalogStore is not null;
+    public bool CanEdit => CanAnalyze && _editor is not null;
+    public event EventHandler<string>? TrackChanged;
+    public event EventHandler<string>? StatusChanged;
+
+    public async Task AnalyzeAgainAsync(string trackPath, CancellationToken cancellationToken = default)
+    {
+        if (!CanAnalyze || string.IsNullOrWhiteSpace(trackPath))
+            return;
+
+        try
+        {
+            ReportStatus($"Analyzing \"{TitleOf(trackPath)}\"...");
+            await _library!.ForceReanalyzeAsync(trackPath, cancellationToken).ConfigureAwait(false);
+            MusicTrack? track = _library.TryGet(trackPath);
+            string onlineStatus = "online lookup not configured";
+
+            if (track is not null && _metadataProvider is not null)
+            {
+                AudioFingerprint? fingerprint = _fingerprinter is null
+                    ? null
+                    : await _fingerprinter.ComputeAsync(trackPath, cancellationToken).ConfigureAwait(false);
+                OnlineTrackMetadata? online = await _metadataProvider.LookupAsync(
+                    new TrackLookupQuery(
+                        track.Artist,
+                        track.Title,
+                        fingerprint?.Fingerprint,
+                        track.Duration),
+                    cancellationToken).ConfigureAwait(false);
+                if (online is not null)
+                {
+                    _library.ApplyOnlineDetails(trackPath, online);
+                    onlineStatus = $"checked {online.Source}";
+                }
+                else
+                {
+                    onlineStatus = "no online match";
+                }
+            }
+
+            await PersistCatalogAsync(cancellationToken).ConfigureAwait(false);
+            RaiseTrackChanged(trackPath);
+            MusicTrack? updated = _library.TryGet(trackPath);
+            ReportStatus(updated is null
+                ? $"Could not find \"{TitleOf(trackPath)}\" in the catalog."
+                : $"Analyzed \"{updated.Title}\": {updated.Bpm?.Bpm:0.0} BPM, " +
+                  $"{updated.Key?.Camelot ?? "no key"}, {onlineStatus}.");
+        }
+        catch (Exception ex)
+        {
+            ReportStatus($"Could not analyze \"{TitleOf(trackPath)}\": {ex.Message}");
+        }
+    }
+
+    public async Task EditAsync(string trackPath, CancellationToken cancellationToken = default)
+    {
+        if (!CanEdit || _library!.TryGet(trackPath) is not { } track)
+            return;
+
+        TrackEditResult? edit = await _editor!.EditAsync(track);
+        if (edit is null)
+            return;
+
+        try
+        {
+            _library.UpdateManualDetails(
+                trackPath, edit.Bpm, edit.Camelot, edit.Genre, edit.Notes);
+            await PersistCatalogAsync(cancellationToken).ConfigureAwait(false);
+            RaiseTrackChanged(trackPath);
+            ReportStatus($"Saved manual metadata for \"{track.Title}\".");
+        }
+        catch (Exception ex)
+        {
+            ReportStatus($"Could not save track metadata: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it. <paramref name="bpm"/> is the
@@ -136,4 +229,18 @@ public sealed class TrackContextActions
         => _dispatcher?.GetFeedback(PerformanceActionKind.DeckPlayPause, slot).IsAvailable ?? false;
 
     private static string TitleOf(string path) => System.IO.Path.GetFileNameWithoutExtension(path);
+
+    private Task PersistCatalogAsync(CancellationToken cancellationToken)
+        => _catalogStore!.SaveMusicAsync(_library!.All, cancellationToken);
+
+    private void RaiseTrackChanged(string trackPath)
+        => RxApp.MainThreadScheduler.Schedule(
+            () => TrackChanged?.Invoke(this, trackPath));
+
+    private void ReportStatus(string message)
+    {
+        _onStatus?.Invoke(message);
+        RxApp.MainThreadScheduler.Schedule(
+            () => StatusChanged?.Invoke(this, message));
+    }
 }

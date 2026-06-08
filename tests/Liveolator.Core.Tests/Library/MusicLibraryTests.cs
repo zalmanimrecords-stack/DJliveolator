@@ -1,5 +1,6 @@
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Enrichment;
 using Xunit;
 
 namespace Liveolator.Core.Tests.Library;
@@ -43,6 +44,61 @@ public class MusicLibraryTests
         await library.ScanAsync(new[] { "music" }); // same fingerprints → skip
 
         Assert.Equal(1, decoder.DecodeCalls["a.mp3"]);
+    }
+
+    [Fact]
+    public async Task ForceReanalyze_RebuildsAnAlreadyAnalyzedTrack()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        bool analyzed = await library.ForceReanalyzeAsync("a.mp3");
+
+        Assert.True(analyzed);
+        Assert.Equal(2, decoder.DecodeCalls["a.mp3"]);
+        Assert.False(library.TryGet("a.mp3")!.AnalysisIsManual);
+    }
+
+    [Fact]
+    public async Task UpdateManualDetails_PersistsBpmKeyGenreAndNotes()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        bool updated = library.UpdateManualDetails(
+            "a.mp3", 138.5, "8A", "Psytrance", "Long intro");
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.Equal(138.5, track.Bpm!.Bpm);
+        Assert.Equal("8A", track.Key!.Camelot);
+        Assert.Equal("A Minor", track.Key.Name);
+        Assert.Equal("Psytrance", track.Metadata!.Genre);
+        Assert.Equal("Long intro", track.Metadata.Comment);
+        Assert.True(track.AnalysisIsManual);
+    }
+
+    [Fact]
+    public async Task ApplyOnlineDetails_CrossChecksBpmAndUpdatesGenre()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        bool updated = library.ApplyOnlineDetails(
+            "a.mp3",
+            new OnlineTrackMetadata(121, "8A", null, "Psytrance", "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.InRange(track.Bpm!.Bpm, 117, 123); // local value stays authoritative
+        Assert.Equal(0.95, track.Bpm.Confidence, 2);
+        Assert.Equal("Psytrance", track.Metadata!.Genre);
     }
 
     [Fact]

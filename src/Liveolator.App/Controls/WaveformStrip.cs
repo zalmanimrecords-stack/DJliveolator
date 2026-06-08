@@ -22,23 +22,23 @@ public sealed class WaveformStrip : Control
 {
     public static readonly StyledProperty<IBrush> BarBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(BarBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0x2F, 0x80, 0xF6)));
+            nameof(BarBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0xF0, 0xC2, 0x3C)));
 
     /// <summary>Brush for the part of the waveform already played (left of the playhead).</summary>
     public static readonly StyledProperty<IBrush> PlayedBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(PlayedBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x2F, 0x80, 0xF6)));
+            nameof(PlayedBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF0, 0xC2, 0x3C)));
 
     /// <summary>Brush for the beat-grid lines (a faint hairline behind the waveform).</summary>
     public static readonly StyledProperty<IBrush> GridBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(GridBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
-    /// <summary>Brush for the low-frequency (kick/bass) band overlay — drawn over the broadband bars so
-    /// the kick transients pop, letting a DJ align downbeats by eye for sync.</summary>
+    /// <summary>Brush for the low-frequency (kick/bass) band overlay — a vivid green glow drawn over the
+    /// yellow broadband bars so the kick transients pop, letting a DJ align downbeats by eye for sync.</summary>
     public static readonly StyledProperty<IBrush> KickBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF2, 0xA8, 0x3B)));
+            nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x27, 0xC5, 0x6A)));
 
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
@@ -166,7 +166,7 @@ public sealed class WaveformStrip : Control
         if (KickAnchor is not { } anchor || MarkerX(anchor, start, span, b.Width) is not { } x)
             return;
 
-        Color kick = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xF2, 0xA8, 0x3B);
+        Color kick = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x27, 0xC5, 0x6A);
         var halo = new Pen(new ImmutableSolidColorBrush(kick, 0.35), 5);
         var core = new Pen(new ImmutableSolidColorBrush(Lighten(kick, 0.35)), 2);
         context.DrawLine(halo, new Point(x, 0), new Point(x, b.Height));
@@ -200,8 +200,14 @@ public sealed class WaveformStrip : Control
             return; // too zoomed-out to read even bar lines → draw no grid (keeps the overview clean)
 
         Color g = (GridBrush as ISolidColorBrush)?.Color ?? Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6);
+        // Downbeat (bar) lines are the alignment markers: a crisp, opaque BLUE line (the single accent),
+        // with a faint blue halo so it stays visible behind the amber kick. The amber kick column sitting
+        // centred on a blue downbeat line is the "kick is on the grid" read used to stack A over B. Beat
+        // (non-downbeat) lines stay a faint hairline so the bars dominate.
+        Color accent = (PlayedBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x2F, 0x80, 0xF6);
         var beatPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0x55, g.R, g.G, g.B)), 1);
-        var barPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0xC8, g.R, g.G, g.B)), 1.4);
+        var barHaloPen = new Pen(new ImmutableSolidColorBrush(accent, 0.28), 3);
+        var barPen = new Pen(new ImmutableSolidColorBrush(accent), 1.4);
 
         double end = start + span;
         for (int i = 0; i < grid.Count; i++)
@@ -213,7 +219,15 @@ public sealed class WaveformStrip : Control
             if (!isBar && !drawBeats)
                 continue;
             double x = (fraction - start) / span * b.Width;
-            context.DrawLine(isBar ? barPen : beatPen, new Point(x, 0), new Point(x, b.Height));
+            if (isBar)
+            {
+                context.DrawLine(barHaloPen, new Point(x, 0), new Point(x, b.Height));
+                context.DrawLine(barPen, new Point(x, 0), new Point(x, b.Height));
+            }
+            else
+            {
+                context.DrawLine(beatPen, new Point(x, 0), new Point(x, b.Height));
+            }
         }
     }
 
@@ -250,36 +264,39 @@ public sealed class WaveformStrip : Control
         }
     }
 
-    // The low-frequency (kick) band overlay, drawn over the broadband bars as a GLOWING warm spike on each
-    // kick — the beat-align guide for sync. Each column is layered: a wide soft halo, a brighter mid, then
-    // a near-white hot core, all derived from KickBrush, so a kick reads as a luminous burst rather than a
-    // flat bar. Only the low band above a small floor draws, so quiet sections stay dark and the kicks pop.
+    // The low-frequency (kick) band overlay, drawn over the broadband bars as a CRISP, opaque amber bar on
+    // each kick — the beat-align marker for sync. One bar per pixel column with peak-HOLD across the buckets
+    // in that column, so a kick never falls between samples (no missed kicks, no flicker while scrolling)
+    // and reads as a hard marker rather than a soft glow. Only the low band above a floor draws, so quiet
+    // sections stay dark and the kicks stand out — line them up on the blue downbeat to stack A over B.
     private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick, double start, double span)
     {
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
-        const double step = 2.0;
+        const double step = 1.0;     // one bar per pixel column — no horizontal blur
+        const float floor = 0.08f;   // suppress the low-band noise floor → only real kicks light up
 
-        Color glow = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xFF, 0xA2, 0x2B);
-        var haloPen = new Pen(new ImmutableSolidColorBrush(glow, 0.20), 6) { LineCap = PenLineCap.Round };
-        var midPen = new Pen(new ImmutableSolidColorBrush(glow, 0.55), 3) { LineCap = PenLineCap.Round };
-        var corePen = new Pen(new ImmutableSolidColorBrush(Lighten(glow, 0.45)), 1.6) { LineCap = PenLineCap.Round };
+        Color amber = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xF2, 0xA8, 0x3B);
+        var barPen = new Pen(new ImmutableSolidColorBrush(amber), 1.0) { LineCap = PenLineCap.Round };
+        int count = kick.Count;
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
-            int index = (int)(TrackFraction(x, b.Width, start, span) * kick.Count);
-            if (index < 0) index = 0;
-            else if (index >= kick.Count) index = kick.Count - 1;
+            // Peak-HOLD over every bucket that falls in this column [x, x+step).
+            int i0 = (int)(TrackFraction(x, b.Width, start, span) * count);
+            int i1 = (int)(TrackFraction(x + step, b.Width, start, span) * count);
+            if (i0 > i1) (i0, i1) = (i1, i0);
+            if (i0 < 0) i0 = 0;
+            if (i1 >= count) i1 = count - 1;
 
-            double k = Math.Clamp(kick[index], 0f, 1f);
-            if (k < 0.06) continue; // suppress the low-band noise floor → only real kicks glow
-            // Mild gamma lift so kicks read prominently without washing out the quieter body.
-            double amp = maxAmp * Math.Pow(k, 0.7);
-            var top = new Point(x, cy - amp);
-            var bottom = new Point(x, cy + amp);
-            context.DrawLine(haloPen, top, bottom);
-            context.DrawLine(midPen, top, bottom);
-            context.DrawLine(corePen, top, bottom);
+            float k = 0f;
+            for (int i = i0; i <= i1; i++)
+                if (kick[i] > k) k = kick[i];
+            if (k < floor) continue;
+
+            // Mild gamma so kicks read prominently; one solid opaque bar gives the eye a hard edge to align.
+            double amp = maxAmp * Math.Pow(k, 0.8);
+            context.DrawLine(barPen, new Point(x, cy - amp), new Point(x, cy + amp));
         }
     }
 

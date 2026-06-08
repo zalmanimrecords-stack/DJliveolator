@@ -20,6 +20,10 @@ namespace Liveolator.Audio.Playback;
 public sealed class BassMixer : IMixer, IDeckLevelMeter
 {
     private readonly IBassMixerChannel?[] _channels;
+    // Last-written gain per slot. Stored so SetChannel can re-apply the correct crossfader-derived
+    // gain to a newly-loaded track channel immediately — without this, a deck loaded while the
+    // crossfader favours the other deck would play at raw BASS volume until the first knob move.
+    private readonly double[] _gains;
     private readonly ILogger _logger;
     private ICueOutput? _cueOutput;
 
@@ -28,6 +32,8 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
         if (deckCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(deckCount), deckCount, "Deck count must be positive.");
         _channels = new IBassMixerChannel?[deckCount];
+        _gains = new double[deckCount];
+        Array.Fill(_gains, 1.0); // Unity until the handler pushes its initial state (ServiceConfig startup push)
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixer>();
     }
 
@@ -44,14 +50,22 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
     /// Registers (or clears) the BASS channel for a deck slot. Called by the two-deck engine when a
     /// deck is loaded/unloaded so the mixer can route FX to it. Internal: callers live in this binding.
     /// </summary>
+    /// <remarks>
+    /// Immediately applies the last-known gain to the new channel so a track loaded while the
+    /// crossfader favours the other deck starts at the correct (possibly zero) volume — not at raw
+    /// BASS volume — without requiring a crossfader move to trigger the first gain push.
+    /// </remarks>
     internal void SetChannel(int slot, IBassMixerChannel? channel)
     {
         EnsureSlot(slot);
         _channels[slot] = channel;
+        channel?.SetVolume(_gains[slot]);
     }
 
     public void SetDeckGain(int slot, double linearGain)
     {
+        EnsureSlot(slot);
+        _gains[slot] = linearGain; // Persist so SetChannel re-applies on the next track load
         if (TryChannel(slot, nameof(SetDeckGain), out IBassMixerChannel channel))
             channel.SetVolume(linearGain);
     }

@@ -48,6 +48,24 @@ public static class Camelot
             ? (number * 2) + (letter == 'B' ? 1 : 0)
             : int.MaxValue;
 
+    public static bool TryToMusicalKey(string? code, out MusicalKey? key)
+    {
+        key = null;
+        if (code is null || !TryParse(code, out int number, out char letter))
+            return false;
+
+        KeyMode mode = letter == 'A' ? KeyMode.Minor : KeyMode.Major;
+        for (int tonic = 0; tonic < 12; tonic++)
+        {
+            if (Code(tonic, mode) == $"{number}{letter}")
+            {
+                key = new MusicalKey(tonic, mode, $"{number}{letter}", Confidence: 1.0);
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static bool TryParse(string code, out int number, out char letter)
     {
         number = 0;

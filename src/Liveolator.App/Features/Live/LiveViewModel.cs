@@ -76,6 +76,9 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     public DeckViewModel DeckA => _decks.DeckA;
     public DeckViewModel DeckB => _decks.DeckB;
     public MixerViewModel Mixer => _decks.Mixer;
+
+    /// <summary>The shared deck set — exposes the waveform ZOOM knob (<see cref="PerformanceDeckSet.WaveformZoom"/>).</summary>
+    public PerformanceDeckSet Decks => _decks;
     public SceneGridViewModel SceneGrid { get; }
     public MasterFxViewModel MasterFx { get; }
     public MacroEncodersViewModel MacroEncoders { get; }

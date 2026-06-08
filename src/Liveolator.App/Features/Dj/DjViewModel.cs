@@ -72,6 +72,9 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     public DeckViewModel DeckB => _decks.DeckB;
     public MixerViewModel Mixer => _decks.Mixer;
 
+    /// <summary>The shared deck set — exposes the waveform ZOOM knob (<see cref="PerformanceDeckSet.WaveformZoom"/>).</summary>
+    public PerformanceDeckSet Decks => _decks;
+
     /// <summary>The set: the Now entry first, then the upcoming queue, in play order.</summary>
     public ObservableCollection<SetEntryViewModel> Set { get; }
 

@@ -202,8 +202,12 @@ public sealed class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncCorrectio
 
             try
             {
-                UnloadSlot(slot);
+                // Open the new stream BEFORE unloading the current track, so a failed open (missing /
+                // corrupt / unreadable file — e.g. a stale live-queue or restored entry) leaves the deck's
+                // existing track loaded and playable rather than wiping it. A bad track must never empty a
+                // good deck (global standards #16/#26).
                 int handle = _backend.OpenDeckStream(trackPath);
+                UnloadSlot(slot);
                 IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 _decks[slot] = new LoadedDeck(handle, channel, Playing: false);

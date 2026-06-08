@@ -346,4 +346,65 @@ public sealed class SettingsViewModelTests
         Assert.True(controller.Called);
         Assert.Null(controller.LastSelected);
     }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedWaveformZoom()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Visuals = new VisualsSettings(WaveformZoomSeconds: 15.0) },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(15.0, vm.WaveformZoomSeconds, precision: 6);
+    }
+
+    [Fact]
+    public async Task Save_PersistsWaveformZoom()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.WaveformZoomSeconds = 5.0;
+
+        await vm.SaveAsync();
+
+        Assert.Equal(5.0, store.Saved.Visuals.WaveformZoomSeconds, precision: 6);
+    }
+
+    [Fact]
+    public void WaveformZoomBounds_ComeFromVisualsSettings()
+    {
+        var vm = NewVm();
+
+        Assert.Equal(VisualsSettings.MinZoomSeconds, vm.WaveformZoomMin, precision: 6);
+        Assert.Equal(VisualsSettings.MaxZoomSeconds, vm.WaveformZoomMax, precision: 6);
+    }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedNudgeSeconds()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Visuals = new VisualsSettings(WaveformZoomSeconds: 7.0, NudgeSeconds: 0.3) },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(0.3, vm.NudgeSeconds, precision: 6);
+    }
+
+    [Fact]
+    public async Task Save_PersistsNudgeSeconds()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.NudgeSeconds = 0.25;
+
+        await vm.SaveAsync();
+
+        Assert.Equal(0.25, store.Saved.Visuals.NudgeSeconds, precision: 6);
+    }
 }

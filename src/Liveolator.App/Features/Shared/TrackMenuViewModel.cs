@@ -29,10 +29,16 @@ public sealed class TrackMenuViewModel
             () => _actions.LoadToDeck(0, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
             () => _actions.LoadToDeck(1, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckB));
+        AnalyzeAgainCommand = ReactiveCommand.CreateFromTask(
+            () => _actions.AnalyzeAgainAsync(_trackPath), Observable.Return(_actions.CanAnalyze));
+        EditMetadataCommand = ReactiveCommand.CreateFromTask(
+            () => _actions.EditAsync(_trackPath), Observable.Return(_actions.CanEdit));
     }
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckBCommand { get; }
+    public ReactiveCommand<Unit, Unit> AnalyzeAgainCommand { get; }
+    public ReactiveCommand<Unit, Unit> EditMetadataCommand { get; }
 
     /// <summary>Drives the "Add to Deck B" item's visibility (hidden until a second deck is backed).</summary>
     public bool CanLoadToDeckB => _actions.CanLoadToDeckB;

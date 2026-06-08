@@ -139,6 +139,61 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsWaveformZoom()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with { Visuals = new VisualsSettings(WaveformZoomSeconds: 12.0) };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(12.0, loaded.Visuals.WaveformZoomSeconds, precision: 6);
+    }
+
+    [Fact]
+    public async Task Save_ClampsWaveformZoomOutOfRange()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with { Visuals = new VisualsSettings(WaveformZoomSeconds: 999.0) };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(VisualsSettings.MaxZoomSeconds, loaded.Visuals.WaveformZoomSeconds, precision: 6);
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsNudgeSeconds()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with
+        {
+            Visuals = new VisualsSettings(WaveformZoomSeconds: 7.0, NudgeSeconds: 0.25),
+        };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(0.25, loaded.Visuals.NudgeSeconds, precision: 6);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutWaveformZoom_UsesDefault()
+    {
+        // Back-compat: a file written before the waveform-zoom field existed must read the default zoom,
+        // not a zero/unusable value (global #20/#22).
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":\"7\",\"BufferMilliseconds\":50,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(VisualsSettings.DefaultZoomSeconds, loaded.Visuals.WaveformZoomSeconds, precision: 6);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

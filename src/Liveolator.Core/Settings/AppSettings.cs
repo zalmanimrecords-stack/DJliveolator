@@ -16,6 +16,9 @@ public sealed record AppSettings
     /// <summary>Extension developer-mode and the UI theme selected for the next startup.</summary>
     public ExtensionSettings Extensions { get; init; } = ExtensionSettings.Default;
 
+    /// <summary>Visual/UI preferences (e.g. the deck waveform zoom).</summary>
+    public VisualsSettings Visuals { get; init; } = VisualsSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -26,5 +29,6 @@ public sealed record AppSettings
             Audio = Audio.Normalized(),
             Midi = Midi.Normalized(),
             Extensions = Extensions.Normalized(),
+            Visuals = Visuals.Normalized(),
         };
 }

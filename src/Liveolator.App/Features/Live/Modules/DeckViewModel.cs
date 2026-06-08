@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 
@@ -33,9 +34,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// (the strip samples down to its pixel width when showing the whole track).</summary>
     private const int WaveformBuckets = 6_000;
 
-    /// <summary>Seconds of track shown in the zoomed-in (playing) view, centred on the playhead — wide
-    /// enough to see a few kicks for beat alignment, tight enough that each kick is large.</summary>
-    private const double PlayingZoomSeconds = 10.0;
     private const double MinZoomWindow = 0.01;
     private const double DefaultZoomWindow = 0.04; // fallback when the duration is unknown
 
@@ -44,6 +42,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>BPM step per nudge button press (±0.1 BPM — fine enough for manual beat-sync).</summary>
     private const double NudgeBpmStep = 0.1;
+
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IWaveformProvider? _waveformProvider;
@@ -61,6 +60,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private double _firstBeatSeconds;
     private double _durationSeconds;
     private double _zoomWindow;
+    // Seconds of audio the waveform shows around the playhead — the configurable zoom level (doc 12
+    // Settings + the deck ZOOM knob). Lower = more magnified; 0 = whole-track overview. Applied whether
+    // the deck is playing or paused, so kicks can be inspected and lined up while cued. Seeded from
+    // VisualsSettings; updated live via SetWaveformZoomSeconds.
+    private double _zoomSeconds = VisualsSettings.DefaultZoomSeconds;
+    // Seconds the track-nudge buttons (◄ / ►) move the playhead per press — the configurable cueing step
+    // (doc 12 Settings). Seeded from VisualsSettings; updated live via SetNudgeSeconds.
+    private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
     private decimal _bpm;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
@@ -75,12 +82,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         int slot,
         IPerformanceActionDispatcher? dispatcher = null,
         IWaveformProvider? waveformProvider = null,
-        Func<string, DeckTrackInfo?>? trackInfo = null)
+        Func<string, DeckTrackInfo?>? trackInfo = null,
+        double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
+        double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds)
     {
         _slot = slot;
         _dispatcher = dispatcher;
         _waveformProvider = waveformProvider;
         _trackInfo = trackInfo;
+        _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
+        _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
         bool enabled = dispatcher is not null;
         IObservable<bool> canEmit = Observable.Return(enabled);
@@ -128,6 +139,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSeek, ActionInputMode.Absolute, Value: clamped, Slot: slot));
         }, canEmit);
+
+        // Track nudge: shift the playhead ±NudgeSeekSeconds via a RELATIVE DeckSeek. The deck knows the
+        // track length, so it converts the half-second into a 0..1 fraction delta; until the duration is
+        // known (waveform still decoding) it is a no-op rather than a guessed jump (the engine clamps to [0,1]).
+        SeekBackCommand = ReactiveCommand.Create(() => NudgeSeek(-_nudgeSeconds), canEmit);
+        SeekForwardCommand = ReactiveCommand.Create(() => NudgeSeek(+_nudgeSeconds), canEmit);
 
         var hotCues = new HotCuePadViewModel[HotCueCount];
         for (int index = 0; index < HotCueCount; index++)
@@ -259,7 +276,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// The waveform zoom as a fraction of the track shown centred on the playhead: 0 = whole-track
-    /// overview (stopped/paused); on play it becomes a small window (~<see cref="PlayingZoomSeconds"/> of
+    /// overview (stopped/paused); on play it becomes a small window (the configured zoom window of
     /// audio) so the strip zooms in and follows the playhead, letting both decks' kicks be aligned by eye.
     /// </summary>
     public double ZoomWindow
@@ -351,12 +368,39 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     private double ComputeZoomWindow()
     {
-        if (!_isPlaying)
-            return 0.0; // whole-track overview when not playing
-        return _durationSeconds > 0
-            ? Math.Clamp(PlayingZoomSeconds / _durationSeconds, MinZoomWindow, 1.0)
-            : DefaultZoomWindow;
+        if (_zoomSeconds <= 0.0)
+            return 0.0; // knob fully out → whole-track overview (and full-track click-seek)
+        if (_durationSeconds <= 0.0)
+            return DefaultZoomWindow; // zoomed, but the duration isn't decoded yet → a sane default window
+        // Window as a fraction of the track. Defined in SECONDS (not a fixed fraction) so both decks at the
+        // same zoom show the same time-scale — a beat is the same width on A and B, so kicks line up by eye.
+        return Math.Clamp(_zoomSeconds / _durationSeconds, MinZoomWindow, 1.0);
     }
+
+    /// <summary>
+    /// Updates the waveform zoom level (seconds of audio shown) at runtime — driven by the ZOOM knob and
+    /// the Settings value. Re-zooms immediately (playing or paused) so kicks can be inspected/aligned while
+    /// cued; lower seconds = more magnified, and <c>0</c> (or below) = whole-track overview.
+    /// </summary>
+    public void SetWaveformZoomSeconds(double seconds)
+    {
+        _zoomSeconds = ClampZoomSeconds(seconds);
+        ZoomWindow = ComputeZoomWindow();
+    }
+
+    // Clamp to the supported zoom range, but let 0 (or below) pass through as the overview sentinel.
+    private static double ClampZoomSeconds(double seconds)
+        => seconds <= 0.0 ? 0.0
+            : double.IsNaN(seconds) ? VisualsSettings.DefaultZoomSeconds
+            : Math.Clamp(seconds, VisualsSettings.MinZoomSeconds, VisualsSettings.MaxZoomSeconds);
+
+    /// <summary>Updates the track-nudge step (seconds per ◄/► press) at runtime — from the Settings value.</summary>
+    public void SetNudgeSeconds(double seconds) => _nudgeSeconds = ClampNudgeSeconds(seconds);
+
+    private static double ClampNudgeSeconds(double seconds)
+        => double.IsNaN(seconds)
+            ? VisualsSettings.DefaultNudgeSeconds
+            : Math.Clamp(seconds, VisualsSettings.MinNudgeSeconds, VisualsSettings.MaxNudgeSeconds);
 
     // The beat/bar grid needs the BPM (from the load), the decoded duration, and the first-beat anchor
     // (from the DeckSetFirstBeat feedback); empty until the duration is known.
@@ -384,6 +428,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Click-to-seek: invoked by the waveform strip with the clicked 0..1 fraction.</summary>
     public ReactiveCommand<double, Unit> SeekCommand { get; }
 
+    /// <summary>Nudges the track playhead 0.5 s back (relative seek) — fine cueing / manual line-up.</summary>
+    public ReactiveCommand<Unit, Unit> SeekBackCommand { get; }
+
+    /// <summary>Nudges the track playhead 0.5 s forward (relative seek) — fine cueing / manual line-up.</summary>
+    public ReactiveCommand<Unit, Unit> SeekForwardCommand { get; }
+
     /// <summary>The four hot-cue pads (the mock's 1·2·3·4 row).</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
 
@@ -398,6 +448,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public bool CanLoop => IsEnabled;
     public bool CanHotCue => IsEnabled;
     public bool CanSync => IsEnabled;
+    public bool CanNudgeSeek => IsEnabled;
 
     public void Dispose()
     {
@@ -422,6 +473,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     private void Emit(PerformanceActionKind kind, double value)
         => _dispatcher?.Dispatch(new PerformanceAction(kind, ActionInputMode.Absolute, Value: value, Slot: _slot));
+
+    // Shift the playhead by a signed number of seconds via a RELATIVE DeckSeek. Converts seconds to a
+    // 0..1 fraction using the decoded duration; a no-op until the duration is known (engine clamps to [0,1]).
+    private void NudgeSeek(double seconds)
+    {
+        if (_dispatcher is null || _durationSeconds <= 0.0)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSeek, ActionInputMode.Relative, Value: seconds / _durationSeconds, Slot: _slot));
+    }
 
     private void OnFeedback(object? sender, ActionFeedbackChanged e)
     {
