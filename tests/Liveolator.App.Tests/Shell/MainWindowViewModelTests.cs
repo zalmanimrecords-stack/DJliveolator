@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
@@ -54,6 +55,28 @@ public sealed class MainWindowViewModelTests
         public event EventHandler? ActivityDetected { add { } remove { } }
     }
 
+    private sealed class FakeMidiControlSession : IMidiControlSession
+    {
+        public ControllerMappingProfile? ActiveProfile => null;
+        public bool IsLearnArmed => false;
+        public bool IsInputConnected => false;
+        public string? InputDeviceName => null;
+        public bool IsOutputConnected => false;
+        public string? OutputDeviceName => null;
+        public event EventHandler? ActivityDetected { add { } remove { } }
+        public event EventHandler<ControllerMappingProfile>? MappingChanged { add { } remove { } }
+        public Task StartAsync(MidiSettings settings, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+        public void Stop() { }
+        public void BeginLearn(
+            Liveolator.Core.Actions.PerformanceActionKind action,
+            int slot = 0,
+            string? argument = null) { }
+        public void CancelLearn() { }
+        public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
     private sealed class FakeSettingsStore : ISettingsStore
     {
         public Task<AppSettings> LoadAsync(CancellationToken ct = default) => Task.FromResult(AppSettings.Default);
@@ -69,9 +92,12 @@ public sealed class MainWindowViewModelTests
             new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore());
         var visualLibrary = new VisualLibraryViewModel(
             new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
+        var mappings = new MappingsViewModel(new FakeMidiControlSession());
+        var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
         return new MainWindowViewModel(
-            new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(), visualLibrary, settings, status);
+            new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
+            visualLibrary, mappings, settings, midiLearn, status);
     }
 
     [Fact]

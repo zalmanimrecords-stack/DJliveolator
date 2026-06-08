@@ -12,6 +12,7 @@ public sealed class MidiLearnSession : IMidiLearnSession
 {
     private PerformanceActionKind _action;
     private int _slot;
+    private string? _argument;
 
     /// <inheritdoc />
     public bool IsArmed { get; private set; }
@@ -20,10 +21,11 @@ public sealed class MidiLearnSession : IMidiLearnSession
     public event EventHandler<ControllerBinding>? Learned;
 
     /// <inheritdoc />
-    public void Begin(PerformanceActionKind action, int slot = 0)
+    public void Begin(PerformanceActionKind action, int slot = 0, string? argument = null)
     {
         _action = action;
         _slot = slot;
+        _argument = argument;
         IsArmed = true;
     }
 
@@ -49,6 +51,6 @@ public sealed class MidiLearnSession : IMidiLearnSession
         ActionInputMode inputMode = isNote ? ActionInputMode.Momentary : ActionInputMode.Absolute;
 
         return new ControllerBinding(
-            triggerType, message.Channel, message.Data1, _action, inputMode, _slot);
+            triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument);
     }
 }

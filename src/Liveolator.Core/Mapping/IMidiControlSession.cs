@@ -1,4 +1,5 @@
 using Liveolator.Core.Settings;
+using Liveolator.Core.Actions;
 
 namespace Liveolator.Core.Mapping;
 
@@ -7,7 +8,19 @@ namespace Liveolator.Core.Mapping;
 /// </summary>
 public interface IMidiControlSession : IMidiControlStatus
 {
+    ControllerMappingProfile? ActiveProfile { get; }
+
+    bool IsLearnArmed { get; }
+
+    event EventHandler<ControllerMappingProfile>? MappingChanged;
+
     Task StartAsync(MidiSettings settings, CancellationToken cancellationToken = default);
 
     void Stop();
+
+    void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null);
+
+    void CancelLearn();
+
+    Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default);
 }

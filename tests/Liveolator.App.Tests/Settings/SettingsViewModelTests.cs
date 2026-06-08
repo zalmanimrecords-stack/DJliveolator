@@ -4,6 +4,7 @@ using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Settings;
+using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
@@ -96,11 +97,18 @@ public sealed class SettingsViewModelTests
     private sealed class FakeMidiControlSession : IMidiControlSession
     {
         public MidiSettings? LastStartedWith { get; private set; }
+        public ControllerMappingProfile? ActiveProfile { get; set; }
+        public bool IsLearnArmed { get; private set; }
         public bool IsInputConnected { get; set; } = true;
         public string? InputDeviceName { get; set; } = "CMD STUDIO 2A";
         public bool IsOutputConnected { get; set; }
         public string? OutputDeviceName { get; set; }
         public event EventHandler? ActivityDetected
+        {
+            add { }
+            remove { }
+        }
+        public event EventHandler<ControllerMappingProfile>? MappingChanged
         {
             add { }
             remove { }
@@ -115,6 +123,14 @@ public sealed class SettingsViewModelTests
         public void Stop()
         {
         }
+
+        public void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null)
+            => IsLearnArmed = true;
+
+        public void CancelLearn() => IsLearnArmed = false;
+
+        public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private static SettingsViewModel NewVm(

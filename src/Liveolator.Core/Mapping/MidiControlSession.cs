@@ -52,6 +52,7 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
             ?? throw new ArgumentNullException(nameof(defaultProfiles));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = loggerFactory.CreateLogger<MidiControlSession>();
+        _learn.Learned += OnLearned;
     }
 
     /// <summary>True once the controller input is open and routing.</summary>
@@ -68,6 +69,10 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
 
     /// <summary>The profile currently routing (empty when none was saved for the device), or null when idle.</summary>
     public ControllerMappingProfile? ActiveProfile => _mapper?.ActiveProfile;
+
+    public bool IsLearnArmed => _learn.IsArmed;
+
+    public event EventHandler<ControllerMappingProfile>? MappingChanged;
 
     /// <summary>
     /// Raised on each inbound MIDI message (re-raised from the activity monitor). Fires on the MIDI
@@ -99,7 +104,9 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
 
             ControllerMappingProfile profile =
                 await _profileStore.LoadMappingProfileAsync(input.DeviceName, cancellationToken).ConfigureAwait(false)
-                ?? MidiProfileSelector.Select(input.DeviceName, _defaultProfiles)
+                ?? (MidiProfileSelector.Select(input.DeviceName, _defaultProfiles) is { } shipped
+                    ? shipped with { Name = input.DeviceName, DeviceHint = input.DeviceName }
+                    : null)
                 ?? ControllerMappingProfile.Empty(input.DeviceName, input.DeviceName);
 
             var mapper = new ControllerMapper(profile, _dispatcher, _loggerFactory.CreateLogger<ControllerMapper>());
@@ -150,6 +157,75 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
 
     private void OnActivityDetected(object? sender, EventArgs e) => ActivityDetected?.Invoke(this, EventArgs.Empty);
 
+    public void BeginLearn(PerformanceActionKind action, int slot = 0, string? argument = null)
+    {
+        if (!IsInputConnected)
+            throw new InvalidOperationException("A MIDI input must be connected before learning a control.");
+
+        _learn.Begin(action, slot, argument);
+    }
+
+    public void CancelLearn() => _learn.Cancel();
+
+    public async Task RemoveBindingAsync(
+        ControllerBinding binding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        if (_mapper is null || _input is null)
+            return;
+
+        ControllerMappingProfile profile = _mapper.ActiveProfile with
+        {
+            Bindings = _mapper.ActiveProfile.Bindings.Where(existing => existing != binding).ToList(),
+        };
+        await ApplyAndSaveProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async void OnLearned(object? sender, ControllerBinding learned)
+    {
+        if (_mapper is null || _input is null)
+            return;
+
+        try
+        {
+            IReadOnlyList<ControllerBinding> retained = _mapper.ActiveProfile.Bindings
+                .Where(existing => !SamePhysicalControl(existing, learned))
+                .Where(existing => !SameActionTarget(existing, learned))
+                .ToList();
+            var profile = new ControllerMappingProfile(
+                _input.DeviceName,
+                _input.DeviceName,
+                new List<ControllerBinding>(retained) { learned });
+
+            await ApplyAndSaveProfileAsync(profile).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Saving learned MIDI binding for {Action} slot {Slot} failed.",
+                learned.Action, learned.Slot);
+        }
+    }
+
+    private async Task ApplyAndSaveProfileAsync(
+        ControllerMappingProfile profile,
+        CancellationToken cancellationToken = default)
+    {
+        _mapper!.SetProfile(profile);
+        await _profileStore.SaveMappingProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+        MappingChanged?.Invoke(this, profile);
+    }
+
+    private static bool SamePhysicalControl(ControllerBinding left, ControllerBinding right)
+        => left.TriggerType == right.TriggerType
+           && left.Channel == right.Channel
+           && (left.TriggerType == MidiMessageType.PitchBend || left.Data1 == right.Data1);
+
+    private static bool SameActionTarget(ControllerBinding left, ControllerBinding right)
+        => left.Action == right.Action
+           && left.Slot == right.Slot
+           && string.Equals(left.Argument, right.Argument, StringComparison.Ordinal);
+
     /// <summary>Tears the pipeline down and releases the devices; safe to call when already idle.</summary>
     public void Stop()
     {
@@ -180,5 +256,9 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
         IsOutputConnected = false;
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        _learn.Learned -= OnLearned;
+        Stop();
+    }
 }

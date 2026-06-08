@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mappings="clr-namespace:Liveolator.App.Features.Mappings"
+             x:Class="Liveolator.App.Features.Mappings.MappingsView"
+             x:DataType="mappings:MappingsViewModel">
+  <Grid Margin="24" RowDefinitions="Auto,Auto,*,Auto">
+    <StackPanel>
+      <TextBlock Classes="section" Text="MIDI MAPPINGS" />
+      <TextBlock Classes="faint" Text="{Binding DeviceName}" />
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="panel" Margin="0,16,0,16">
+      <Grid Margin="14" ColumnDefinitions="*,Auto,Auto">
+        <ComboBox ItemsSource="{Binding Targets}"
+                  SelectedItem="{Binding SelectedTarget}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="mappings:MappingTargetViewModel">
+              <TextBlock Text="{Binding Label}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="1" Classes="accent" Content="Learn" Margin="10,0,0,0"
+                Command="{Binding LearnCommand}" />
+        <Button Grid.Column="2" Classes="spartan" Content="Cancel" Margin="10,0,0,0"
+                Command="{Binding CancelLearnCommand}" />
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2" Classes="panel">
+      <Grid Margin="14" RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="1.1*,1.4*,0.6*" Margin="8,0,8,8">
+          <TextBlock Classes="faint" Text="CONTROL" />
+          <TextBlock Grid.Column="1" Classes="faint" Text="TARGET" />
+          <TextBlock Grid.Column="2" Classes="faint" Text="MODE" />
+        </Grid>
+        <ListBox Grid.Row="1"
+                 ItemsSource="{Binding Bindings}"
+                 SelectedItem="{Binding SelectedBinding}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="mappings:MappingBindingViewModel">
+              <Grid ColumnDefinitions="1.1*,1.4*,0.6*" Margin="8,6">
+                <TextBlock Text="{Binding Control}" />
+                <TextBlock Grid.Column="1" Text="{Binding Target}" />
+                <TextBlock Grid.Column="2" Classes="faint" Text="{Binding Mode}" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,16,0,0">
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="{Binding Status}" />
+      <Button Grid.Column="1" Classes="spartan" Content="Remove selected"
+              Command="{Binding RemoveCommand}" />
+    </Grid>
+  </Grid>
+</UserControl>

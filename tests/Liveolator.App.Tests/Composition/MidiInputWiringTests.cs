@@ -31,6 +31,29 @@ public sealed class MidiInputWiringTests
     }
 
     [Fact]
+    public void NoControllerConfigured_DetectedCmdStudio_IsSelectedAutomatically()
+    {
+        var provider = new FakeMidiDeviceProvider();
+        provider.InputNames.Add("CMD Studio 2a");
+
+        MidiSettings resolved = ServiceConfig.ResolveMidiSettings(MidiSettings.Default, provider);
+
+        Assert.Equal("CMD Studio 2a", resolved.ControllerInputName);
+    }
+
+    [Fact]
+    public void ConfiguredController_IsNotReplacedByAutoDetection()
+    {
+        var provider = new FakeMidiDeviceProvider();
+        provider.InputNames.Add("CMD Studio 2a");
+        var configured = new MidiSettings { ControllerInputName = "Ableton Push" };
+
+        MidiSettings resolved = ServiceConfig.ResolveMidiSettings(configured, provider);
+
+        Assert.Equal("Ableton Push", resolved.ControllerInputName);
+    }
+
+    [Fact]
     public void SelectedControllerNotFound_YieldsNoPipeline_DoesNotThrow()
     {
         var provider = new FakeMidiDeviceProvider { InputToReturn = null };
@@ -121,8 +144,9 @@ public sealed class MidiInputWiringTests
         public bool ThrowOnOpenInput { get; set; }
         public bool OpenInputCalled { get; private set; }
         public bool OpenOutputCalled { get; private set; }
+        public List<string> InputNames { get; } = new();
 
-        public IReadOnlyList<string> GetInputDeviceNames() => Array.Empty<string>();
+        public IReadOnlyList<string> GetInputDeviceNames() => InputNames;
         public IReadOnlyList<string> GetOutputDeviceNames() => Array.Empty<string>();
 
         public IMidiInput? OpenInput(string deviceName)

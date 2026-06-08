@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
@@ -23,17 +24,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         LiveViewModel live,
         DjViewModel dj,
         VisualLibraryViewModel visualLibrary,
+        MappingsViewModel mappings,
         SettingsViewModel settings,
+        GlobalMidiLearnCoordinator midiLearn,
         ShellStatusViewModel status)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
         ArgumentNullException.ThrowIfNull(visualLibrary);
+        ArgumentNullException.ThrowIfNull(mappings);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(midiLearn);
         ArgumentNullException.ThrowIfNull(status);
 
         Status = status;
+        MidiLearn = midiLearn;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -43,7 +49,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("DJ", dj),
             new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
-            new("MAPPINGS", new PlaceholderViewModel("Mappings", "MIDI learn & devices — coming soon.")),
+            new("MAPPINGS", mappings),
             new("SETTINGS", settings),
         };
 
@@ -53,6 +59,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
     public ShellStatusViewModel Status { get; }
+
+    public GlobalMidiLearnCoordinator MidiLearn { get; }
 
     public ObservableCollection<TabItemViewModel> Tabs { get; }
 
@@ -67,6 +75,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>Move to the previous tab, wrapping from the first to the last (Shift+Tab).</summary>
     public void SelectPreviousTab() => StepTab(-1);
+
+    public void CancelMidiLearn() => MidiLearn.Cancel();
 
     private void StepTab(int direction)
     {

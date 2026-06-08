@@ -1,6 +1,7 @@
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
@@ -280,7 +281,7 @@ public static class ServiceConfig
             handlers,
             NullLogger<PerformanceActionDispatcher>.Instance,
             requireCompleteOwnership: realtimeUp);
-        services.AddSingleton<IPerformanceActionDispatcher>(dispatcher);
+        services.AddSingleton(dispatcher);
 
         // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
         // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the
@@ -313,6 +314,12 @@ public static class ServiceConfig
         // (global standards #16/#26). The default-profile auto-select path (CmdStudio2AProfile) lives in
         // TryOpenMidiPipeline for the controller-profile-capture increment (doc 22 step A8).
         var midiProvider = midiProviderOverride ?? new RtMidiDeviceProvider();
+        MidiSettings effectiveMidiSettings = ResolveMidiSettings(appSettings.Midi, midiProvider);
+        if (effectiveMidiSettings != appSettings.Midi.Normalized())
+        {
+            appSettings = appSettings with { Midi = effectiveMidiSettings };
+            settingsStore.SaveAsync(appSettings).GetAwaiter().GetResult();
+        }
         var midiSession = new MidiControlSession(
             midiProvider,
             dispatcher,
@@ -322,7 +329,7 @@ public static class ServiceConfig
             NullLoggerFactory.Instance);
         try
         {
-            midiSession.StartAsync(appSettings.Midi).GetAwaiter().GetResult();
+            midiSession.StartAsync(effectiveMidiSettings).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
@@ -331,6 +338,10 @@ public static class ServiceConfig
         services.AddSingleton(midiSession);
         services.AddSingleton<IMidiControlSession>(midiSession);
         services.AddSingleton<IMidiControlStatus>(midiSession);
+        var globalMidiLearn = new GlobalMidiLearnCoordinator(midiSession);
+        services.AddSingleton(globalMidiLearn);
+        services.AddSingleton<IPerformanceActionDispatcher>(
+            new LearningPerformanceActionDispatcher(dispatcher, globalMidiLearn));
 
         // Shared decks + crossfader (doc 11/12): ONE PerformanceDeckSet drives both the Live tab and the
         // DJ tab, so a track loaded on one is reflected on the other (one source of truth). It carries the
@@ -445,6 +456,7 @@ public static class ServiceConfig
         services.AddSingleton(appSettings);
         if (enableSystemMetrics)
             services.AddSingleton<ISystemMetricsSampler, ProcessSystemMetricsSampler>();
+        services.AddSingleton<MappingsViewModel>();
         services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
@@ -815,4 +827,20 @@ public static class ServiceConfig
     // today; persisted/custom profiles (doc 13) extend this set later.
     private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
         => new[] { CmdStudio2AProfile.Default };
+
+    internal static MidiSettings ResolveMidiSettings(
+        MidiSettings configured,
+        IMidiDeviceProvider provider)
+    {
+        MidiSettings normalized = configured.Normalized();
+        if (!string.IsNullOrWhiteSpace(normalized.ControllerInputName))
+            return normalized;
+
+        string? detectedCmd = provider.GetInputDeviceNames().FirstOrDefault(name =>
+            name.Contains(CmdStudio2AProfile.DeviceHint, StringComparison.OrdinalIgnoreCase));
+
+        return detectedCmd is null
+            ? normalized
+            : normalized with { ControllerInputName = detectedCmd };
+    }
 }

@@ -24,6 +24,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == Key.Escape && DataContext is MainWindowViewModel escapeVm
+            && escapeVm.MidiLearn.IsEnabled)
+        {
+            escapeVm.CancelMidiLearn();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key != Key.Tab || DataContext is not MainWindowViewModel vm)
         {
             return;

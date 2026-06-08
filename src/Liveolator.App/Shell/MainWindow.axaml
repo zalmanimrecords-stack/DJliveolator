@@ -60,6 +60,11 @@
           <TextBlock Classes="mono faint"
                      Text="{Binding Status.MidiFeedbackName, StringFormat='· LED {0}'}"
                      IsVisible="{Binding Status.MidiFeedbackName, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+          <Button Classes="spartan"
+                  Content="MIDI LEARN"
+                  Padding="9,4"
+                  Margin="8,0,0,0"
+                  Command="{Binding MidiLearn.ToggleCommand}" />
           <Button x:Name="FullScreenButton"
                   Classes="spartan"
                   Content="WINDOW"
@@ -85,6 +90,15 @@
           </DataTemplate>
         </ListBox.ItemTemplate>
       </ListBox>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom"
+            Background="{StaticResource Accent}"
+            Padding="14,8"
+            IsVisible="{Binding MidiLearn.IsEnabled}">
+      <TextBlock Foreground="{StaticResource AccentInk}"
+                 HorizontalAlignment="Center"
+                 Text="{Binding MidiLearn.Status}" />
     </Border>
 
     <!-- selected page (resolved by ViewLocator) -->

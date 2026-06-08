@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Theme;
@@ -40,6 +41,9 @@ public partial class App : Application
             _ = services.GetRequiredService<LibrariesViewModel>().InitializeAsync();
             // Likewise restore the VJ / Visual Library tab (scan folders + asset catalog), Track C C1.
             _ = services.GetRequiredService<VisualLibraryViewModel>().InitializeAsync();
+            // Restore device selections and extension settings into the Settings tab. Without this,
+            // the pickers always start at "(none)" even when settings.json contains a controller.
+            _ = services.GetRequiredService<SettingsViewModel>().InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();

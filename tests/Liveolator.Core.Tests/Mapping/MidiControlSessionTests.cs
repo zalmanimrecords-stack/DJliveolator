@@ -109,7 +109,39 @@ public sealed class MidiControlSessionTests
 
         PerformanceAction action = Assert.Single(_dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.DeckPlayPause, action.Kind);
-        Assert.Equal(CmdStudio2AProfile.ProfileName, session.ActiveProfile!.Name);
+        Assert.Equal("BEHRINGER CMD Studio 2A", session.ActiveProfile!.Name);
+    }
+
+    [Fact]
+    public async Task Learn_ReplacesActionBinding_AppliesImmediately_AndPersistsByDeviceName()
+    {
+        _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A" });
+
+        session.BeginLearn(PerformanceActionKind.DeckPlayPause, slot: 0);
+        _provider.LastInput!.Emit(new MidiMessage(MidiMessageType.NoteOn, 4, 12, 127));
+        _provider.LastInput.Emit(new MidiMessage(MidiMessageType.NoteOn, 4, 12, 127));
+
+        PerformanceAction action = Assert.Single(_dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPlayPause, action.Kind);
+        Assert.Equal(4, session.ActiveProfile!.Bindings.Single(b =>
+            b.Action == PerformanceActionKind.DeckPlayPause && b.Slot == 0).Channel);
+        Assert.Equal("CMD Studio 2A", _store.SavedProfile!.Name);
+    }
+
+    [Fact]
+    public async Task RemoveBinding_UpdatesLiveProfileAndPersists()
+    {
+        _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A" });
+        ControllerBinding binding = session.ActiveProfile!.Bindings[0];
+
+        await session.RemoveBindingAsync(binding);
+
+        Assert.DoesNotContain(binding, session.ActiveProfile.Bindings);
+        Assert.DoesNotContain(binding, _store.SavedProfile!.Bindings);
     }
 
     [Fact]
@@ -169,12 +201,16 @@ public sealed class MidiControlSessionTests
     private sealed class FakeLiveProfileStore : ILiveProfileStore
     {
         public ControllerMappingProfile? Profile { get; set; }
+        public ControllerMappingProfile? SavedProfile { get; private set; }
 
         public Task<ControllerMappingProfile?> LoadMappingProfileAsync(string name, CancellationToken cancellationToken = default)
             => Task.FromResult(Profile);
 
         public Task SaveMappingProfileAsync(ControllerMappingProfile profile, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            SavedProfile = profile;
+            return Task.CompletedTask;
+        }
 
         public Task<VisualBank?> LoadVisualBankAsync(string name, CancellationToken cancellationToken = default)
             => Task.FromResult<VisualBank?>(null);

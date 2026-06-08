@@ -51,6 +51,16 @@ public class MidiLearnSessionTests
     }
 
     [Fact]
+    public void Observe_PreservesActionArgument()
+    {
+        _session.Begin(PerformanceActionKind.DeckHotCue, slot: 1, argument: "4");
+
+        _session.Observe(new MidiMessage(MidiMessageType.NoteOn, 0, 20, 127));
+
+        Assert.Equal("4", _learned!.Argument);
+    }
+
+    [Fact]
     public void Observe_WhenNotArmed_DoesNothing()
     {
         _session.Observe(new MidiMessage(MidiMessageType.NoteOn, 0, 36, 127));

@@ -134,6 +134,15 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   (global standards #16/#26): no controller selected, no matching device, or a native open failure all
   log + leave the app running WITHOUT MIDI — never throw at startup. The Settings tab reuses the same
   provider instance.
+- **Mappings UI is live:** the `MAPPINGS` tab exposes the active profile, target selection, MIDI
+  learn, cancel, and binding removal. Learn captures the next real hardware message, replaces any
+  binding that targets the same action or physical control, applies it immediately, and persists the
+  profile under the connected device name so it reloads on the next launch.
+- **Global MIDI Learn:** the shell's `MIDI LEARN` mode intercepts the next
+  `PerformanceAction` emitted by any active UI control, uses that full action target (kind, slot, and
+  argument) to arm the hardware capture, and suppresses the UI action itself. The next controller
+  message is applied and persisted, then the mode returns to waiting for another UI control. `Esc`
+  cancels the pending capture and exits Learn mode.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
