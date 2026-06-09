@@ -20,7 +20,12 @@ public static class VisualSourceActionCodec
         try
         {
             source = JsonSerializer.Deserialize<VisualSourceRef>(value);
-            return source is not null && !string.IsNullOrWhiteSpace(source.Reference);
+            if (source is null)
+                return false;
+
+            // A None source clears the layer and carries no reference; every other kind must name its
+            // asset/effect, so an empty reference there is an invalid payload.
+            return source.Kind == VisualSourceKind.None || !string.IsNullOrWhiteSpace(source.Reference);
         }
         catch (JsonException)
         {

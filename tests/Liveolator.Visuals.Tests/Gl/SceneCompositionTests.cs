@@ -56,6 +56,32 @@ public sealed class SceneCompositionTests
     }
 
     [Fact]
+    public void Resolve_marks_none_layers_non_renderable()
+    {
+        VisualScene scene = Scene(
+            Layer("img", VisualSourceKind.Image),
+            Layer("off", VisualSourceKind.None, reference: ""));
+
+        IReadOnlyList<ResolvedLayer> resolved = SceneComposition.Resolve(scene);
+
+        Assert.True(resolved[0].Renderable);
+        Assert.False(resolved[1].Renderable);
+    }
+
+    [Fact]
+    public void RenderableLayers_skips_none_layers()
+    {
+        VisualScene scene = Scene(
+            Layer("img", VisualSourceKind.Image),
+            Layer("off", VisualSourceKind.None, reference: ""),
+            Layer("vu", VisualSourceKind.Generator, reference: "core/vu-meter"));
+
+        IReadOnlyList<ResolvedLayer> renderable = SceneComposition.RenderableLayers(scene);
+
+        Assert.Equal(new[] { "img", "vu" }, renderable.Select(layer => layer.Name));
+    }
+
+    [Fact]
     public void Resolve_marks_generator_layers_renderable()
     {
         VisualScene scene = Scene(

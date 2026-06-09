@@ -59,6 +59,21 @@ public sealed class VisualControlViewModelTests
         }
     }
 
+    private sealed class FakeEffectRegistry : IVisualEffectRegistry
+    {
+        public FakeEffectRegistry(params VisualEffectDescriptor[] effects) => Effects = effects;
+        public IReadOnlyList<VisualEffectDescriptor> Effects { get; }
+        public bool TryGet(string effectId, string? version, out VisualEffectDescriptor descriptor)
+            => throw new NotSupportedException();
+        public void ReplacePackage(string packageId, IEnumerable<VisualEffectDescriptor> effects)
+            => throw new NotSupportedException();
+        public void RemovePackage(string packageId) => throw new NotSupportedException();
+    }
+
+    private static VisualEffectDescriptor Generator(string effectId)
+        => new(effectId, "1.0.0", "core", $"{effectId}.frag",
+            Array.Empty<VisualEffectParameter>(), VisualEffectRole.Generator);
+
     public VisualControlViewModelTests()
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
@@ -126,6 +141,40 @@ public sealed class VisualControlViewModelTests
         Assert.Equal(3, action.Slot);
         Assert.True(VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? decoded));
         Assert.Equal(source.Source, decoded);
+    }
+
+    [Fact]
+    public void ChannelSources_LeadWithANoneOption_SoALayerCanBeSwitchedOff()
+    {
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            effectRegistry: new FakeEffectRegistry(Generator("core/vu-meter")));
+
+        foreach (VisualChannelViewModel channel in vm.Channels)
+        {
+            VisualChannelSourceOption first = channel.Sources[0];
+            Assert.Equal("None", first.Label);
+            Assert.Equal(VisualSourceKind.None, first.Source.Kind);
+        }
+    }
+
+    [Fact]
+    public void SelectingNone_EmitsADecodableNoneLayerSourceAction()
+    {
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher);
+        var none = new VisualChannelSourceOption("None", "OFF", VisualSourceRef.None);
+        channel.ReplaceSources(new[] { none });
+        dispatcher.Dispatched.Clear();
+
+        channel.SelectedSource = null;
+        channel.SelectedSource = none;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualSetLayerSource, action.Kind);
+        Assert.Equal(3, action.Slot);
+        Assert.True(VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? decoded));
+        Assert.Equal(VisualSourceKind.None, decoded!.Kind);
     }
 
     [Fact]

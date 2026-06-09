@@ -12,4 +12,8 @@ namespace Liveolator.Core.Visuals;
 /// (<see cref="VisualSourceKind.Camera"/>), or a generator effect id
 /// (<see cref="VisualSourceKind.Generator"/>) resolved via the <see cref="IVisualEffectRegistry"/>.
 /// </param>
-public sealed record VisualSourceRef(VisualSourceKind Kind, string Reference);
+public sealed record VisualSourceRef(VisualSourceKind Kind, string Reference)
+{
+    /// <summary>An empty layer source: the slot draws nothing. See <see cref="VisualSourceKind.None"/>.</summary>
+    public static VisualSourceRef None { get; } = new(VisualSourceKind.None, string.Empty);
+}

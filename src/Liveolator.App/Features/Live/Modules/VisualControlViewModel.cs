@@ -232,14 +232,19 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     private async Task ReloadChannelSourcesAsync(string? trackPath)
     {
-        var options = (_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
+        // "None" leads the list so a layer can be switched off from the UI without leaving the scene.
+        var options = new List<VisualChannelSourceOption>
+        {
+            new("None", "OFF", VisualSourceRef.None),
+        };
+
+        options.AddRange((_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
             .Where(effect => effect.Role == VisualEffectRole.Generator)
             .OrderBy(effect => effect.EffectId, StringComparer.OrdinalIgnoreCase)
             .Select(effect => new VisualChannelSourceOption(
                 effect.EffectId,
                 "PLUGINS",
-                new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId)))
-            .ToList();
+                new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId))));
 
         if (!string.IsNullOrWhiteSpace(trackPath) && _trackVisualPrograms is not null)
         {

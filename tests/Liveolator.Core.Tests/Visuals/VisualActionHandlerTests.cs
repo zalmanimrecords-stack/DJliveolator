@@ -177,6 +177,19 @@ public class VisualActionHandlerTests
     }
 
     [Fact]
+    public void SetLayerSource_WithNoneSource_ClearsTheLayer()
+    {
+        Handle(
+            PerformanceActionKind.VisualSetLayerSource,
+            slot: 2,
+            argument: VisualSourceActionCodec.Encode(VisualSourceRef.None));
+
+        var selected = Assert.Single(_engine.LayerSources);
+        Assert.Equal(2, selected.Layer);
+        Assert.Equal(VisualSourceKind.None, selected.Source.Kind);
+    }
+
+    [Fact]
     public void LaunchClip_PassesSlotAndClipId_Immediately()
     {
         Handle(PerformanceActionKind.VisualLaunchClip, slot: 2, argument: "clip-42");

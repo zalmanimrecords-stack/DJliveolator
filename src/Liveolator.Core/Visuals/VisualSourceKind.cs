@@ -19,4 +19,12 @@ public enum VisualSourceKind
     /// <see cref="IVisualEffectRegistry"/> to a <see cref="VisualEffectRole.Generator"/> descriptor.
     /// </summary>
     Generator,
+
+    /// <summary>
+    /// An empty layer: the slot is occupied but draws nothing, so it is composited as if absent. Lets a
+    /// performer switch a layer "off" from the UI without removing it from the scene. Carries no
+    /// <see cref="VisualSourceRef.Reference"/> and resolves as non-renderable, so the compositor skips it
+    /// (doc 08 — the same graceful-skip path as deferred video/camera sources).
+    /// </summary>
+    None,
 }
