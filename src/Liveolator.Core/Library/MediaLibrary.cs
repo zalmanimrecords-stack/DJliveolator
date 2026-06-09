@@ -63,6 +63,21 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     }
 
     /// <summary>
+    /// Removes a single catalogued entry by file path (the user deleted that one asset). In-memory and
+    /// instant — deleting the file on disk is a separate platform concern (<see cref="IFileRemover"/>).
+    /// Returns <c>true</c> if an entry was removed, <c>false</c> if no entry had that path. A following
+    /// scan of the same folders re-adds the asset only if its file still exists on disk.
+    /// </summary>
+    public bool Remove(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        lock (_gate)
+            return _byPath.Remove(path);
+    }
+
+    /// <summary>
     /// Drops every catalogued entry whose file no longer lives under any of the given folder roots.
     /// Used when a scan folder is removed: it trims exactly the entries a re-scan of the reduced folder
     /// set would drop, but instantly and without touching disk. An entry kept by a still-retained

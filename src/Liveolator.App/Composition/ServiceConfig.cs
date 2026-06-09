@@ -197,6 +197,11 @@ public static class ServiceConfig
         services.AddSingleton<IVisualMediaProbe>(_ => new CompositeVisualMediaProbe());
         services.AddSingleton<VisualMediaLibrary>(sp => new VisualMediaLibrary(
             sp.GetRequiredService<IFileEnumerator>(), sp.GetRequiredService<IVisualMediaProbe>()));
+        // Visual-library preview (Track C C1): decodes the selected asset for the detail panel — images
+        // via managed Skia, video via an ffmpeg-extracted frame (null preview when ffmpeg is absent).
+        services.AddSingleton<IVisualThumbnailRenderer>(_ => new CompositeVisualThumbnailRenderer());
+        // Removes an asset's file from disk when the user deletes it (OS-backed, Liveolator.Platform).
+        services.AddSingleton<IFileRemover, FileSystemFileRemover>();
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
@@ -416,6 +421,8 @@ public static class ServiceConfig
             fingerprinter: sp.GetService<IAudioFingerprinter>(),
             editor: sp.GetRequiredService<ITrackEditor>()));
         services.AddSingleton<ITrackEditor, TrackEditor>();
+        // Modal yes/no confirmation for destructive actions (e.g. deleting a visual asset's file).
+        services.AddSingleton<IConfirmationService, ConfirmationService>();
 
         // Libraries playback is gated on the realtime engine, not merely the dispatcher: without
         // native BASS there is no deck to play, so pass the dispatcher only when the engine is up
@@ -439,7 +446,10 @@ public static class ServiceConfig
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
             sp.GetRequiredService<VisualMediaLibrary>(),
-            sp.GetRequiredService<IVisualCatalogStore>()));
+            sp.GetRequiredService<IVisualCatalogStore>(),
+            sp.GetRequiredService<IVisualThumbnailRenderer>(),
+            sp.GetRequiredService<IFileRemover>(),
+            sp.GetRequiredService<IConfirmationService>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
@@ -681,24 +691,33 @@ public static class ServiceConfig
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
                 opacity: 1.0);
-            // The built-in VU meter (doc 26 reference generator) composited over the background, so a
-            // fresh install shows a live, audio-reactive visual. Its shader fills the frame; if the
-            // generator failed to register the renderer skips it and the background still shows.
+            // The built-in VU meter (doc 26 reference) shows by default like the reference photo: a faithful
+            // static dial FACE (Skia-rendered: bezel/screws/aged scale/red zone/VU METER/brass hub) with the
+            // live NEEDLE generator composited over it. The face fills the frame; the needle (transparent
+            // background) swings with the master level. If either asset fails the renderer skips it.
+            var vuFace = new VisualLayer(
+                name: "VU Meter Face",
+                source: new VisualSourceRef(VisualSourceKind.Image, VuMeterAddon.FaceImagePath()),
+                effects: Array.Empty<EffectRef>(),
+                blend: BlendMode.Normal,
+                opacity: 1.0);
             var vuMeter = new VisualLayer(
                 name: "VU Meter",
                 source: new VisualSourceRef(VisualSourceKind.Generator, VuMeterAddon.EffectId),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
-                opacity: 0.0);
+                opacity: 1.0);
+            // The fractal generator is an alternate visual kept on top at zero opacity, so its own Visual
+            // Control toggle can bring it over the VU meter without disturbing the meter's face+needle pair.
             var psyFractal = new VisualLayer(
                 name: "Psy Fractal Visualizer",
                 source: new VisualSourceRef(VisualSourceKind.Generator, PsyFractalVisualizerAddon.EffectId),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
-                opacity: 1.0);
+                opacity: 0.0);
             var scene = new VisualScene(
                 name: "Starter",
-                layers: new[] { background, psyFractal, vuMeter },
+                layers: new[] { background, vuFace, vuMeter, psyFractal },
                 macroValues: new Dictionary<string, double>(),
                 transition: TransitionStyle.Cut,
                 beatBehavior: BeatBehavior.None);

@@ -2,10 +2,16 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Liveolator.App.Features.Shared;
 using Liveolator.App.Shell;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Persistence;
+using Liveolator.Core.Visuals;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.VisualLibrary;
@@ -20,8 +26,15 @@ namespace Liveolator.App.Features.VisualLibrary;
 /// </summary>
 public sealed class VisualLibraryViewModel : ViewModelBase
 {
+    // Longest edge of the generated preview thumbnail. The detail panel is ~320px wide; this keeps the
+    // decode + bitmap cheap (and bounds memory) while staying crisp on hi-dpi displays.
+    private const int PreviewMaxEdge = 480;
+
     private readonly VisualMediaLibrary _library;
     private readonly IVisualCatalogStore? _store;
+    private readonly IVisualThumbnailRenderer? _thumbnails;
+    private readonly IFileRemover? _fileRemover;
+    private readonly IConfirmationService? _confirmation;
     private List<VisualAssetRowViewModel> _all = new();
 
     private string? _searchText;
@@ -33,24 +46,49 @@ public sealed class VisualLibraryViewModel : ViewModelBase
     private bool _isScanning;
     private double _scanProgressValue;
 
+    private WriteableBitmap? _previewBitmap;
+    private bool _isPreviewLoading;
+    private string? _previewMessage;
+    // Cancels the in-flight preview render when the selection changes again before it finishes, so a
+    // slow video-frame extraction never paints over a newer selection.
+    private CancellationTokenSource? _previewCts;
+
     /// <param name="library">The Core visual-media library (scan/catalog).</param>
     /// <param name="store">Persists the catalog + scan folders across runs; null disables persistence
     /// (the tab still works in-memory for the session).</param>
-    public VisualLibraryViewModel(VisualMediaLibrary library, IVisualCatalogStore? store = null)
+    /// <param name="thumbnails">Renders the selected asset's preview (image decode / video frame); null
+    /// disables the preview (the panel shows a placeholder).</param>
+    /// <param name="fileRemover">Deletes an asset's file from disk; null disables the delete action.</param>
+    /// <param name="confirmation">Confirms the destructive delete; null disables the delete action.</param>
+    public VisualLibraryViewModel(
+        VisualMediaLibrary library,
+        IVisualCatalogStore? store = null,
+        IVisualThumbnailRenderer? thumbnails = null,
+        IFileRemover? fileRemover = null,
+        IConfirmationService? confirmation = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store;
+        _thumbnails = thumbnails;
+        _fileRemover = fileRemover;
+        _confirmation = confirmation;
 
         ScanCommand = ReactiveCommand.CreateFromTask(
             RunScanAsync,
             this.WhenAnyValue(x => x.IsScanning, scanning => !scanning));
         ClearFiltersCommand = ReactiveCommand.Create(ClearFilters);
+        DeleteSelectedCommand = ReactiveCommand.CreateFromTask(
+            DeleteSelectedAsync,
+            this.WhenAnyValue(x => x.SelectedAsset, asset => CanDelete(asset)));
 
         Observable.Merge(
                 this.WhenAnyValue(x => x.SearchText).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedKind).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedStatus).Select(_ => Unit.Default))
             .Subscribe(_ => ApplyFilter());
+
+        // Load the preview whenever the selection changes (and clear it when nothing is selected).
+        this.WhenAnyValue(x => x.SelectedAsset).Subscribe(row => _ = LoadPreviewAsync(row));
     }
 
     public ObservableCollection<string> Folders { get; } = new();
@@ -72,6 +110,10 @@ public sealed class VisualLibraryViewModel : ViewModelBase
 
     /// <summary>Resets the kind/status filter and the search box back to "show all".</summary>
     public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
+
+    /// <summary>Permanently deletes the selected asset's file from disk (after confirmation) and drops
+    /// it from the catalog. Enabled only when an asset is selected and delete is wired.</summary>
+    public ReactiveCommand<Unit, Unit> DeleteSelectedCommand { get; }
 
     public string? SearchText
     {
@@ -97,6 +139,29 @@ public sealed class VisualLibraryViewModel : ViewModelBase
     {
         get => _selectedAsset;
         set => this.RaiseAndSetIfChanged(ref _selectedAsset, value);
+    }
+
+    /// <summary>The decoded preview thumbnail of the selected asset, or null while loading / when no
+    /// preview is available (then <see cref="PreviewMessage"/> explains why).</summary>
+    public WriteableBitmap? PreviewBitmap
+    {
+        get => _previewBitmap;
+        private set => this.RaiseAndSetIfChanged(ref _previewBitmap, value);
+    }
+
+    /// <summary>True while a preview is being rendered (drives a "Loading…" hint).</summary>
+    public bool IsPreviewLoading
+    {
+        get => _isPreviewLoading;
+        private set => this.RaiseAndSetIfChanged(ref _isPreviewLoading, value);
+    }
+
+    /// <summary>A short explanation shown in place of the preview when one cannot be produced
+    /// (e.g. ffmpeg missing for a video, or an undecodable image); null when a preview is shown.</summary>
+    public string? PreviewMessage
+    {
+        get => _previewMessage;
+        private set => this.RaiseAndSetIfChanged(ref _previewMessage, value);
     }
 
     public string ScanStatus
@@ -281,5 +346,135 @@ public sealed class VisualLibraryViewModel : ViewModelBase
         {
             RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not save folders: {ex.Message}");
         }
+    }
+
+    // Delete is offered only when an asset is selected AND both the file remover and the confirmation
+    // prompt are wired — never expose a destructive action that cannot first confirm with the user.
+    private bool CanDelete(VisualAssetRowViewModel? asset)
+        => asset is not null && _fileRemover is not null && _confirmation is not null;
+
+    // Renders (off the UI thread) the preview for the selected asset and marshals the result back. A
+    // newer selection cancels this one. A missing renderer or an unproduceable preview shows a message
+    // rather than a broken image — the preview is a convenience, never a failure path (#26).
+    private async Task LoadPreviewAsync(VisualAssetRowViewModel? row)
+    {
+        _previewCts?.Cancel();
+
+        if (row is null || _thumbnails is null)
+        {
+            PreviewBitmap = null;
+            PreviewMessage = null;
+            IsPreviewLoading = false;
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _previewCts = cts;
+        VisualAsset asset = row.Asset;
+
+        RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            IsPreviewLoading = true;
+            PreviewMessage = null;
+            PreviewBitmap = null;
+        });
+
+        try
+        {
+            VisualPreviewFrame? frame = await _thumbnails
+                .RenderAsync(asset.File.Path, asset.Kind, PreviewMaxEdge, cts.Token)
+                .ConfigureAwait(false);
+
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                if (cts.IsCancellationRequested)
+                    return;
+
+                IsPreviewLoading = false;
+                if (frame is null)
+                {
+                    PreviewBitmap = null;
+                    PreviewMessage = asset.Kind == VisualMediaKind.Video
+                        ? "No preview available (FFmpeg not installed?)."
+                        : "No preview available.";
+                }
+                else
+                {
+                    PreviewBitmap = ToBitmap(frame);
+                    PreviewMessage = null;
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer selection — the newer load owns the panel state.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                if (cts.IsCancellationRequested)
+                    return;
+                IsPreviewLoading = false;
+                PreviewBitmap = null;
+                PreviewMessage = $"Preview failed: {ex.Message}";
+            });
+        }
+    }
+
+    // Confirms, then permanently deletes the file from disk and drops it from the catalog + persisted
+    // store. A delete failure is surfaced on the status line and aborts before touching the catalog, so
+    // the list never diverges from disk.
+    private async Task DeleteSelectedAsync()
+    {
+        VisualAssetRowViewModel? row = SelectedAsset;
+        if (row is null || _fileRemover is null || _confirmation is null)
+            return;
+
+        string path = row.Asset.File.Path;
+        bool confirmed = await _confirmation.ConfirmAsync(
+            "Delete asset",
+            $"Permanently delete this file from disk? This cannot be undone.\n\n{path}",
+            "Delete").ConfigureAwait(false);
+        if (!confirmed)
+            return;
+
+        try
+        {
+            _fileRemover.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not delete file: {ex.Message}");
+            return;
+        }
+
+        _library.Remove(path);
+        _all = _all.Where(r => !string.Equals(r.Asset.File.Path, path, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            SelectedAsset = null;
+            ApplyFilter();
+            ScanStatus = $"Deleted {row.FileName}";
+        });
+
+        await PersistCatalogAsync(Folders.ToList()).ConfigureAwait(false);
+    }
+
+    // Copies the RGBA8 preview frame into an Avalonia bitmap for the detail panel (same RGBA8888 path
+    // the live Program Out monitor uses). Runs on the UI thread.
+    private static WriteableBitmap ToBitmap(VisualPreviewFrame frame)
+    {
+        var bitmap = new WriteableBitmap(
+            new PixelSize(frame.Width, frame.Height),
+            new Vector(96, 96),
+            PixelFormat.Rgba8888,
+            AlphaFormat.Unpremul);
+
+        using (ILockedFramebuffer framebuffer = bitmap.Lock())
+            Marshal.Copy(frame.RgbaPixels, 0, framebuffer.Address, frame.RgbaPixels.Length);
+
+        return bitmap;
     }
 }

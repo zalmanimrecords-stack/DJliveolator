@@ -96,6 +96,21 @@
               <TextBlock Classes="mono faint" Text="{Binding SelectedAsset.SubLine}" TextWrapping="Wrap" />
             </StackPanel>
 
+            <!-- preview: decoded image, or an extracted video frame -->
+            <Border Height="180" Background="{DynamicResource S1}"
+                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="3">
+              <Grid>
+                <Image Source="{Binding PreviewBitmap}" Stretch="Uniform" Margin="6"
+                       IsVisible="{Binding PreviewBitmap, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center" Margin="12"
+                           Text="{Binding PreviewMessage}"
+                           IsVisible="{Binding PreviewBitmap, Converter={x:Static ObjectConverters.IsNull}}" />
+                <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Text="Loading…" IsVisible="{Binding IsPreviewLoading}" />
+              </Grid>
+            </Border>
+
             <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
               <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
                 <TextBlock Classes="faint" Text="KIND" />
@@ -128,6 +143,12 @@
                 </Grid>
               </StackPanel>
             </StackPanel>
+
+            <Button Classes="spartan" Content="Delete from disk"
+                    Foreground="{DynamicResource Red}"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Command="{Binding DeleteSelectedCommand}"
+                    ToolTip.Tip="Permanently delete this file from disk and remove it from the library" />
           </StackPanel>
         </StackPanel>
       </Border>

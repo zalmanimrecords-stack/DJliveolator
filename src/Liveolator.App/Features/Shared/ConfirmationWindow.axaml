@@ -1,0 +1,17 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Liveolator.App.Features.Shared.ConfirmationWindow"
+        Width="420" SizeToContent="Height"
+        MinWidth="380"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="Confirm">
+  <Grid Margin="20" RowDefinitions="Auto,Auto,Auto">
+    <TextBlock x:Name="TitleText" Grid.Row="0" Classes="section" Margin="0,0,0,12" />
+    <TextBlock x:Name="MessageText" Grid.Row="1" TextWrapping="Wrap" Margin="0,0,0,20" />
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="CancelButton" Classes="spartan" Content="Cancel" Click="OnCancel" />
+      <Button x:Name="ConfirmButton" Classes="accent" Content="OK" Click="OnConfirm" />
+    </StackPanel>
+  </Grid>
+</Window>

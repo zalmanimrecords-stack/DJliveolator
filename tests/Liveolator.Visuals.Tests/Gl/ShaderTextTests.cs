@@ -30,11 +30,18 @@ public sealed class ShaderTextTests
         Assert.Equal(glsl, ShaderText.Sanitize(glsl));
     }
 
+    // MemberData (not InlineData) because some built-in shaders are composed at runtime
+    // (static readonly), not compile-time constants — those cannot be attribute arguments.
+    public static IEnumerable<object[]> BuiltInShaderSources => new[]
+    {
+        new object[] { LayeredQuadShaderSource.Vertex },
+        new object[] { LayeredQuadShaderSource.Fragment },
+        new object[] { VuMeterAddon.FragmentShader },
+        new object[] { PsyFractalVisualizerAddon.FragmentShader },
+    };
+
     [Theory]
-    [InlineData(LayeredQuadShaderSource.Vertex)]
-    [InlineData(LayeredQuadShaderSource.Fragment)]
-    [InlineData(VuMeterAddon.FragmentShader)]
-    [InlineData(PsyFractalVisualizerAddon.FragmentShader)]
+    [MemberData(nameof(BuiltInShaderSources))]
     public void BuiltIn_shader_sources_are_ascii_only(string shader)
     {
         // Regression guard: a single non-ASCII byte (e.g. an em-dash in a comment) silently breaks the

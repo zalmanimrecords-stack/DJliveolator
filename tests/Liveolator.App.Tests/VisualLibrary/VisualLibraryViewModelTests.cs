@@ -1,13 +1,18 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Headless.XUnit;
+using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Tests.Fakes;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Visual;
+using Liveolator.Core.Visuals;
 using ReactiveUI;
 using Xunit;
 
@@ -145,6 +150,115 @@ public sealed class VisualLibraryViewModelTests
 
         Assert.Single(vm.Folders);
         Assert.Contains("/vis/one", store.SavedFolders);
+    }
+
+    [Fact]
+    public async Task Delete_removes_file_from_disk_catalog_and_list()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog, seedFolders: new[] { "/vis" });
+        var library = EmptyLibrary();
+        var remover = new FakeFileRemover();
+        var vm = new VisualLibraryViewModel(library, store, fileRemover: remover, confirmation: Confirm(true));
+        await vm.InitializeAsync();
+        vm.SelectedAsset = vm.Assets.Single(a => a.Title == "sunset");
+
+        await vm.DeleteSelectedCommand.Execute().ToTask();
+
+        Assert.Contains("/vis/sunset.jpg", remover.Deleted);                  // deleted from disk
+        Assert.Equal(3, vm.Assets.Count);                                    // dropped from the list
+        Assert.Null(vm.SelectedAsset);                                       // selection cleared
+        Assert.DoesNotContain(store.SavedAssets, a => a.File.Path == "/vis/sunset.jpg"); // persisted without it
+    }
+
+    [Fact]
+    public async Task Delete_when_cancelled_keeps_everything()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var remover = new FakeFileRemover();
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, fileRemover: remover, confirmation: Confirm(false));
+        await vm.InitializeAsync();
+        vm.SelectedAsset = vm.Assets.Single(a => a.Title == "sunset");
+
+        await vm.DeleteSelectedCommand.Execute().ToTask();
+
+        Assert.Empty(remover.Deleted);
+        Assert.Equal(4, vm.Assets.Count);
+        Assert.NotNull(vm.SelectedAsset);
+    }
+
+    [Fact]
+    public async Task Delete_when_file_delete_fails_surfaces_status_and_keeps_catalog()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var remover = new FakeFileRemover { Throw = true };
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, fileRemover: remover, confirmation: Confirm(true));
+        await vm.InitializeAsync();
+        vm.SelectedAsset = vm.Assets.Single(a => a.Title == "sunset");
+
+        await vm.DeleteSelectedCommand.Execute().ToTask();
+
+        Assert.Contains("Could not delete", vm.ScanStatus);
+        Assert.Equal(4, vm.Assets.Count); // catalog untouched when the disk delete fails
+    }
+
+    [AvaloniaFact]
+    public async Task Selecting_an_asset_renders_its_preview()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var thumbnails = new FakeThumbnailRenderer { Frame = new VisualPreviewFrame(2, 2, new byte[2 * 2 * 4]) };
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, thumbnails: thumbnails);
+        await vm.InitializeAsync();
+
+        vm.SelectedAsset = vm.Assets.Single(a => a.Title == "sunset");
+
+        Assert.NotNull(vm.PreviewBitmap);
+        Assert.Null(vm.PreviewMessage);
+    }
+
+    [AvaloniaFact]
+    public async Task Unavailable_preview_shows_a_message_not_a_bitmap()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var thumbnails = new FakeThumbnailRenderer { Frame = null }; // e.g. ffmpeg missing for a video
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, thumbnails: thumbnails);
+        await vm.InitializeAsync();
+
+        vm.SelectedAsset = vm.Assets.Single(a => a.KindText == "Video");
+
+        Assert.Null(vm.PreviewBitmap);
+        Assert.Contains("preview", vm.PreviewMessage ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static FakeConfirmation Confirm(bool result) => new() { Result = result };
+
+    private sealed class FakeFileRemover : IFileRemover
+    {
+        public List<string> Deleted { get; } = new();
+        public bool Throw { get; init; }
+
+        public void Delete(string path)
+        {
+            if (Throw)
+                throw new System.IO.IOException("locked");
+            Deleted.Add(path);
+        }
+    }
+
+    private sealed class FakeConfirmation : IConfirmationService
+    {
+        public bool Result { get; init; }
+
+        public Task<bool> ConfirmAsync(string title, string message, string confirmLabel = "OK")
+            => Task.FromResult(Result);
+    }
+
+    private sealed class FakeThumbnailRenderer : IVisualThumbnailRenderer
+    {
+        public VisualPreviewFrame? Frame { get; init; }
+
+        public Task<VisualPreviewFrame?> RenderAsync(
+            string filePath, VisualMediaKind kind, int maxEdge, CancellationToken cancellationToken = default)
+            => Task.FromResult(Frame);
     }
 
     [Fact]

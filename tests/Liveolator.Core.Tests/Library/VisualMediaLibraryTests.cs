@@ -57,6 +57,32 @@ public class VisualMediaLibraryTests
     }
 
     [Fact]
+    public async Task Remove_DropsOneAsset_LeavingTheRest()
+    {
+        var enumerator = new FakeFileEnumerator(File("keep.png"), File("drop.png"));
+        var library = new VisualMediaLibrary(enumerator, new FakeVisualProbe());
+        await library.ScanAsync(new[] { "media" });
+
+        bool removed = library.Remove("drop.png");
+
+        Assert.True(removed);
+        Assert.Equal(1, library.Count);
+        Assert.Null(library.TryGet("drop.png"));
+        Assert.NotNull(library.TryGet("keep.png"));
+    }
+
+    [Fact]
+    public async Task Remove_UnknownPath_ReturnsFalse_AndKeepsCatalog()
+    {
+        var enumerator = new FakeFileEnumerator(File("keep.png"));
+        var library = new VisualMediaLibrary(enumerator, new FakeVisualProbe());
+        await library.ScanAsync(new[] { "media" });
+
+        Assert.False(library.Remove("ghost.png"));
+        Assert.Equal(1, library.Count);
+    }
+
+    [Fact]
     public async Task Scan_Incremental_DoesNotReprobeUnchanged()
     {
         var enumerator = new FakeFileEnumerator(File("pic.jpg"));

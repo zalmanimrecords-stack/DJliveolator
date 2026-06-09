@@ -1,3 +1,4 @@
+using System.Globalization;
 using Liveolator.Core.Visuals;
 
 namespace Liveolator.Visuals.Gl;
@@ -8,11 +9,13 @@ namespace Liveolator.Visuals.Gl;
 /// shader + a package manifest is the canonical third-party add-on documented in doc 26.
 /// </summary>
 /// <remarks>
-/// The fragment shader draws itself purely from uniforms (no input texture) — it is a
-/// <see cref="VisualEffectRole.Generator"/>. The needle swings with the smoothed <c>uLevel</c> (VU
-/// ballistics resolved in Core), a peak dot rides the arc from <c>uPeak</c>, and the scale turns red past
-/// the <c>uRedline</c> parameter. The shader file is emitted to the app's asset cache like
-/// <see cref="StarterImage"/>; a write failure degrades to "no built-in generator" rather than crashing.
+/// The look matches a real analog VU meter by splitting it the way skeuomorphic plugins do: the static
+/// dial — bezel, screws, aged cream face, dual-row scale, red zone, "VU METER", brass hub — is a PNG
+/// rendered by <see cref="VuMeterFace"/> (an image layer), and this generator draws ONLY the moving
+/// needle on a transparent background over it. The needle is a <see cref="VisualEffectRole.Generator"/>
+/// driven purely by <c>uLevel</c> (VU ballistics resolved in Core); it shares <see cref="VuMeterGeometry"/>
+/// with the face so the needle registers with the printed arc. The shader file is emitted to the app's
+/// asset cache like <see cref="StarterImage"/>; a write failure degrades to "no built-in generator".
 /// </remarks>
 public static class VuMeterAddon
 {
@@ -24,86 +27,77 @@ public static class VuMeterAddon
 
     public const string Version = "1.0.0";
 
-    // Analog VU meter drawn from uniforms. Contract per doc 26: #version 330 core, in vec2 vTexCoord,
-    // out vec4 fragColor; automatic uniforms uResolution/uLevel/uRms/uPeak; one declared parameter
-    // uRedline. No texture sampling — a generator produces its own pixels.
-    public const string FragmentShader = """
-        #version 330 core
-        in vec2 vTexCoord;
-        out vec4 fragColor;
+    // The needle-only generator: it draws JUST the moving black needle (and its short counterweight
+    // tail) on a TRANSPARENT background, so it composites over the static face image (VuMeterFace) and
+    // reacts to the audio while the printed dial stays fixed. Contract per doc 26: #version 330 core,
+    // in vec2 vTexCoord, out vec4 fragColor, premultiplied-alpha output; uLevel drives the needle angle.
+    // It works in FACE PIXEL SPACE using the shared VuMeterGeometry, so the needle aligns with the arc
+    // the face renderer printed. Built from the geometry constants so there is one source of truth.
+    public static readonly string FragmentShader = BuildShader();
 
-        uniform vec2  uResolution;
-        uniform float uLevel;    // smoothed VU level 0..1 (the needle)
-        uniform float uRms;      // raw RMS 0..1 (unused here, available to forks)
-        uniform float uPeak;     // raw peak 0..1 (the peak dot)
-        uniform float uRedline;  // scale fraction where the arc turns red
+    private static string BuildShader()
+    {
+        static string F(double v) => v.ToString("0.0###", CultureInfo.InvariantCulture);
 
-        // Distance from point p to segment a-b.
-        float sdSegment(vec2 p, vec2 a, vec2 b) {
-            vec2 pa = p - a, ba = b - a;
-            float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-            return length(pa - ba * h);
-        }
+        return $$"""
+            #version 330 core
+            in vec2 vTexCoord;
+            out vec4 fragColor;
 
-        void main() {
-            // Aspect-corrected space, y up. vTexCoord.y runs top-to-bottom, so flip it.
-            vec2 uv = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
-            float aspect = uResolution.x / max(uResolution.y, 1.0);
-            vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
+            uniform float uLevel;   // smoothed VU level 0..1 (the needle position)
 
-            // Warm cream panel with a soft vignette, evoking an analog meter face.
-            vec3 col = vec3(0.91, 0.87, 0.75);
-            float vign = smoothstep(1.3, 0.25, length(vec2((uv.x - 0.5) * aspect, uv.y - 0.5)));
-            col *= mix(0.80, 1.0, vign);
+            const float PI = 3.14159265;
+            const float FW = {{F(VuMeterGeometry.FaceWidth)}};
+            const float FH = {{F(VuMeterGeometry.FaceHeight)}};
+            const float PX = {{F(VuMeterGeometry.PivotXPx)}};
+            const float PY = {{F(VuMeterGeometry.PivotYPx)}};
+            const float R  = {{F(VuMeterGeometry.ArcRadiusPx)}};
+            const float AMIN = {{F(VuMeterGeometry.NeedleMinDeg)}};
+            const float AMAX = {{F(VuMeterGeometry.NeedleMaxDeg)}};
 
-            vec2  pivot  = vec2(0.0, 0.06);
-            float radius = 0.62;
-            float minAng = radians(140.0);  // level 0 -> up-left
-            float maxAng = radians(40.0);   // level 1 -> up-right
-
-            vec2  d   = p - pivot;
-            float r   = length(d);
-            float ang = atan(d.y, d.x);
-            bool  inArc = ang <= minAng && ang >= maxAng;
-            float t   = clamp((minAng - ang) / (minAng - maxAng), 0.0, 1.0); // 0 left -> 1 right
-
-            // Scale arc, red past the redline.
-            if (inArc) {
-                float band = smoothstep(0.014, 0.0, abs(r - radius));
-                vec3 scaleCol = t < uRedline ? vec3(0.11) : vec3(0.78, 0.10, 0.08);
-                col = mix(col, scaleCol, band);
-
-                // Tick marks just inside the arc.
-                float ticks = abs(fract(t * 10.0 + 0.5) - 0.5) * 2.0;
-                float mark = smoothstep(0.05, 0.0, ticks) * smoothstep(0.05, 0.0, abs(r - (radius - 0.05)));
-                col = mix(col, scaleCol, mark * 0.85);
+            float sdSeg(vec2 p, vec2 a, vec2 b) {
+                vec2 pa = p - a, ba = b - a;
+                float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+                return length(pa - ba * h);
             }
 
-            // Needle.
-            float needleAng = mix(minAng, maxAng, clamp(uLevel, 0.0, 1.0));
-            vec2  tip = pivot + vec2(cos(needleAng), sin(needleAng)) * (radius + 0.02);
-            col = mix(col, vec3(0.06), smoothstep(0.013, 0.004, sdSegment(p, pivot, tip)));
+            void main() {
+                // Face pixel space (y down), so it registers with the printed face at any window aspect.
+                vec2 pix = vec2(vTexCoord.x * FW, vTexCoord.y * FH);
 
-            // Hub.
-            col = mix(col, vec3(0.10), smoothstep(0.05, 0.032, length(p - pivot)));
+                float ang = mix(AMIN, AMAX, clamp(uLevel, 0.0, 1.0)) * PI / 180.0;
+                vec2 dir = vec2(sin(ang), -cos(ang));     // up = -y, + = right
+                vec2 pivot = vec2(PX, PY);
+                vec2 tip  = pivot + dir * (R + 12.0);
+                vec2 tail = pivot - dir * 46.0;           // short counterweight past the hub
 
-            // Peak dot riding the arc.
-            float pkAng = mix(minAng, maxAng, clamp(uPeak, 0.0, 1.0));
-            vec2  pkPos = pivot + vec2(cos(pkAng), sin(pkAng)) * radius;
-            col = mix(col, vec3(0.86, 0.10, 0.07), smoothstep(0.022, 0.0, length(p - pkPos)));
+                float len = length(tip - tail);
+                float along = clamp(dot(pix - tail, (tip - tail) / len) / len, 0.0, 1.0);
+                float halfW = mix(4.5, 1.1, along);        // tapered: wide at the base, fine at the tip
+                float d = sdSeg(pix, tail, tip);
+                float needle = smoothstep(halfW, halfW - 1.6, d);
 
-            fragColor = vec4(col, 1.0);
-        }
-        """;
+                vec3 col = vec3(0.05);                     // near-black needle
+                fragColor = vec4(col * needle, needle);    // premultiplied; transparent elsewhere
+            }
+            """;
+    }
 
-    /// <summary>Builds the descriptor for the built-in generator, pointing at the emitted shader file.</summary>
+    /// <summary>
+    /// Builds the descriptor for the built-in needle generator. No tunable parameters — the dial face
+    /// (colours, scale, red zone) is the static <see cref="VuMeterFace"/> image; the generator only
+    /// animates the needle from <c>uLevel</c>.
+    /// </summary>
     public static VisualEffectDescriptor Descriptor(string shaderPath) => new(
         EffectId,
         Version,
         PackageId,
         shaderPath,
-        new[] { new VisualEffectParameter("redline", "uRedline", Min: 0.0, Max: 1.0, Default: 0.85) },
+        Array.Empty<VisualEffectParameter>(),
         Role: VisualEffectRole.Generator);
+
+    /// <summary>The static dial-face image this needle composites over (rendered by <see cref="VuMeterFace"/>).</summary>
+    public static string FaceImagePath() => VuMeterFace.EnsureCreated();
 
     /// <summary>
     /// Ensures the shader exists and returns its absolute path. Idempotent: writes only when missing.
