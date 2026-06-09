@@ -46,7 +46,7 @@ public static class VuMeterAddon
         }
 
         void main() {
-            // Aspect-corrected space, y up. vTexCoord.y runs top→bottom, so flip it.
+            // Aspect-corrected space, y up. vTexCoord.y runs top-to-bottom, so flip it.
             vec2 uv = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
             float aspect = uResolution.x / max(uResolution.y, 1.0);
             vec2 p = vec2((uv.x - 0.5) * aspect, uv.y);
@@ -58,14 +58,14 @@ public static class VuMeterAddon
 
             vec2  pivot  = vec2(0.0, 0.06);
             float radius = 0.62;
-            float minAng = radians(140.0);  // level 0 → up-left
-            float maxAng = radians(40.0);   // level 1 → up-right
+            float minAng = radians(140.0);  // level 0 -> up-left
+            float maxAng = radians(40.0);   // level 1 -> up-right
 
             vec2  d   = p - pivot;
             float r   = length(d);
             float ang = atan(d.y, d.x);
             bool  inArc = ang <= minAng && ang >= maxAng;
-            float t   = clamp((minAng - ang) / (minAng - maxAng), 0.0, 1.0); // 0 left → 1 right
+            float t   = clamp((minAng - ang) / (minAng - maxAng), 0.0, 1.0); // 0 left -> 1 right
 
             // Scale arc, red past the redline.
             if (inArc) {

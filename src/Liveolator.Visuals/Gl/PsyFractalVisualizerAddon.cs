@@ -62,7 +62,7 @@ public static class PsyFractalVisualizerAddon
                 b = vec3(0.25, 0.05, 0.75);
                 c = vec3(1.00, 0.20, 0.75);
             }
-            float wave = 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.00, 0.33, 0.67)));
+            vec3 wave = 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.00, 0.33, 0.67)));
             return mix(mix(a, b, wave.x), c, wave.y * 0.62);
         }
 

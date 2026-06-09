@@ -187,7 +187,7 @@ internal sealed class GeneratorPass : IDisposable
     private uint Compile(ShaderType type, string source)
     {
         uint shader = _gl.CreateShader(type);
-        _gl.ShaderSource(shader, source);
+        _gl.ShaderSource(shader, ShaderText.Sanitize(source));
         _gl.CompileShader(shader);
         _gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
         if (compiled == 0)

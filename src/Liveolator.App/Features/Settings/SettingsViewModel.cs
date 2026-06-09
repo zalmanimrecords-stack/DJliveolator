@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Reactive;
+using System.Reactive.Linq;
+using Liveolator.App.Diagnostics;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Shell;
 using Liveolator.Core.Audio;
@@ -54,6 +56,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IUiThemeManager? _themes;
     private readonly IExtensionContentReloader? _contentReloader;
     private readonly PerformanceDeckSet? _decks;
+    private readonly ILogFileLocator? _logLocator;
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
@@ -68,6 +71,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private string? _activeUiThemeId;
     private double _waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds;
     private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
+    private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
@@ -81,7 +85,8 @@ public sealed class SettingsViewModel : ViewModelBase
         IExtensionInstaller? extensionInstaller = null,
         IUiThemeManager? themes = null,
         IExtensionContentReloader? contentReloader = null,
-        PerformanceDeckSet? decks = null)
+        PerformanceDeckSet? decks = null,
+        ILogFileLocator? logLocator = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
@@ -95,9 +100,12 @@ public sealed class SettingsViewModel : ViewModelBase
         _themes = themes;
         _contentReloader = contentReloader;
         _decks = decks;
+        _logLocator = logLocator;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
+        foreach (string level in DiagnosticsSettings.Levels)
+            LogLevels.Add(level);
 
         RefreshDevicesCommand = ReactiveCommand.Create(RefreshDevices);
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
@@ -105,6 +113,9 @@ public sealed class SettingsViewModel : ViewModelBase
         InstallPackageCommand = ReactiveCommand.CreateFromTask(InstallPackageAsync);
         ToggleExtensionCommand = ReactiveCommand.CreateFromTask(ToggleExtensionAsync);
         UninstallExtensionCommand = ReactiveCommand.CreateFromTask(UninstallExtensionAsync);
+        OpenLogsFolderCommand = ReactiveCommand.Create(
+            () => _logLocator?.RevealInFileManager(),
+            Observable.Return(_logLocator is not null));
 
         RefreshDevices();
     }
@@ -125,6 +136,9 @@ public sealed class SettingsViewModel : ViewModelBase
     public ObservableCollection<int> BufferOptions { get; } = new();
     public ObservableCollection<ExtensionItemViewModel> InstalledExtensions { get; } = new();
     public ObservableCollection<string> UiThemeIds { get; } = new() { "Spartan" };
+
+    /// <summary>The selectable log verbosity levels (least to most severe).</summary>
+    public ObservableCollection<string> LogLevels { get; } = new();
 
     public AudioOutputDevice? SelectedOutputDevice
     {
@@ -212,9 +226,24 @@ public sealed class SettingsViewModel : ViewModelBase
     public double NudgeMin => VisualsSettings.MinNudgeSeconds;
     public double NudgeMax => VisualsSettings.MaxNudgeSeconds;
 
+    /// <summary>The persisted log verbosity. Applied to the file log on the next launch (the sink is built
+    /// at startup); persisted on Save.</summary>
+    public string SelectedLogLevel
+    {
+        get => _selectedLogLevel;
+        set => this.RaiseAndSetIfChanged(ref _selectedLogLevel, value);
+    }
+
+    /// <summary>The absolute path of the active log file, shown so the performer can find it for support.</summary>
+    public string LogFilePath => _logLocator?.CurrentFilePath ?? "(file logging unavailable)";
+
+    /// <summary>True when a log file exists to open (false in headless/test composition).</summary>
+    public bool CanOpenLogs => _logLocator is not null;
+
     public ReactiveCommand<Unit, Unit> RefreshDevicesCommand { get; }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
+    public ReactiveCommand<Unit, Unit> OpenLogsFolderCommand { get; }
     public ReactiveCommand<Unit, Unit> PreviewPackageCommand { get; }
     public ReactiveCommand<Unit, Unit> InstallPackageCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleExtensionCommand { get; }
@@ -290,6 +319,7 @@ public sealed class SettingsViewModel : ViewModelBase
                 ActiveUiThemeId = ActiveUiThemeId == "Spartan" ? null : ActiveUiThemeId,
             },
             Visuals = new VisualsSettings(WaveformZoomSeconds, NudgeSeconds),
+            Diagnostics = new DiagnosticsSettings(SelectedLogLevel),
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -372,6 +402,7 @@ public sealed class SettingsViewModel : ViewModelBase
         ActiveUiThemeId = settings.Extensions.ActiveUiThemeId ?? "Spartan";
         WaveformZoomSeconds = settings.Visuals.WaveformZoomSeconds;
         NudgeSeconds = settings.Visuals.NudgeSeconds;
+        SelectedLogLevel = settings.Diagnostics.Normalized().MinimumLevel;
 
         UiThemeIds.Clear();
         UiThemeIds.Add("Spartan");

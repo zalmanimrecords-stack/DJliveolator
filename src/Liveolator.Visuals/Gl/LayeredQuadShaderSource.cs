@@ -48,7 +48,7 @@ internal static class LayeredQuadShaderSource
             float a = clamp(uOpacity, 0.0, 1.0) * texel.a;
             // Output PREMULTIPLIED alpha (rgb already scaled by alpha). All blend modes in
             // BlendModeGl use premultiplied-alpha factors, so opacity is honored uniformly by
-            // alpha-over, additive, and screen via the one src color — the shader bakes it in once.
+            // alpha-over, additive, and screen via the one src color - the shader bakes it in once.
             fragColor = vec4(texel.rgb * gain * a, a);
         }
         """;

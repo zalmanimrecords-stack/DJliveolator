@@ -192,7 +192,7 @@ public sealed class LayeredQuadRenderer : IDisposable
     private uint CompileShader(ShaderType type, string source)
     {
         uint shader = _gl.CreateShader(type);
-        _gl.ShaderSource(shader, source);
+        _gl.ShaderSource(shader, ShaderText.Sanitize(source));
         _gl.CompileShader(shader);
 
         _gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);

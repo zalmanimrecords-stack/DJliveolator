@@ -194,6 +194,34 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsLogLevel()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with { Diagnostics = new DiagnosticsSettings("Error") };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal("Error", loaded.Diagnostics.MinimumLevel);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutLogLevel_UsesWarningDefault()
+    {
+        // Back-compat: a file written before the diagnostics field existed must read the Warning default.
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":40,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(DiagnosticsSettings.DefaultMinimumLevel, loaded.Diagnostics.MinimumLevel);
+        Assert.Equal("Warning", loaded.Diagnostics.MinimumLevel);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

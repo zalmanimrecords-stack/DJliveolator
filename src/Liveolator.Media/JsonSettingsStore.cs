@@ -22,7 +22,8 @@ public sealed record SettingsSnapshot(
     bool DeveloperMode = false,
     string? ActiveUiThemeId = null,
     double? WaveformZoomSeconds = null,
-    double? NudgeSeconds = null)
+    double? NudgeSeconds = null,
+    string? MinimumLogLevel = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -103,6 +104,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             Visuals = new VisualsSettings(
                 snapshot.WaveformZoomSeconds ?? VisualsSettings.DefaultZoomSeconds,
                 snapshot.NudgeSeconds ?? VisualsSettings.DefaultNudgeSeconds),
+            Diagnostics = new DiagnosticsSettings(
+                snapshot.MinimumLogLevel ?? DiagnosticsSettings.DefaultMinimumLevel),
         }.Normalized();
     }
 
@@ -124,7 +127,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Extensions.DeveloperMode,
             normalized.Extensions.ActiveUiThemeId,
             normalized.Visuals.WaveformZoomSeconds,
-            normalized.Visuals.NudgeSeconds);
+            normalized.Visuals.NudgeSeconds,
+            normalized.Diagnostics.MinimumLevel);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

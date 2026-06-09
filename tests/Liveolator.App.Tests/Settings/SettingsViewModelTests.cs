@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Concurrency;
+using System.Reactive.Threading.Tasks;
 using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Settings;
@@ -468,5 +469,75 @@ public sealed class SettingsViewModelTests
         await vm.SaveAsync();
 
         Assert.Equal(0.25, store.Saved.Visuals.NudgeSeconds, precision: 6);
+    }
+
+    private sealed class FakeLogLocator : Liveolator.App.Diagnostics.ILogFileLocator
+    {
+        public string Directory => @"C:\logs\Liveolator";
+        public string CurrentFilePath => @"C:\logs\Liveolator\liveolator.log";
+        public int RevealCount { get; private set; }
+        public void RevealInFileManager() => RevealCount++;
+    }
+
+    private static SettingsViewModel NewVmWithLocator(
+        Liveolator.App.Diagnostics.ILogFileLocator locator, FakeSettingsStore store)
+        => new(new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), store,
+               logLocator: locator);
+
+    [Fact]
+    public void Diagnostics_LogPathAndCanOpen_ComeFromLocator()
+    {
+        var locator = new FakeLogLocator();
+        var vm = NewVmWithLocator(locator, new FakeSettingsStore());
+
+        Assert.Equal(locator.CurrentFilePath, vm.LogFilePath);
+        Assert.True(vm.CanOpenLogs);
+        Assert.Contains("Information", vm.LogLevels);
+    }
+
+    [Fact]
+    public void Diagnostics_NoLocator_DisablesOpenAndShowsPlaceholder()
+    {
+        var vm = NewVm();
+
+        Assert.False(vm.CanOpenLogs);
+        Assert.Equal("(file logging unavailable)", vm.LogFilePath);
+    }
+
+    [Fact]
+    public async Task OpenLogsFolder_RevealsViaLocator()
+    {
+        var locator = new FakeLogLocator();
+        var vm = NewVmWithLocator(locator, new FakeSettingsStore());
+
+        await vm.OpenLogsFolderCommand.Execute().ToTask();
+
+        Assert.Equal(1, locator.RevealCount);
+    }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedLogLevel()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Diagnostics = new DiagnosticsSettings("debug") },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal("Debug", vm.SelectedLogLevel); // folded to canonical casing
+    }
+
+    [Fact]
+    public async Task Save_PersistsSelectedLogLevel()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.SelectedLogLevel = "Warning";
+
+        await vm.SaveAsync();
+
+        Assert.Equal("Warning", store.Saved.Diagnostics.MinimumLevel);
     }
 }

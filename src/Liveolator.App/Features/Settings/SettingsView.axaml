@@ -128,6 +128,26 @@
         </StackPanel>
       </Border>
 
+      <TextBlock Classes="section" Text="DIAGNOSTICS / LOGS" />
+      <Border Classes="panel">
+        <StackPanel Spacing="12" Margin="14">
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Log detail (applies after restart) — raise to Debug/Trace when reproducing a problem" />
+            <ComboBox ItemsSource="{Binding LogLevels}"
+                      SelectedItem="{Binding SelectedLogLevel}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+
+          <StackPanel Spacing="4">
+            <TextBlock Classes="faint" Text="Log file" />
+            <SelectableTextBlock Classes="mono" Text="{Binding LogFilePath}" TextWrapping="Wrap" />
+          </StackPanel>
+
+          <Button Classes="spartan" Content="Open logs folder"
+                  Command="{Binding OpenLogsFolderCommand}" IsEnabled="{Binding CanOpenLogs}" />
+        </StackPanel>
+      </Border>
+
       <StackPanel Orientation="Horizontal" Spacing="12">
         <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
         <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />

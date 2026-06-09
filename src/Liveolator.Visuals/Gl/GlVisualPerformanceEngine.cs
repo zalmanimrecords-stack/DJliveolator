@@ -40,6 +40,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     private readonly double _flashStrength;
     private readonly IVisualEffectRegistry _effectRegistry;
     private readonly IReadOnlyList<VisualMacro> _macros;
+    // Optional: lets the per-frame LayeredQuadRenderer log skipped/uncompilable layers through the same
+    // sink as the engine. Null in headless tests, where the renderer falls back to NullLogger.
+    private readonly ILoggerFactory? _loggerFactory;
 
     // Macro control values are normalized 0..1 and may be written from a UI/MIDI thread while the
     // render thread reads them, so the store is concurrent and reads take an immutable snapshot.
@@ -70,9 +73,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         ILogger<GlVisualPerformanceEngine>? logger = null,
         IVisualEffectRegistry? effectRegistry = null,
         IReadOnlyList<VisualMacro>? macros = null,
-        IVisualAudioLevelSource? audioLevel = null)
+        IVisualAudioLevelSource? audioLevel = null,
+        ILoggerFactory? loggerFactory = null)
         : this(new[] { initialBank ?? throw new ArgumentNullException(nameof(initialBank)) },
-               brightnessMacro, beatClock, flashStrength, imageLoader, logger, effectRegistry, macros, audioLevel)
+               brightnessMacro, beatClock, flashStrength, imageLoader, logger, effectRegistry, macros, audioLevel, loggerFactory)
     {
     }
 
@@ -90,7 +94,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         ILogger<GlVisualPerformanceEngine>? logger = null,
         IVisualEffectRegistry? effectRegistry = null,
         IReadOnlyList<VisualMacro>? macros = null,
-        IVisualAudioLevelSource? audioLevel = null)
+        IVisualAudioLevelSource? audioLevel = null,
+        ILoggerFactory? loggerFactory = null)
     {
         ArgumentNullException.ThrowIfNull(banks);
         if (banks.Count == 0)
@@ -111,7 +116,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
 
         _flashStrength = flashStrength;
         _imageLoader = imageLoader ?? new SkiaImageLoader();
-        _logger = logger ?? NullLogger<GlVisualPerformanceEngine>.Instance;
+        _logger = logger ?? loggerFactory?.CreateLogger<GlVisualPerformanceEngine>() ?? NullLogger<GlVisualPerformanceEngine>.Instance;
+        _loggerFactory = loggerFactory;
         _effectRegistry = effectRegistry ?? new VisualEffectRegistry();
         _macros = (macros ?? Array.Empty<VisualMacro>())
             .Append(brightnessMacro)
@@ -290,7 +296,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
                     layers,
                     _effectRegistry,
                     _macros,
-                    NullLogger<LayeredQuadRenderer>.Instance)
+                    _loggerFactory?.CreateLogger<LayeredQuadRenderer>() ?? NullLogger<LayeredQuadRenderer>.Instance)
                 : null;
 
             renderer?.Dispose();
@@ -368,10 +374,18 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         // The window/renderer are owned for the lifetime of Run(); nothing persists after it returns.
     }
 
-    private VisualScene? ActiveScene()
+    /// <summary>
+    /// The active scene as currently mutated (layer sources/opacity/blend), for persistence. This is the
+    /// live state behind <c>SetLayerSource</c>/<c>ToggleLayer</c> — distinct from <see cref="ActiveBank"/>,
+    /// whose stored scene is not mutated in place. Null until a bank with at least one scene is active.
+    /// </summary>
+    public VisualScene? ActiveScene
     {
-        lock (_sceneGate)
-            return _activeScene;
+        get
+        {
+            lock (_sceneGate)
+                return _activeScene;
+        }
     }
 
     private void MutateLayer(int layer, Func<VisualLayer, VisualLayer> mutate)
@@ -411,7 +425,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     private IReadOnlyList<(ResolvedLayer Layer, RgbaImage? Image)> LoadRenderableLayers()
     {
         var loaded = new List<(ResolvedLayer, RgbaImage?)>();
-        foreach (ResolvedLayer layer in SceneComposition.RenderableLayers(ActiveScene()))
+        foreach (ResolvedLayer layer in SceneComposition.RenderableLayers(ActiveScene))
         {
             if (layer.Source.Kind == VisualSourceKind.Generator)
             {

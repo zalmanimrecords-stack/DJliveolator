@@ -40,8 +40,9 @@ using Liveolator.Online;
 using Liveolator.Platform;
 using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
+using Liveolator.App.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Liveolator.App.Composition;
 
@@ -68,6 +69,22 @@ public static class ServiceConfig
         // store instance is registered below so the Settings tab reads/writes the very same file.
         var settingsStore = new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         AppSettings appSettings = settingsStore.LoadAsync().GetAwaiter().GetResult();
+
+        // --- On-disk logging (doc 12 diagnostics): the single place "log to a file" becomes wiring.
+        // Every engine/UI logger resolved from DI writes to one rolling file under %APPDATA%/Liveolator/logs
+        // at the persisted verbosity, so a field crash or a swallowed GL/audio failure leaves a trace.
+        // The factory is a singleton; ILogger<T> is the open-generic over it; the locator backs the
+        // Settings "Open logs folder" link. Global handlers capture otherwise-unhandled exceptions.
+        var logOptions = new FileLoggerOptions
+        {
+            Directory = AppLogging.DefaultDirectory(),
+            MinimumLevel = AppLogging.ParseLevel(appSettings.Diagnostics.MinimumLevel),
+        };
+        ILoggerFactory loggerFactory = AppLogging.CreateFactory(logOptions);
+        AppLogging.InstallGlobalExceptionLogging(loggerFactory);
+        services.AddSingleton(loggerFactory);
+        services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+        services.AddSingleton<ILogFileLocator>(new LogFileLocator(logOptions));
 
         // --- Authored Live-Mode data (doc 13): mapping profiles / scenes / macros / autopilot rule-sets
         // persisted under the per-user live/ root. The seam lives in Core; LiveProfileStore is the Media
@@ -236,14 +253,14 @@ public static class ServiceConfig
             : new SilentVisualAudioLevelSource();
         services.AddSingleton<IVisualAudioLevelSource>(audioLevel);
 
-        VisualActionHandler visualHandler =
-            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel);
+        (VisualActionHandler visualHandler, GlVisualPerformanceEngine visualEngine) =
+            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel, loggerFactory);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
         // immediate scheduler until a clock-driven one lands (doc 03). The handler owns the playlist
         // edits (insert/move/remove/skip) so the UI drives them through the one dispatcher.
-        var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), NullLogger<LivePlaylist>.Instance);
+        var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), loggerFactory.CreateLogger<LivePlaylist>());
         services.AddSingleton<ILivePlaylist>(livePlaylist);
 
         // Persist + restore the live set so the DJ tab opens where the last run left off (doc 13) instead
@@ -260,7 +277,7 @@ public static class ServiceConfig
             new JsonDeckSessionStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IDeckSessionStore>(deckSessionStore);
 
-        var playlistHandler = new PlaylistActionHandler(livePlaylist, NullLogger<PlaylistActionHandler>.Instance);
+        var playlistHandler = new PlaylistActionHandler(livePlaylist, loggerFactory.CreateLogger<PlaylistActionHandler>());
 
         // Register the realtime engine seams (constructed above, before the visual engine). Registering
         // IMultiDeckPlaybackEngine lets the deck handler address both decks AND lets the two-deck engine
@@ -298,7 +315,7 @@ public static class ServiceConfig
 
         var dispatcher = new PerformanceActionDispatcher(
             handlers,
-            NullLogger<PerformanceActionDispatcher>.Instance,
+            loggerFactory.CreateLogger<PerformanceActionDispatcher>(),
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton(dispatcher);
 
@@ -323,6 +340,13 @@ public static class ServiceConfig
             services.AddSingleton(deckSession);
         }
 
+        // Autosave the live visual layer arrangement so it survives a restart (the engine otherwise only
+        // mutates the in-memory active scene). Restored automatically by LoadBanksOrStarter loading the
+        // "Live" bank first. Registered as a singleton so the feedback subscription outlives Build().
+        var visualSession = new VisualSessionPersistence(
+            dispatcher, () => visualEngine.ActiveScene, liveProfileStore);
+        services.AddSingleton(visualSession);
+
         WirePlaylistAudio(services, livePlaylist, dispatcher, deckEngine);
 
         // --- MIDI controller → dispatcher (doc 05/07) ---
@@ -345,7 +369,7 @@ public static class ServiceConfig
             liveProfileStore,
             new MidiLearnSession(),
             AvailableMidiProfiles(),
-            NullLoggerFactory.Instance);
+            loggerFactory);
         try
         {
             midiSession.StartAsync(effectiveMidiSettings).GetAwaiter().GetResult();
@@ -446,7 +470,7 @@ public static class ServiceConfig
         AudioReinitCoordinator? audioReinit = realtimeUp
             ? new AudioReinitCoordinator(
                 new BassAudioEngineReinitializer(deckEngine!), appSettings.Audio,
-                NullLogger<AudioReinitCoordinator>.Instance)
+                loggerFactory.CreateLogger<AudioReinitCoordinator>())
             : null;
 
         services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
@@ -459,7 +483,7 @@ public static class ServiceConfig
                 ? new CaptureSourceController(
                     sp.GetRequiredService<IAudioCaptureSourceFactory>(),
                     new SwitchableAudioSource(),
-                    NullLogger<CaptureSourceController>.Instance)
+                    loggerFactory.CreateLogger<CaptureSourceController>())
                 : null,
             sp.GetRequiredService<IMidiControlSession>(),
             sp.GetRequiredService<IExtensionCatalog>(),
@@ -467,7 +491,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IUiThemeManager>(),
             sp.GetRequiredService<IExtensionContentReloader>(),
             // The shared decks so a saved waveform-zoom change applies live (without a restart).
-            sp.GetRequiredService<PerformanceDeckSet>()));
+            sp.GetRequiredService<PerformanceDeckSet>(),
+            sp.GetService<ILogFileLocator>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the
@@ -594,12 +619,13 @@ public static class ServiceConfig
     // on the actual music — or on the Live tab taps when headless. A persisted visual bank (doc 13) is
     // loaded at startup and feeds the engine when present; otherwise the placeholder starter bank is used
     // (tolerant — a missing/corrupt snapshot degrades to the starter bank with a warning).
-    private static VisualActionHandler WireVisuals(
+    private static (VisualActionHandler Handler, GlVisualPerformanceEngine Engine) WireVisuals(
         IServiceCollection services,
         IBeatClock liveClock,
         ILiveProfileStore profileStore,
         IVisualEffectRegistry effectRegistry,
-        IVisualAudioLevelSource audioLevel)
+        IVisualAudioLevelSource audioLevel,
+        ILoggerFactory loggerFactory)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
@@ -621,10 +647,12 @@ public static class ServiceConfig
             banks,
             brightnessMacro,
             liveClock,
+            logger: loggerFactory.CreateLogger<GlVisualPerformanceEngine>(),
             effectRegistry: effectRegistry,
             macros: macros,
-            audioLevel: audioLevel);
-        var visualHandler = new VisualActionHandler(visualEngine);
+            audioLevel: audioLevel,
+            loggerFactory: loggerFactory);
+        var visualHandler = new VisualActionHandler(visualEngine, loggerFactory.CreateLogger<VisualActionHandler>());
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
         services.AddSingleton(visualHandler);
@@ -634,9 +662,9 @@ public static class ServiceConfig
         // during composition (that would crash headless/CI). The engine reads the shared clock, so the
         // window pulses on the same beat the Live tab taps.
         services.AddSingleton<IVisualStage>(
-            new VisualStage(() => visualEngine.Run("Liveolator Visuals"), NullLogger<VisualStage>.Instance));
+            new VisualStage(() => visualEngine.Run("Liveolator Visuals"), loggerFactory.CreateLogger<VisualStage>()));
 
-        return visualHandler;
+        return (visualHandler, visualEngine);
     }
 
     // The compositor's first slice needs a renderable image layer. Generate a placeholder image and
@@ -885,7 +913,8 @@ public static class ServiceConfig
                 : midiProvider.OpenOutput(outputName);
 
             return MidiInputPipeline.Create(
-                input, output, dispatcher, AvailableMidiProfiles(), NullLoggerFactory.Instance);
+                input, output, dispatcher, AvailableMidiProfiles(),
+                Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
         }
         catch (Exception ex)
         {

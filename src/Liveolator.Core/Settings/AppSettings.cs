@@ -19,6 +19,9 @@ public sealed record AppSettings
     /// <summary>Visual/UI preferences (e.g. the deck waveform zoom).</summary>
     public VisualsSettings Visuals { get; init; } = VisualsSettings.Default;
 
+    /// <summary>Diagnostics/logging preferences (the on-disk log verbosity).</summary>
+    public DiagnosticsSettings Diagnostics { get; init; } = DiagnosticsSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -30,5 +33,6 @@ public sealed record AppSettings
             Midi = Midi.Normalized(),
             Extensions = Extensions.Normalized(),
             Visuals = Visuals.Normalized(),
+            Diagnostics = Diagnostics.Normalized(),
         };
 }
