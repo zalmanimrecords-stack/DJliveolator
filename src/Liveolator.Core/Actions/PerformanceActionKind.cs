@@ -85,4 +85,7 @@ public enum PerformanceActionKind
 
     /// <summary>Toggle persistent deck tempo/phase synchronization to the other deck.</summary>
     DeckSyncToggle,
+
+    // Appended to preserve the serialized numeric values of existing action kinds.
+    VisualSetLayerSource,
 }

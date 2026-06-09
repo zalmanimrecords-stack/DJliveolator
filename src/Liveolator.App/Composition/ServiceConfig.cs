@@ -107,6 +107,9 @@ public static class ServiceConfig
         // so it is not removed, and under its own package id so it never collides with an installed pack.
         // A generator layer can then render out of the box and react to the live master level.
         VuMeterAddon.TryRegister(visualEffects, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        PsyFractalVisualizerAddon.TryRegister(
+            visualEffects,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);
@@ -658,10 +661,16 @@ public static class ServiceConfig
                 source: new VisualSourceRef(VisualSourceKind.Generator, VuMeterAddon.EffectId),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
+                opacity: 0.0);
+            var psyFractal = new VisualLayer(
+                name: "Psy Fractal Visualizer",
+                source: new VisualSourceRef(VisualSourceKind.Generator, PsyFractalVisualizerAddon.EffectId),
+                effects: Array.Empty<EffectRef>(),
+                blend: BlendMode.Normal,
                 opacity: 1.0);
             var scene = new VisualScene(
                 name: "Starter",
-                layers: new[] { background, vuMeter },
+                layers: new[] { background, psyFractal, vuMeter },
                 macroValues: new Dictionary<string, double>(),
                 transition: TransitionStyle.Cut,
                 beatBehavior: BeatBehavior.None);
@@ -721,18 +730,50 @@ public static class ServiceConfig
     private static void WireLiveTab(
         IServiceCollection services, ManualBeatClock clock, SystemHostClock hostClock)
     {
-        services.AddSingleton<LiveViewModel>(sp => new LiveViewModel(
-            sp.GetRequiredService<IPerformanceActionDispatcher>(),
-            clock, clock, hostClock, new DispatcherLiveBeatTimer(),
-            sp.GetService<IVisualStage>(),
-            sp.GetService<IWaveformProvider>(),
-            sp.GetRequiredService<PerformanceDeckSet>(),
-            // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
-            sp.GetService<IVisualPerformanceEngine>()?.BankNames,
-            sp.GetService<IVisualEffectRegistry>(),
-            sp.GetService<IExtensionCatalog>(),
-            sp.GetService<IExtensionInstaller>(),
-            sp.GetService<IExtensionContentReloader>()));
+        services.AddSingleton<LiveViewModel>(sp =>
+        {
+            IVisualPerformanceEngine? visualEngine = sp.GetService<IVisualPerformanceEngine>();
+            // Resolve the built-in VU-meter layer so the Visual Control toggle addresses the right slot
+            // (and hides itself when the startup scene has no built-in meter).
+            (int Slot, bool Shown)? vuMeter = FindVuMeterLayer(visualEngine);
+            return new LiveViewModel(
+                sp.GetRequiredService<IPerformanceActionDispatcher>(),
+                clock, clock, hostClock, new DispatcherLiveBeatTimer(),
+                sp.GetService<IVisualStage>(),
+                sp.GetService<IWaveformProvider>(),
+                sp.GetRequiredService<PerformanceDeckSet>(),
+                // Real bank names from the engine so the Scene Grid's bank tabs map to actual banks (doc 22 C3).
+                visualEngine?.BankNames,
+                sp.GetService<IVisualEffectRegistry>(),
+                sp.GetService<IExtensionCatalog>(),
+                sp.GetService<IExtensionInstaller>(),
+                sp.GetService<IExtensionContentReloader>(),
+                vuMeter?.Slot,
+                vuMeter?.Shown ?? true,
+                visualEngine,
+                sp.GetService<ILivePlaylist>(),
+                sp.GetService<ITrackVisualProgramStore>());
+        });
+    }
+
+    // Locates the built-in VU-meter generator in the engine's startup scene (the active bank's first
+    // scene, which the engine renders on launch). Returns its layer index plus whether it ships visible,
+    // or null when the scene has no VU-meter layer. The engine's ToggleLayer addresses the active scene
+    // by index, so this index is valid for the startup scene.
+    private static (int Slot, bool Shown)? FindVuMeterLayer(IVisualPerformanceEngine? engine)
+    {
+        VisualScene? scene = engine?.ActiveBank.Scene(0);
+        if (scene is null)
+            return null;
+
+        for (int i = 0; i < scene.Layers.Count; i++)
+        {
+            VisualLayer layer = scene.Layers[i];
+            if (layer.Source.Kind == VisualSourceKind.Generator
+                && string.Equals(layer.Source.Reference, VuMeterAddon.EffectId, StringComparison.Ordinal))
+                return (i, layer.Opacity > 0.0);
+        }
+        return null;
     }
 
     // --- Live playlist audio binding (doc 09) -----------------------------------------------------

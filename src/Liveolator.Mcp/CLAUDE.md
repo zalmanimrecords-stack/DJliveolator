@@ -14,4 +14,5 @@ harmonic, playlist, visual) to external AI agents.
 3. **Validate agent/external input before calling Core** (global standard #19); handle
    and log tool failures rather than letting them escape raw.
 
-**Tests:** add under `tests/Liveolator.Mcp.Tests` (none yet).
+**Tests:** add under `tests/Liveolator.Mcp.Tests`, including a real stdio handshake for tool
+discovery. Keep the handshake headless and use an isolated data directory.

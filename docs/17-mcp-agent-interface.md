@@ -20,6 +20,10 @@ In scope (implemented):
 - **Scan music folders** (recursively), analyze each track offline (BPM, musical key + Camelot
   code, intro/outro cues, duration), and **cache** the result so later calls are instant.
 - **Explore** the catalog: list/filter/sort tracks, fetch one track, aggregate stats.
+- **Inspect rich tags and analysis provenance**: artist/album/genre/year/stream facts, track vs
+  sample classification, analyzer version, and whether a result was manually corrected.
+- **Repair analysis**: force one catalogued track through local analysis again, or resume all
+  failed/incomplete/stale entries while preserving manual corrections.
 - **Analyze** a single file on demand without cataloging it.
 - **Harmonic mixing**: compatible-key lookup (Camelot) and harmonically-compatible matches for a
   seed track.
@@ -71,9 +75,11 @@ Other flags: `--ffmpeg PATH` (FFmpeg executable; also `LIVEOLATOR_FFMPEG_PATH`),
 | Tool | What it does |
 |------|--------------|
 | `scan_music_folders(folders[], force?)` | Scan + analyze + cache; returns status counts, elapsed, and any failures. |
-| `list_tracks(status?, minBpm?, maxBpm?, camelot?, sort?, limit?, offset?)` | Query the catalog. |
+| `list_tracks(text?, kind?, artist?, genre?, status?, minBpm?, maxBpm?, camelot?, year?, fileType?, minDurationSeconds?, sort?, descending?, limit?, offset?)` | Rich catalog query over shared Core filter/sort logic. |
 | `get_track(path)` | Full analysis for one catalogued track. |
 | `get_catalog_stats()` | Counts by status, average BPM, key distribution, 10-BPM histogram. |
+| `reanalyze_track(path, force?)` | Refresh one catalogued track and persist it. |
+| `reanalyze_pending_tracks()` | Resume all failed/incomplete/old-version analysis; preserve manual edits. |
 | `analyze_track(path)` | One-off analysis without cataloging. |
 | `harmonic_matches(path, limit?)` | Camelot-compatible tracks for a seed, with the relationship. |
 | `compatible_keys(camelot)` | The Camelot keys that mix with a given code (pure theory). |

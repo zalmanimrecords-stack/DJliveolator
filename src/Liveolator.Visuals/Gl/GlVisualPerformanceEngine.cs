@@ -26,7 +26,7 @@ namespace Liveolator.Visuals.Gl;
 /// Effect chains execute as ordered GLSL framebuffer passes before each layer is composited. Video
 /// and camera sources, quantized clip launching, and transitions remain deferred.
 /// </summary>
-public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDisposable
+public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisualPreviewSource, IDisposable
 {
     /// <summary>The macro name this slice understands; bound to the shader brightness uniform.</summary>
     public const string BrightnessMacro = "brightness";
@@ -34,6 +34,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     private readonly VisualMacro _brightnessMacro;
     private readonly IBeatClock _beatClock;
     private readonly IVisualAudioLevelSource _audioLevel;
+    private readonly IVisualAudioBandsSource _audioBands;
     private readonly SkiaImageLoader _imageLoader;
     private readonly ILogger<GlVisualPerformanceEngine> _logger;
     private readonly double _flashStrength;
@@ -55,6 +56,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     private readonly object _sceneGate = new();
     private VisualScene? _activeScene;
     private long _compositionVersion;
+    private int _previewFrameCounter;
+
+    public event EventHandler<VisualPreviewFrame>? PreviewFrameReady;
 
     /// <summary>Single-bank engine (the original first-slice shape). Equivalent to one-element bank list.</summary>
     public GlVisualPerformanceEngine(
@@ -101,6 +105,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         _brightnessMacro = brightnessMacro ?? throw new ArgumentNullException(nameof(brightnessMacro));
         _beatClock = beatClock ?? throw new ArgumentNullException(nameof(beatClock));
         _audioLevel = audioLevel ?? new SilentVisualAudioLevelSource();
+        _audioBands = _audioLevel as IVisualAudioBandsSource ?? new SilentVisualAudioLevelSource();
         if (flashStrength < 0 || double.IsNaN(flashStrength))
             throw new ArgumentOutOfRangeException(nameof(flashStrength), flashStrength, "Flash strength must be >= 0.");
 
@@ -135,7 +140,13 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     {
         double normalized = _macroValues.TryGetValue(BrightnessMacro, out double v) ? v : NormalizeDefault(_brightnessMacro);
         return FrameUniforms.Resolve(
-            _brightnessMacro, normalized, _beatClock.Current, _flashStrength, _blackout, _audioLevel.Current);
+            _brightnessMacro,
+            normalized,
+            _beatClock.Current,
+            _flashStrength,
+            _blackout,
+            _audioLevel.Current,
+            _audioBands.CurrentBands);
     }
 
     /// <summary>
@@ -332,6 +343,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
                     gl.ClearColor(0f, 0f, 0f, 1f);
                     gl.Clear((uint)ClearBufferMask.ColorBufferBit);
                 }
+
+                if (++_previewFrameCounter % 6 == 0 && PreviewFrameReady is not null)
+                    PublishPreview(gl, framebufferSize.X, framebufferSize.Y);
             }
             catch (Exception ex)
             {
@@ -364,14 +378,23 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
     {
         lock (_sceneGate)
         {
-            if (_activeScene is null || layer < 0 || layer >= _activeScene.Layers.Count)
+            if (_activeScene is null || layer < 0)
             {
                 _logger.LogWarning(
                     "Layer mutation ignored: index {Layer} is outside the active scene.", layer);
                 return;
             }
 
-            VisualLayer[] layers = _activeScene.Layers.ToArray();
+            var layers = _activeScene.Layers.ToList();
+            while (layers.Count <= layer)
+            {
+                layers.Add(new VisualLayer(
+                    $"Layer {layers.Count + 1}",
+                    new VisualSourceRef(VisualSourceKind.Generator, "core/vu-meter"),
+                    Array.Empty<EffectRef>(),
+                    BlendMode.Normal,
+                    0.0));
+            }
             layers[layer] = mutate(layers[layer]);
             _activeScene = _activeScene with { Layers = layers };
             MarkCompositionDirty();
@@ -419,5 +442,34 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IDispo
         // Map the macro's real Default back to a 0..1 control value so seeding matches Resolve's domain.
         double range = macro.Max - macro.Min;
         return range <= 0 ? 0.0 : Math.Clamp((macro.Default - macro.Min) / range, 0.0, 1.0);
+    }
+
+    private unsafe void PublishPreview(GL gl, int width, int height)
+    {
+        int previewWidth = Math.Max(1, width);
+        int previewHeight = Math.Max(1, height);
+        byte[] pixels = new byte[previewWidth * previewHeight * 4];
+
+        gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
+        fixed (byte* destination = pixels)
+        {
+            gl.ReadPixels(
+                0, 0,
+                (uint)previewWidth, (uint)previewHeight,
+                PixelFormat.Rgba,
+                PixelType.UnsignedByte,
+                destination);
+        }
+
+        int stride = previewWidth * 4;
+        byte[] row = new byte[stride];
+        for (int top = 0, bottom = previewHeight - 1; top < bottom; top++, bottom--)
+        {
+            System.Buffer.BlockCopy(pixels, top * stride, row, 0, stride);
+            System.Buffer.BlockCopy(pixels, bottom * stride, pixels, top * stride, stride);
+            System.Buffer.BlockCopy(row, 0, pixels, bottom * stride, stride);
+        }
+
+        PreviewFrameReady?.Invoke(this, new VisualPreviewFrame(previewWidth, previewHeight, pixels));
     }
 }

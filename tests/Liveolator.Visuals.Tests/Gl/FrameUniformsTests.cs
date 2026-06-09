@@ -33,6 +33,20 @@ public sealed class FrameUniformsTests
     }
 
     [Fact]
+    public void Resolve_passes_frequency_bands_through_to_uniforms()
+    {
+        var bands = new VisualAudioBands(Bass: 0.8, LowMid: 0.6, Mid: 0.4, High: 0.2);
+
+        FrameUniforms u = FrameUniforms.Resolve(
+            Brightness(), 0.5, Beat(), flashStrength: 0, blackout: false, bands: bands);
+
+        Assert.Equal(0.8f, u.Bass, 5);
+        Assert.Equal(0.6f, u.LowMid, 5);
+        Assert.Equal(0.4f, u.Mid, 5);
+        Assert.Equal(0.2f, u.High, 5);
+    }
+
+    [Fact]
     public void Resolve_defaults_audio_level_to_silent_when_omitted()
     {
         FrameUniforms u = FrameUniforms.Resolve(Brightness(), 0.5, Beat(), flashStrength: 0, blackout: false);

@@ -1,33 +1,71 @@
 using System.Reactive;
 using System.Reactive.Linq;
+using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Threading;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Shell;
+using Liveolator.Core.Visuals;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Live.Modules;
 
-/// <summary>
-/// The Program Out module (the mock's video preview header): launches the GL visuals window on demand
-/// via <see cref="IVisualStage"/> (the render-window seam — never opened during composition). The live
-/// preview frame, REC, and per-layer toggles have no backend yet (doc 18) and are shown as a static
-/// placeholder so the header matches the mock.
-/// </summary>
-public sealed class ProgramOutViewModel : ViewModelBase
+/// <summary>Displays the live compositor feed and launches the clean second-screen output.</summary>
+public sealed class ProgramOutViewModel : ViewModelBase, IDisposable
 {
-    private readonly IVisualStage? _visualStage;
+    private readonly IVisualPreviewSource? _previewSource;
+    private WriteableBitmap? _preview;
 
-    public ProgramOutViewModel(IVisualStage? visualStage = null)
+    public ProgramOutViewModel(
+        IVisualStage? visualStage = null,
+        IVisualPreviewSource? previewSource = null)
     {
-        _visualStage = visualStage;
+        _previewSource = previewSource;
+        if (_previewSource is not null)
+            _previewSource.PreviewFrameReady += OnPreviewFrameReady;
+
         ShowVisualsCommand = ReactiveCommand.Create(
-            () => _visualStage?.Show(), Observable.Return(visualStage is not null));
+            () => visualStage?.Show(),
+            Observable.Return(visualStage is not null));
+        CanShowVisuals = visualStage is not null;
     }
 
-    /// <summary>True when a visuals window can be launched (drives the "Show Visuals" button).</summary>
-    public bool CanShowVisuals => _visualStage is not null;
-
+    public bool CanShowVisuals { get; }
     public ReactiveCommand<Unit, Unit> ShowVisualsCommand { get; }
+    public string ResolutionLabel => "Program Out - live visual";
 
-    /// <summary>Static program-out summary line (no live signal feed yet).</summary>
-    public string ResolutionLabel => "Program Out · 1920×1080 · 60";
+    public WriteableBitmap? Preview
+    {
+        get => _preview;
+        private set => this.RaiseAndSetIfChanged(ref _preview, value);
+    }
+
+    public void Dispose()
+    {
+        if (_previewSource is not null)
+            _previewSource.PreviewFrameReady -= OnPreviewFrameReady;
+        Preview?.Dispose();
+    }
+
+    private void OnPreviewFrameReady(object? sender, VisualPreviewFrame frame)
+        => Dispatcher.UIThread.Post(() => ApplyFrame(frame));
+
+    private void ApplyFrame(VisualPreviewFrame frame)
+    {
+        if (Preview?.PixelSize != new PixelSize(frame.Width, frame.Height))
+        {
+            Preview?.Dispose();
+            Preview = new WriteableBitmap(
+                new PixelSize(frame.Width, frame.Height),
+                new Vector(96, 96),
+                PixelFormat.Rgba8888,
+                AlphaFormat.Opaque);
+        }
+
+        using ILockedFramebuffer framebuffer = Preview!.Lock();
+        Marshal.Copy(frame.RgbaPixels, 0, framebuffer.Address, frame.RgbaPixels.Length);
+        this.RaisePropertyChanged(nameof(Preview));
+    }
 }

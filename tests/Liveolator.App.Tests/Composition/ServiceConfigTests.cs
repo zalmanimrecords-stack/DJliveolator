@@ -173,6 +173,23 @@ public sealed class ServiceConfigTests
         Assert.Equal(VisualEffectRole.Generator, descriptor.Role);
     }
 
+    [Fact]
+    public void Build_RegistersTheBuiltInPsyFractalGenerator()
+    {
+        using var provider = BuildForTest();
+
+        var registry = provider.GetRequiredService<IVisualEffectRegistry>();
+        bool found = registry.TryGet(
+            PsyFractalVisualizerAddon.EffectId,
+            version: null,
+            out VisualEffectDescriptor descriptor);
+
+        Assert.True(found);
+        Assert.Equal(VisualEffectRole.Generator, descriptor.Role);
+        Assert.Contains(descriptor.Parameters, parameter => parameter.Id == "symmetry");
+        Assert.Contains(descriptor.Parameters, parameter => parameter.Id == "palette");
+    }
+
     private static ServiceProvider BuildForTest() =>
         (ServiceProvider)ServiceConfig.Build(enableSystemMetrics: false);
 }

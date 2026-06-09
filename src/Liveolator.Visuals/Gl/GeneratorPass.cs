@@ -1,6 +1,7 @@
 using Liveolator.Core.Visuals;
 using Microsoft.Extensions.Logging;
 using Silk.NET.OpenGL;
+using System.Diagnostics;
 
 namespace Liveolator.Visuals.Gl;
 
@@ -33,6 +34,7 @@ internal sealed class GeneratorPass : IDisposable
     private readonly ILogger _logger;
     private readonly VisualEffectDescriptor _descriptor;
     private readonly Dictionary<string, int> _parameterLocations = new(StringComparer.Ordinal);
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
 
     private uint _program;
     private uint _vao;
@@ -50,6 +52,11 @@ internal sealed class GeneratorPass : IDisposable
     private int _uRms = -1;
     private int _uPeak = -1;
     private int _uLevel = -1;
+    private int _uBass = -1;
+    private int _uLowMid = -1;
+    private int _uMid = -1;
+    private int _uHigh = -1;
+    private int _uTime = -1;
 
     private bool _valid;
     private bool _disposed;
@@ -113,6 +120,11 @@ internal sealed class GeneratorPass : IDisposable
         Set(_uRms, frame.Rms);
         Set(_uPeak, frame.Peak);
         Set(_uLevel, frame.Level);
+        Set(_uBass, frame.Bass);
+        Set(_uLowMid, frame.LowMid);
+        Set(_uMid, frame.Mid);
+        Set(_uHigh, frame.High);
+        Set(_uTime, (float)_clock.Elapsed.TotalSeconds);
 
         foreach ((string uniform, float value) in parameters)
         {
@@ -163,6 +175,11 @@ internal sealed class GeneratorPass : IDisposable
         _uRms = _gl.GetUniformLocation(program, "uRms");
         _uPeak = _gl.GetUniformLocation(program, "uPeak");
         _uLevel = _gl.GetUniformLocation(program, "uLevel");
+        _uBass = _gl.GetUniformLocation(program, "uBass");
+        _uLowMid = _gl.GetUniformLocation(program, "uLowMid");
+        _uMid = _gl.GetUniformLocation(program, "uMid");
+        _uHigh = _gl.GetUniformLocation(program, "uHigh");
+        _uTime = _gl.GetUniformLocation(program, "uTime");
         foreach (VisualEffectParameter parameter in _descriptor.Parameters)
             _parameterLocations[parameter.Uniform] = _gl.GetUniformLocation(program, parameter.Uniform);
     }

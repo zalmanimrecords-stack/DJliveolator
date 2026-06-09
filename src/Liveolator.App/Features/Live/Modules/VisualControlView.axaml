@@ -5,49 +5,40 @@
              x:DataType="m:VisualControlViewModel">
 
   <Border Classes="panel">
-    <StackPanel Margin="16" Spacing="12">
+    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
       <TextBlock Classes="section" Text="VISUAL CONTROL" />
 
-      <Button Classes="accent" Content="SHOW VISUALS" Command="{Binding ShowVisualsCommand}" />
-
-      <TextBlock Classes="faint" Text="TRANSITION" />
-      <UniformGrid Columns="3">
-        <Button Classes="key" Content="NOW" Command="{Binding TransitionNowCommand}" Margin="0,0,6,0" />
-        <Button Classes="key" Content="BEAT" Command="{Binding TransitionBeatCommand}" Margin="0,0,6,0" />
-        <Button Classes="key" Content="BAR" Command="{Binding TransitionBarCommand}" />
-      </UniformGrid>
-
-      <TextBlock Classes="faint" Text="LAYERS" />
-      <UniformGrid Columns="4">
-        <Button Classes="key" Content="1" Command="{Binding ToggleLayer1Command}" Margin="0,0,6,0" />
-        <Button Classes="key" Content="2" Command="{Binding ToggleLayer2Command}" Margin="0,0,6,0" />
-        <Button Classes="key" Content="3" Command="{Binding ToggleLayer3Command}" Margin="0,0,6,0" />
-        <Button Classes="key" Content="4" Command="{Binding ToggleLayer4Command}" />
-      </UniformGrid>
-
-      <TextBlock Classes="faint" Text="VISUAL ADD-ONS" />
-      <ListBox ItemsSource="{Binding Addons}" SelectedItem="{Binding SelectedAddon}" MaxHeight="105">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="m:VisualAddonViewModel">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Classes="mono" Text="{Binding PackageId}" />
-              <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding State}" />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
-      <TextBlock Classes="faint" IsVisible="{Binding !HasAddons}" Text="No installed visual add-ons" />
-      <Button Classes="key" Content="ENABLE / DISABLE" Command="{Binding ToggleAddonCommand}" />
-
-      <TextBlock Classes="faint" Text="LOADED EFFECTS / GENERATORS" />
-      <ItemsControl ItemsSource="{Binding LoadedEffects}" MaxHeight="70">
+      <ItemsControl Grid.Row="1" ItemsSource="{Binding Channels}" Margin="0,12">
         <ItemsControl.ItemTemplate>
-          <DataTemplate>
-            <TextBlock Classes="mono faint" Text="{Binding}" />
+          <DataTemplate x:DataType="m:VisualChannelViewModel">
+            <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}"
+                    BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="70,*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Classes="mono accent" FontWeight="SemiBold" Text="{Binding LayerLabel}" />
+                  <TextBlock Classes="mono faint" FontSize="10" Text="{Binding DepthLabel}" />
+                </StackPanel>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Sources}"
+                          SelectedItem="{Binding SelectedSource}" MinWidth="150">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="m:VisualChannelSourceOption">
+                      <StackPanel>
+                        <TextBlock Text="{Binding Label}" />
+                        <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Group}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Grid.Column="2" Classes="mono faint" Margin="8,0,0,0"
+                           VerticalAlignment="Center" Text="{Binding DisplayOrder}" />
+              </Grid>
+            </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <TextBlock Classes="mono faint" Text="{Binding Status}" TextWrapping="Wrap" />
-    </StackPanel>
+
+      <Button Grid.Row="2" Classes="accent" Content="SHOW VISUAL SCREEN"
+              Command="{Binding ShowVisualsCommand}" />
+    </Grid>
   </Border>
 </UserControl>

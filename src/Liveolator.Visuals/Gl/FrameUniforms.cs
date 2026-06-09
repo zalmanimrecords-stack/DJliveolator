@@ -28,7 +28,11 @@ public readonly record struct FrameUniforms(
     float Confidence = 0,
     float Rms = 0,
     float Peak = 0,
-    float Level = 0)
+    float Level = 0,
+    float Bass = 0,
+    float LowMid = 0,
+    float Mid = 0,
+    float High = 0)
 {
     /// <summary>The neutral pass-through frame: full brightness, no flash, not blacked out.</summary>
     public static FrameUniforms Neutral { get; } = new(Brightness: 1f, BeatFlash: 0f, Blackout: false);
@@ -57,7 +61,8 @@ public readonly record struct FrameUniforms(
         BeatClockState beat,
         double flashStrength,
         bool blackout,
-        VisualAudioLevel? level = null)
+        VisualAudioLevel? level = null,
+        VisualAudioBands? bands = null)
     {
         ArgumentNullException.ThrowIfNull(beat);
         if (flashStrength < 0 || double.IsNaN(flashStrength))
@@ -69,6 +74,7 @@ public readonly record struct FrameUniforms(
 
         double flash = ResolveFlash(beat, flashStrength);
         VisualAudioLevel audio = level ?? VisualAudioLevel.Silent;
+        VisualAudioBands spectrum = bands ?? VisualAudioBands.Silent;
 
         return new FrameUniforms(
             (float)brightness,
@@ -79,7 +85,11 @@ public readonly record struct FrameUniforms(
             (float)beat.Confidence,
             (float)audio.Rms,
             (float)audio.Peak,
-            (float)audio.Vu);
+            (float)audio.Vu,
+            (float)spectrum.Bass,
+            (float)spectrum.LowMid,
+            (float)spectrum.Mid,
+            (float)spectrum.High);
     }
 
     // The flash peaks on the beat frame and decays linearly across the beat via BeatPhase, gated by

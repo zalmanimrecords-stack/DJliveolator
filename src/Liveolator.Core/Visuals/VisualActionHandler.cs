@@ -26,6 +26,7 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.VisualLoadScene,
         PerformanceActionKind.VisualSelectBank,
         PerformanceActionKind.VisualSetMacro,
+        PerformanceActionKind.VisualSetLayerSource,
         PerformanceActionKind.VisualToggleLayer,
         PerformanceActionKind.VisualSetLayerOpacity,
         PerformanceActionKind.VisualLaunchClip,
@@ -77,6 +78,9 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.VisualSetMacro:
                 SetMacro(action);
+                break;
+            case PerformanceActionKind.VisualSetLayerSource:
+                SetLayerSource(action);
                 break;
             case PerformanceActionKind.VisualToggleLayer:
                 _engine.ToggleLayer(action.Slot);
@@ -177,6 +181,25 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         }
 
         _engine.LaunchClip(action.Slot, action.Argument, Quantize.Immediate);
+    }
+
+    private void SetLayerSource(PerformanceAction action)
+    {
+        if (!VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? source))
+        {
+            _logger.LogWarning("VisualSetLayerSource ignored: the action has no valid source.");
+            return;
+        }
+
+        _engine.SetLayerSource(action.Slot, source!, Quantize.Immediate);
+        RaiseFeedback(
+            PerformanceActionKind.VisualSetLayerSource,
+            action.Slot,
+            new ActionFeedbackState(
+                IsActive: true,
+                IsAvailable: true,
+                Value: 0,
+                Argument: action.Argument));
     }
 
     private void ToggleBlackout()

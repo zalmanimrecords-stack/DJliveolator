@@ -3,6 +3,8 @@ using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Extensions;
+using Liveolator.Core.Persistence;
+using Liveolator.Core.Playlist;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 
@@ -40,6 +42,9 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     /// view-model still constructs headless / under test.</param>
     /// <param name="visualBankNames">The visual engine's bank names (selection-index order) for the
     /// Scene Grid's bank tabs; null/empty falls back to the mock's phase labels (doc 22 C3).</param>
+    /// <param name="vuMeterLayerSlot">The startup scene's built-in VU-meter layer index; null hides the
+    /// Visual Control VU-meter toggle when no built-in meter is present.</param>
+    /// <param name="vuMeterShown">Whether that layer ships visible, so the toggle's label starts correct.</param>
     public LiveViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
@@ -53,20 +58,30 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         IVisualEffectRegistry? visualEffectRegistry = null,
         IExtensionCatalog? extensionCatalog = null,
         IExtensionInstaller? extensionInstaller = null,
-        IExtensionContentReloader? extensionContentReloader = null)
+        IExtensionContentReloader? extensionContentReloader = null,
+        int? vuMeterLayerSlot = null,
+        bool vuMeterShown = true,
+        IVisualPerformanceEngine? visualEngine = null,
+        ILivePlaylist? playlist = null,
+        ITrackVisualProgramStore? trackVisualPrograms = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
         _hostClock = hostClock;
         _timer = timer;
-        ProgramOut = new ProgramOutViewModel(visualStage);
+        ProgramOut = new ProgramOutViewModel(visualStage, visualEngine as IVisualPreviewSource);
         VisualControl = new VisualControlViewModel(
             dispatcher,
             visualStage,
             visualEffectRegistry,
             extensionCatalog,
             extensionInstaller,
-            extensionContentReloader);
+            extensionContentReloader,
+            vuMeterLayerSlot,
+            vuMeterShown,
+            visualEngine,
+            playlist,
+            trackVisualPrograms);
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
         SceneGrid = new SceneGridViewModel(dispatcher, visualBankNames);
@@ -113,6 +128,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
             _decks.Dispose();
         SceneGrid.Dispose();
         MasterFx.Dispose();
+        VisualControl.Dispose();
+        ProgramOut.Dispose();
     }
 
     // The render loop pumps the manual clock so phase + the pulse advance smoothly between taps, advances

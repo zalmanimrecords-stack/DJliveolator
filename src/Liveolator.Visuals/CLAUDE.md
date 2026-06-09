@@ -46,7 +46,8 @@ The GL compositor lives in `Gl/`:
   `IVisualAudioLevelSource.Current` directly from the render thread (just as it reads `IBeatClock.Current`
   — sampling a clock/level is the engine's read path, not the dispatcher command path) and feeds
   `uRms`/`uPeak`/`uLevel` plus the beat uniforms into both generator and effect shaders. The built-in
-  `VuMeterAddon` is the reference generator.
+  `VuMeterAddon` is the reference generator. `PsyFractalVisualizerAddon` additionally consumes
+  `uBass`/`uLowMid`/`uMid`/`uHigh`, derived from the same master spectrum.
 
 **Manual visual verification (no headless path — GL needs a display):**
 
@@ -68,6 +69,11 @@ The GL compositor lives in `Gl/`:
    layer. With BASS present and a track playing, the **needle swings with the music** (fast attack,
    slow release) and the peak dot rides the arc; in silence it rests at the floor. Headless (no BASS)
    the meter renders at rest (the level source is `SilentVisualAudioLevelSource`) — no crash.
+
+9. **Psy Fractal Visualizer:** the visible starter generator is `PsyFractalVisualizerAddon`.
+   Click `SHOW VISUALS`; bass expands the mandala, low mids thicken tribal branches, mids increase
+   ring detail, highs excite orbiting shards, and beats launch a restrained shockwave. Without
+   realtime audio it remains animated from time and the manual beat clock.
 
 **App wiring:** `ServiceConfig.WireVisuals` registers the engine as `IVisualPerformanceEngine`, joins
 its `VisualActionHandler` to the one dispatcher, and binds the engine to the `LiveClockSelector`-chosen

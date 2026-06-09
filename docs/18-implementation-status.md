@@ -647,9 +647,21 @@ now closed: **generative** shaders that draw from uniforms, and **live audio amp
 - **Out of the box:** `ServiceConfig` registers the built-in VU generator into the effect registry and the
   starter bank carries a `Generator` layer, so a fresh install shows the analog meter; its needle swings
   with the master `uLevel` (verified manually — GL needs a display; see `Liveolator.Visuals/CLAUDE.md` step 8).
-- **Deferred:** per-band spectrum uniforms (only RMS/peak/VU level now); a generator that *also* has a
-  post-effect chain uses a fixed chain size (the VU has none); Push/MIDI mapping of generator parameters
-  end-to-end (the macro plumbing is reused, a dedicated mapping is later).
+- **Deferred:** a generator that *also* has a post-effect chain uses a fixed chain size (the built-ins
+  have none); Push/MIDI mapping of generator parameters end-to-end (the macro plumbing is reused, a
+  dedicated mapping is later).
+
+### Psy Fractal Visualizer generator
+
+- Built-in `PsyFractalVisualizerAddon` is registered as a generator and is the visible starter
+  visual: neon radial mandala, recursive rings, mirrored tribal branches, orbiting shards, and
+  confidence-gated beat shockwaves.
+- The shared master spectrum feeds smoothed `uBass`, `uLowMid`, `uMid`, and `uHigh` uniforms
+  (20-140 Hz, 140-500 Hz, 500-2500 Hz, 2500-12000 Hz) alongside RMS/peak/VU.
+- Descriptor controls cover sensitivity, glow, complexity, symmetry 6-32, speed, four palettes,
+  reduced motion, and quality. Silent/headless mode remains animated from time + manual clock.
+- Pure band mapping/smoothing, descriptor/uniform contracts, shader emission, and app registration
+  are covered without requiring a GL display.
 
 ### ✅ Visual library / VJ tab — asset browser — `Liveolator.App/Features/VisualLibrary/` (doc 08/13, Track C **C1**)
 
@@ -770,6 +782,13 @@ Runs an unattended show from rules, emitting actions through the **same** dispat
   `Liveolator.Platform` (file enumerator), `Liveolator.Visuals` (image/video probes only),
   `Liveolator.Media` (JSON catalog store — music snapshot **v2** carries `TrackMetadata`),
   `Liveolator.Mcp` (music-intelligence server).
+- **MCP completion increment (2026-06-09):** `list_tracks` now uses the shared Core
+  `TrackQuery`/`TrackSort` path and supports text, Track/Sample kind, artist, genre, year, file type,
+  minimum duration, direction, and paging. `TrackInfo` additively exposes tag/stream metadata plus
+  analyzer version/manual provenance. `reanalyze_track` and `reanalyze_pending_tracks` persist
+  refreshed local analysis while preserving manual corrections by default. The server now wires
+  `AtlMetadataReader`, restores sample-folder classification, and has a dedicated
+  `Liveolator.Mcp.Tests` project with a real `initialize` -> `tools/list` stdio handshake.
 - **App Libraries tab** (`Liveolator.App/Features/Libraries`) surfaces the scanned catalog:
   track table with an Artist column + a detail panel showing tags (artist/album/genre/year/
   track #), stream facts (bitrate/sample-rate/channels/codec), tempo+confidence, key+name,

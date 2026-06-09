@@ -13,23 +13,30 @@ namespace Liveolator.Core.Audio;
 /// locking (the whole-record-swap pattern <see cref="Beat.BeatClockState"/> uses). Pure managed — no
 /// native — so it unit-tests with a fake frame provider.
 /// </remarks>
-public sealed class FrameAudioLevelMeter : IVisualAudioLevelSource, IDisposable
+public sealed class FrameAudioLevelMeter : IVisualAudioLevelSource, IVisualAudioBandsSource, IDisposable
 {
     private readonly IAudioFrameProvider _frames;
     private readonly AudioLevelEnvelope _envelope;
+    private readonly FrequencyBandEnvelope _bands;
     private double _lastTimestamp = double.NaN;
     private volatile VisualAudioLevel _current = VisualAudioLevel.Silent;
+    private volatile VisualAudioBands _currentBands = VisualAudioBands.Silent;
     private volatile bool _disposed;
 
-    public FrameAudioLevelMeter(IAudioFrameProvider frames, AudioLevelEnvelope? envelope = null)
+    public FrameAudioLevelMeter(
+        IAudioFrameProvider frames,
+        AudioLevelEnvelope? envelope = null,
+        FrequencyBandEnvelope? bands = null)
     {
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _envelope = envelope ?? new AudioLevelEnvelope();
+        _bands = bands ?? new FrequencyBandEnvelope();
         _frames.FrameAvailable += OnFrame;
     }
 
     /// <inheritdoc />
     public VisualAudioLevel Current => _current;
+    public VisualAudioBands CurrentBands => _currentBands;
 
     private void OnFrame(object? sender, AudioFrameData frame)
     {
@@ -42,6 +49,7 @@ public sealed class FrameAudioLevelMeter : IVisualAudioLevelSource, IDisposable
         _lastTimestamp = frame.TimestampSeconds;
 
         _current = _envelope.Process(frame.MonoPcm, dt);
+        _currentBands = _bands.Process(frame.Spectrum, frame.SampleRate, dt);
     }
 
     public void Dispose()

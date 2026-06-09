@@ -5,6 +5,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Extensions;
+using Liveolator.Core.Visuals;
 using ReactiveUI;
 using Xunit;
 
@@ -91,6 +92,77 @@ public sealed class VisualControlViewModelTests
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.VisualToggleLayer, action.Kind);
         Assert.Equal(2, action.Slot);
+    }
+
+    [Fact]
+    public void Channels_AreDisplayedTopToBottom_AndMapToReverseCompositorSlots()
+    {
+        var vm = new VisualControlViewModel(new FakeDispatcher());
+
+        Assert.Equal(4, vm.Channels.Count);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, vm.Channels.Select(channel => channel.DisplayOrder));
+        Assert.Equal(new[] { 3, 2, 1, 0 }, vm.Channels.Select(channel => channel.LayerSlot));
+        Assert.Equal("TOP", vm.Channels[0].DepthLabel);
+        Assert.Equal("BOTTOM", vm.Channels[3].DepthLabel);
+    }
+
+    [Fact]
+    public void SelectingChannelSource_EmitsSerializableLayerSourceAction()
+    {
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher);
+        var source = new VisualChannelSourceOption(
+            "VU Meter",
+            "PLUGINS",
+            new VisualSourceRef(VisualSourceKind.Generator, "core/vu-meter"));
+        channel.ReplaceSources(new[] { source });
+        dispatcher.Dispatched.Clear();
+
+        channel.SelectedSource = null;
+        channel.SelectedSource = source;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualSetLayerSource, action.Kind);
+        Assert.Equal(3, action.Slot);
+        Assert.True(VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? decoded));
+        Assert.Equal(source.Source, decoded);
+    }
+
+    [Fact]
+    public async Task ToggleVuMeter_EmitsToggleForConfiguredLayerSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new VisualControlViewModel(dispatcher, vuMeterLayerSlot: 1);
+
+        Assert.True(vm.CanToggleVuMeter);
+        await vm.ToggleVuMeterCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualToggleLayer, action.Kind);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
+    public void ToggleVuMeter_HiddenWhenNoVuMeterLayerPresent()
+    {
+        var vm = new VisualControlViewModel(new FakeDispatcher());
+
+        Assert.False(vm.CanToggleVuMeter);
+    }
+
+    [Fact]
+    public async Task ToggleVuMeter_FlipsShownStateAndButtonLabel()
+    {
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(), vuMeterLayerSlot: 1, vuMeterInitiallyShown: true);
+
+        Assert.True(vm.IsVuMeterShown);
+        Assert.Equal("HIDE VU METER", vm.VuMeterButtonText);
+
+        await vm.ToggleVuMeterCommand.Execute().ToTask();
+
+        Assert.False(vm.IsVuMeterShown);
+        Assert.Equal("SHOW VU METER", vm.VuMeterButtonText);
     }
 
     [Fact]

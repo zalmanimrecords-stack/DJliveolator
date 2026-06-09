@@ -34,10 +34,10 @@ public class VisualActionHandlerTests
         => _handler.Handle(new PerformanceAction(kind, Slot: slot, Value: value, Argument: argument));
 
     [Fact]
-    public void HandledKinds_CoverTheElevenWiredVisualActions()
+    public void HandledKinds_CoverTheTwelveWiredVisualActions()
     {
         // Every declared Visual* kind has an owning handler.
-        Assert.Equal(11, _handler.HandledKinds.Count);
+        Assert.Equal(12, _handler.HandledKinds.Count);
         Assert.Contains(PerformanceActionKind.VisualLoadScene, _handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.VisualTransitionNextBar, _handler.HandledKinds);
     }
@@ -150,6 +150,30 @@ public class VisualActionHandlerTests
         var op = Assert.Single(_engine.Opacities);
         Assert.Equal(1, op.Layer);
         Assert.Equal(0.25, op.Opacity, precision: 6);
+    }
+
+    [Fact]
+    public void SetLayerSource_DecodesSourceAndPassesItImmediately()
+    {
+        var source = new VisualSourceRef(VisualSourceKind.Generator, "core/vu-meter");
+
+        Handle(
+            PerformanceActionKind.VisualSetLayerSource,
+            slot: 3,
+            argument: VisualSourceActionCodec.Encode(source));
+
+        var selected = Assert.Single(_engine.LayerSources);
+        Assert.Equal(3, selected.Layer);
+        Assert.Equal(source, selected.Source);
+        Assert.Equal(Quantize.Immediate, selected.When);
+    }
+
+    [Fact]
+    public void SetLayerSource_WithInvalidPayload_DoesNotCallEngine()
+    {
+        Handle(PerformanceActionKind.VisualSetLayerSource, slot: 0, argument: "not-json");
+
+        Assert.Empty(_engine.LayerSources);
     }
 
     [Fact]
