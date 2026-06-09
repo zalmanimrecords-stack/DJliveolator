@@ -144,6 +144,41 @@ public sealed class VisualControlViewModelTests
     }
 
     [Fact]
+    public void ChannelOpacityKnob_EmitsAbsoluteSetLayerOpacityForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher);
+
+        channel.Opacity.Value = 0.4;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualSetLayerOpacity, action.Kind);
+        Assert.Equal(ActionInputMode.Absolute, action.InputMode);
+        Assert.Equal(3, action.Slot);
+        Assert.Equal(0.4, action.Value);
+    }
+
+    [Fact]
+    public void ChannelOpacityKnob_SyncFromScene_DoesNotReDispatch()
+    {
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher);
+
+        channel.SyncOpacityFromScene(0.25);
+
+        Assert.Equal(0.25, channel.Opacity.Value);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
+    public void EveryChannelExposesAnEnabledOpacityKnob_WhenDispatcherWired()
+    {
+        var vm = new VisualControlViewModel(new FakeDispatcher());
+
+        Assert.All(vm.Channels, channel => Assert.True(channel.Opacity.IsEnabled));
+    }
+
+    [Fact]
     public void ChannelSources_LeadWithANoneOption_SoALayerCanBeSwitchedOff()
     {
         var vm = new VisualControlViewModel(

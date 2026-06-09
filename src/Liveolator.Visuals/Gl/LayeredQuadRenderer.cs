@@ -110,18 +110,6 @@ public sealed class LayeredQuadRenderer : IDisposable
         {
             LayerTexture layer = _layers[i];
 
-            // The base layer paints over the cleared frame opaquely; layers above blend over it.
-            if (i == 0)
-            {
-                _gl.Disable(EnableCap.Blend);
-            }
-            else
-            {
-                _gl.Enable(EnableCap.Blend);
-                _gl.BlendEquation(layer.Blend.Equation);
-                _gl.BlendFunc(layer.Blend.SourceFactor, layer.Blend.DestFactor);
-            }
-
             IReadOnlyDictionary<string, double> resolvedMacros = macroValues ?? EmptyMacroValues;
 
             // A generator layer draws its texture from its shader each frame (the needle moves); an image
@@ -148,6 +136,22 @@ public sealed class LayeredQuadRenderer : IDisposable
             uint texture = layer.EffectChain.Apply(source, effectValues, uniforms);
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             _gl.Viewport(0, 0, (uint)Math.Max(1, viewportWidth), (uint)Math.Max(1, viewportHeight));
+
+            // Blend state is applied HERE, after the generator/effect FBO passes above — those bind their
+            // own framebuffers and (GeneratorPass) disable blending, so configuring it before them would
+            // leak: the composite draw would run with blending off and an opacity-0 layer would overwrite
+            // the frame with transparent black. The base layer paints opaquely; layers above blend over it.
+            if (i == 0)
+            {
+                _gl.Disable(EnableCap.Blend);
+            }
+            else
+            {
+                _gl.Enable(EnableCap.Blend);
+                _gl.BlendEquation(layer.Blend.Equation);
+                _gl.BlendFunc(layer.Blend.SourceFactor, layer.Blend.DestFactor);
+            }
+
             _gl.UseProgram(_program);
             _gl.BindVertexArray(_vao);
             _gl.Uniform1(_uBrightness, uniforms.Brightness);

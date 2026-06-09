@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Live.Modules.VisualControlView"
              x:DataType="m:VisualControlViewModel">
 
@@ -29,8 +30,15 @@
                     </DataTemplate>
                   </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock Grid.Column="2" Classes="mono faint" Margin="8,0,0,0"
-                           VerticalAlignment="Center" Text="{Binding DisplayOrder}" />
+                <StackPanel Grid.Column="2" Margin="12,0,0,0" Spacing="2"
+                            VerticalAlignment="Center" HorizontalAlignment="Center">
+                  <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
+                                 DefaultValue="1"
+                                 Value="{Binding Opacity.Value}" IsEnabled="{Binding Opacity.IsEnabled}" />
+                  <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                             Text="{Binding Opacity.Value, StringFormat='0.00'}" />
+                  <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="OPACITY" />
+                </StackPanel>
               </Grid>
             </Border>
           </DataTemplate>

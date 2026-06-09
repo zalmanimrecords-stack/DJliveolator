@@ -261,10 +261,12 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         VisualScene? scene = _visualEngine?.ActiveBank.Scene(0);
         foreach (VisualChannelViewModel channel in Channels)
         {
-            VisualSourceRef? current = scene is not null && channel.LayerSlot < scene.Layers.Count
-                ? scene.Layers[channel.LayerSlot].Source
+            VisualLayer? layer = scene is not null && channel.LayerSlot < scene.Layers.Count
+                ? scene.Layers[channel.LayerSlot]
                 : null;
-            channel.ReplaceSources(options, current);
+            channel.ReplaceSources(options, layer?.Source);
+            if (layer is not null)
+                channel.SyncOpacityFromScene(layer.Opacity);
         }
     }
 }
