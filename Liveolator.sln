@@ -41,6 +41,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Liveolator.Online", "src\Li
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Liveolator.Online.Tests", "tests\Liveolator.Online.Tests\Liveolator.Online.Tests.csproj", "{DF56CD16-FA73-4245-BF23-E4B079168E33}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Liveolator.Mcp.Tests", "tests\Liveolator.Mcp.Tests\Liveolator.Mcp.Tests.csproj", "{C91E9F9A-4889-4741-9D46-9D8E5E48E629}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -118,6 +120,10 @@ Global
 		{DF56CD16-FA73-4245-BF23-E4B079168E33}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DF56CD16-FA73-4245-BF23-E4B079168E33}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DF56CD16-FA73-4245-BF23-E4B079168E33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C91E9F9A-4889-4741-9D46-9D8E5E48E629}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C91E9F9A-4889-4741-9D46-9D8E5E48E629}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C91E9F9A-4889-4741-9D46-9D8E5E48E629}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C91E9F9A-4889-4741-9D46-9D8E5E48E629}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4F14DCF7-DE4D-4610-9B62-1A9F8B92DF8C} = {C2899C12-E89B-40DD-B222-FF086230F082}
@@ -137,5 +143,6 @@ Global
 		{C8F3D2B5-4A6E-5B0C-9D3F-2E7A1B0C5D8F} = {1A969337-FD32-4F2E-AACD-3D3677CE198D}
 		{A2F8C95F-A94D-40F4-9587-CDF9245DC3AD} = {C2899C12-E89B-40DD-B222-FF086230F082}
 		{DF56CD16-FA73-4245-BF23-E4B079168E33} = {1A969337-FD32-4F2E-AACD-3D3677CE198D}
+		{C91E9F9A-4889-4741-9D46-9D8E5E48E629} = {1A969337-FD32-4F2E-AACD-3D3677CE198D}
 	EndGlobalSection
 EndGlobal
