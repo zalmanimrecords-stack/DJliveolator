@@ -12,82 +12,95 @@ namespace Liveolator.Mcp.Tools;
 public sealed class LibraryTools
 {
     [McpServerTool(Name = "scan_music_folders")]
-    [Description("Scan one or more folders (recursively) for audio files and analyze each: BPM, " +
-                 "musical key + Camelot code, intro/outro cues, and duration. Incremental — unchanged " +
-                 "files are not re-analyzed, and results are cached for fast later calls. WAV needs no " +
-                 "setup; mp3/flac/m4a/ogg/opus need the FFmpeg libraries installed (otherwise those " +
-                 "files appear under 'failures' with an actionable message).")]
-    public static async Task<ScanSummary> ScanMusicFolders(
+    [Description("Scan folders recursively for audio files, analyze them, and persist the catalog. " +
+                 "The scan is incremental unless force is true. WAV works without external setup; " +
+                 "compressed formats require FFmpeg.")]
+    public static Task<ScanSummary> ScanMusicFolders(
         LibrarySession session,
-        [Description("Absolute folder paths to scan, searched recursively.")] string[] folders,
-        [Description("Re-analyze every file even if already cached. Default false.")] bool force = false,
+        [Description("Absolute folder paths to scan recursively.")] string[] folders,
+        [Description("Re-analyze every file even if it is cached.")] bool force = false,
         CancellationToken cancellationToken = default)
-        => await session.ScanAsync(folders, force, cancellationToken).ConfigureAwait(false);
+        => session.ScanAsync(folders, force, cancellationToken);
 
     [McpServerTool(Name = "list_tracks")]
-    [Description("List catalogued tracks with optional filtering, sorting and paging. Returns the " +
-                 "analysis for each track. Run scan_music_folders first to populate the catalog.")]
+    [Description("Query catalogued tracks with metadata, analysis, filtering, sorting, and paging. " +
+                 "Run scan_music_folders first. TrackInfo includes tag metadata, media kind, analyzer " +
+                 "version, and whether analysis was manually corrected.")]
     public static async Task<IReadOnlyList<TrackInfo>> ListTracks(
         LibrarySession session,
-        [Description("Filter by status: Ok, PartiallyAnalyzed, or Failed. Omit for all.")] string? status = null,
-        [Description("Only tracks with BPM ≥ this value.")] double? minBpm = null,
-        [Description("Only tracks with BPM ≤ this value.")] double? maxBpm = null,
-        [Description("Only tracks in this Camelot key (e.g. '8B').")] string? camelot = null,
-        [Description("Sort by: title, bpm, or key. Default title.")] string sort = "title",
-        [Description("Max results to return. Default 100.")] int limit = 100,
-        [Description("Number of results to skip (for paging). Default 0.")] int offset = 0,
+        [Description("Text matched against title, artist, or file name.")] string? text = null,
+        [Description("Filter by media kind: Track or Sample.")] string? kind = null,
+        [Description("Exact artist tag to match.")] string? artist = null,
+        [Description("Exact genre tag to match.")] string? genre = null,
+        [Description("Filter by status: Ok, PartiallyAnalyzed, or Failed.")] string? status = null,
+        [Description("Only tracks with BPM at least this value.")] double? minBpm = null,
+        [Description("Only tracks with BPM at most this value.")] double? maxBpm = null,
+        [Description("Only tracks in this Camelot key.")] string? camelot = null,
+        [Description("Exact release year to match.")] int? year = null,
+        [Description("File extension without a dot, such as mp3 or wav.")] string? fileType = null,
+        [Description("Minimum duration in seconds. Unknown durations are retained.")] double? minDurationSeconds = null,
+        [Description("Sort by title, bpm, key, or duration.")] string sort = "title",
+        [Description("Reverse the selected sort order. Missing values remain last.")] bool descending = false,
+        [Description("Maximum results to return.")] int limit = 100,
+        [Description("Number of results to skip.")] int offset = 0,
         CancellationToken cancellationToken = default)
     {
         IReadOnlyList<MusicTrack> all = await session.SnapshotAsync(cancellationToken).ConfigureAwait(false);
 
-        IEnumerable<MusicTrack> query = all;
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            if (!Enum.TryParse(status, ignoreCase: true, out MediaAnalysisStatus parsed))
-                throw new ArgumentException($"Unknown status '{status}'. Use Ok, PartiallyAnalyzed, or Failed.");
-            query = query.Where(t => t.Status == parsed);
-        }
-        if (minBpm is { } lo) query = query.Where(t => t.Bpm is not null && t.Bpm.Bpm >= lo);
-        if (maxBpm is { } hi) query = query.Where(t => t.Bpm is not null && t.Bpm.Bpm <= hi);
-        if (!string.IsNullOrWhiteSpace(camelot))
-            query = query.Where(t => string.Equals(t.Key?.Camelot, camelot, StringComparison.OrdinalIgnoreCase));
+        MusicMediaKind? parsedKind = ParseOptionalEnum<MusicMediaKind>(kind, "kind", "Track or Sample");
+        MediaAnalysisStatus? parsedStatus = ParseOptionalEnum<MediaAnalysisStatus>(
+            status, "status", "Ok, PartiallyAnalyzed, or Failed");
 
-        query = sort.ToLowerInvariant() switch
+        if (minDurationSeconds < 0)
+            throw new ArgumentOutOfRangeException(nameof(minDurationSeconds), "Minimum duration cannot be negative.");
+
+        TrackSortKey sortKey = sort.ToLowerInvariant() switch
         {
-            "bpm" => query.OrderByDescending(t => t.Bpm?.Bpm ?? double.MinValue),
-            "key" => query.OrderBy(t => t.Key?.Camelot ?? string.Empty, StringComparer.OrdinalIgnoreCase),
-            "title" => query.OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase),
-            _ => throw new ArgumentException($"Unknown sort '{sort}'. Use title, bpm, or key.")
+            "bpm" => TrackSortKey.Bpm,
+            "key" => TrackSortKey.Key,
+            "duration" => TrackSortKey.Duration,
+            "title" => TrackSortKey.Title,
+            _ => throw new ArgumentException($"Unknown sort '{sort}'. Use title, bpm, key, or duration.")
         };
 
-        return query
-            .Skip(Math.Max(0, offset))
-            .Take(Math.Clamp(limit, 1, 1000))
+        var filter = new TrackFilter(
+            Text: text,
+            Kind: parsedKind,
+            Artist: artist,
+            Genre: genre,
+            MinBpm: minBpm,
+            MaxBpm: maxBpm,
+            Camelot: camelot,
+            Year: year,
+            FileType: fileType,
+            Status: parsedStatus,
+            MinDuration: minDurationSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null);
+
+        return TrackQuery.Query(all, filter, sortKey, descending, limit, offset)
             .Select(TrackInfo.From)
             .ToList();
     }
 
     [McpServerTool(Name = "get_track")]
-    [Description("Get the full analysis for one catalogued track by its exact file path.")]
+    [Description("Get the full analysis and metadata for one catalogued track by exact path.")]
     public static async Task<TrackInfo> GetTrack(
         LibrarySession session,
-        [Description("Exact file path of the track (as catalogued).")] string path,
+        [Description("Exact file path of the track as catalogued.")] string path,
         CancellationToken cancellationToken = default)
     {
         MusicTrack? track = await session.GetAsync(path, cancellationToken).ConfigureAwait(false);
         if (track is null)
-            throw new ArgumentException($"No catalogued track at '{path}'. Scan its folder first, or check the path.");
+            throw MissingTrack(path);
         return TrackInfo.From(track);
     }
 
     [McpServerTool(Name = "get_catalog_stats")]
-    [Description("Summarize the catalog: track counts by status, average BPM, key distribution, and a " +
-                 "10-BPM-bucket tempo histogram — a quick way to understand a music collection.")]
+    [Description("Summarize track status, average BPM, key distribution, and tempo histogram.")]
     public static async Task<CatalogStats> GetCatalogStats(
-        LibrarySession session, CancellationToken cancellationToken = default)
+        LibrarySession session,
+        CancellationToken cancellationToken = default)
     {
         IReadOnlyList<MusicTrack> all = await session.SnapshotAsync(cancellationToken).ConfigureAwait(false);
-
         double[] bpms = all.Where(t => t.Bpm is not null).Select(t => t.Bpm!.Bpm).ToArray();
 
         var keyDistribution = all
@@ -104,12 +117,48 @@ public sealed class LibraryTools
             .ToList();
 
         return new CatalogStats(
-            Total: all.Count,
-            Ok: all.Count(t => t.Status == MediaAnalysisStatus.Ok),
-            PartiallyAnalyzed: all.Count(t => t.Status == MediaAnalysisStatus.PartiallyAnalyzed),
-            Failed: all.Count(t => t.Status == MediaAnalysisStatus.Failed),
-            AverageBpm: bpms.Length > 0 ? Math.Round(bpms.Average(), 1) : null,
-            KeyDistribution: keyDistribution,
-            BpmHistogram: histogram);
+            all.Count,
+            all.Count(t => t.Status == MediaAnalysisStatus.Ok),
+            all.Count(t => t.Status == MediaAnalysisStatus.PartiallyAnalyzed),
+            all.Count(t => t.Status == MediaAnalysisStatus.Failed),
+            bpms.Length > 0 ? Math.Round(bpms.Average(), 1) : null,
+            keyDistribution,
+            histogram);
     }
+
+    [McpServerTool(Name = "reanalyze_track")]
+    [Description("Re-run local BPM, key, duration, and cue analysis for one catalogued track and " +
+                 "persist the result. Without force, only stale, failed, or incomplete analysis is retried.")]
+    public static async Task<TrackInfo> ReanalyzeTrack(
+        LibrarySession session,
+        [Description("Exact path of a catalogued track.")] string path,
+        [Description("Replace even current or manually corrected analysis.")] bool force = false,
+        CancellationToken cancellationToken = default)
+    {
+        MusicTrack? track = await session.ReanalyzeAsync(path, force, cancellationToken).ConfigureAwait(false);
+        if (track is null)
+            throw MissingTrack(path);
+        return TrackInfo.From(track);
+    }
+
+    [McpServerTool(Name = "reanalyze_pending_tracks")]
+    [Description("Re-analyze all failed, incomplete, or old-version catalog entries. Manual " +
+                 "corrections are preserved and progress is persisted incrementally.")]
+    public static Task<ReanalysisSummary> ReanalyzePendingTracks(
+        LibrarySession session,
+        CancellationToken cancellationToken = default)
+        => session.ReanalyzePendingAsync(cancellationToken);
+
+    private static TEnum? ParseOptionalEnum<TEnum>(string? value, string name, string valid)
+        where TEnum : struct, Enum
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        if (Enum.TryParse(value, ignoreCase: true, out TEnum parsed))
+            return parsed;
+        throw new ArgumentException($"Unknown {name} '{value}'. Use {valid}.");
+    }
+
+    private static ArgumentException MissingTrack(string path)
+        => new($"No catalogued track at '{path}'. Scan its folder first, or check the path.");
 }

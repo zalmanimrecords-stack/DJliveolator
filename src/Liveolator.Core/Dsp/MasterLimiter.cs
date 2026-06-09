@@ -296,10 +296,20 @@ public sealed class MasterLimiter
         {
             double frac = (double)phase / OversampleFactor;
             int baseIdx = (phase - 1) * OversampleTaps;
+            double sum = 0.0;
             for (int t = 0; t < OversampleTaps; t++)
             {
                 double x = center - t - frac;
-                coeffs[baseIdx + t] = Sinc(x) * HannWindow(t, OversampleTaps);
+                double coeff = Sinc(x) * HannWindow(t, OversampleTaps);
+                coeffs[baseIdx + t] = coeff;
+                sum += coeff;
+            }
+            // Normalise each phase to unity DC gain so the interpolated amplitude is unbiased — without
+            // this a windowed sinc systematically under-/over-reads the true peak.
+            if (Math.Abs(sum) > 1e-12)
+            {
+                for (int t = 0; t < OversampleTaps; t++)
+                    coeffs[baseIdx + t] /= sum;
             }
         }
         return coeffs;

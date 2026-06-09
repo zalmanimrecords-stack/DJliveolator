@@ -26,7 +26,22 @@ public sealed record TrackInfo(
     double? DurationSeconds,
     CueInfo Cues,
     string Status,
-    string? Error)
+    string? Error,
+    string? Artist = null,
+    string? Album = null,
+    string? AlbumArtist = null,
+    string? Genre = null,
+    int? Year = null,
+    int? TrackNumber = null,
+    string? Comment = null,
+    int? BitrateKbps = null,
+    int? SampleRateHz = null,
+    int? Channels = null,
+    string? Codec = null,
+    string? FileType = null,
+    string Kind = "Track",
+    int AnalyzerVersion = 0,
+    bool AnalysisIsManual = false)
 {
     public static TrackInfo From(MusicTrack track)
     {
@@ -46,7 +61,22 @@ public sealed record TrackInfo(
                 track.Cues.OutroStart?.TotalSeconds,
                 track.Cues.OutroEnd?.TotalSeconds),
             track.Status.ToString(),
-            track.Error);
+            track.Error,
+            track.Metadata?.Artist,
+            track.Metadata?.Album,
+            track.Metadata?.AlbumArtist,
+            track.Metadata?.Genre,
+            track.Metadata?.Year,
+            track.Metadata?.TrackNumber,
+            track.Metadata?.Comment,
+            track.Metadata?.BitrateKbps,
+            track.Metadata?.SampleRateHz,
+            track.Metadata?.Channels,
+            track.Metadata?.Codec,
+            track.FileType,
+            track.Kind.ToString(),
+            track.AnalyzerVersion,
+            track.AnalysisIsManual);
     }
 
     /// <summary>Builds a view from a one-off analysis result (the ad-hoc analyze tool, no catalog entry).</summary>

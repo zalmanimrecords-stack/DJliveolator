@@ -321,6 +321,18 @@ the beat clock follows the audible mix — the increment that turns the routing 
   `BiquadCoefficients` via `StatefulBiquad` (per-audio-channel Direct-Form-I state) inside the deck's
   BASS DSP callback — keeping Core's mixer math authoritative and the sample processing unit-testable.
   So only **`ManagedBass.Mix`** is needed (no `ManagedBass.Fx`).
+- **Master true-peak look-ahead brick-wall limiter (`Core/Dsp/MasterLimiter`):** the post-crossfader master
+  can never clip — not even at inter-sample peaks. Upgraded from the prior feed-forward peak limiter to a
+  **highest-quality** design (DSP spec in doc 26): a **4× polyphase-FIR true-peak detector** (16 taps/phase,
+  normalized), a **5 ms look-ahead** delay line with a **sliding-minimum (monotonic-deque) gain window** so
+  reduction is fully applied before a peak surfaces (no transient-clip distortion), **two-stage smoothed
+  release** (anti-pump), stereo-linked, allocation-free on the RT thread, plus a never-hit hard-guard safety
+  net. Default ceiling **−1.0 dBTP**. Applied last in `BassMixerBackend.OnMasterDsp` (after the master VST3
+  rack); adds `LatencySamples` (≈240 @ 48 kHz) of latency — the analysis tap + cue master leg read the SAME
+  post-limiter buffer, so the audio↔visual shared clock stays aligned. Pure Core, **21 unit tests** incl. the
+  inter-sample-peak case a sample-peak limiter misses, look-ahead transient pre-emption, cross-buffer
+  continuity, and exact latency. `Reset()` is reserved for a full-stop re-init (not called on live re-route,
+  to avoid racing the audio thread). **Deferred:** user-exposed ceiling/look-ahead in Settings.
 - **Transport added (seek/pitch/cue/sync-lock/quantize/hot-cue):** `IMultiDeckPlaybackEngine` gained per-slot
   `Position`/`Seek`, `PitchPosition`/`SetPitch`, `Cue`, `SyncLock`/`Quantize` toggles, and hot-cues
   (`HotCueCount`, `IsHotCueSet`, `HotCue`) — all routed by `DeckActionHandler` (with value/active feedback; the

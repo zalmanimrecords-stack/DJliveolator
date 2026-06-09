@@ -26,10 +26,11 @@ public sealed class LibrarySession
         IFileEnumerator enumerator,
         IAudioDecoder decoder,
         TrackAnalyzer analyzer,
+        ITrackMetadataReader metadataReader,
         JsonCatalogStore store,
         ILogger<LibrarySession> logger)
     {
-        _library = new MusicLibrary(enumerator, decoder, analyzer);
+        _library = new MusicLibrary(enumerator, decoder, analyzer, metadataReader);
         _store = store;
         _logger = logger;
     }
@@ -98,6 +99,50 @@ public sealed class LibrarySession
         finally { _gate.Release(); }
     }
 
+    public async Task<MusicTrack?> ReanalyzeAsync(
+        string path, bool force, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            if (_library.TryGet(path) is null)
+                return null;
+
+            if (force)
+                await _library.ForceReanalyzeAsync(path, cancellationToken).ConfigureAwait(false);
+            else
+                await _library.ReanalyzeAsync(path, cancellationToken).ConfigureAwait(false);
+
+            await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
+            return _library.TryGet(path);
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<ReanalysisSummary> ReanalyzePendingAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var failures = new List<FailedTrack>();
+            var service = new CatalogReanalysisService(
+                _library,
+                _store,
+                onError: message => failures.Add(new FailedTrack(string.Empty, message)));
+            ReanalysisOutcome outcome = await service.RunAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return new ReanalysisSummary(
+                outcome.Considered,
+                outcome.Analyzed,
+                _library.PathsNeedingAnalysis().Count,
+                failures);
+        }
+        finally { _gate.Release(); }
+    }
+
     /// <summary>Harmonically-compatible tracks for the catalogued seed at <paramref name="path"/>.</summary>
     public async Task<(MusicTrack Seed, IReadOnlyList<MusicTrack> Matches)?> HarmonicMatchesAsync(
         string path, CancellationToken cancellationToken)
@@ -118,6 +163,8 @@ public sealed class LibrarySession
             return;
 
         IReadOnlyList<MusicTrack> cached = await _store.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> sampleFolders = await _store.LoadSampleFoldersAsync(cancellationToken).ConfigureAwait(false);
+        _library.SetSampleFolders(sampleFolders);
         if (cached.Count > 0)
         {
             _library.Restore(cached);

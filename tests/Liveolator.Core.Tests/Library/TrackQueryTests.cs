@@ -150,6 +150,27 @@ public class TrackQueryTests
     }
 
     [Fact]
+    public void Query_FiltersThenSortsAndPages()
+    {
+        var tracks = new[]
+        {
+            Track("a.mp3", bpm: 120, title: "A"),
+            Track("b.mp3", bpm: 130, title: "B"),
+            Track("c.mp3", bpm: 125, title: "C"),
+        };
+
+        IReadOnlyList<MusicTrack> result = TrackQuery.Query(
+            tracks,
+            new TrackFilter(MinBpm: 120),
+            TrackSortKey.Bpm,
+            descending: true,
+            limit: 1,
+            offset: 1);
+
+        Assert.Equal("C", Assert.Single(result).Title);
+    }
+
+    [Fact]
     public void Search_NullTracks_Throws()
         => Assert.Throws<ArgumentNullException>(() => TrackQuery.Search(null!));
 }

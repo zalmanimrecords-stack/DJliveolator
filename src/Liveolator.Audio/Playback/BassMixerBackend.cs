@@ -46,8 +46,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private bool _disposed;
 
     // ── master-limiter region (Gap #5) ──────────────────────────────────────────────────────────
-    // The post-crossfader brick-wall limiter so two summed decks never hard-clip the master (doc 11).
-    // Pure Core DSP, applied in place inside OnMasterDsp on the BASS update thread.
+    // The post-crossfader true-peak look-ahead brick-wall limiter so two summed decks never clip the
+    // master — not even at inter-sample peaks (doc 11 + doc 26 DSP design). Pure Core DSP, applied in
+    // place inside OnMasterDsp on the BASS update thread. It adds MasterLimiter.LatencySamples of latency
+    // (the look-ahead); the analysis tap and cue master leg read the SAME post-limiter buffer, so they are
+    // delayed equally and the shared audio↔visual clock stays aligned.
     private readonly MasterLimiter _masterLimiter;
 
     // RT-thread allocation fix (doc 01: "no allocation on the audio thread"): the DSP callbacks used to
@@ -223,6 +226,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         }
 
         Bass.CurrentDevice = options.DeviceIndex;
+        // The master limiter is intentionally NOT Reset() here: the mixer keeps playing across the device
+        // move, so resetting its delay line would race OnMasterDsp on the audio thread. Its ~5 ms look-ahead
+        // tail across a re-route is benign (the re-route itself is a discontinuity); Reset() is reserved for
+        // a future full-stop re-init path.
         return true;
     }
 

@@ -18,3 +18,10 @@ public sealed record ScanSummary(
     long ElapsedMs,
     IReadOnlyList<string> Folders,
     IReadOnlyList<FailedTrack> Failures);
+
+/// <summary>Outcome of re-analyzing stale or incomplete catalog entries.</summary>
+public sealed record ReanalysisSummary(
+    int Considered,
+    int Analyzed,
+    int Remaining,
+    IReadOnlyList<FailedTrack> Failures);

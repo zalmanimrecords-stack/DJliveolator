@@ -2,6 +2,7 @@ using Liveolator.Audio;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
 using Liveolator.Media;
 using Liveolator.Mcp.Session;
@@ -20,6 +21,7 @@ internal static class ServiceRegistration
         services.AddSingleton(config);
         services.AddSingleton(_ => new FfmpegOptions(config.FfmpegPath));
         services.AddSingleton<IAudioDecoder>(sp => new CompositeAudioDecoder(sp.GetRequiredService<FfmpegOptions>()));
+        services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();
         services.AddSingleton<IFileEnumerator, FileSystemFileEnumerator>();
         services.AddSingleton(new TrackAnalyzer());
         services.AddSingleton(sp => new JsonCatalogStore(

@@ -56,6 +56,18 @@ public static class TrackQuery
     /// </summary>
     public static IReadOnlyList<MusicTrack> Apply(
         IEnumerable<MusicTrack> tracks, TrackFilter filter, int limit = 100)
+        => Query(tracks, filter, TrackSortKey.Title, descending: false, limit);
+
+    /// <summary>
+    /// Filters, sorts, and pages a catalog query in one deterministic operation.
+    /// </summary>
+    public static IReadOnlyList<MusicTrack> Query(
+        IEnumerable<MusicTrack> tracks,
+        TrackFilter filter,
+        TrackSortKey sortKey = TrackSortKey.Title,
+        bool descending = false,
+        int limit = 100,
+        int offset = 0)
     {
         ArgumentNullException.ThrowIfNull(tracks);
         ArgumentNullException.ThrowIfNull(filter);
@@ -96,8 +108,8 @@ public static class TrackQuery
         if (filter.MinDuration is { } minDuration)
             query = query.Where(t => t.Duration is null || t.Duration >= minDuration);
 
-        return query
-            .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
+        return TrackSort.Apply(query, sortKey, descending)
+            .Skip(Math.Max(0, offset))
             .Take(Math.Clamp(limit, 1, MaxResults))
             .ToList();
     }
