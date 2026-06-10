@@ -845,7 +845,8 @@ public static class ServiceConfig
                 vuMeter?.Shown ?? true,
                 visualEngine,
                 sp.GetService<ILivePlaylist>(),
-                sp.GetService<ITrackVisualProgramStore>());
+                sp.GetService<ITrackVisualProgramStore>(),
+                sp.GetService<IGeneratorPresetRegistry>());
         });
     }
 

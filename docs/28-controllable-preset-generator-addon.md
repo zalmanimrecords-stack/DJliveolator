@@ -181,18 +181,25 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
       the active preset's 5 macro names (don't hardcode CC numbers — capture via learn, per project
       decision). The plumbing already accepts `Argument = macroName`.
 
-## Phase 6 — UI: dynamic per-preset knobs (Avalonia, `Liveolator.App`)
+## Phase 6 — UI: dynamic per-preset knobs (Avalonia, `Liveolator.App`) ✅ DONE
 
-- [ ] New `PresetControlsViewModel` (`src/Liveolator.App/Features/Live/Modules/`) that, for the active
-      preset, builds ≤5 `ContinuousControlViewModel`s labelled from `ControllableParameter.Label`,
-      each emitting `VisualSetMacro` with the derived macro name. Model on `MacroEncodersViewModel` but
-      **data-driven** (count + labels from the preset, not the hardcoded `Specs` array).
-- [ ] Subscribe to action feedback (`ActionFeedbackState`) and call `SetFromFeedback` so MIDI/preset
-      loads move the on-screen knobs without re-emitting (loop guard already exists).
-- [ ] A preset picker on the VJ/LIVE tab (the VJ tab currently has the weakest UI — see memory
-      `open-questions-and-known-gaps`); selecting a preset dispatches `VisualLoadPreset`.
-- [ ] Empty/extra states: 0 controllable params ⇒ no knobs; never render more than 5.
-- [ ] Accessibility (global standard 25): each knob labelled, keyboard-focusable.
+- [x] [`PresetControlsViewModel`](../src/Liveolator.App/Features/Live/Modules/PresetControlsViewModel.cs) +
+      [`PresetOptionViewModel`](../src/Liveolator.App/Features/Live/Modules/PresetOptionViewModel.cs): for the
+      active preset it builds ≤5 `ContinuousControlViewModel`s labelled from `ControllableParameter.Label`,
+      each emitting `VisualSetMacro` with the namespaced macro name — data-driven (count + labels from the
+      preset, modelled on `MacroEncodersViewModel`). Knobs seed to the descriptor defaults via
+      `GeneratorPresetExpansion`.
+- [x] Subscribes to `VisualSetMacro` feedback and calls `SetFromFeedback` (no re-emit loop).
+- [x] Preset picker on the LIVE tab's Visual Control surface (no separate VJ tab exists yet; visuals live
+      in `VisualControlViewModel`/`VisualControlView`). Selecting a preset dispatches `VisualLoadPreset`
+      onto the base layer (slot 0). Wired through `VisualControlViewModel` → `LiveViewModel` → `ServiceConfig` DI.
+- [x] Empty/disabled states: surface hidden when unwired (`IsEnabled`); 0 controllable ⇒ no knobs; never >5.
+- [x] AXAML: [VisualControlView.axaml](../src/Liveolator.App/Features/Live/Modules/VisualControlView.axaml)
+      PRESET section (ComboBox + horizontal knob row, mirroring the OPACITY knob; tokenised styles).
+- **Validated:** [PresetControlsViewModelTests.cs](../tests/Liveolator.App.Tests/Live/Modules/PresetControlsViewModelTests.cs)
+      6/6 green (list, load→dispatch+knobs, knob→VisualSetMacro, select→load, unwired no-op, feedback sync).
+      (Pre-existing unrelated `Libraries*` test failures on this branch are not touched by this work.)
+- [ ] MIDI-learn affordance to bind a hardware knob to a preset macro name — still pending (Phase 5 note).
 
 ## Phase 7 — Validate & document
 

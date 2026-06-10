@@ -46,7 +46,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         bool vuMeterInitiallyShown = true,
         IVisualPerformanceEngine? visualEngine = null,
         ILivePlaylist? playlist = null,
-        ITrackVisualProgramStore? trackVisualPrograms = null)
+        ITrackVisualProgramStore? trackVisualPrograms = null,
+        IGeneratorPresetRegistry? presetRegistry = null)
     {
         _dispatcher = dispatcher;
         _extensions = extensions;
@@ -88,6 +89,10 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
                     layerSlot: 3 - row,
                     dispatcher)));
 
+        // Controllable generator presets (doc 28) load onto the base layer (slot 0); their ≤5 knobs are
+        // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
+        PresetControls = new PresetControlsViewModel(presetRegistry, effectRegistry, dispatcher, targetLayer: 0);
+
         ReloadEffects();
         ReloadAddons();
         ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath).GetAwaiter().GetResult();
@@ -108,6 +113,9 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<string> LoadedEffects { get; } = new();
     public ObservableCollection<VisualChannelViewModel> Channels { get; }
+
+    /// <summary>The controllable-preset picker + knob row (doc 28).</summary>
+    public PresetControlsViewModel PresetControls { get; }
     public ObservableCollection<VisualAddonViewModel> Addons { get; } = new();
     public bool HasAddons => Addons.Count > 0;
 
@@ -223,6 +231,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        PresetControls.Dispose();
         if (_playlist is not null)
             _playlist.NowChanged -= OnNowChanged;
     }

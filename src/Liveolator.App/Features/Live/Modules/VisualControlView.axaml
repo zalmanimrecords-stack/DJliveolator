@@ -6,10 +6,43 @@
              x:DataType="m:VisualControlViewModel">
 
   <Border Classes="panel">
-    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
       <TextBlock Classes="section" Text="VISUAL CONTROL" />
 
-      <ItemsControl Grid.Row="1" ItemsSource="{Binding Channels}" Margin="0,12">
+      <!-- Controllable preset (doc 28): pick a generator preset; its up-to-5 parameters appear as knobs
+           that emit VisualSetMacro, the same path a learned MIDI knob uses. -->
+      <StackPanel Grid.Row="1" IsVisible="{Binding PresetControls.IsEnabled}" Margin="0,12,0,4">
+        <TextBlock Classes="mono faint" FontSize="10" Text="PRESET" />
+        <ComboBox ItemsSource="{Binding PresetControls.Presets}"
+                  SelectedItem="{Binding PresetControls.SelectedPreset}"
+                  HorizontalAlignment="Stretch" MinWidth="180" Margin="0,2,0,0">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="m:PresetOptionViewModel">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <ItemsControl ItemsSource="{Binding PresetControls.Controls}" Margin="0,8,0,0">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal" Spacing="12" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="m:ContinuousControlViewModel">
+              <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
+                               Value="{Binding Value}" IsEnabled="{Binding IsEnabled}" />
+                <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                           Text="{Binding Value, StringFormat='0.00'}" />
+                <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="{Binding Label}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <ItemsControl Grid.Row="2" ItemsSource="{Binding Channels}" Margin="0,12">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:VisualChannelViewModel">
             <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}"
@@ -45,7 +78,7 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <Button Grid.Row="2" Classes="accent" Content="SHOW VISUAL SCREEN"
+      <Button Grid.Row="3" Classes="accent" Content="SHOW VISUAL SCREEN"
               Command="{Binding ShowVisualsCommand}" />
     </Grid>
   </Border>
