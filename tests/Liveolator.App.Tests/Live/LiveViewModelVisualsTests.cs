@@ -18,6 +18,7 @@ public sealed class LiveViewModelVisualsTests
     {
         public int ShowCount { get; private set; }
         public bool IsShown { get; private set; }
+        public void Start() { }
         public void Show()
         {
             ShowCount++;
