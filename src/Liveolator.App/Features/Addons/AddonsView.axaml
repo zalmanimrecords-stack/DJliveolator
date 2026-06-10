@@ -40,6 +40,17 @@
                       DataContext="{Binding VuMeterSettings}"
                       x:DataType="addons:VuMeterBackgroundSettingsViewModel">
 
+            <TextBlock Classes="section" Text="VU METER — NEEDLE ORIGIN" />
+            <Border Classes="panel">
+              <StackPanel Spacing="8" Margin="14">
+                <TextBlock Classes="faint" TextWrapping="Wrap"
+                           Text="Where the needle pivots from. Bottom is the classic VU look (needle points up); Top hangs the needle down. The dial face follows your choice." />
+                <ComboBox ItemsSource="{Binding Origins}"
+                          SelectedItem="{Binding SelectedOrigin, Mode=TwoWay}"
+                          HorizontalAlignment="Left" MinWidth="220" />
+              </StackPanel>
+            </Border>
+
             <TextBlock Classes="section" Text="VU METER — BACKGROUND IMAGE" />
             <Border Classes="panel">
               <StackPanel Spacing="12" Margin="14">

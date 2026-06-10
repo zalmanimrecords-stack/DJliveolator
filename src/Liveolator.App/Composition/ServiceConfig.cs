@@ -131,6 +131,7 @@ public static class ServiceConfig
         VuMeterAddon.TryRegister(
             visualEffects,
             backgroundPath: appSettings.Addons.VuMeterBackgroundImagePath,
+            origin: appSettings.Addons.VuMeterNeedleOrigin,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         PsyFractalVisualizerAddon.TryRegister(
             visualEffects,
@@ -541,12 +542,13 @@ public static class ServiceConfig
             IVisualPerformanceEngine? engine = sp.GetService<IVisualPerformanceEngine>();
             int? vuLayer = FindVuMeterLayer(engine)?.Slot;
 
-            // Apply a chosen dial-face live: re-register the VU generator with the new background, then
-            // nudge the VU layer's source so the compositor rebuilds the generator and loads the image.
-            void ApplyBackground(string? path)
+            // Apply the chosen dial-face + needle origin live: re-register the VU generator with the new
+            // background + origin, then nudge the VU layer's source so the compositor rebuilds the
+            // generator and reloads the image/uniforms.
+            void ApplyBackground(string? path, VuMeterNeedleOrigin origin)
             {
                 VuMeterAddon.TryRegister(
-                    visualEffects, backgroundPath: path,
+                    visualEffects, backgroundPath: path, origin: origin,
                     onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
                 if (vuLayer is int slot)
                     dispatcher.Dispatch(new PerformanceAction(
@@ -559,8 +561,9 @@ public static class ServiceConfig
             return new AddonsViewModel(
                 sp.GetRequiredService<ISettingsStore>(),
                 VuMeterAddon.FaceSpec,
-                VuMeterAddon.FaceImagePath(),
+                VuMeterAddon.FaceImagePath,
                 appSettings.Addons.VuMeterBackgroundImagePath,
+                appSettings.Addons.VuMeterNeedleOrigin,
                 ApplyBackground,
                 sp.GetService<IVisualEffectRegistry>(),
                 sp.GetService<IExtensionCatalog>(),
