@@ -34,12 +34,13 @@ public class VisualActionHandlerTests
         => _handler.Handle(new PerformanceAction(kind, Slot: slot, Value: value, Argument: argument));
 
     [Fact]
-    public void HandledKinds_CoverTheTwelveWiredVisualActions()
+    public void HandledKinds_CoverTheWiredVisualActions()
     {
-        // Every declared Visual* kind has an owning handler.
-        Assert.Equal(12, _handler.HandledKinds.Count);
+        // Every declared Visual* kind has an owning handler (12 original + VisualLoadPreset, doc 28).
+        Assert.Equal(13, _handler.HandledKinds.Count);
         Assert.Contains(PerformanceActionKind.VisualLoadScene, _handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.VisualTransitionNextBar, _handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.VisualLoadPreset, _handler.HandledKinds);
     }
 
     [Fact]

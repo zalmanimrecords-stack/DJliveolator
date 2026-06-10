@@ -26,6 +26,14 @@ public interface IVisualPerformanceEngine
     /// <summary>Loads a scene's full layer stack, applied atomically at the resolved quantum.</summary>
     void LoadScene(VisualScene scene, Quantize when, int everyN = 1);
 
+    /// <summary>
+    /// Loads a controllable generator preset (doc 28) onto a single layer: places the generator as the
+    /// layer's source, installs the preset's ≤5 controllable macros, and seeds their values to the
+    /// descriptor defaults. Other layers are left untouched. The installed macros are then driven by
+    /// <see cref="SetMacro"/> (UI knobs / external controllers).
+    /// </summary>
+    void LoadPreset(GeneratorPresetBinding binding, int layer, Quantize when, int everyN = 1);
+
     /// <summary>Sets a macro from a normalized 0..1 value.</summary>
     void SetMacro(string name, double value);
 

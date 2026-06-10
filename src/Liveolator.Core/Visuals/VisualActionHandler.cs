@@ -35,12 +35,15 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.VisualTransitionNow,
         PerformanceActionKind.VisualTransitionNextBeat,
         PerformanceActionKind.VisualTransitionNextBar,
+        PerformanceActionKind.VisualLoadPreset,
     };
 
     /// <summary>The transition style this handler requests. A later increment can carry it on the action.</summary>
     public const TransitionStyle DefaultTransition = TransitionStyle.Crossfade;
 
     private readonly IVisualPerformanceEngine _engine;
+    private readonly IGeneratorPresetRegistry? _presets;
+    private readonly IVisualEffectRegistry? _effects;
     private readonly ILogger<VisualActionHandler> _logger;
 
     // Blackout/strobe are boolean on the engine but arrive as momentary/toggle actions, so the
@@ -53,10 +56,16 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
     // the handler is the single owner of this UI/LED state.
     private int _activeSceneSlot = -1;
 
-    public VisualActionHandler(IVisualPerformanceEngine engine, ILogger<VisualActionHandler>? logger = null)
+    public VisualActionHandler(
+        IVisualPerformanceEngine engine,
+        ILogger<VisualActionHandler>? logger = null,
+        IGeneratorPresetRegistry? presets = null,
+        IVisualEffectRegistry? effects = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _logger = logger ?? NullLogger<VisualActionHandler>.Instance;
+        _presets = presets;
+        _effects = effects;
     }
 
     /// <inheritdoc />
@@ -105,6 +114,9 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.VisualTransitionNextBar:
                 _engine.Transition(DefaultTransition, Quantize.NextBar);
+                break;
+            case PerformanceActionKind.VisualLoadPreset:
+                LoadPreset(action);
                 break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
@@ -170,6 +182,52 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
                 IsAvailable: true,
                 Value: action.Value,
                 Argument: action.Argument));
+    }
+
+    private void LoadPreset(PerformanceAction action)
+    {
+        if (string.IsNullOrWhiteSpace(action.Argument))
+        {
+            _logger.LogWarning("VisualLoadPreset ignored: no preset id supplied in the action's Argument.");
+            return;
+        }
+        if (_presets is null || _effects is null)
+        {
+            _logger.LogWarning(
+                "VisualLoadPreset ignored: the preset/effect registries are not wired into this handler.");
+            return;
+        }
+        if (!_presets.TryGet(action.Argument, out GeneratorPreset preset))
+        {
+            _logger.LogWarning("VisualLoadPreset ignored: no preset '{Preset}' is registered.", action.Argument);
+            return;
+        }
+        if (!_effects.TryGet(preset.GeneratorEffectId, preset.GeneratorVersion, out VisualEffectDescriptor generator))
+        {
+            _logger.LogWarning(
+                "VisualLoadPreset ignored: preset '{Preset}' references unknown generator '{Generator}'.",
+                preset.PresetId, preset.GeneratorEffectId);
+            return;
+        }
+
+        GeneratorPresetBinding binding;
+        try
+        {
+            binding = GeneratorPresetExpansion.Expand(preset, generator, action.Slot);
+        }
+        catch (ArgumentException ex)
+        {
+            // A preset that survived registration but cannot expand against this descriptor (e.g. a
+            // controllable id the generator no longer declares) is surfaced, never silently ignored.
+            _logger.LogWarning(ex, "VisualLoadPreset ignored: preset '{Preset}' could not be expanded.", preset.PresetId);
+            return;
+        }
+
+        _engine.LoadPreset(binding, action.Slot, Quantize.Immediate);
+        RaiseFeedback(
+            PerformanceActionKind.VisualLoadPreset,
+            action.Slot,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: action.Argument));
     }
 
     private void LaunchClip(PerformanceAction action)

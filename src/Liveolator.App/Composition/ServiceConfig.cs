@@ -109,6 +109,7 @@ public static class ServiceConfig
         var extensionInstaller = new ExtensionInstaller(
             extensionValidator, extensionCatalog, appSettings.Extensions.DeveloperMode);
         var visualEffects = new VisualEffectRegistry();
+        var generatorPresets = new GeneratorPresetRegistry();
         var uiThemes = new UiThemeManager();
         BuiltInUiThemes.Register(uiThemes);
         string shaderProbeName = OperatingSystem.IsWindows()
@@ -118,7 +119,8 @@ public static class ServiceConfig
             Path.Combine(AppContext.BaseDirectory, shaderProbeName));
         var extensionContent = new ExtensionContentLoader(
             extensionCatalog, visualEffects, uiThemes, shaderProbe,
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w),
+            presets: generatorPresets);
         extensionContent.ReloadAsync().GetAwaiter().GetResult();
 
         // Register the built-in VU-meter generator (doc 26 reference add-on) AFTER the extension reload
@@ -134,6 +136,7 @@ public static class ServiceConfig
         services.AddSingleton<IExtensionValidator>(extensionValidator);
         services.AddSingleton<IExtensionInstaller>(extensionInstaller);
         services.AddSingleton<IVisualEffectRegistry>(visualEffects);
+        services.AddSingleton<IGeneratorPresetRegistry>(generatorPresets);
         services.AddSingleton<IVisualShaderProbe>(shaderProbe);
         services.AddSingleton<IUiThemeManager>(uiThemes);
         services.AddSingleton<IExtensionContentReloader>(extensionContent);
@@ -260,8 +263,8 @@ public static class ServiceConfig
         services.AddSingleton<IVisualAudioLevelSource>(audioLevel);
 
         (VisualActionHandler visualHandler, GlVisualPerformanceEngine visualEngine) =
-            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel, loggerFactory,
-                appSettings.Addons.VuMeterBackgroundImagePath);
+            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, generatorPresets, audioLevel,
+                loggerFactory, appSettings.Addons.VuMeterBackgroundImagePath);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -657,6 +660,7 @@ public static class ServiceConfig
         IBeatClock liveClock,
         ILiveProfileStore profileStore,
         IVisualEffectRegistry effectRegistry,
+        IGeneratorPresetRegistry presetRegistry,
         IVisualAudioLevelSource audioLevel,
         ILoggerFactory loggerFactory,
         string? customVuMeterFacePath)
@@ -686,7 +690,9 @@ public static class ServiceConfig
             macros: macros,
             audioLevel: audioLevel,
             loggerFactory: loggerFactory);
-        var visualHandler = new VisualActionHandler(visualEngine, loggerFactory.CreateLogger<VisualActionHandler>());
+        var visualHandler = new VisualActionHandler(
+            visualEngine, loggerFactory.CreateLogger<VisualActionHandler>(),
+            presets: presetRegistry, effects: effectRegistry);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
         services.AddSingleton(visualHandler);

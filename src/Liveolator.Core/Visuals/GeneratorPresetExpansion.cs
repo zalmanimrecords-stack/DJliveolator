@@ -13,6 +13,18 @@ public static class GeneratorPresetExpansion
     /// <summary>Derives the collision-safe macro name for a preset's controllable parameter.</summary>
     public static string MacroName(string presetId, string parameterId) => $"{presetId}.{parameterId}";
 
+    /// <summary>
+    /// Expands using the generator's own effect id as the instance id. This matches the compositor
+    /// convention for a generator layer (the renderer addresses a generator's parameters by its effect
+    /// id), so the derived macros line up with the running generator without threading an instance id
+    /// through the scene model.
+    /// </summary>
+    public static GeneratorPresetBinding Expand(GeneratorPreset preset, VisualEffectDescriptor generator, int layerIndex)
+    {
+        ArgumentNullException.ThrowIfNull(generator);
+        return Expand(preset, generator, layerIndex, generator.EffectId);
+    }
+
     public static GeneratorPresetBinding Expand(
         GeneratorPreset preset,
         VisualEffectDescriptor generator,

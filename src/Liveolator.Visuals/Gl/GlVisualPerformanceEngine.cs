@@ -39,7 +39,13 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     private readonly ILogger<GlVisualPerformanceEngine> _logger;
     private readonly double _flashStrength;
     private readonly IVisualEffectRegistry _effectRegistry;
-    private readonly IReadOnlyList<VisualMacro> _macros;
+
+    // The macro set the renderer resolves against. Mutable so a controllable preset (doc 28) can install
+    // its macros at runtime; written under _macrosGate from the action thread and read as an immutable
+    // snapshot (Volatile.Read) by the window thread when it rebuilds the renderer. A preset load marks
+    // the composition dirty so the rebuild picks the new set up.
+    private VisualMacro[] _macros;
+    private readonly object _macrosGate = new();
     // Optional: lets the per-frame LayeredQuadRenderer log skipped/uncompilable layers through the same
     // sink as the engine. Null in headless tests, where the renderer falls back to NullLogger.
     private readonly ILoggerFactory? _loggerFactory;
@@ -132,6 +138,9 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
             _macroValues[macro.Name] = NormalizeDefault(macro);
     }
 
+    /// <summary>The macros currently bound (brightness + any installed by presets). Observable for tests.</summary>
+    public IReadOnlyList<VisualMacro> Macros => Volatile.Read(ref _macros);
+
     public VisualBank ActiveBank => _banks[_activeBankIndex];
 
     /// <summary>The number of banks addressable by the Scene Grid / Push bank tabs.</summary>
@@ -178,7 +187,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         double clamped = Math.Clamp(value, 0.0, 1.0);
         _macroValues[name] = clamped;
 
-        if (!_macros.Any(macro => string.Equals(macro.Name, name, StringComparison.Ordinal)))
+        if (!Volatile.Read(ref _macros).Any(macro => string.Equals(macro.Name, name, StringComparison.Ordinal)))
             _logger.LogDebug("Macro '{Macro}' set to {Value:0.###} but is not bound in this slice; ignored by the shader.", name, clamped);
     }
 
@@ -224,6 +233,51 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
 
         foreach ((string name, double value) in scene.MacroValues)
             _macroValues[name] = Math.Clamp(value, 0.0, 1.0);
+    }
+
+    public void LoadPreset(GeneratorPresetBinding binding, int layer, Quantize when, int everyN = 1)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        if (layer < 0)
+        {
+            _logger.LogWarning("LoadPreset ignored: layer index {Layer} is negative.", layer);
+            return;
+        }
+
+        // Install the controllable macros so EffectParameterResolver can drive the generator's uniforms,
+        // then seed each to the descriptor default. Done before the layer swap; the swap marks the
+        // composition dirty, so the next renderer rebuild reads the new macro set.
+        InstallMacros(binding.Macros);
+        foreach ((string name, double value) in binding.InitialMacroValues)
+            _macroValues[name] = Math.Clamp(value, 0.0, 1.0);
+
+        // Place the generator on the target layer, keeping the other layers. A layer hidden by a prior
+        // toggle is revealed so the freshly loaded preset is actually visible.
+        var source = new VisualSourceRef(VisualSourceKind.Generator, binding.Generator.EffectId);
+        MutateLayer(layer, current => current with
+        {
+            Source = source,
+            Opacity = current.Opacity <= 0.0 ? 1.0 : current.Opacity,
+        });
+
+        _logger.LogInformation(
+            "Loaded generator preset onto layer {Layer}: generator '{Generator}', {Count} controllable macro(s).",
+            layer, binding.Generator.EffectId, binding.Macros.Count);
+    }
+
+    // Merges macros into the bound set by name (a preset re-uses stable, namespaced names, so reloading
+    // it replaces rather than duplicates). Publishes a fresh immutable array the render thread can read.
+    private void InstallMacros(IReadOnlyList<VisualMacro> macros)
+    {
+        if (macros.Count == 0)
+            return;
+        lock (_macrosGate)
+        {
+            var byName = _macros.ToDictionary(macro => macro.Name, StringComparer.Ordinal);
+            foreach (VisualMacro macro in macros)
+                byName[macro.Name] = macro;
+            Volatile.Write(ref _macros, byName.Values.ToArray());
+        }
     }
 
     public void SetLayerSource(int layer, VisualSourceRef source, Quantize when, int everyN = 1)
@@ -315,7 +369,7 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
                     gl,
                     layers,
                     _effectRegistry,
-                    _macros,
+                    Volatile.Read(ref _macros),
                     _loggerFactory?.CreateLogger<LayeredQuadRenderer>() ?? NullLogger<LayeredQuadRenderer>.Instance)
                 : null;
 

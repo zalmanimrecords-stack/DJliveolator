@@ -135,15 +135,33 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
 - [ ] Confirm `uTime`/beat/`uBass..uHigh`/`uLevel` uniforms still feed the feedback shader (they
       already flow through `GeneratorPass`).
 
-## Phase 4 — Engine: load a preset (`GlVisualPerformanceEngine` / `IVisualPerformanceEngine`)
+## Phase 4 — Engine: load a preset (`GlVisualPerformanceEngine` / `IVisualPerformanceEngine`) ✅ DONE
 
-- [ ] Add a way to make the active scene's generator layer use a preset: a `VisualLoadScene`-style
-      path (or a new `VisualLoadPreset` action — see Phase 5) that calls `GeneratorPresetExpansion`,
-      installs the ≤5 macros into the engine's macro set, seeds `_macroValues` with the defaults, and
-      sets the generator layer's `EffectRef`/`GeneratorRef`. Reuse the existing
-      `LoadScene → MacroValues` seeding pattern.
-- [ ] Ensure the new macros are visible to `EffectParameterResolver` (they must be in the engine's
-      `_macros` list, which `ResolveGeneratorParameters` already consults).
+- [x] Added `IVisualPerformanceEngine.LoadPreset(binding, layer, when, everyN)`. The decision (2026-06-10):
+      **a preset occupies one dedicated layer** (the action's Slot); other layers are untouched.
+- [x] `GlVisualPerformanceEngine.LoadPreset` installs the binding's macros into a now-mutable macro set
+      (`Volatile.Read`/`Write` snapshot under a gate, mirroring the registries), seeds `_macroValues`
+      with the descriptor defaults, and places the generator on the target layer via the existing
+      `MutateLayer` (which marks the composition dirty, so the renderer rebuild picks up the new macros).
+- [x] The new macros are visible to `EffectParameterResolver`: they target the generator by its **effect
+      id** (`GeneratorPresetExpansion.Expand(preset, descriptor, layer)` overload), matching the instance
+      id the renderer assigns to a generator layer ([LayeredQuadRenderer.cs:299](../src/Liveolator.Visuals/Gl/LayeredQuadRenderer.cs)) —
+      **so no renderer or scene-model change was needed.**
+- **Validated (off-GPU):** `GlVisualPerformanceEnginePresetTests` — macros installed, generator placed,
+      brightness kept, negative layer ignored. Visuals suite 100/100. (GL render verified manually — Phase 7.)
+
+## Phase 5 — Action + controller wiring (doc 04 / doc 05) ✅ DONE (MIDI-learn UI pending)
+
+- [x] **`VisualLoadPreset` `PerformanceActionKind`** appended (serialized order preserved); handled by
+      `VisualActionHandler`, which resolves the preset via `IGeneratorPresetRegistry` + descriptor via
+      `IVisualEffectRegistry`, expands, and calls `engine.LoadPreset`. Missing/unknown/unwired inputs log
+      + no-op (never throw). Wired in DI (`ServiceConfig`): the preset registry is created, fed to
+      `ExtensionContentLoader`, registered as `IGeneratorPresetRegistry`, and passed to the handler.
+  - [x] Tests: `VisualLoadPresetActionTests` (Core) — expands + drives engine with the controllable
+        macros; unknown/blank/unwired → no engine call. Handler now owns 13 kinds.
+- [x] Controllable params reuse the **existing** `VisualSetMacro` action (preset macro names as `Argument`).
+- [ ] **MIDI learn** — bind a learned knob to one of the active preset's macro names (plumbing already
+      accepts `Argument = macroName`; needs the mapping-UI affordance). *(Deferred — pairs with Phase 6 UI.)*
 
 ## Phase 5 — Action + controller wiring (doc 04 / doc 05)
 

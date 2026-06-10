@@ -21,6 +21,7 @@ internal sealed class FakeVisualPerformanceEngine : IVisualPerformanceEngine
 
     public List<int> SelectedBanks { get; } = new();
     public List<(VisualScene Scene, Quantize When, int EveryN)> LoadedScenes { get; } = new();
+    public List<(GeneratorPresetBinding Binding, int Layer, Quantize When, int EveryN)> LoadedPresets { get; } = new();
     public List<(string Name, double Value)> Macros { get; } = new();
     public List<(int Layer, VisualSourceRef Source, Quantize When, int EveryN)> LayerSources { get; } = new();
     public List<int> ToggledLayers { get; } = new();
@@ -34,6 +35,9 @@ internal sealed class FakeVisualPerformanceEngine : IVisualPerformanceEngine
 
     public void LoadScene(VisualScene scene, Quantize when, int everyN = 1)
         => LoadedScenes.Add((scene, when, everyN));
+
+    public void LoadPreset(GeneratorPresetBinding binding, int layer, Quantize when, int everyN = 1)
+        => LoadedPresets.Add((binding, layer, when, everyN));
 
     public void SetMacro(string name, double value) => Macros.Add((name, value));
 

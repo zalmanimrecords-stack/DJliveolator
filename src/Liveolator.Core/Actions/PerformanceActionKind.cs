@@ -88,4 +88,11 @@ public enum PerformanceActionKind
 
     // Appended to preserve the serialized numeric values of existing action kinds.
     VisualSetLayerSource,
+
+    /// <summary>
+    /// Loads a controllable generator preset (doc 28) onto a layer: Argument is the preset id, Slot is
+    /// the target layer. The handler expands the preset into the generator source + its ≤5 controllable
+    /// macros, which are then driven by <see cref="VisualSetMacro"/> from UI knobs / external controllers.
+    /// </summary>
+    VisualLoadPreset,
 }
