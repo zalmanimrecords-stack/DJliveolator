@@ -66,10 +66,10 @@ public static class VuMeterAddon
                 vec2 pix = vec2(vTexCoord.x * FW, vTexCoord.y * FH);
 
                 float ang = mix(AMIN, AMAX, clamp(uLevel, 0.0, 1.0)) * PI / 180.0;
-                vec2 dir = vec2(sin(ang), -cos(ang));     // up = -y, + = right
+                vec2 dir = vec2(sin(ang), cos(ang));      // down = +y, + = right (hub at top, needle hangs down)
                 vec2 pivot = vec2(PX, PY);
                 vec2 tip  = pivot + dir * (R + 12.0);
-                vec2 tail = pivot - dir * 46.0;           // short counterweight past the hub
+                vec2 tail = pivot - dir * 46.0;           // short counterweight above the hub
 
                 float len = length(tip - tail);
                 float along = clamp(dot(pix - tail, (tip - tail) / len) / len, 0.0, 1.0);

@@ -1,3 +1,4 @@
+using System.IO;
 using ATL;
 using Liveolator.Core.Library.Music;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,16 @@ public sealed class AtlMetadataReader : ITrackMetadataReader
     {
         if (string.IsNullOrWhiteSpace(filePath))
             return null;
+
+        // ATL.Track swallows a missing-file IO error and writes the full stack trace straight to
+        // Console.Out (it does not throw), which floods the console during background re-analysis of a
+        // catalog that references an unmounted/removed drive. A file we cannot see has no metadata to
+        // read, so short-circuit before touching ATL — same null result, no console spam.
+        if (!File.Exists(filePath))
+        {
+            _logger.LogDebug("Skipping metadata read; file not found: '{FilePath}'", filePath);
+            return null;
+        }
 
         try
         {

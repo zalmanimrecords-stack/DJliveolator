@@ -57,12 +57,17 @@
               </StackPanel>
             </Border>
 
-            <TextBlock Classes="section" Text="FACE IMAGE GUIDELINES" />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="section" Text="AI IMAGE PROMPT (BACKGROUND)"
+                         VerticalAlignment="Center" />
+              <Button Grid.Column="1" Classes="accent" Content="Copy prompt" Margin="10,0,0,0"
+                      Tag="{Binding ImagePrompt}" Click="OnCopyText" />
+            </Grid>
             <Border Classes="panel">
-              <StackPanel Spacing="10" Margin="14">
-                <TextBlock Classes="faint" Text="{Binding SizeRequirement}" TextWrapping="Wrap" />
-                <TextBlock Classes="faint" Text="{Binding PivotRequirement}" TextWrapping="Wrap" />
-                <TextBlock Classes="faint" Text="{Binding NeedleSweep}" TextWrapping="Wrap" />
+              <StackPanel Spacing="8" Margin="14">
+                <TextBlock Classes="faint" TextWrapping="Wrap"
+                           Text="Paste this into an AI image generator to create a matching background. The app draws the moving needle on top — the prompt tells the tool to leave it out and where the needle pivots." />
+                <SelectableTextBlock Text="{Binding ImagePrompt}" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
           </StackPanel>

@@ -8,9 +8,10 @@ namespace Liveolator.Visuals.Gl;
 /// to the window identically, so they stay registered at any aspect.
 /// </summary>
 /// <remarks>
-/// Angles are measured in degrees from straight up, positive toward the right; the needle sweeps a tube
-/// of fixed length around the brass hub at the pivot. The scale spans a slightly wider arc than the
-/// needle travel, matching the reference meter (the "−"/"+" labels sit just past the needle's extremes).
+/// Angles are measured in degrees from straight <b>down</b>, positive toward the right: the hub sits near
+/// the TOP and the needle hangs DOWN, sweeping a downward arc over the scale (top-pivot meter). The needle
+/// is a tube of fixed length around the brass hub at the pivot; the scale spans a slightly wider arc than
+/// the needle travel, so the "−"/"+" labels sit just past the needle's extremes.
 /// </remarks>
 internal static class VuMeterGeometry
 {
@@ -18,10 +19,10 @@ internal static class VuMeterGeometry
     public const int FaceHeight = 800;
 
     public const float PivotXFrac = 0.5f;     // hub centred horizontally
-    public const float PivotYFrac = 0.72f;    // hub near the lower third (from the top)
-    public const float ArcRadiusFrac = 0.46f; // scale arc radius, as a fraction of the height
+    public const float PivotYFrac = 0.20f;    // hub near the TOP (the needle hangs down from here)
+    public const float ArcRadiusFrac = 0.42f; // scale arc radius (fraction of height) — leaves room below for the legend
 
-    public const float ScaleMinDeg = -58f;    // left end of the printed scale
+    public const float ScaleMinDeg = -58f;    // left end of the printed scale (from straight down)
     public const float ScaleMaxDeg = 58f;     // right end of the printed scale
     public const float NeedleMinDeg = -55f;   // uLevel 0 → resting far left
     public const float NeedleMaxDeg = 52f;    // uLevel 1 → far right

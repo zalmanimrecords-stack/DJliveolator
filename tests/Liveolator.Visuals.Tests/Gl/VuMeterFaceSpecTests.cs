@@ -33,7 +33,7 @@ public sealed class VuMeterFaceSpecTests
         Assert.Equal(1200, spec.RecommendedWidth);
         Assert.Equal(800, spec.RecommendedHeight);
         Assert.Equal(600, spec.PivotXPixels);
-        Assert.Equal(576, spec.PivotYPixels);
+        Assert.Equal(160, spec.PivotYPixels); // hub near the TOP (20% down) — the needle hangs down
         Assert.Equal(1.5, spec.AspectRatio, precision: 5);
     }
 }

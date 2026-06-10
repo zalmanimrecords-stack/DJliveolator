@@ -60,10 +60,12 @@ public static class VuMeterFace
 
     private static SKPoint PointAt(float cx, float cy, float radius, float angleDeg)
     {
+        // Angle from straight DOWN, + toward the right: the hub is near the top and the scale arc + needle
+        // fall BELOW it (top-pivot meter), so y grows with cos(angle).
         double rad = angleDeg * Math.PI / 180.0;
         return new SKPoint(
             (float)(cx + radius * Math.Sin(rad)),
-            (float)(cy - radius * Math.Cos(rad)));
+            (float)(cy + radius * Math.Cos(rad)));
     }
 
     private static SKTypeface Serif() =>
@@ -252,18 +254,19 @@ public static class VuMeterFace
 
     private static void DrawLegend(SKCanvas canvas, int w, int h)
     {
+        // The hub is near the top, so the legend sits in the open band BELOW the scale arc.
         using var vu = new SKPaint
         {
             IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Georgia", SKFontStyle.Bold) ?? Serif(),
-            TextAlign = SKTextAlign.Center, TextSize = 86, Color = Ink,
+            TextAlign = SKTextAlign.Center, TextSize = 64, Color = Ink,
         };
-        canvas.DrawText("VU", w / 2f, h * 0.56f, vu);
+        canvas.DrawText("VU", w / 2f, h * 0.78f, vu);
 
         using var meter = new SKPaint
         {
-            IsAntialias = true, Typeface = Serif(), TextAlign = SKTextAlign.Center, TextSize = 34, Color = Ink,
+            IsAntialias = true, Typeface = Serif(), TextAlign = SKTextAlign.Center, TextSize = 28, Color = Ink,
         };
-        DrawSpaced(canvas, meter, "METER", w / 2f, h * 0.63f, 14f);
+        DrawSpaced(canvas, meter, "METER", w / 2f, h * 0.84f, 12f);
     }
 
     private static void DrawSpaced(SKCanvas canvas, SKPaint font, string text, float centerX, float y, float tracking)

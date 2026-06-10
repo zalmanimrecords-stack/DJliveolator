@@ -103,21 +103,41 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
             + "fill the meter — keep the {2} aspect so the dial stays in shape.",
             Spec.RecommendedWidth, Spec.RecommendedHeight, AspectLabel);
 
-    public string PivotRequirement =>
-        string.Format(
-            CultureInfo.CurrentCulture,
-            "Needle pivot (where the needle comes out): horizontal centre ({0:P0} of width), {1:P0} down "
-            + "from the top — at ({2}, {3}) px in a {4} × {5} image.",
-            Spec.PivotXFraction, Spec.PivotYFraction, Spec.PivotXPixels, Spec.PivotYPixels,
-            Spec.RecommendedWidth, Spec.RecommendedHeight);
-
-    public string NeedleSweep =>
-        string.Format(
-            CultureInfo.CurrentCulture,
-            "The needle sweeps {0:0}° → {1:0}° measured from straight up (+ = right), around an arc of "
-            + "radius {2:P0} of the height (≈{3} px). Paint your dial's hub and scale to match this pivot "
-            + "and arc so the needle registers.",
-            Spec.NeedleMinDegrees, Spec.NeedleMaxDegrees, Spec.ArcRadiusFraction, Spec.ArcRadiusPixels);
+    /// <summary>
+    /// A ready-to-paste prompt for an AI image generator that produces a matching background (dial face).
+    /// The app draws the moving needle on top, so the prompt forbids a needle and pins the exact pivot the
+    /// app's needle hangs from — built from <see cref="VuMeterFaceSpec"/> so the numbers can't drift.
+    /// </summary>
+    public string ImagePrompt =>
+        string.Join(Environment.NewLine, new[]
+        {
+            string.Format(
+                CultureInfo.CurrentCulture,
+                "Design a photorealistic ANALOG VU-METER DIAL FACE as a background image, {0}×{1} px ({2}).",
+                Spec.RecommendedWidth, Spec.RecommendedHeight, AspectLabel),
+            "",
+            "IMPORTANT: this is the BACKGROUND only. Do NOT draw the pointer/needle — the app renders the "
+            + "moving needle on top. Leave the pivot and the area the needle sweeps clean and unobstructed.",
+            "",
+            string.Format(
+                CultureInfo.CurrentCulture,
+                "The needle pivots at the TOP and hangs DOWN over the scale. Put the pivot hub at exactly "
+                + "horizontal centre, {0:P0} down from the top — pixel ({1}, {2}) in a {3}×{4} image — and "
+                + "draw a small brass/metal hub there.",
+                Spec.PivotYFraction, Spec.PivotXPixels, Spec.PivotYPixels,
+                Spec.RecommendedWidth, Spec.RecommendedHeight),
+            "",
+            string.Format(
+                CultureInfo.CurrentCulture,
+                "Paint a curved scale BELOW the hub: an upward 'smile' arc of radius ≈{0:P0} of the image "
+                + "height (≈{1} px) centred on the hub, with tick marks, dB numbers and a red zone toward "
+                + "the right end. The needle will sweep this arc from about {2:0}° (far left) to {3:0}° (far "
+                + "right) measured from straight down, so align the scale to that range.",
+                Spec.ArcRadiusFraction, Spec.ArcRadiusPixels, Spec.NeedleMinDegrees, Spec.NeedleMaxDegrees),
+            "",
+            "Style: aged cream dial, dark bezel, subtle wear, a 'VU' legend near the bottom centre. Fill the "
+            + "whole frame. No needle, no extra text, no watermark.",
+        });
 
     // The recommended aspect as a tidy "3:2"-style label derived from the spec's pixel size.
     private string AspectLabel

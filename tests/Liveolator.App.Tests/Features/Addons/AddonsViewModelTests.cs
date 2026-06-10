@@ -131,11 +131,13 @@ public sealed class AddonsViewModelTests : IDisposable
 
         Assert.True(vm.ShowVuMeterSettings);
         Assert.False(vm.ShowNoSettingsMessage);
-        // The page documents the concrete required size + pivot from the spec.
-        Assert.Contains("1200", vm.VuMeterSettings.SizeRequirement);
-        Assert.Contains("800", vm.VuMeterSettings.SizeRequirement);
-        Assert.Contains("600", vm.VuMeterSettings.PivotRequirement);
-        Assert.Contains("576", vm.VuMeterSettings.PivotRequirement);
+        // The AI prompt embeds the concrete size + the exact (top) pivot from the spec, and forbids a needle.
+        string prompt = vm.VuMeterSettings.ImagePrompt;
+        Assert.Contains("1200", prompt);
+        Assert.Contains("800", prompt);
+        Assert.Contains("600", prompt);
+        Assert.Contains("160", prompt);
+        Assert.Contains("needle", prompt, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

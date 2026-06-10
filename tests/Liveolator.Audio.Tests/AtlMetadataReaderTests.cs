@@ -81,4 +81,35 @@ public class AtlMetadataReaderTests
     [Fact]
     public void Read_MissingPath_ReturnsNull()
         => Assert.Null(_reader.Read("   "));
+
+    [Fact]
+    public void Read_NonExistentPath_ReturnsNull()
+    {
+        string missing = Path.Combine(Path.GetTempPath(), $"liveolator-missing-{Guid.NewGuid():N}.flac");
+        Assert.Null(_reader.Read(missing));
+    }
+
+    [Fact]
+    public void Read_NonExistentPath_DoesNotPrintToConsole()
+    {
+        // Regression: ATL.Track swallows the IO error for a missing file and writes the full stack
+        // trace to Console.Out (it does not throw), flooding the console during background re-analysis
+        // of catalogs that reference unmounted/removed drives. The reader must short-circuit before
+        // ever touching ATL when the file is gone.
+        string token = $"liveolator-missing-{Guid.NewGuid():N}";
+        string missing = Path.Combine(Path.GetTempPath(), token + ".flac");
+
+        TextWriter original = Console.Out;
+        var captured = new StringWriter();
+        try
+        {
+            Console.SetOut(TextWriter.Synchronized(captured)); // other parallel tests may also write
+            Assert.Null(_reader.Read(missing));
+        }
+        finally { Console.SetOut(original); }
+
+        string output = captured.ToString();
+        Assert.DoesNotContain(token, output);          // the missing path never reached ATL
+        Assert.DoesNotContain("ReadFromFile", output); // ATL's swallowed-IO stack trace never printed
+    }
 }

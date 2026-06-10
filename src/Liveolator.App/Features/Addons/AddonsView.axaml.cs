@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
@@ -48,5 +49,18 @@ public partial class AddonsView : UserControl
         string? path = picked[0].TryGetLocalPath();
         if (!string.IsNullOrEmpty(path))
             await vm.VuMeterSettings.ChooseImageAsync(path);
+    }
+
+    // Copies a single guideline paragraph to the clipboard. The text rides on the button's Tag (bound to
+    // the matching view-model string), so one handler serves all the Copy buttons. Clipboard access is
+    // view-bound (needs the TopLevel), so it lives here rather than in the UI-free view-model.
+    private async void OnCopyText(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string text } || string.IsNullOrEmpty(text))
+            return;
+
+        IClipboard? clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+            await clipboard.SetTextAsync(text);
     }
 }
