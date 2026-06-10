@@ -106,11 +106,15 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
       [GeneratorPresetRegistry.cs](../src/Liveolator.Core/Visuals/GeneratorPresetRegistry.cs). Tests:
       [GeneratorPresetRegistryTests.cs](../tests/Liveolator.Core.Tests/Visuals/GeneratorPresetRegistryTests.cs).
       Still **TODO**: register in DI in `ServiceConfig` alongside `IVisualEffectRegistry` (with Phase 4).
-- [ ] Extend the package descriptor loader to also read presets: `ExtensionContentLoader`
-      (`src/Liveolator.Media/Extensions/ExtensionContentLoader.cs`) loads `presets.json` next to
-      `visual-effects.json`, validates each preset against its generator descriptor (≤5, ids exist),
-      and registers them via `IGeneratorPresetRegistry`. Reject (don't silently skip) invalid presets
-      — surface via `onWarning`.
+- [x] Extend the package descriptor loader to also read presets:
+      [`ExtensionContentLoader`](../src/Liveolator.Media/Extensions/ExtensionContentLoader.cs) now takes
+      an optional `IGeneratorPresetRegistry`, loads `presets.json` after `visual-effects.json`, and
+      validates each preset against its registered generator descriptor (generator exists, is
+      Generator-role, every controllable id is declared; ≤5 enforced by the `GeneratorPreset` ctor at
+      deserialization). An invalid preset throws `InvalidDataException`, so that pack's presets are
+      skipped + logged via `onWarning` while other packs still load (doc 21 tolerance). Tests:
+      [GeneratorPresetRoundTripTests.cs](../tests/Liveolator.Media.Tests/GeneratorPresetRoundTripTests.cs)
+      (registers a valid preset; rejects undeclared-parameter and unknown-generator presets). Media suite 106/106.
 - [ ] **Built-in reference preset(s)** — at least one in-process `MilkdropStarterPresetAddon`
       (mirrors `PsyFractalVisualizerAddon.TryRegister`) shipping a generator shader with feedback +
       a preset exposing 5 params (e.g. `GLOW`, `WARP`, `SPEED`, `ZOOM`, `DECAY`). Registered in

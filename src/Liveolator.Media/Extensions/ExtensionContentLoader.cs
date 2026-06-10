@@ -19,6 +19,7 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
     private readonly IVisualEffectRegistry _effects;
     private readonly IUiThemeManager _themes;
     private readonly IVisualShaderProbe? _shaderProbe;
+    private readonly IGeneratorPresetRegistry? _presets;
     private readonly Action<string>? _onWarning;
 
     public ExtensionContentLoader(
@@ -26,13 +27,15 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
         IVisualEffectRegistry effects,
         IUiThemeManager themes,
         IVisualShaderProbe? shaderProbe = null,
-        Action<string>? onWarning = null)
+        Action<string>? onWarning = null,
+        IGeneratorPresetRegistry? presets = null)
     {
         _catalog = catalog;
         _effects = effects;
         _themes = themes;
         _shaderProbe = shaderProbe;
         _onWarning = onWarning;
+        _presets = presets;
     }
 
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
@@ -42,6 +45,7 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
         {
             _effects.RemovePackage(extension.Manifest.PackageId);
             _themes.RemovePackage(extension.Manifest.PackageId);
+            _presets?.RemovePackage(extension.Manifest.PackageId);
             if (!extension.IsEnabled)
                 continue;
 
@@ -49,6 +53,8 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
             {
                 await LoadEffectsAsync(extension, cancellationToken).ConfigureAwait(false);
                 await LoadThemesAsync(extension, cancellationToken).ConfigureAwait(false);
+                // Presets resolve against the effects just registered above, so load them last.
+                await LoadPresetsAsync(extension, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (
                 ex is IOException or JsonException or UnauthorizedAccessException or ArgumentException
@@ -118,6 +124,44 @@ public sealed class ExtensionContentLoader : IExtensionContentReloader
                 themes.Add(theme);
         }
         _themes.ReplacePackage(extension.Manifest.PackageId, themes);
+    }
+
+    private async Task LoadPresetsAsync(InstalledExtension extension, CancellationToken cancellationToken)
+    {
+        if (_presets is null)
+            return;
+        string path = Path.Combine(extension.InstallPath, "presets.json");
+        if (!File.Exists(path))
+            return;
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        GeneratorPreset[] presets =
+            await JsonSerializer.DeserializeAsync<GeneratorPreset[]>(stream, JsonOptions, cancellationToken)
+                .ConfigureAwait(false)
+            ?? Array.Empty<GeneratorPreset>();
+
+        foreach (GeneratorPreset preset in presets)
+        {
+            // The generator the preset wraps must be a registered Generator-role effect (its own package's
+            // effects are already registered, or a dependency's), and every controllable parameter must be
+            // one the generator actually declares — otherwise the knob would drive a uniform that does not
+            // exist. A violation throws InvalidDataException, so the caller skips this pack's presets + logs.
+            if (!_effects.TryGet(preset.GeneratorEffectId, preset.GeneratorVersion, out VisualEffectDescriptor generator))
+                throw new InvalidDataException(
+                    $"Preset '{preset.PresetId}' references unknown generator '{preset.GeneratorEffectId}' ({preset.GeneratorVersion}).");
+            if (generator.Role != VisualEffectRole.Generator)
+                throw new InvalidDataException(
+                    $"Preset '{preset.PresetId}' references '{preset.GeneratorEffectId}', which is not a generator.");
+
+            var declared = new HashSet<string>(generator.Parameters.Select(p => p.Id), StringComparer.Ordinal);
+            foreach (ControllableParameter controllable in preset.Controllable)
+            {
+                if (!declared.Contains(controllable.Id))
+                    throw new InvalidDataException(
+                        $"Preset '{preset.PresetId}' exposes '{controllable.Id}', which generator '{preset.GeneratorEffectId}' does not declare.");
+            }
+        }
+
+        _presets.ReplacePackage(extension.Manifest.PackageId, presets);
     }
 
     private static string ResolveContentPath(string root, string relative)
