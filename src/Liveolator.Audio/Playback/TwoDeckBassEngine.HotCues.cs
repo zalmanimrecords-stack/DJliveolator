@@ -19,7 +19,7 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         if (cueIndex < 0 || cueIndex >= HotCuesPerDeck)
             return false;
-        lock (_gate) return _hotCues[slot][cueIndex].HasValue;
+        lock (_gate) return _slots[slot].HotCues[cueIndex].HasValue;
     }
 
     public void HotCue(int slot, int cueIndex)
@@ -29,15 +29,16 @@ public sealed partial class TwoDeckBassEngine
             throw new ArgumentOutOfRangeException(nameof(cueIndex), cueIndex, "Hot-cue index is out of range.");
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck)
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck)
                 return; // nothing loaded — no position to store or jump to
-            if (_hotCues[slot][cueIndex] is { } position)
+            if (s.HotCues[cueIndex] is { } position)
             {
                 _backend.SetDeckPositionFraction(deck.Handle, position); // jump to the stored cue
             }
             else
             {
-                _hotCues[slot][cueIndex] = _backend.GetDeckPositionFraction(deck.Handle); // set at current position
+                s.HotCues[cueIndex] = _backend.GetDeckPositionFraction(deck.Handle); // set at current position
                 SavePersistedHotCues(slot, deck.Handle); // a newly set cue survives the next load/restart
             }
         }
@@ -57,13 +58,14 @@ public sealed partial class TwoDeckBassEngine
             if (record is null)
                 return;
 
+            DeckSlot s = _slots[slot];
             double lengthSeconds = _backend.GetDeckLengthSeconds(handle);
             int sampleRate = record.SampleRate > 0 ? record.SampleRate : _sampleRate;
             foreach (HotCue cue in record.HotCues)
             {
                 if (cue.Index < 0 || cue.Index >= HotCuesPerDeck)
                     continue; // tolerate a hand-edited / wider-bank file
-                _hotCues[slot][cue.Index] =
+                s.HotCues[cue.Index] =
                     HotCuePositionMapper.SamplesToFraction(cue.PositionSamples, lengthSeconds, sampleRate);
             }
             _logger.LogInformation(
@@ -83,14 +85,15 @@ public sealed partial class TwoDeckBassEngine
     // does not race a later cue edit.
     private void SavePersistedHotCues(int slot, int handle)
     {
-        if (_hotCueStore is null || _loadedPath[slot] is not { } trackPath)
+        DeckSlot s = _slots[slot];
+        if (_hotCueStore is null || s.LoadedPath is not { } trackPath)
             return;
 
         double lengthSeconds = _backend.GetDeckLengthSeconds(handle);
         var set = new TrackCueSet(_sampleRate > 0 ? _sampleRate : 1, HotCuesPerDeck);
         for (int i = 0; i < HotCuesPerDeck; i++)
         {
-            if (_hotCues[slot][i] is { } fraction)
+            if (s.HotCues[i] is { } fraction)
                 set = set.SetHotCue(i, HotCuePositionMapper.FractionToSamples(fraction, lengthSeconds, _sampleRate));
         }
 

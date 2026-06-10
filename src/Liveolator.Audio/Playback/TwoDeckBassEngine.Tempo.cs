@@ -11,7 +11,7 @@ public sealed partial class TwoDeckBassEngine
     public double PitchPosition(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _pitchPosition[slot];
+        lock (_gate) return _slots[slot].PitchPosition;
     }
 
     public void SetPitch(int slot, double value, bool relative)
@@ -19,14 +19,15 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            double next = Math.Clamp(relative ? _pitchPosition[slot] + value : value, 0.0, 1.0);
-            _pitchPosition[slot] = next;
-            _playbackRate[slot] = RateFor(next);
+            DeckSlot s = _slots[slot];
+            double next = Math.Clamp(relative ? s.PitchPosition + value : value, 0.0, 1.0);
+            s.PitchPosition = next;
+            s.PlaybackRate = RateFor(next);
             // While Sync is engaged the synced rate owns the deck (doc 11: Sync is an assist; manual
             // nudging of a synced deck is a later increment). The position is still stored so it takes
             // effect the moment Sync is released.
-            if (_decks[slot] is { } deck && !_syncLocked[slot])
-                _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
+            if (s.Deck is { } deck && !s.SyncLocked)
+                _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
             // This deck may be the sync leader — pull any synced follower to the new tempo.
             ReapplySyncedFollowers();
         }
@@ -35,7 +36,7 @@ public sealed partial class TwoDeckBassEngine
     public double DeckBaseBpm(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _baseBpm[slot];
+        lock (_gate) return _slots[slot].BaseBpm;
     }
 
     public void SetDeckBaseBpm(int slot, double bpm)
@@ -43,7 +44,7 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            _baseBpm[slot] = bpm > 0.0 ? bpm : 0.0;
+            _slots[slot].BaseBpm = bpm > 0.0 ? bpm : 0.0;
             // A new reference tempo re-beatmatches: this deck may be a leader (pull its followers) or a
             // synced follower whose own tempo just changed.
             ReapplySyncedFollowers();
@@ -59,13 +60,21 @@ public sealed partial class TwoDeckBassEngine
     public double MinimumDeckBpm(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _baseBpm[slot] > 0.0 ? _baseBpm[slot] * (1.0 - PitchRangePercent) : 0.0;
+        lock (_gate)
+        {
+            double baseBpm = _slots[slot].BaseBpm;
+            return baseBpm > 0.0 ? baseBpm * (1.0 - PitchRangePercent) : 0.0;
+        }
     }
 
     public double MaximumDeckBpm(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _baseBpm[slot] > 0.0 ? _baseBpm[slot] * (1.0 + PitchRangePercent) : 0.0;
+        lock (_gate)
+        {
+            double baseBpm = _slots[slot].BaseBpm;
+            return baseBpm > 0.0 ? baseBpm * (1.0 + PitchRangePercent) : 0.0;
+        }
     }
 
     public void SetDeckBpm(int slot, double bpm)
@@ -73,13 +82,14 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_baseBpm[slot] <= 0.0 || bpm <= 0.0)
+            DeckSlot s = _slots[slot];
+            if (s.BaseBpm <= 0.0 || bpm <= 0.0)
                 return;
 
-            _pitchPosition[slot] = PitchPositionFor(bpm / _baseBpm[slot]);
-            _playbackRate[slot] = RateFor(_pitchPosition[slot]);
-            if (_decks[slot] is { } deck && !_syncLocked[slot])
-                _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
+            s.PitchPosition = PitchPositionFor(bpm / s.BaseBpm);
+            s.PlaybackRate = RateFor(s.PitchPosition);
+            if (s.Deck is { } deck && !s.SyncLocked)
+                _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
             ReapplySyncedFollowers();
         }
     }
@@ -88,20 +98,22 @@ public sealed partial class TwoDeckBassEngine
     // tempo follows the separately retained playback rate. 0 when base BPM is unknown.
     private double EffectiveBpm(int slot)
     {
-        if (_baseBpm[slot] <= 0.0)
+        DeckSlot s = _slots[slot];
+        if (s.BaseBpm <= 0.0)
             return 0.0;
-        double rate = _syncLocked[slot] ? SyncedRateFor(slot) : _playbackRate[slot];
-        return _baseBpm[slot] * rate;
+        double rate = s.SyncLocked ? SyncedRateFor(slot) : s.PlaybackRate;
+        return s.BaseBpm * rate;
     }
 
     // Caller holds _gate. The rate Sync would apply to a follower deck (its leader's audible tempo folded
     // to the nearest octave), or its manual pitch rate when no valid leader exists — mirrors ReapplyRate.
     private double SyncedRateFor(int slot)
     {
-        int leader = slot == 0 ? 1 : 0;
-        if (_baseBpm[slot] <= 0.0 || _decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
-            return _playbackRate[slot];
-        double leaderEffectiveBpm = _baseBpm[leader] * _playbackRate[leader];
-        return TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
+        DeckSlot s = _slots[slot];
+        DeckSlot leader = _slots[slot == 0 ? 1 : 0];
+        if (s.BaseBpm <= 0.0 || leader.Deck is null || leader.SyncLocked || leader.BaseBpm <= 0.0)
+            return s.PlaybackRate;
+        double leaderEffectiveBpm = leader.BaseBpm * leader.PlaybackRate;
+        return TempoSyncCalculator.RateFor(leaderEffectiveBpm, s.BaseBpm);
     }
 }

@@ -12,7 +12,7 @@ public sealed partial class TwoDeckBassEngine
     public bool IsPlaying(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _decks[slot]?.Playing ?? false;
+        lock (_gate) return _slots[slot].Deck?.Playing ?? false;
     }
 
     public void Load(int slot, string trackPath)
@@ -25,6 +25,7 @@ public sealed partial class TwoDeckBassEngine
         {
             if (_disposed) throw new ObjectDisposedException(nameof(TwoDeckBassEngine));
 
+            DeckSlot s = _slots[slot];
             try
             {
                 // Open the new stream BEFORE unloading the current track, so a failed open (missing /
@@ -35,13 +36,13 @@ public sealed partial class TwoDeckBassEngine
                 UnloadSlot(slot);
                 IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
-                _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
-                _loadedPath[slot] = trackPath; // the cue-store key for this slot
+                s.Deck = new LoadedDeck(handle, channel, Playing: false);
+                s.LoadedPath = trackPath; // the cue-store key for this slot
                 // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the
                 // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
                 // load action supplies the new track's base BPM via SetDeckBaseBpm).
-                if (!_syncLocked[slot])
-                    _backend.SetDeckRate(handle, _playbackRate[slot]);
+                if (!s.SyncLocked)
+                    _backend.SetDeckRate(handle, s.PlaybackRate);
                 // Restore the track's persisted hot cues (A3). Tolerant: a missing/unreadable store
                 // leaves the slot with the fresh (empty) cue bank UnloadSlot cleared — never a throw.
                 LoadPersistedHotCues(slot, handle, trackPath);
@@ -63,14 +64,14 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck)
+            if (_slots[slot].Deck is not { } deck)
             {
                 _logger.LogWarning("PlayPause deck slot {Slot} requested with no track loaded; ignoring.", slot);
                 return;
             }
             bool next = !deck.Playing;
             _backend.SetDeckPlaying(deck.Handle, next);
-            _decks[slot] = deck with { Playing = next };
+            _slots[slot].Deck = deck with { Playing = next };
         }
     }
 
@@ -79,10 +80,10 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_decks[slot] is { Playing: true } deck)
+            if (_slots[slot].Deck is { Playing: true } deck)
             {
                 _backend.SetDeckPlaying(deck.Handle, false);
-                _decks[slot] = deck with { Playing = false };
+                _slots[slot].Deck = deck with { Playing = false };
             }
         }
     }
@@ -91,7 +92,7 @@ public sealed partial class TwoDeckBassEngine
     {
         ValidateSlot(slot);
         lock (_gate)
-            return _decks[slot] is { } deck ? _backend.GetDeckPositionFraction(deck.Handle) : 0.0;
+            return _slots[slot].Deck is { } deck ? _backend.GetDeckPositionFraction(deck.Handle) : 0.0;
     }
 
     public void Seek(int slot, double position, bool relative)
@@ -99,7 +100,7 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck)
+            if (_slots[slot].Deck is not { } deck)
                 return; // nothing loaded — no playhead to move
             double target = relative
                 ? Math.Clamp(_backend.GetDeckPositionFraction(deck.Handle) + position, 0.0, 1.0)
@@ -116,7 +117,7 @@ public sealed partial class TwoDeckBassEngine
 
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck)
+            if (_slots[slot].Deck is not { } deck)
                 return;
 
             double lengthSeconds = _backend.GetDeckLengthSeconds(deck.Handle);
@@ -136,46 +137,49 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck)
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck)
                 return;
 
             // CDJ back-to-cue (A5): the pure resolver decides set-vs-return from the deck's transport
             // state, live position, and stored temp cue. Set drops a fresh cue here; return jumps to the
             // stored cue (or track start when none is set) and pauses.
             double current = _backend.GetDeckPositionFraction(deck.Handle);
-            CueButtonAction action = CueButtonResolver.Resolve(deck.Playing, current, _tempCue[slot]);
+            CueButtonAction action = CueButtonResolver.Resolve(deck.Playing, current, s.TempCue);
             if (action == CueButtonAction.SetCueHere)
             {
-                _tempCue[slot] = current;
+                s.TempCue = current;
                 _backend.SetDeckPlaying(deck.Handle, false);
-                _decks[slot] = deck with { Playing = false };
+                s.Deck = deck with { Playing = false };
                 _logger.LogInformation("Deck slot {Slot} cue: set temp cue at {Pos:F4}.", slot, current);
                 return;
             }
 
-            double target = _tempCue[slot] ?? 0.0; // return to the stored cue, else the track start
+            double target = s.TempCue ?? 0.0; // return to the stored cue, else the track start
             _backend.SetDeckPositionFraction(deck.Handle, target);
             _backend.SetDeckPlaying(deck.Handle, false);
-            _decks[slot] = deck with { Playing = false };
+            s.Deck = deck with { Playing = false };
         }
     }
 
     // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel and the
-    // track-specific hot-cues (a new track gets fresh cues).
+    // track-specific state (a new track gets fresh cues / BPM / loop). Transport state that belongs to
+    // the DJ rather than the track (pitch, sync/quantize toggles) is intentionally left in place.
     private void UnloadSlot(int slot)
     {
-        if (_decks[slot] is not { } deck)
+        DeckSlot s = _slots[slot];
+        if (s.Deck is not { } deck)
             return;
         _backend.ClearDeckLoop(deck.Handle); // drop any loop sync before the stream is freed
         _backend.UnplugDeck(deck.Handle);
         _mixer.SetChannel(slot, null);
-        _decks[slot] = null;
-        _loadedPath[slot] = null;
-        _tempCue[slot] = null; // the temp cue belongs to the track — the new track starts with none
-        Array.Clear(_hotCues[slot]);
-        _baseBpm[slot] = 0.0;   // base BPM belongs to the track — the new track supplies its own on load
-        _firstBeat[slot] = 0.0; // first-beat anchor likewise belongs to the track
-        _loopBeats[slot] = 0.0; // a new track has no active loop
+        s.Deck = null;
+        s.LoadedPath = null;
+        s.TempCue = null;        // the temp cue belongs to the track — the new track starts with none
+        Array.Clear(s.HotCues);
+        s.BaseBpm = 0.0;         // base BPM belongs to the track — the new track supplies its own on load
+        s.FirstBeat = 0.0;       // first-beat anchor likewise belongs to the track
+        s.LoopBeats = 0.0;       // a new track has no active loop
     }
 
     // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the
@@ -186,9 +190,9 @@ public sealed partial class TwoDeckBassEngine
     {
         lock (_gate)
         {
-            if (_disposed || _decks[slot] is not { } deck || deck.Handle != handle)
+            if (_disposed || _slots[slot].Deck is not { } deck || deck.Handle != handle)
                 return; // the slot was replaced/unloaded before the end fired — ignore the stale callback
-            _decks[slot] = deck with { Playing = false };
+            _slots[slot].Deck = deck with { Playing = false };
         }
 
         try

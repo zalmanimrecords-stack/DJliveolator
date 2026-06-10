@@ -54,7 +54,10 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     private readonly ILogger _logger;
     private readonly object _gate = new();
     private readonly MasterAudioSource _master;
-    private readonly LoadedDeck?[] _decks = new LoadedDeck?[Decks];
+
+    // Per-deck mutable transport + sync state (one object per slot, indexed A = 0, B = 1). Replaces the
+    // former parallel per-slot arrays. All access is serialized by _gate; see DeckSlot.cs.
+    private readonly DeckSlot[] _slots = new DeckSlot[Decks];
 
     // Persistent hot-cue store (doc 11/13, A3): null = cues stay RAM-only (the prior behaviour). When
     // present, a track's saved cue set is loaded on Load and re-saved on set/clear, keyed by file path.
@@ -64,48 +67,11 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     // are stored as fractions here but persisted as samples, so the store record is self-describing.
     private readonly int _sampleRate;
 
-    // Per-slot file path of the loaded track; the cue-store key. null = nothing loaded.
-    private readonly string?[] _loadedPath = new string?[Decks];
-
-    // Per-slot temporary (primary) cue position as a 0..1 fraction; null = unset, so the Cue button
-    // returns to the track start (the prior behaviour). Belongs to the track — cleared on unload (A5).
-    private readonly double?[] _tempCue = new double?[Decks];
-
-    // Per-slot transport state that persists across track loads (a DJ keeps the pitch fader and the
-    // sync/quantize toggles where they were set when swapping tracks). Position is read live from the
-    // backend, so it is not stored here.
-    private readonly double[] _pitchPosition = new double[Decks];
-    private readonly double[] _playbackRate = new double[Decks];
-    private readonly bool[] _syncLocked = new bool[Decks];
-    private readonly bool[] _quantize = new bool[Decks];
-
-    // Per-slot beat-lock state for the SYNC indicator (Off/Active/Locked/Drifting), driven by the
-    // continuous correction loop and reset to Off when sync is released.
-    private readonly SyncLockState[] _syncState = new SyncLockState[Decks];
-
     // Phase-lock loop tunables (gains/thresholds/output latency). Injected so the composition root can
     // pass the user's output latency; defaults to the professional preset.
     private readonly PhaseLockSettings _phaseLock;
 
-    // Per-slot analyzed natural tempo (BPM) used as the Sync reference; 0 = unknown. Set when a track
-    // with a known BPM loads (doc 11). Cleared when the slot unloads.
-    private readonly double[] _baseBpm = new double[Decks];
-
-    // Per-slot first-beat (downbeat) anchor in seconds; 0 = unknown. Fed from the track's analyzed
-    // BpmResult on load (like base BPM) and used by Quantize phase-match. Cleared when the slot unloads.
-    private readonly double[] _firstBeat = new double[Decks];
-
-    // Per-slot active loop length in beats; 0 = no loop. The loop region (seconds) is derived from this
-    // and the base BPM so it stays a musical length. Belongs to the track, cleared when the slot unloads.
-    private readonly double[] _loopBeats = new double[Decks];
-
-    // Hot-cue memory per deck: a position fraction per pad, null = unset. Belongs to the loaded track,
-    // so it is cleared when the slot unloads.
-    private readonly double?[][] _hotCues = new double?[Decks][];
     private bool _disposed;
-
-    /// <summary>A deck currently plugged into the mix: its BASS handle, FX control, and play state.</summary>
-    private sealed record LoadedDeck(int Handle, IBassMixerChannel Channel, bool Playing);
 
     /// <summary>
     /// Public entry point: builds a real BASSmix backend and registers its per-deck channels into
@@ -152,10 +118,12 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
                 $"Mixer addresses {mixer.DeckCount} deck(s); the two-deck engine needs {Decks}.", nameof(mixer));
 
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<TwoDeckBassEngine>();
-        Array.Fill(_pitchPosition, PitchCenter);
-        Array.Fill(_playbackRate, 1.0);
         for (int slot = 0; slot < Decks; slot++)
-            _hotCues[slot] = new double?[HotCuesPerDeck];
+            _slots[slot] = new DeckSlot(HotCuesPerDeck)
+            {
+                PitchPosition = PitchCenter, // fader centre = no tempo change
+                PlaybackRate = 1.0,          // unity rate until a pitch/sync change
+            };
 
         // The real BASSmix backend is also the headphone-cue output; route the Core mixer's cue/master
         // output gains to it so the cue-mix knob reaches the second output. A fake backend (tests) or a

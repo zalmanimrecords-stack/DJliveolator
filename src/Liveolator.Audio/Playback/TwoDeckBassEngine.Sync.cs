@@ -14,13 +14,13 @@ public sealed partial class TwoDeckBassEngine
     public double DeckFirstBeat(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _firstBeat[slot];
+        lock (_gate) return _slots[slot].FirstBeat;
     }
 
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds)
     {
         ValidateSlot(slot);
-        lock (_gate) _firstBeat[slot] = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
+        lock (_gate) _slots[slot].FirstBeat = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
     }
 
     public void SyncOnce(int slot)
@@ -28,25 +28,27 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            if (_decks[slot] is not { } deck || _baseBpm[slot] <= 0.0)
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck || s.BaseBpm <= 0.0)
                 return;
 
-            int leader = slot == 0 ? 1 : 0;
-            if (_decks[leader] is null || _baseBpm[leader] <= 0.0)
+            int leaderSlot = slot == 0 ? 1 : 0;
+            DeckSlot leader = _slots[leaderSlot];
+            if (leader.Deck is null || leader.BaseBpm <= 0.0)
                 return;
 
-            double leaderRate = _playbackRate[leader];
+            double leaderRate = leader.PlaybackRate;
             double targetRate = TempoSyncCalculator.RateFor(
-                _baseBpm[leader] * leaderRate,
-                _baseBpm[slot]);
-            _playbackRate[slot] = targetRate;
-            _pitchPosition[slot] = PitchPositionFor(targetRate);
+                leader.BaseBpm * leaderRate,
+                s.BaseBpm);
+            s.PlaybackRate = targetRate;
+            s.PitchPosition = PitchPositionFor(targetRate);
             _backend.SetDeckRate(deck.Handle, targetRate);
             PhaseAlignToLeader(slot);
             _logger.LogInformation(
                 "Deck slot {Slot} one-shot synced to deck {Leader} at rate {Rate:F5}.",
                 slot,
-                leader,
+                leaderSlot,
                 targetRate);
         }
     }
@@ -54,7 +56,7 @@ public sealed partial class TwoDeckBassEngine
     public bool IsSyncLocked(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _syncLocked[slot];
+        lock (_gate) return _slots[slot].SyncLocked;
     }
 
     public void SetSyncLock(int slot, bool enabled)
@@ -62,7 +64,8 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            _syncLocked[slot] = enabled;
+            DeckSlot s = _slots[slot];
+            s.SyncLocked = enabled;
             if (enabled)
             {
                 // Professional SYNC engage (doc 11): (1) beatmatch tempo to the master, then (2) snap the
@@ -75,8 +78,8 @@ public sealed partial class TwoDeckBassEngine
             }
             else
             {
-                if (_decks[slot] is { } deck)
-                    _backend.SetDeckRate(deck.Handle, _playbackRate[slot]);
+                if (s.Deck is { } deck)
+                    _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
                 SetSyncStateLocked(slot, SyncLockState.Off);
             }
         }
@@ -90,7 +93,7 @@ public sealed partial class TwoDeckBassEngine
     public SyncLockState SyncState(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _syncState[slot];
+        lock (_gate) return _slots[slot].SyncState;
     }
 
     /// <inheritdoc />
@@ -106,7 +109,7 @@ public sealed partial class TwoDeckBassEngine
             // stays Active but uncorrected — never a wrong tempo.
             for (int slot = 0; slot < Decks; slot++)
             {
-                if (!_syncLocked[slot])
+                if (!_slots[slot].SyncLocked)
                     continue;
                 int leader = ValidLeaderSlot(slot);
                 if (leader < 0)
@@ -126,10 +129,11 @@ public sealed partial class TwoDeckBassEngine
         continuousBeat = 0.0;
         lock (_gate)
         {
-            if (_disposed || ComputeSyncMasterLocked() is not int master || _decks[master] is not { } deck)
+            if (_disposed || ComputeSyncMasterLocked() is not int masterSlot || _slots[masterSlot].Deck is not { } deck)
                 return false;
 
-            double bpm = EffectiveBpm(master);
+            DeckSlot master = _slots[masterSlot];
+            double bpm = EffectiveBpm(masterSlot);
             if (bpm <= 0.0)
                 return false;
 
@@ -138,7 +142,7 @@ public sealed partial class TwoDeckBassEngine
             // what the listener hears.
             double posSeconds = _backend.GetDeckPositionSeconds(deck.Handle) - _phaseLock.OutputLatencySeconds;
             effectiveBpm = bpm;
-            continuousBeat = (posSeconds - _firstBeat[master]) / (60.0 / _baseBpm[master]);
+            continuousBeat = (posSeconds - master.FirstBeat) / (60.0 / master.BaseBpm);
             return true;
         }
     }
@@ -150,7 +154,7 @@ public sealed partial class TwoDeckBassEngine
     {
         for (int slot = 0; slot < Decks; slot++)
         {
-            if (!_syncLocked[slot])
+            if (!_slots[slot].SyncLocked)
                 continue;
             int leader = ValidLeaderSlot(slot);
             if (leader >= 0)
@@ -163,22 +167,26 @@ public sealed partial class TwoDeckBassEngine
     // synced, known base BPM) and this slot can be matched (loaded, known base BPM); otherwise -1.
     private int ValidLeaderSlot(int slot)
     {
-        if (_decks[slot] is null || _baseBpm[slot] <= 0.0)
+        DeckSlot s = _slots[slot];
+        if (s.Deck is null || s.BaseBpm <= 0.0)
             return -1;
-        int leader = slot == 0 ? 1 : 0;
-        if (_decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
+        int leaderSlot = slot == 0 ? 1 : 0;
+        DeckSlot leader = _slots[leaderSlot];
+        if (leader.Deck is null || leader.SyncLocked || leader.BaseBpm <= 0.0)
             return -1;
-        return leader;
+        return leaderSlot;
     }
 
     // Caller holds _gate. One correction tick for a synced slave: measure the residual beat-phase error
     // against the master, apply the clamped micro pitch-bend, and re-snap once if it has slipped too far.
-    private void CorrectSlaveLocked(int slot, int leader)
+    private void CorrectSlaveLocked(int slot, int leaderSlot)
     {
-        if (_decks[slot] is not { } deck || _decks[leader] is not { } leaderDeck)
+        DeckSlot s = _slots[slot];
+        DeckSlot leader = _slots[leaderSlot];
+        if (s.Deck is not { } deck || leader.Deck is not { } leaderDeck)
             return;
 
-        if (_baseBpm[slot] <= 0.0 || _baseBpm[leader] <= 0.0)
+        if (s.BaseBpm <= 0.0 || leader.BaseBpm <= 0.0)
         {
             SetSyncStateLocked(slot, SyncLockState.Active);
             return;
@@ -192,9 +200,9 @@ public sealed partial class TwoDeckBassEngine
         // analyzed base BPM; playback rate changes how quickly the playhead crosses that grid, not the
         // distance between kick markers in the source.
         var slavePhase = new DeckPhase(
-            _backend.GetDeckPositionSeconds(deck.Handle) - lat, _firstBeat[slot], _baseBpm[slot]);
+            _backend.GetDeckPositionSeconds(deck.Handle) - lat, s.FirstBeat, s.BaseBpm);
         var masterPhase = new DeckPhase(
-            _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, _firstBeat[leader], _baseBpm[leader]);
+            _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, leader.FirstBeat, leader.BaseBpm);
 
         double beatmatchedRate = SyncedRateFor(slot); // the tempo-matched base rate, before phase correction
         PhaseLockCorrection correction =
@@ -219,10 +227,11 @@ public sealed partial class TwoDeckBassEngine
     // set diagnostics capture lock/drift changes without flooding the log (doc 03 invariant).
     private void SetSyncStateLocked(int slot, SyncLockState state)
     {
-        if (_syncState[slot] == state)
+        DeckSlot s = _slots[slot];
+        if (s.SyncState == state)
             return;
-        _logger.LogInformation("Deck slot {Slot} sync state {Old} -> {New}.", slot, _syncState[slot], state);
-        _syncState[slot] = state;
+        _logger.LogInformation("Deck slot {Slot} sync state {Old} -> {New}.", slot, s.SyncState, state);
+        s.SyncState = state;
     }
 
     // Caller holds _gate. Beatmatch one synced deck to the sync leader: leader = the other deck if it is
@@ -230,24 +239,25 @@ public sealed partial class TwoDeckBassEngine
     // base BPM unknown) the rate is left unchanged — Sync stays armed but silent, never a wrong tempo.
     private void ReapplyRate(int slot)
     {
-        if (_decks[slot] is not { } deck)
+        DeckSlot s = _slots[slot];
+        if (s.Deck is not { } deck)
             return;
-        if (_baseBpm[slot] <= 0.0)
+        if (s.BaseBpm <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} sync: own BPM unknown; rate unchanged.", slot);
             return;
         }
 
-        int leader = slot == 0 ? 1 : 0;
-        if (_decks[leader] is null || _syncLocked[leader] || _baseBpm[leader] <= 0.0)
+        DeckSlot leader = _slots[slot == 0 ? 1 : 0];
+        if (leader.Deck is null || leader.SyncLocked || leader.BaseBpm <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} sync: no valid leader; rate unchanged.", slot);
             return;
         }
 
         // A prior one-shot sync can put the leader beyond the manual pitch fader's display range.
-        double leaderEffectiveBpm = _baseBpm[leader] * _playbackRate[leader];
-        double rate = TempoSyncCalculator.RateFor(leaderEffectiveBpm, _baseBpm[slot]);
+        double leaderEffectiveBpm = leader.BaseBpm * leader.PlaybackRate;
+        double rate = TempoSyncCalculator.RateFor(leaderEffectiveBpm, s.BaseBpm);
         _backend.SetDeckRate(deck.Handle, rate);
     }
 
@@ -255,14 +265,14 @@ public sealed partial class TwoDeckBassEngine
     private void ReapplySyncedFollowers()
     {
         for (int slot = 0; slot < Decks; slot++)
-            if (_syncLocked[slot])
+            if (_slots[slot].SyncLocked)
                 ReapplyRate(slot);
     }
 
     public bool IsQuantizeEnabled(int slot)
     {
         ValidateSlot(slot);
-        lock (_gate) return _quantize[slot];
+        lock (_gate) return _slots[slot].Quantize;
     }
 
     public void SetQuantize(int slot, bool enabled)
@@ -270,7 +280,7 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            _quantize[slot] = enabled;
+            _slots[slot].Quantize = enabled;
             // Phase match (doc 11): enabling Quantize snaps the deck's beat phase onto the leader's grid
             // once, now. The latch stays so a UI/LED reflects the armed state; the alignment is the action.
             if (enabled)
@@ -283,17 +293,18 @@ public sealed partial class TwoDeckBassEngine
     // deck's own anchor/BPM unknown) the playhead is left where it is — Quantize arms but does not guess.
     private void PhaseAlignToLeader(int slot)
     {
-        if (_decks[slot] is not { } deck)
+        DeckSlot s = _slots[slot];
+        if (s.Deck is not { } deck)
             return;
 
-        if (_baseBpm[slot] <= 0.0)
+        if (s.BaseBpm <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} quantize: own tempo unknown; phase unchanged.", slot);
             return;
         }
 
-        int leader = slot == 0 ? 1 : 0;
-        if (_decks[leader] is null || _baseBpm[leader] <= 0.0)
+        DeckSlot leader = _slots[slot == 0 ? 1 : 0];
+        if (leader.Deck is not { } leaderDeck || leader.BaseBpm <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} quantize: no valid leader; phase unchanged.", slot);
             return;
@@ -303,9 +314,9 @@ public sealed partial class TwoDeckBassEngine
         // track's analyzed base BPM. Effective BPM describes wall-clock playback speed and would skew
         // the kick grid whenever Sync changes the deck rate.
         var followerPhase = new DeckPhase(
-            _backend.GetDeckPositionSeconds(deck.Handle), _firstBeat[slot], _baseBpm[slot]);
+            _backend.GetDeckPositionSeconds(deck.Handle), s.FirstBeat, s.BaseBpm);
         var leaderPhase = new DeckPhase(
-            _backend.GetDeckPositionSeconds(_decks[leader]!.Handle), _firstBeat[leader], _baseBpm[leader]);
+            _backend.GetDeckPositionSeconds(leaderDeck.Handle), leader.FirstBeat, leader.BaseBpm);
 
         double nudgeSeconds = PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
         double length = _backend.GetDeckLengthSeconds(deck.Handle);
