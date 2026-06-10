@@ -1,0 +1,204 @@
+using Liveolator.Core.Audio;
+using Microsoft.Extensions.Logging;
+
+namespace Liveolator.Audio.Playback;
+
+/// <summary>
+/// Transport surface of <see cref="TwoDeckBassEngine"/>: load/unload a deck, play/pause/stop, read and
+/// move the playhead (seek/jog), the CDJ cue button, and the end-of-track handoff.
+/// </summary>
+public sealed partial class TwoDeckBassEngine
+{
+    public bool IsPlaying(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _decks[slot]?.Playing ?? false;
+    }
+
+    public void Load(int slot, string trackPath)
+    {
+        ValidateSlot(slot);
+        if (string.IsNullOrWhiteSpace(trackPath))
+            throw new ArgumentException("trackPath must be a non-empty path.", nameof(trackPath));
+
+        lock (_gate)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(TwoDeckBassEngine));
+
+            try
+            {
+                // Open the new stream BEFORE unloading the current track, so a failed open (missing /
+                // corrupt / unreadable file — e.g. a stale live-queue or restored entry) leaves the deck's
+                // existing track loaded and playable rather than wiping it. A bad track must never empty a
+                // good deck (global standards #16/#26).
+                int handle = _backend.OpenDeckStream(trackPath);
+                UnloadSlot(slot);
+                IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
+                _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
+                _decks[slot] = new LoadedDeck(handle, channel, Playing: false);
+                _loadedPath[slot] = trackPath; // the cue-store key for this slot
+                // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the
+                // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
+                // load action supplies the new track's base BPM via SetDeckBaseBpm).
+                if (!_syncLocked[slot])
+                    _backend.SetDeckRate(handle, _playbackRate[slot]);
+                // Restore the track's persisted hot cues (A3). Tolerant: a missing/unreadable store
+                // leaves the slot with the fresh (empty) cue bank UnloadSlot cleared — never a throw.
+                LoadPersistedHotCues(slot, handle, trackPath);
+                // Arm end-of-track handling (A4): when this stream runs out, mark the slot stopped and
+                // raise DeckEnded so the live queue can auto-advance (or stop when dry).
+                _backend.SetDeckEndCallback(handle, () => OnDeckEnded(slot, handle));
+                _logger.LogInformation("Loaded deck slot {Slot} <- {Track}", slot, trackPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load deck slot {Slot} <- {Track}", slot, trackPath);
+                throw;
+            }
+        }
+    }
+
+    public void PlayPause(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+            {
+                _logger.LogWarning("PlayPause deck slot {Slot} requested with no track loaded; ignoring.", slot);
+                return;
+            }
+            bool next = !deck.Playing;
+            _backend.SetDeckPlaying(deck.Handle, next);
+            _decks[slot] = deck with { Playing = next };
+        }
+    }
+
+    public void Stop(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is { Playing: true } deck)
+            {
+                _backend.SetDeckPlaying(deck.Handle, false);
+                _decks[slot] = deck with { Playing = false };
+            }
+        }
+    }
+
+    public double Position(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+            return _decks[slot] is { } deck ? _backend.GetDeckPositionFraction(deck.Handle) : 0.0;
+    }
+
+    public void Seek(int slot, double position, bool relative)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return; // nothing loaded — no playhead to move
+            double target = relative
+                ? Math.Clamp(_backend.GetDeckPositionFraction(deck.Handle) + position, 0.0, 1.0)
+                : Math.Clamp(position, 0.0, 1.0);
+            _backend.SetDeckPositionFraction(deck.Handle, target);
+        }
+    }
+
+    public void Jog(int slot, double deltaSeconds)
+    {
+        ValidateSlot(slot);
+        if (!double.IsFinite(deltaSeconds))
+            return;
+
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return;
+
+            double lengthSeconds = _backend.GetDeckLengthSeconds(deck.Handle);
+            if (lengthSeconds <= 0.0)
+                return;
+
+            double targetSeconds = Math.Clamp(
+                _backend.GetDeckPositionSeconds(deck.Handle) + deltaSeconds,
+                0.0,
+                lengthSeconds);
+            _backend.SetDeckPositionFraction(deck.Handle, targetSeconds / lengthSeconds);
+        }
+    }
+
+    public void Cue(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            if (_decks[slot] is not { } deck)
+                return;
+
+            // CDJ back-to-cue (A5): the pure resolver decides set-vs-return from the deck's transport
+            // state, live position, and stored temp cue. Set drops a fresh cue here; return jumps to the
+            // stored cue (or track start when none is set) and pauses.
+            double current = _backend.GetDeckPositionFraction(deck.Handle);
+            CueButtonAction action = CueButtonResolver.Resolve(deck.Playing, current, _tempCue[slot]);
+            if (action == CueButtonAction.SetCueHere)
+            {
+                _tempCue[slot] = current;
+                _backend.SetDeckPlaying(deck.Handle, false);
+                _decks[slot] = deck with { Playing = false };
+                _logger.LogInformation("Deck slot {Slot} cue: set temp cue at {Pos:F4}.", slot, current);
+                return;
+            }
+
+            double target = _tempCue[slot] ?? 0.0; // return to the stored cue, else the track start
+            _backend.SetDeckPositionFraction(deck.Handle, target);
+            _backend.SetDeckPlaying(deck.Handle, false);
+            _decks[slot] = deck with { Playing = false };
+        }
+    }
+
+    // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel and the
+    // track-specific hot-cues (a new track gets fresh cues).
+    private void UnloadSlot(int slot)
+    {
+        if (_decks[slot] is not { } deck)
+            return;
+        _backend.ClearDeckLoop(deck.Handle); // drop any loop sync before the stream is freed
+        _backend.UnplugDeck(deck.Handle);
+        _mixer.SetChannel(slot, null);
+        _decks[slot] = null;
+        _loadedPath[slot] = null;
+        _tempCue[slot] = null; // the temp cue belongs to the track — the new track starts with none
+        Array.Clear(_hotCues[slot]);
+        _baseBpm[slot] = 0.0;   // base BPM belongs to the track — the new track supplies its own on load
+        _firstBeat[slot] = 0.0; // first-beat anchor likewise belongs to the track
+        _loopBeats[slot] = 0.0; // a new track has no active loop
+    }
+
+    // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the
+    // slot stopped under the gate, then raises DeckEnded OUTSIDE the lock so a subscriber that drives the
+    // engine back (e.g. the live-queue binding loading the next track) does not run nested under _gate.
+    // Guarded by handle so a stale callback from an already-replaced deck is ignored.
+    private void OnDeckEnded(int slot, int handle)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _decks[slot] is not { } deck || deck.Handle != handle)
+                return; // the slot was replaced/unloaded before the end fired — ignore the stale callback
+            _decks[slot] = deck with { Playing = false };
+        }
+
+        try
+        {
+            DeckEnded?.Invoke(this, slot);
+        }
+        catch (Exception ex)
+        {
+            // A misbehaving subscriber must not bubble onto the BASS sync thread (global #16/#26).
+            _logger.LogError(ex, "A DeckEnded handler threw for deck slot {Slot}.", slot);
+        }
+    }
+}
