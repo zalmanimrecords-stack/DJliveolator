@@ -200,6 +200,56 @@ public sealed class GlVisualPerformanceEngineTests
     }
 
     [Fact]
+    public void SetLayerOpacity_OnExistingLayer_DoesNotRebuildTheComposition()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+        long before = engine.CompositionVersion;
+
+        engine.SetLayerOpacity(0, 0.4);
+
+        // Opacity is a live per-frame uniform — it must NOT bump the version, which would force a full
+        // renderer teardown (re-decode every image + recompile every shader) on the most common VJ
+        // gesture (doc 27 B5). The live value is still updated for the render loop to read.
+        Assert.Equal(before, engine.CompositionVersion);
+        Assert.Equal(0.4, engine.CurrentComposition()[0].Opacity, precision: 6);
+    }
+
+    [Fact]
+    public void ToggleLayer_OnExistingLayer_DoesNotRebuildTheComposition()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+        long before = engine.CompositionVersion;
+
+        engine.ToggleLayer(0);
+
+        Assert.Equal(before, engine.CompositionVersion);
+        Assert.Equal(0.0, engine.CurrentComposition()[0].Opacity, precision: 6);
+    }
+
+    [Fact]
+    public void SetLayerSource_RebuildsTheComposition()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+        long before = engine.CompositionVersion;
+
+        engine.SetLayerSource(0, new VisualSourceRef(VisualSourceKind.Image, "other.png"), Quantize.Immediate);
+
+        // A source swap needs a new texture/generator, so it must still rebuild.
+        Assert.True(engine.CompositionVersion > before);
+    }
+
+    [Fact]
+    public void SetLayerOpacity_BeyondExistingLayers_RebuildsBecauseTheLayerSetGrew()
+    {
+        var engine = NewEngine(new FakeBeatClock());
+        long before = engine.CompositionVersion;
+
+        engine.SetLayerOpacity(3, 0.5); // creates filler layers up to index 3 → the renderable set changed
+
+        Assert.True(engine.CompositionVersion > before);
+    }
+
+    [Fact]
     public void Constructor_rejects_negative_flash_strength()
         => Assert.Throws<ArgumentOutOfRangeException>(
             () => new GlVisualPerformanceEngine(BankWithImage(), Brightness(), new FakeBeatClock(), flashStrength: -1));

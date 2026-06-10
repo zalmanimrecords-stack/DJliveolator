@@ -75,12 +75,12 @@ The GL compositor lives in `Gl/`:
    ring detail, highs excite orbiting shards, and beats launch a restrained shockwave. Without
    realtime audio it remains animated from time and the manual beat clock.
 
-10. **Milkdrop starter preset (generator feedback + controllable params, doc 28):** dispatch
-    `VisualLoadPreset` with `Argument = "liveolator.builtin.milkdrop/starter"` and `Slot = <layer>`
-    (preset picker, Phase 6). The generator (`MilkdropStarterPresetAddon`) samples the previous frame
+10. **FRKTL preset (generator feedback + controllable params, doc 28):** dispatch
+    `VisualLoadPreset` with `Argument = "liveolator.builtin.frktl/preset"` and `Slot = <layer>`
+    (preset picker, Phase 6). The generator (`FrktlPresetAddon`) samples the previous frame
     via `uPreviousFrame`, so motion **leaves trails** that swirl (WARP) and zoom (ZOOM); audio + beats
     inject neon petals and a shockwave. Drive the five controllable macros
-    (`liveolator.builtin.milkdrop/starter.{glow,warp,speed,zoom,decay}`) via `VisualSetMacro` (a UI knob
+    (`liveolator.builtin.frktl/preset.{glow,warp,speed,zoom,decay}`) via `VisualSetMacro` (a UI knob
     or a learned MIDI knob): GLOW brightens new energy, DECAY lengthens trails. With no realtime audio it
     still animates from time + the manual beat clock. A generator that does **not** declare `uPreviousFrame`
     (VU meter / psy-fractal) renders unchanged — feedback is opt-in per shader.

@@ -22,6 +22,25 @@
 >
 > Where this doc and `docs/18`/`docs/22` disagree on a code fact, **this doc wins** — it was measured
 > against the working tree on 2026-06-10. `docs/18` remains the living module map.
+>
+> **Update (2026-06-10, same day):** first quick-win wave landed (TDD-first, still uncommitted):
+> **B5** (the opacity knob / `ToggleLayer` no longer bumps the composition version → no full compositor
+> rebuild; opacity is now a live per-frame uniform fed to `LayeredQuadRenderer.Render`; also fixed the
+> related medium bug — filler layers now use `VisualSourceKind.None` instead of the non-existent
+> `core/vu-meter` generator), **B6** (re-scan no longer destroys manual beat-grid/BPM edits —
+> `MediaLibrary.PreserveModifiedEntry` hook + `MusicLibrary` override), **B8** (Tab no longer breaks
+> focus traversal inside editable controls), and the **ATL re-analysis log flood** (the `run`
+> observation — `AtlMetadataReader` now short-circuits missing files; startup stdout 1.8 MB → 73 B).
+> All changed projects build and their suites are green (Core 818, Audio 183, Visuals 112, App
+> `MainWindowTests` 7). **B0 reassessed:** it is *not* the one-line "isolate
+> `RxApp` statics" fix implied below — assembly parallelization is already off and the statics are set
+> per-class. The real cause is a **flaky, intermittent cross-suite race**: many view-models start
+> fire-and-forget `Task.Run` background work whose callbacks marshal through the tests' global
+> `ImmediateScheduler` and mutate `ObservableCollection`s on thread-pool threads, never cancelled/awaited,
+> so they leak across the serialized classes. The proper fix is view-model background-work lifecycle
+> (cancellable/disposable) or a single-thread test scheduler — its own scoped task, not a quick win.
+> **Baseline correction:** the per-project counts below were taken from a `--no-build` run that hit a
+> NuGet-restore conflict and read stale assemblies; a clean build measures **Core 818** (not 781).
 
 ---
 

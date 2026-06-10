@@ -37,6 +37,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Don't hijack Tab while focus is in an editable/list control — the user needs it there for
+        // standard field-to-field focus traversal (e.g. the Settings form, the library filter bar).
+        // Consuming it unconditionally broke keyboard navigation app-wide (docs/19 accessibility).
+        if (!ShouldCycleScreensOnTab(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
+        {
+            return;
+        }
+
         if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
             vm.SelectPreviousTab();
@@ -48,6 +56,12 @@ public partial class MainWindow : Window
 
         e.Handled = true;
     }
+
+    // Bare Tab cycles the app's screens, but only when focus is on chrome or nothing — never when a
+    // text-editing or list control owns it, since those need Tab for their own focus traversal.
+    // Pure + static so the decision is unit-testable without spinning up a window and focus tree.
+    internal static bool ShouldCycleScreensOnTab(IInputElement? focused)
+        => focused is not (TextBox or ComboBox or AutoCompleteBox or NumericUpDown);
 
     private void OnFullScreenClick(object? sender, RoutedEventArgs e)
         => ToggleFullScreen();

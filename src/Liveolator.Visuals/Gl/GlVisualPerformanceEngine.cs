@@ -287,14 +287,14 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     }
 
     public void ToggleLayer(int layer)
-        => MutateLayer(layer, current => current with { Opacity = current.Opacity > 0.0 ? 0.0 : 1.0 });
+        => MutateLayer(layer, current => current with { Opacity = current.Opacity > 0.0 ? 0.0 : 1.0 }, liveOnly: true);
 
     public void SetLayerOpacity(int layer, double opacity)
     {
         if (double.IsNaN(opacity))
             throw new ArgumentOutOfRangeException(nameof(opacity), opacity, "Opacity must be a number.");
         double clamped = Math.Clamp(opacity, 0.0, 1.0);
-        MutateLayer(layer, current => current with { Opacity = clamped });
+        MutateLayer(layer, current => current with { Opacity = clamped }, liveOnly: true);
     }
 
     public void LaunchClip(int layer, string clipId, Quantize when, int everyN = 1)
@@ -421,7 +421,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
                         CurrentFrame(),
                         framebufferSize.X,
                         framebufferSize.Y,
-                        new Dictionary<string, double>(_macroValues));
+                        new Dictionary<string, double>(_macroValues),
+                        CurrentLayerOpacities());
                 }
                 else
                 {
@@ -473,7 +474,12 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         }
     }
 
-    private void MutateLayer(int layer, Func<VisualLayer, VisualLayer> mutate)
+    // <paramref name="liveOnly"/>: the mutation only changes a per-frame uniform the render loop already
+    // reads each frame (opacity/visibility), so it must NOT bump the composition version — bumping it
+    // forces a full renderer teardown (re-decode every image + recompile every shader), which made
+    // dragging the OPACITY knob stutter and thrash the disk (doc 27 B5). Source/effect changes (and any
+    // change that grows the layer set) still rebuild, because they need new GL resources.
+    private void MutateLayer(int layer, Func<VisualLayer, VisualLayer> mutate, bool liveOnly = false)
     {
         lock (_sceneGate)
         {
@@ -485,18 +491,24 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
             }
 
             var layers = _activeScene.Layers.ToList();
+            bool layerSetGrew = layers.Count <= layer;
             while (layers.Count <= layer)
             {
                 layers.Add(new VisualLayer(
                     $"Layer {layers.Count + 1}",
-                    new VisualSourceRef(VisualSourceKind.Generator, "core/vu-meter"),
+                    new VisualSourceRef(VisualSourceKind.None, string.Empty),
                     Array.Empty<EffectRef>(),
                     BlendMode.Normal,
                     0.0));
             }
             layers[layer] = mutate(layers[layer]);
             _activeScene = _activeScene with { Layers = layers };
-            MarkCompositionDirty();
+
+            // A live opacity/visibility change to an existing layer is picked up by the render loop's
+            // per-frame opacity snapshot — no rebuild. Anything else (source/effect change, or a grown
+            // layer set that needs new textures) still marks the composition dirty.
+            if (!liveOnly || layerSetGrew)
+                MarkCompositionDirty();
         }
     }
 
@@ -531,6 +543,19 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
             }
         }
         return loaded;
+    }
+
+    // The current opacity of each renderable layer, in the renderer's composite order, read fresh each
+    // frame so a live SetLayerOpacity/ToggleLayer takes effect without rebuilding the renderer. The
+    // renderer applies these only when the count matches its built layers (the no-failed-asset case);
+    // otherwise it falls back to the opacity baked at build time.
+    private IReadOnlyList<double> CurrentLayerOpacities()
+    {
+        IReadOnlyList<ResolvedLayer> renderable = SceneComposition.RenderableLayers(ActiveScene);
+        var opacities = new double[renderable.Count];
+        for (int i = 0; i < renderable.Count; i++)
+            opacities[i] = renderable[i].Opacity;
+        return opacities;
     }
 
     private void LogDeferred(string operation)

@@ -1,3 +1,5 @@
+using Liveolator.Core.Settings;
+
 namespace Liveolator.Visuals.Gl;
 
 /// <summary>
@@ -15,8 +17,9 @@ namespace Liveolator.Visuals.Gl;
 /// <param name="PivotYPixels">Needle pivot Y in pixels at the recommended size.</param>
 /// <param name="ArcRadiusFraction">Scale-arc radius as a fraction of height.</param>
 /// <param name="ArcRadiusPixels">Scale-arc radius in pixels at the recommended size.</param>
-/// <param name="NeedleMinDegrees">Needle angle (from straight up, + = right) at level 0 — far left.</param>
+/// <param name="NeedleMinDegrees">Needle angle (+ = right) at level 0 — far left.</param>
 /// <param name="NeedleMaxDegrees">Needle angle at level 1 — far right.</param>
+/// <param name="Origin">Where the needle pivots from — Bottom (classic) or Top.</param>
 public sealed record VuMeterFaceSpec(
     int RecommendedWidth,
     int RecommendedHeight,
@@ -27,7 +30,8 @@ public sealed record VuMeterFaceSpec(
     double ArcRadiusFraction,
     int ArcRadiusPixels,
     double NeedleMinDegrees,
-    double NeedleMaxDegrees)
+    double NeedleMaxDegrees,
+    VuMeterNeedleOrigin Origin = VuMeterNeedleOrigin.Bottom)
 {
     /// <summary>The recommended aspect ratio (width / height) — e.g. 1.5 for the 3:2 reference face.</summary>
     public double AspectRatio => (double)RecommendedWidth / RecommendedHeight;

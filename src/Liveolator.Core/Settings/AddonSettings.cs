@@ -9,7 +9,10 @@ namespace Liveolator.Core.Settings;
 /// </summary>
 /// <param name="VuMeterBackgroundImagePath">Absolute path to a custom VU-meter face (background) image,
 /// or null to use the built-in face. The needle generator is unaffected.</param>
-public sealed record AddonSettings(string? VuMeterBackgroundImagePath = null)
+/// <param name="VuMeterNeedleOrigin">Whether the VU-meter needle pivots from the bottom (classic) or the top.</param>
+public sealed record AddonSettings(
+    string? VuMeterBackgroundImagePath = null,
+    VuMeterNeedleOrigin VuMeterNeedleOrigin = VuMeterNeedleOrigin.Bottom)
 {
     /// <summary>The default add-on preferences: every add-on at its built-in defaults.</summary>
     public static AddonSettings Default { get; } = new();

@@ -53,6 +53,13 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error,
                ReadMetadata(file.Path), SampleClassifier.Classify(file.Path, null, _sampleFolders));
 
+    // A user-locked beat grid / BPM / key (AnalysisIsManual) must survive a re-tag or any other file
+    // change: rebuilding from the decoder would silently discard the DJ's manual correction (global
+    // standard #7). Keep the manual entry as-is, only re-stamping the fingerprint to the new file so a
+    // following scan sees it Unchanged instead of repeatedly trying to rebuild it.
+    protected override MusicTrack? PreserveModifiedEntry(MusicTrack existing, ScannedFile file)
+        => existing.AnalysisIsManual ? existing with { File = file } : null;
+
     /// <summary>
     /// Designates which scan folders hold samples (the classifier override) and **reclassifies the whole
     /// catalog in place** from cached durations — no re-decode, so toggling a folder is instant. New scans

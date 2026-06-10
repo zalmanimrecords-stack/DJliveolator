@@ -6,6 +6,24 @@ namespace Liveolator.App.Tests.Shell;
 
 public sealed class MainWindowTests
 {
+    [AvaloniaTheory]
+    [InlineData(typeof(TextBox))]
+    [InlineData(typeof(ComboBox))]
+    [InlineData(typeof(NumericUpDown))]
+    [InlineData(typeof(AutoCompleteBox))]
+    public void Tab_DoesNotCycleScreens_WhenAnEditableControlIsFocused(System.Type controlType)
+    {
+        var focused = (Avalonia.Input.IInputElement)System.Activator.CreateInstance(controlType)!;
+        Assert.False(MainWindow.ShouldCycleScreensOnTab(focused)); // Tab must traverse fields, not switch tabs
+    }
+
+    [AvaloniaFact]
+    public void Tab_CyclesScreens_WhenFocusIsOnChromeOrNothing()
+    {
+        Assert.True(MainWindow.ShouldCycleScreensOnTab(new Button())); // chrome → Tab cycles screens
+        Assert.True(MainWindow.ShouldCycleScreensOnTab(null));          // nothing focused → cycles screens
+    }
+
     [AvaloniaFact]
     public void StartsInFullScreen()
     {

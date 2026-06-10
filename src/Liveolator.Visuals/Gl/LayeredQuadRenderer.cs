@@ -88,13 +88,22 @@ public sealed class LayeredQuadRenderer : IDisposable
     public int LayerCount => _layers.Count;
 
     /// <summary>Clears and draws the layer stack bottom→top for one frame using the resolved uniforms.</summary>
+    /// <param name="liveOpacities">
+    /// Optional per-layer opacities (in this renderer's composite order) read live each frame, so a
+    /// <c>SetLayerOpacity</c>/<c>ToggleLayer</c> takes effect without rebuilding the renderer (doc 27 B5).
+    /// Applied only when its count matches the built layer count — i.e. no layer was dropped for a failed
+    /// asset, so positions align; otherwise the opacity baked at build time is used.
+    /// </param>
     public void Render(
         FrameUniforms uniforms,
         int viewportWidth,
         int viewportHeight,
-        IReadOnlyDictionary<string, double>? macroValues = null)
+        IReadOnlyDictionary<string, double>? macroValues = null,
+        IReadOnlyList<double>? liveOpacities = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        bool useLiveOpacities = liveOpacities is not null && liveOpacities.Count == _layers.Count;
 
         _gl.ClearColor(0f, 0f, 0f, 1f);
         _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
@@ -157,7 +166,8 @@ public sealed class LayeredQuadRenderer : IDisposable
             _gl.Uniform1(_uBrightness, uniforms.Brightness);
             _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
             _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
-            _gl.Uniform1(_uOpacity, (float)layer.Opacity);
+            double opacity = useLiveOpacities ? liveOpacities![i] : layer.Opacity;
+            _gl.Uniform1(_uOpacity, (float)opacity);
             _gl.BindTexture(TextureTarget.Texture2D, texture);
             _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
         }

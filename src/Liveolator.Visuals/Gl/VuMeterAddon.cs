@@ -1,4 +1,5 @@
 using System.Globalization;
+using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
 
 namespace Liveolator.Visuals.Gl;
@@ -46,12 +47,13 @@ public static class VuMeterAddon
 
             uniform float uLevel;          // smoothed VU level 0..1 (the needle position)
             uniform sampler2D uBackground; // the dial face (built-in or a custom image)
+            uniform float uPivotYFrac;     // hub Y as a fraction of height (per chosen origin)
+            uniform float uNeedleDown;     // 1 = needle hangs DOWN (top hub), 0 = points UP (bottom hub)
 
             const float PI = 3.14159265;
             const float FW = {{F(VuMeterGeometry.FaceWidth)}};
             const float FH = {{F(VuMeterGeometry.FaceHeight)}};
             const float PX = {{F(VuMeterGeometry.PivotXPx)}};
-            const float PY = {{F(VuMeterGeometry.PivotYPx)}};
             const float R  = {{F(VuMeterGeometry.ArcRadiusPx)}};
             const float AMIN = {{F(VuMeterGeometry.NeedleMinDeg)}};
             const float AMAX = {{F(VuMeterGeometry.NeedleMaxDeg)}};
@@ -63,16 +65,21 @@ public static class VuMeterAddon
             }
 
             void main() {
-                // Face pixel space (origin top-left, y down): vTexCoord.y=0 is the top of the composited
-                // output, matching the top-row-first face image, so the needle registers with the printed
-                // face (VuMeterFace) at any window aspect.
-                vec2 pix = vec2(vTexCoord.x * FW, vTexCoord.y * FH);
+                // The compositor presents this generator's FBO vertically flipped relative to a
+                // top-row-first image, so mirror Y here once: with fc the background image and the needle's
+                // pixel space both read top-left origin, so the meter appears upright (hub near the TOP,
+                // needle hanging DOWN) and the needle registers with the printed face at any aspect.
+                vec2 fc = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
+                vec2 pix = vec2(fc.x * FW, fc.y * FH);
 
                 float ang = mix(AMIN, AMAX, clamp(uLevel, 0.0, 1.0)) * PI / 180.0;
-                vec2 dir = vec2(sin(ang), cos(ang));      // down = +y, + = right (hub at top, needle hangs down)
-                vec2 pivot = vec2(PX, PY);
+                // dirY flips with the chosen origin: +cos hangs the needle DOWN (top hub), -cos points it
+                // UP (bottom hub). Left/right (sin) is the same either way, so level 0 = far left.
+                float dirY = (uNeedleDown > 0.5) ? cos(ang) : -cos(ang);
+                vec2 dir = vec2(sin(ang), dirY);
+                vec2 pivot = vec2(PX, uPivotYFrac * FH);
                 vec2 tip  = pivot + dir * (R + 12.0);
-                vec2 tail = pivot - dir * 46.0;           // short counterweight above the hub
+                vec2 tail = pivot - dir * 46.0;           // short counterweight past the hub
 
                 float len = length(tip - tail);
                 float along = clamp(dot(pix - tail, (tip - tail) / len) / len, 0.0, 1.0);
@@ -81,8 +88,8 @@ public static class VuMeterAddon
                 float needle = smoothstep(halfW, halfW - 1.6, d);
 
                 // The dial face is the background image; the needle is drawn over it with a soft shadow
-                // so it stays legible on any custom face. Opaque output — this layer IS the whole meter.
-                vec3 col = texture(uBackground, vTexCoord).rgb;
+                // so it stays legible on any custom face. Opaque output - this layer IS the whole meter.
+                vec3 col = texture(uBackground, fc).rgb;
                 float shadow = smoothstep(halfW + 3.0, halfW + 0.5, d);
                 col *= (1.0 - 0.30 * shadow);
                 col = mix(col, vec3(0.04), needle);        // near-black needle
@@ -97,34 +104,45 @@ public static class VuMeterAddon
     /// or a custom one) sampled as <c>uBackground</c>; the generator only animates the needle from
     /// <c>uLevel</c> over it.
     /// </summary>
-    public static VisualEffectDescriptor Descriptor(string shaderPath, string backgroundPath) => new(
+    public static VisualEffectDescriptor Descriptor(
+        string shaderPath, string backgroundPath, VuMeterNeedleOrigin origin) => new(
         EffectId,
         Version,
         PackageId,
         shaderPath,
-        Array.Empty<VisualEffectParameter>(),
+        new[]
+        {
+            // The pivot Y and needle direction are uniforms (not baked) so one shader serves both origins;
+            // re-registering with a different origin live-swaps them once the composition refreshes.
+            new VisualEffectParameter("pivotY", "uPivotYFrac", Min: 0.0, Max: 1.0,
+                Default: VuMeterGeometry.PivotYFrac(origin)),
+            new VisualEffectParameter("needleDown", "uNeedleDown", Min: 0.0, Max: 1.0,
+                Default: VuMeterGeometry.NeedleDown(origin) ? 1.0 : 0.0),
+        },
         Role: VisualEffectRole.Generator,
         BackgroundImagePath: backgroundPath);
 
-    /// <summary>The static dial-face image this needle composites over (rendered by <see cref="VuMeterFace"/>).</summary>
-    public static string FaceImagePath() => VuMeterFace.EnsureCreated();
+    /// <summary>The built-in dial-face image for the chosen origin (rendered by <see cref="VuMeterFace"/>).</summary>
+    public static string FaceImagePath(VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom)
+        => VuMeterFace.EnsureCreated(origin);
 
     /// <summary>
-    /// The spec a custom face (background) image must follow so the standard needle still registers with
-    /// it — surfaced to the Add-ons settings page. Derived from <see cref="VuMeterGeometry"/> (single
-    /// source of truth) so the published size/pivot can never drift from the shader and face renderer.
+    /// The spec a custom face (background) image must follow for the chosen origin so the standard needle
+    /// still registers with it — surfaced to the Add-ons settings page. Derived from
+    /// <see cref="VuMeterGeometry"/> (single source of truth) so the published size/pivot can never drift.
     /// </summary>
-    public static VuMeterFaceSpec FaceSpec { get; } = new(
+    public static VuMeterFaceSpec FaceSpec(VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom) => new(
         RecommendedWidth: VuMeterGeometry.FaceWidth,
         RecommendedHeight: VuMeterGeometry.FaceHeight,
         PivotXFraction: VuMeterGeometry.PivotXFrac,
-        PivotYFraction: VuMeterGeometry.PivotYFrac,
+        PivotYFraction: VuMeterGeometry.PivotYFrac(origin),
         PivotXPixels: (int)Math.Round(VuMeterGeometry.PivotXPx),
-        PivotYPixels: (int)Math.Round(VuMeterGeometry.PivotYPx),
+        PivotYPixels: (int)Math.Round(VuMeterGeometry.PivotYPx(origin)),
         ArcRadiusFraction: VuMeterGeometry.ArcRadiusFrac,
         ArcRadiusPixels: (int)Math.Round(VuMeterGeometry.ArcRadiusPx),
         NeedleMinDegrees: VuMeterGeometry.NeedleMinDeg,
-        NeedleMaxDegrees: VuMeterGeometry.NeedleMaxDeg);
+        NeedleMaxDegrees: VuMeterGeometry.NeedleMaxDeg,
+        Origin: origin);
 
     /// <summary>
     /// Ensures the shader exists and returns its absolute path. Idempotent: writes only when missing.
@@ -155,7 +173,10 @@ public static class VuMeterAddon
     /// the composition is refreshed (the renderer rebuilds the generator from this descriptor).
     /// </summary>
     public static bool TryRegister(
-        IVisualEffectRegistry registry, string? backgroundPath = null, Action<string>? onWarning = null)
+        IVisualEffectRegistry registry,
+        string? backgroundPath = null,
+        VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom,
+        Action<string>? onWarning = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         try
@@ -163,8 +184,8 @@ public static class VuMeterAddon
             string shaderPath = EnsureShaderCreated();
             string background = !string.IsNullOrWhiteSpace(backgroundPath) && File.Exists(backgroundPath)
                 ? backgroundPath
-                : FaceImagePath();
-            registry.ReplacePackage(PackageId, new[] { Descriptor(shaderPath, background) });
+                : FaceImagePath(origin);
+            registry.ReplacePackage(PackageId, new[] { Descriptor(shaderPath, background, origin) });
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)

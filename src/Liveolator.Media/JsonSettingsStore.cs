@@ -24,7 +24,8 @@ public sealed record SettingsSnapshot(
     double? WaveformZoomSeconds = null,
     double? NudgeSeconds = null,
     string? MinimumLogLevel = null,
-    string? VuMeterBackgroundImagePath = null)
+    string? VuMeterBackgroundImagePath = null,
+    int? VuMeterNeedleOrigin = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -107,7 +108,9 @@ public sealed class JsonSettingsStore : ISettingsStore
                 snapshot.NudgeSeconds ?? VisualsSettings.DefaultNudgeSeconds),
             Diagnostics = new DiagnosticsSettings(
                 snapshot.MinimumLogLevel ?? DiagnosticsSettings.DefaultMinimumLevel),
-            Addons = new AddonSettings(snapshot.VuMeterBackgroundImagePath),
+            Addons = new AddonSettings(
+                snapshot.VuMeterBackgroundImagePath,
+                (VuMeterNeedleOrigin)(snapshot.VuMeterNeedleOrigin ?? (int)VuMeterNeedleOrigin.Bottom)),
         }.Normalized();
     }
 

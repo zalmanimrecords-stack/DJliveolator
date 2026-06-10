@@ -25,20 +25,22 @@ public sealed class AddonsViewModel : ViewModelBase
 
     public AddonsViewModel(
         ISettingsStore store,
-        VuMeterFaceSpec vuMeterFaceSpec,
-        string defaultVuMeterFacePath,
+        Func<VuMeterNeedleOrigin, VuMeterFaceSpec> vuMeterSpecFor,
+        Func<VuMeterNeedleOrigin, string> vuMeterDefaultFaceFor,
         string? currentVuMeterCustomFacePath = null,
-        Action<string?>? applyVuMeterBackground = null,
+        VuMeterNeedleOrigin vuMeterOrigin = VuMeterNeedleOrigin.Bottom,
+        Action<string?, VuMeterNeedleOrigin>? applyVuMeterBackground = null,
         IVisualEffectRegistry? registry = null,
         IExtensionCatalog? extensions = null,
         IImageDimensionsProbe? imageProbe = null)
     {
         ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(vuMeterFaceSpec);
+        ArgumentNullException.ThrowIfNull(vuMeterSpecFor);
+        ArgumentNullException.ThrowIfNull(vuMeterDefaultFaceFor);
 
         _vuMeterSettings = new VuMeterBackgroundSettingsViewModel(
-            store, vuMeterFaceSpec, defaultVuMeterFacePath,
-            currentVuMeterCustomFacePath, applyVuMeterBackground, imageProbe);
+            store, vuMeterSpecFor, vuMeterDefaultFaceFor,
+            currentVuMeterCustomFacePath, vuMeterOrigin, applyVuMeterBackground, imageProbe);
 
         OpenSettingsCommand = ReactiveCommand.Create<AddonItemViewModel>(item => SelectedAddon = item);
 

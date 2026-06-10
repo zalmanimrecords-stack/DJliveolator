@@ -1,3 +1,4 @@
+using Liveolator.Core.Settings;
 using SkiaSharp;
 
 namespace Liveolator.Visuals.Gl;
@@ -12,28 +13,31 @@ namespace Liveolator.Visuals.Gl;
 /// </summary>
 public static class VuMeterFace
 {
-    // Bump when the drawing changes so an existing install regenerates the cached PNG.
-    // v2: top-pivot layout — hub near the top, scale arc + needle hang downward.
-    private const string Version = "v2";
+    // Bump when the drawing changes so an existing install regenerates the cached PNG. The needle-origin
+    // is part of the cache key so Top and Bottom faces are cached side by side.
+    // v3: needle origin is selectable (Bottom = classic, Top = mirror).
+    private const string Version = "v3";
 
     private static readonly SKColor Ink = new(0x1A, 0x17, 0x14);
     private static readonly SKColor Red = new(0xC0, 0x24, 0x1B);
 
     /// <summary>
-    /// Ensures the face PNG exists and returns its absolute path. Idempotent per <see cref="Version"/>:
-    /// regenerates only when missing. Throws on a genuine write failure — guard the call for best-effort startup.
+    /// Ensures the face PNG for the chosen needle origin exists and returns its absolute path. Idempotent
+    /// per <see cref="Version"/> + origin: regenerates only when missing. Throws on a genuine write failure
+    /// — guard the call for best-effort startup.
     /// </summary>
-    public static string EnsureCreated(string? directory = null)
+    public static string EnsureCreated(VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom, string? directory = null)
     {
         directory ??= Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liveolator", "assets");
         Directory.CreateDirectory(directory);
 
-        string path = Path.Combine(directory, $"vu-meter-face-{Version}.png");
+        string path = Path.Combine(
+            directory, $"vu-meter-face-{Version}-{origin.ToString().ToLowerInvariant()}.png");
         if (File.Exists(path))
             return path;
 
-        using SKBitmap bitmap = Render();
+        using SKBitmap bitmap = Render(origin);
         using SKImage image = SKImage.FromBitmap(bitmap);
         using SKData data = image.Encode(SKEncodedImageFormat.Png, 95);
         using FileStream file = File.Create(path);
@@ -41,32 +45,37 @@ public static class VuMeterFace
         return path;
     }
 
-    /// <summary>Renders the face to a bitmap (exposed so a test can inspect the result without GL).</summary>
-    public static SKBitmap Render()
+    /// <summary>Renders the face for the chosen origin (exposed so a test can inspect it without GL).</summary>
+    public static SKBitmap Render(VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom)
     {
         int w = VuMeterGeometry.FaceWidth;
         int h = VuMeterGeometry.FaceHeight;
         var bitmap = new SKBitmap(w, h);
         using var canvas = new SKCanvas(bitmap);
 
+        float cy = VuMeterGeometry.PivotYPx(origin);
+        // arcSign +1 puts the scale arc BELOW the hub (Top origin, needle hangs down); -1 puts it ABOVE
+        // (Bottom origin, classic needle-up). The needle shader uses the matching direction.
+        float arcSign = VuMeterGeometry.NeedleDown(origin) ? 1f : -1f;
+
         DrawBezel(canvas, w, h);
         DrawFace(canvas, w, h);
-        DrawScale(canvas);
-        DrawLegend(canvas, w, h);
-        DrawHub(canvas);
+        DrawScale(canvas, cy, arcSign);
+        DrawLegend(canvas, w, h, origin);
+        DrawHub(canvas, cy);
         DrawScrews(canvas, w, h);
 
         return bitmap;
     }
 
-    private static SKPoint PointAt(float cx, float cy, float radius, float angleDeg)
+    private static SKPoint PointAt(float cx, float cy, float radius, float angleDeg, float arcSign)
     {
-        // Angle from straight DOWN, + toward the right: the hub is near the top and the scale arc + needle
-        // fall BELOW it (top-pivot meter), so y grows with cos(angle).
+        // Angle from the hub, + toward the right. arcSign flips the arc/scale to the side the needle sweeps:
+        // +1 below the hub (Top origin), -1 above it (Bottom origin).
         double rad = angleDeg * Math.PI / 180.0;
         return new SKPoint(
             (float)(cx + radius * Math.Sin(rad)),
-            (float)(cy + radius * Math.Cos(rad)));
+            (float)(cy + arcSign * radius * Math.Cos(rad)));
     }
 
     private static SKTypeface Serif() =>
@@ -182,10 +191,9 @@ public static class VuMeterFace
 
     // ── Scale: arc, ticks, numbers ───────────────────────────────────────────────────────────────
 
-    private static void DrawScale(SKCanvas canvas)
+    private static void DrawScale(SKCanvas canvas, float cy, float arcSign)
     {
         float cx = VuMeterGeometry.PivotXPx;
-        float cy = VuMeterGeometry.PivotYPx;
         float r = VuMeterGeometry.ArcRadiusPx;
 
         // Arc line — black up to the redline, red beyond. Drawn as short segments along t.
@@ -199,8 +207,8 @@ public static class VuMeterFace
             arc.Color = red ? Red : Ink;
             arc.StrokeWidth = red ? 6f : 3.2f;
             canvas.DrawLine(
-                PointAt(cx, cy, r, VuMeterGeometry.AngleDegAt(t0)),
-                PointAt(cx, cy, r, VuMeterGeometry.AngleDegAt(t1)),
+                PointAt(cx, cy, r, VuMeterGeometry.AngleDegAt(t0), arcSign),
+                PointAt(cx, cy, r, VuMeterGeometry.AngleDegAt(t1), arcSign),
                 arc);
         }
 
@@ -209,12 +217,12 @@ public static class VuMeterFace
         var top = VuMeterGeometry.TopLabels;
         for (int i = 0; i < top.Length; i++)
         {
-            DrawTick(canvas, tick, cx, cy, r, top[i].T, major: true);
+            DrawTick(canvas, tick, cx, cy, r, top[i].T, arcSign, major: true);
             if (i < top.Length - 1)
-                DrawTick(canvas, tick, cx, cy, r, (top[i].T + top[i + 1].T) * 0.5f, major: false);
+                DrawTick(canvas, tick, cx, cy, r, (top[i].T + top[i + 1].T) * 0.5f, arcSign, major: false);
         }
 
-        // Numbers: dB row above the arc, percentage row below it.
+        // Numbers: dB row on the outer edge of the arc, percentage row on the inner edge.
         using var font = new SKPaint
         {
             IsAntialias = true, Typeface = Serif(), TextAlign = SKTextAlign.Center, TextSize = 40,
@@ -223,51 +231,55 @@ public static class VuMeterFace
         {
             font.Color = t >= VuMeterGeometry.RedlineT ? Red : Ink;
             font.TextSize = (text is "-" or "+") ? 52 : 40;
-            DrawLabel(canvas, font, cx, cy, r + 46f, t, text);
+            DrawLabel(canvas, font, cx, cy, r + 46f, t, text, arcSign);
         }
 
         font.TextSize = 30;
         foreach ((float t, string text) in VuMeterGeometry.BottomLabels)
         {
             font.Color = text == "100" ? Red : Ink;
-            DrawLabel(canvas, font, cx, cy, r - 40f, t, text);
+            DrawLabel(canvas, font, cx, cy, r - 40f, t, text, arcSign);
         }
     }
 
-    private static void DrawTick(SKCanvas canvas, SKPaint tick, float cx, float cy, float r, float t, bool major)
+    private static void DrawTick(SKCanvas canvas, SKPaint tick, float cx, float cy, float r, float t, float arcSign, bool major)
     {
         bool red = t >= VuMeterGeometry.RedlineT;
         tick.Color = red ? Red : Ink;
         tick.StrokeWidth = major ? 3.4f : 2f;
         float angle = VuMeterGeometry.AngleDegAt(t);
         float outer = r + (major ? 22f : 12f);
-        canvas.DrawLine(PointAt(cx, cy, r, angle), PointAt(cx, cy, outer, angle), tick);
+        canvas.DrawLine(PointAt(cx, cy, r, angle, arcSign), PointAt(cx, cy, outer, angle, arcSign), tick);
     }
 
-    private static void DrawLabel(SKCanvas canvas, SKPaint font, float cx, float cy, float radius, float t, string text)
+    private static void DrawLabel(SKCanvas canvas, SKPaint font, float cx, float cy, float radius, float t, string text, float arcSign)
     {
-        SKPoint p = PointAt(cx, cy, radius, VuMeterGeometry.AngleDegAt(t));
+        SKPoint p = PointAt(cx, cy, radius, VuMeterGeometry.AngleDegAt(t), arcSign);
         // Centre the glyph vertically on the point (TextAlign handles horizontal).
         canvas.DrawText(text, p.X, p.Y + font.TextSize * 0.35f, font);
     }
 
     // ── Legend + hub ─────────────────────────────────────────────────────────────────────────────
 
-    private static void DrawLegend(SKCanvas canvas, int w, int h)
+    private static void DrawLegend(SKCanvas canvas, int w, int h, VuMeterNeedleOrigin origin)
     {
-        // The hub is near the top, so the legend sits in the open band BELOW the scale arc.
+        // Place the legend in the open band away from the scale arc: BELOW the arc for a Top meter (hub
+        // high), and just above the low hub for a Bottom meter (classic, arc arching above).
+        float vuY = origin == VuMeterNeedleOrigin.Top ? h * 0.78f : h * 0.63f;
+        float meterY = origin == VuMeterNeedleOrigin.Top ? h * 0.84f : h * 0.69f;
+
         using var vu = new SKPaint
         {
             IsAntialias = true, Typeface = SKTypeface.FromFamilyName("Georgia", SKFontStyle.Bold) ?? Serif(),
             TextAlign = SKTextAlign.Center, TextSize = 64, Color = Ink,
         };
-        canvas.DrawText("VU", w / 2f, h * 0.78f, vu);
+        canvas.DrawText("VU", w / 2f, vuY, vu);
 
         using var meter = new SKPaint
         {
             IsAntialias = true, Typeface = Serif(), TextAlign = SKTextAlign.Center, TextSize = 28, Color = Ink,
         };
-        DrawSpaced(canvas, meter, "METER", w / 2f, h * 0.84f, 12f);
+        DrawSpaced(canvas, meter, "METER", w / 2f, meterY, 12f);
     }
 
     private static void DrawSpaced(SKCanvas canvas, SKPaint font, string text, float centerX, float y, float tracking)
@@ -294,10 +306,9 @@ public static class VuMeterFace
         left.Dispose();
     }
 
-    private static void DrawHub(SKCanvas canvas)
+    private static void DrawHub(SKCanvas canvas, float cy)
     {
         float cx = VuMeterGeometry.PivotXPx;
-        float cy = VuMeterGeometry.PivotYPx;
 
         // Brass mechanism: a few concentric rings with a warm radial gradient.
         using (var shader = SKShader.CreateRadialGradient(

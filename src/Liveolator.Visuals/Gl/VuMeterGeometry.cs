@@ -1,3 +1,5 @@
+using Liveolator.Core.Settings;
+
 namespace Liveolator.Visuals.Gl;
 
 /// <summary>
@@ -8,10 +10,11 @@ namespace Liveolator.Visuals.Gl;
 /// to the window identically, so they stay registered at any aspect.
 /// </summary>
 /// <remarks>
-/// Angles are measured in degrees from straight <b>down</b>, positive toward the right: the hub sits near
-/// the TOP and the needle hangs DOWN, sweeping a downward arc over the scale (top-pivot meter). The needle
-/// is a tube of fixed length around the brass hub at the pivot; the scale spans a slightly wider arc than
-/// the needle travel, so the "−"/"+" labels sit just past the needle's extremes.
+/// The needle pivot is the performer's choice (<see cref="VuMeterNeedleOrigin"/>): a <c>Bottom</c> meter is
+/// the classic look (hub low, needle points up, scale arc above the hub) and a <c>Top</c> meter is its
+/// vertical mirror (hub high, needle hangs down, arc below). The two are mirror images about the centre;
+/// angles are the same magnitude either way, only the needle's vertical direction flips. The needle is a
+/// tube of fixed length around the brass hub; the scale spans a slightly wider arc than the needle travel.
 /// </remarks>
 internal static class VuMeterGeometry
 {
@@ -19,18 +22,30 @@ internal static class VuMeterGeometry
     public const int FaceHeight = 800;
 
     public const float PivotXFrac = 0.5f;     // hub centred horizontally
-    public const float PivotYFrac = 0.20f;    // hub near the TOP (the needle hangs down from here)
-    public const float ArcRadiusFrac = 0.42f; // scale arc radius (fraction of height) — leaves room below for the legend
+    public const float ArcRadiusFrac = 0.42f; // scale arc radius (fraction of height) — leaves room for the legend
 
-    public const float ScaleMinDeg = -58f;    // left end of the printed scale (from straight down)
+    public const float ScaleMinDeg = -58f;    // left end of the printed scale
     public const float ScaleMaxDeg = 58f;     // right end of the printed scale
     public const float NeedleMinDeg = -55f;   // uLevel 0 → resting far left
     public const float NeedleMaxDeg = 52f;    // uLevel 1 → far right
     public const float RedlineT = 0.68f;      // scale fraction where the red zone (0 VU) begins
 
+    // Hub vertical position per origin: Bottom = low (classic), Top = high — exact mirror about the centre.
+    private const float BottomPivotYFrac = 0.78f;
+    private const float TopPivotYFrac = 1f - BottomPivotYFrac;
+
     public static float PivotXPx => FaceWidth * PivotXFrac;
-    public static float PivotYPx => FaceHeight * PivotYFrac;
     public static float ArcRadiusPx => FaceHeight * ArcRadiusFrac;
+
+    /// <summary>Hub Y as a fraction of height for the chosen origin (Bottom = low, Top = high).</summary>
+    public static float PivotYFrac(VuMeterNeedleOrigin origin)
+        => origin == VuMeterNeedleOrigin.Top ? TopPivotYFrac : BottomPivotYFrac;
+
+    /// <summary>Hub Y in face pixels for the chosen origin.</summary>
+    public static float PivotYPx(VuMeterNeedleOrigin origin) => FaceHeight * PivotYFrac(origin);
+
+    /// <summary>True when the needle hangs DOWN from the hub (Top origin); false when it points UP (Bottom).</summary>
+    public static bool NeedleDown(VuMeterNeedleOrigin origin) => origin == VuMeterNeedleOrigin.Top;
 
     /// <summary>Scale-parameter t∈[0,1] (left→right) → angle in degrees from vertical (+ = right).</summary>
     public static float AngleDegAt(float t) => ScaleMinDeg + (ScaleMaxDeg - ScaleMinDeg) * t;
