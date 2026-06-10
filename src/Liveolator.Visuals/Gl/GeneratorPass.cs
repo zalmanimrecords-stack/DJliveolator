@@ -39,10 +39,19 @@ internal sealed class GeneratorPass : IDisposable
     private uint _program;
     private uint _vao;
     private uint _vbo;
-    private uint _texture;
-    private uint _framebuffer;
+
+    // Two texture/FBO slots so a generator can sample the previous frame (uPreviousFrame) for
+    // MilkDrop-style trails/warp (doc 28). Ping-pong is only engaged when the shader declares the
+    // sampler; otherwise slot 0 is used exactly like the original single-buffer path (VU / psy-fractal
+    // are unaffected). _front is the slot rendered into this frame; the other holds the previous frame.
+    private readonly uint[] _textures = new uint[2];
+    private readonly uint[] _framebuffers = new uint[2];
+    private int _front;
     private int _width = -1;
     private int _height = -1;
+
+    private int _uPreviousFrame = -1;
+    private bool _hasFeedback;
 
     private int _uResolution = -1;
     private int _uBeatPhase = -1;
@@ -104,13 +113,25 @@ internal sealed class GeneratorPass : IDisposable
         if (width != _width || height != _height)
             AllocateTarget(width, height);
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+        int target = _hasFeedback ? _front : 0;
+        int previous = _hasFeedback ? _front ^ 1 : 0;
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffers[target]);
         _gl.Viewport(0, 0, (uint)width, (uint)height);
         _gl.Disable(EnableCap.Blend);
         _gl.ClearColor(0, 0, 0, 0);
         _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
 
         _gl.UseProgram(_program);
+
+        // Feedback generators sample last frame's output as uPreviousFrame on texture unit 0.
+        if (_hasFeedback)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _textures[previous]);
+            _gl.Uniform1(_uPreviousFrame, 0);
+        }
+
         if (_uResolution >= 0)
             _gl.Uniform2(_uResolution, (float)width, (float)height);
         Set(_uBeatPhase, frame.BeatPhase);
@@ -137,7 +158,13 @@ internal sealed class GeneratorPass : IDisposable
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _gl.BindVertexArray(0);
-        return _texture;
+
+        uint rendered = _textures[target];
+        // Swap so the texture just produced becomes next frame's uPreviousFrame; the compositor reads
+        // 'rendered' this frame before we render into the other slot next frame, so nothing is clobbered.
+        if (_hasFeedback)
+            _front ^= 1;
+        return rendered;
     }
 
     private void Set(int location, float value)
@@ -180,6 +207,8 @@ internal sealed class GeneratorPass : IDisposable
         _uMid = _gl.GetUniformLocation(program, "uMid");
         _uHigh = _gl.GetUniformLocation(program, "uHigh");
         _uTime = _gl.GetUniformLocation(program, "uTime");
+        _uPreviousFrame = _gl.GetUniformLocation(program, "uPreviousFrame");
+        _hasFeedback = _uPreviousFrame >= 0;
         foreach (VisualEffectParameter parameter in _descriptor.Parameters)
             _parameterLocations[parameter.Uniform] = _gl.GetUniformLocation(program, parameter.Uniform);
     }
@@ -223,13 +252,25 @@ internal sealed class GeneratorPass : IDisposable
 
     private unsafe void AllocateTarget(int width, int height)
     {
-        if (_texture != 0)
-            _gl.DeleteTexture(_texture);
-        if (_framebuffer != 0)
-            _gl.DeleteFramebuffer(_framebuffer);
+        // Allocate slot 0 always; slot 1 only for feedback generators (it holds the previous frame).
+        int slots = _hasFeedback ? 2 : 1;
+        for (int slot = 0; slot < slots; slot++)
+            AllocateSlot(slot, width, height);
 
-        _texture = _gl.GenTexture();
-        _gl.BindTexture(TextureTarget.Texture2D, _texture);
+        _front = 0;
+        _width = width;
+        _height = height;
+    }
+
+    private unsafe void AllocateSlot(int slot, int width, int height)
+    {
+        if (_textures[slot] != 0)
+            _gl.DeleteTexture(_textures[slot]);
+        if (_framebuffers[slot] != 0)
+            _gl.DeleteFramebuffer(_framebuffers[slot]);
+
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
         _gl.TexImage2D(
             TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
             (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, null);
@@ -238,18 +279,24 @@ internal sealed class GeneratorPass : IDisposable
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
 
-        _framebuffer = _gl.GenFramebuffer();
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+        uint framebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
         _gl.FramebufferTexture2D(
             FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
-            TextureTarget.Texture2D, _texture, 0);
+            TextureTarget.Texture2D, texture, 0);
         if (_gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != GLEnum.FramebufferComplete)
             throw new InvalidOperationException("Visual generator framebuffer is incomplete.");
 
+        // Clear to transparent so a feedback shader's first sample of the previous frame is black, not
+        // garbage (and a freshly resized buffer shows no stale trails).
+        _gl.ClearColor(0, 0, 0, 0);
+        _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         _gl.BindTexture(TextureTarget.Texture2D, 0);
-        _width = width;
-        _height = height;
+
+        _textures[slot] = texture;
+        _framebuffers[slot] = framebuffer;
     }
 
     public void Dispose()
@@ -257,8 +304,11 @@ internal sealed class GeneratorPass : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        if (_texture != 0) _gl.DeleteTexture(_texture);
-        if (_framebuffer != 0) _gl.DeleteFramebuffer(_framebuffer);
+        for (int slot = 0; slot < _textures.Length; slot++)
+        {
+            if (_textures[slot] != 0) _gl.DeleteTexture(_textures[slot]);
+            if (_framebuffers[slot] != 0) _gl.DeleteFramebuffer(_framebuffers[slot]);
+        }
         if (_vbo != 0) _gl.DeleteBuffer(_vbo);
         if (_vao != 0) _gl.DeleteVertexArray(_vao);
         if (_program != 0) _gl.DeleteProgram(_program);

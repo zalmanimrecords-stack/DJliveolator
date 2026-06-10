@@ -120,20 +120,25 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
       a preset exposing 5 params (e.g. `GLOW`, `WARP`, `SPEED`, `ZOOM`, `DECAY`). Registered in
       `ServiceConfig.WireVisuals` after extension reload, same as the other built-ins.
 
-## Phase 3 — Compositor: frame-feedback in `GeneratorPass` (doc 08)
+## Phase 3 — Compositor: frame-feedback in `GeneratorPass` (doc 08) ✅ DONE (GL verified manually)
 
 > `tests/Liveolator.Visuals.Tests` for the pure parts; GL itself is verified manually (no headless GL).
 
-- [ ] Add an optional second FBO/texture pair to `GeneratorPass`
-      (`src/Liveolator.Visuals/Gl/GeneratorPass.cs`), swapped each frame (ping-pong like
-      `EffectChainRenderer`'s `_textures[2]`).
-- [ ] Bind previous frame to texture unit 1; cache + set `uPreviousFrame` sampler when the shader
-      declares it. Generators that don't declare it are unaffected (backward compatible).
-- [ ] Re-allocate/clear both targets on viewport change; clear previous to transparent on first frame
-      and on scene switch (no stale trails from a different preset).
-- [ ] Keep the premultiplied-alpha output contract (doc 26).
-- [ ] Confirm `uTime`/beat/`uBass..uHigh`/`uLevel` uniforms still feed the feedback shader (they
-      already flow through `GeneratorPass`).
+- [x] Added a second FBO/texture slot to [`GeneratorPass`](../src/Liveolator.Visuals/Gl/GeneratorPass.cs),
+      swapped each frame (`_front`). Ping-pong is **only engaged when the shader declares `uPreviousFrame`**;
+      otherwise slot 0 is used exactly like the original single-buffer path — VU meter / psy-fractal are
+      byte-for-byte unaffected (backward compatible).
+- [x] Binds the previous frame on texture unit 0 and sets the `uPreviousFrame` sampler when present.
+- [x] Re-allocates on viewport change and clears every slot to transparent on allocation, so a feedback
+      shader's first previous-frame sample is black and a resize shows no stale trails.
+- [x] Premultiplied-alpha output contract kept; `uTime`/beat/`uBass..uHigh`/`uLevel` still feed the shader.
+- [x] **Built-in `MilkdropStarterPresetAddon`** ([file](../src/Liveolator.Visuals/Gl/MilkdropStarterPresetAddon.cs)):
+      a feedback generator (trails + swirl warp + audio/beat energy) exposing 5 controllable params
+      (GLOW/WARP/SPEED/ZOOM/DECAY) as a preset; ASCII-only shader. Registered into both registries in
+      `ServiceConfig`. Tests: [MilkdropStarterPresetAddonTests.cs](../tests/Liveolator.Visuals.Tests/Gl/MilkdropStarterPresetAddonTests.cs)
+      (generator role, 5 params, clean expansion, declares `uPreviousFrame`, ASCII-only). Visuals 105/105.
+- [ ] **Manual GL verification (owner):** load `liveolator.builtin.milkdrop/starter` onto a layer, confirm
+      trails/warp react to audio + beat, and the GLOW knob changes the look live. (Tracked in Phase 7.)
 
 ## Phase 4 — Engine: load a preset (`GlVisualPerformanceEngine` / `IVisualPerformanceEngine`) ✅ DONE
 
