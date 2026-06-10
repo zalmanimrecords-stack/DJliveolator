@@ -165,8 +165,12 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
   - [x] Tests: `VisualLoadPresetActionTests` (Core) — expands + drives engine with the controllable
         macros; unknown/blank/unwired → no engine call. Handler now owns 13 kinds.
 - [x] Controllable params reuse the **existing** `VisualSetMacro` action (preset macro names as `Argument`).
-- [ ] **MIDI learn** — bind a learned knob to one of the active preset's macro names (plumbing already
-      accepts `Argument = macroName`; needs the mapping-UI affordance). *(Deferred — pairs with Phase 6 UI.)*
+- [x] **MIDI learn** — the MAPPINGS tab now lists one learn target per controllable preset parameter
+      (`Visuals: <preset> - <LABEL>`), carrying the namespaced macro name as `Argument`. `MappingsViewModel`
+      takes `IGeneratorPresetRegistry` (auto-injected by DI) and passes the target's `Argument` to
+      `IMidiControlSession.BeginLearn` (which already threaded it through to the `ControllerBinding`).
+      Tests: [MappingsViewModelPresetTargetTests.cs](../tests/Liveolator.App.Tests/Mappings/MappingsViewModelPresetTargetTests.cs).
+      (The global "click a control while in learn mode" path already covered the live preset knobs too.)
 
 ## Phase 5 — Action + controller wiring (doc 04 / doc 05)
 
@@ -199,7 +203,7 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
 - **Validated:** [PresetControlsViewModelTests.cs](../tests/Liveolator.App.Tests/Live/Modules/PresetControlsViewModelTests.cs)
       6/6 green (list, load→dispatch+knobs, knob→VisualSetMacro, select→load, unwired no-op, feedback sync).
       (Pre-existing unrelated `Libraries*` test failures on this branch are not touched by this work.)
-- [ ] MIDI-learn affordance to bind a hardware knob to a preset macro name — still pending (Phase 5 note).
+- [x] MIDI-learn affordance to bind a hardware knob to a preset macro name — done via MAPPINGS-tab targets (see Phase 5).
 
 ## Phase 7 — Validate & document
 

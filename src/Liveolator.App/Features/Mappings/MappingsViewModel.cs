@@ -4,6 +4,7 @@ using System.Reactive.Concurrency;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Mapping;
+using Liveolator.Core.Visuals;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Mappings;
@@ -15,10 +16,10 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     private MappingBindingViewModel? _selectedBinding;
     private string _status = string.Empty;
 
-    public MappingsViewModel(IMidiControlSession session)
+    public MappingsViewModel(IMidiControlSession session, IGeneratorPresetRegistry? presets = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        Targets = BuildTargets();
+        Targets = BuildTargets(presets);
         SelectedTarget = Targets.FirstOrDefault();
         LearnCommand = ReactiveCommand.Create(BeginLearn);
         CancelLearnCommand = ReactiveCommand.Create(CancelLearn);
@@ -64,6 +65,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             _session.BeginLearn(
                 SelectedTarget.Action,
                 SelectedTarget.Slot,
+                argument: SelectedTarget.Argument,
                 preferredInputMode: SelectedTarget.PreferredInputMode,
                 relativeTicksPerRevolution: SelectedTarget.RelativeTicksPerRevolution,
                 invert: SelectedTarget.Invert);
@@ -116,8 +118,9 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(DeviceName));
     }
 
-    private static ObservableCollection<MappingTargetViewModel> BuildTargets()
-        => new(
+    private static ObservableCollection<MappingTargetViewModel> BuildTargets(IGeneratorPresetRegistry? presets)
+    {
+        var targets = new ObservableCollection<MappingTargetViewModel>(
         [
             new("Deck A: Play / Pause", PerformanceActionKind.DeckPlayPause, 0),
             new("Deck A: Cue", PerformanceActionKind.DeckCue, 0),
@@ -142,6 +145,26 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Visuals: Blackout", PerformanceActionKind.VisualBlackout, 0),
             new("Visuals: Strobe", PerformanceActionKind.VisualToggleStrobe, 0),
         ]);
+
+        // One learn target per controllable parameter of every registered generator preset (doc 28), so a
+        // hardware knob can be bound to e.g. GLOW. The binding carries the namespaced macro name as its
+        // Argument; the learn session and ControllerBinding already thread Argument through to VisualSetMacro.
+        foreach (GeneratorPreset preset in (presets?.Presets ?? Array.Empty<GeneratorPreset>())
+                     .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (ControllableParameter parameter in preset.Controllable)
+            {
+                targets.Add(new MappingTargetViewModel(
+                    $"Visuals: {preset.Name} - {parameter.Label}",
+                    PerformanceActionKind.VisualSetMacro,
+                    Slot: 0,
+                    PreferredInputMode: ActionInputMode.Absolute,
+                    Argument: GeneratorPresetExpansion.MacroName(preset.PresetId, parameter.Id)));
+            }
+        }
+
+        return targets;
+    }
 
     public void Dispose() => _session.MappingChanged -= OnMappingChanged;
 }

@@ -8,4 +8,5 @@ public sealed record MappingTargetViewModel(
     int Slot,
     ActionInputMode? PreferredInputMode = null,
     double RelativeTicksPerRevolution = 1.0,
-    bool Invert = false);
+    bool Invert = false,
+    string? Argument = null);
