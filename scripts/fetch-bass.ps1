@@ -8,10 +8,10 @@
     BASS ships as per-platform zips from un4seen.com. This script downloads the right
     archives, extracts only the native libraries we need, and places them under
     runtimes/<rid>/native/ using the canonical names ManagedBass probes for:
-      win-x64    -> bass.dll      + bassmix.dll
-      osx-x64    -> libbass.dylib + libbassmix.dylib   (universal: arm64 + x64)
-      osx-arm64  -> libbass.dylib + libbassmix.dylib
-      linux-x64  -> libbass.so    + libbassmix.so
+      win-x64    -> bass.dll      + bassmix.dll      + bassflac.dll
+      osx-x64    -> libbass.dylib + libbassmix.dylib + libbassflac.dylib  (universal: arm64 + x64)
+      osx-arm64  -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
+      linux-x64  -> libbass.so    + libbassmix.so    + libbassflac.so
 
     BASSmix is required by the two-deck engine (TwoDeckBassEngine): the two decks feed one
     BASSmix master channel. Without it, realtime audio (and "Add to Deck") is disabled.

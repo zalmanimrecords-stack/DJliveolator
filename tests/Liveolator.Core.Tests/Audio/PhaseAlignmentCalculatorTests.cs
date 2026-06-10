@@ -147,6 +147,45 @@ public class PhaseAlignmentCalculatorTests
     }
 
     [Fact]
+    public void PhaseNudge_HalfDoubleTempo_SnapsToNearestLeaderBeat_NotTheOffBeat()
+    {
+        // 70 (follower) vs 140 (leader) — a half/double pairing. Follower sits exactly on its beat; the
+        // leader is half-way through ITS (twice-as-fast) beat. The follower must move only HALF A LEADER
+        // beat (0.5 * 60/140 = 0.2143 s) to land on the next leader beat — NOT half a follower beat
+        // (0.4286 s), which is a whole leader beat and would drop it on the leader's OFF-beat (doc 27 B2).
+        var follower = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 70.0);
+        var leader = new DeckPhase(PositionSeconds: 0.5 * (60.0 / 140.0), FirstBeatSeconds: 0.0, Bpm: 140.0);
+
+        double nudge = PhaseAlignmentCalculator.PhaseNudgeSeconds(follower, leader);
+
+        Assert.Equal(0.5 * (60.0 / 140.0), nudge, precision: 6);   // 0.2143 s — a half LEADER beat
+        Assert.NotEqual(0.5 * (60.0 / 70.0), nudge, precision: 6);  // not 0.4286 s — the old off-beat bug
+    }
+
+    [Fact]
+    public void PhaseNudge_HalfDoubleTempo_BothOnDownbeats_IsZero()
+    {
+        // Both decks exactly on a beat — already phase-aligned despite the 2:1 tempo ratio.
+        var follower = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 70.0);
+        var leader = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 140.0);
+
+        Assert.Equal(0.0, PhaseAlignmentCalculator.PhaseNudgeSeconds(follower, leader), precision: 6);
+    }
+
+    [Fact]
+    public void BeatPhaseError_HalfDoubleTempo_StaysWithinHalfALeaderBeat()
+    {
+        // Whatever the relationship, the error resolves to the shortest correction on the leader's grid.
+        var leader = new DeckPhase(PositionSeconds: 0.37, FirstBeatSeconds: 0.0, Bpm: 140.0);
+        foreach (double followerPos in new[] { 0.0, 0.2, 0.45, 0.7, 1.1 })
+        {
+            var follower = new DeckPhase(followerPos, 0.0, 70.0);
+            double error = PhaseAlignmentCalculator.BeatPhaseError(follower, leader);
+            Assert.InRange(error, -0.5 - 1e-9, 0.5 + 1e-9);
+        }
+    }
+
+    [Fact]
     public void PhaseNudge_EqualsBeatPhaseError_TimesBeatSeconds()
     {
         // The seconds nudge is just the wrapped beat error scaled by the follower's beat length — the two

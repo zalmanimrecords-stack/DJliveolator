@@ -47,6 +47,31 @@ public static class BeatLoopCalculator
         double length = LengthSeconds(beats, bpm);
         return new LoopRegion(startSeconds, startSeconds + length);
     }
+
+    /// <summary>
+    /// Snaps a loop in-point to the nearest beat boundary on the deck's grid (the first-beat anchor +
+    /// tempo), so a loop set while Quantize is armed starts on the grid instead of wherever the playhead
+    /// happened to sit (doc 27 B3). Returns a non-negative time; falls back to <paramref name="startSeconds"/>
+    /// unchanged when the tempo is non-positive (no grid to snap to).
+    /// </summary>
+    /// <param name="startSeconds">The raw loop in-point (the current playhead), seconds from track start.</param>
+    /// <param name="firstBeatSeconds">The track's first-beat (downbeat) anchor from analysis (seconds).</param>
+    /// <param name="bpm">The deck's base tempo (BPM).</param>
+    public static double SnapToBeat(double startSeconds, double firstBeatSeconds, double bpm)
+    {
+        if (bpm <= 0.0)
+            return startSeconds;
+
+        double beatSeconds = 60.0 / bpm;
+        double beats = (startSeconds - firstBeatSeconds) / beatSeconds;
+        double snapped = firstBeatSeconds + (Math.Round(beats) * beatSeconds);
+
+        // Rounding can land just before the track start (a large anchor with an in-point near 0); step
+        // forward to the first on-grid point that is non-negative so Region's contract still holds.
+        if (snapped < 0.0)
+            snapped += Math.Ceiling(-snapped / beatSeconds) * beatSeconds;
+        return snapped;
+    }
 }
 
 /// <summary>A loop's time region in seconds from the track start: a half-open [Start, End) span.</summary>

@@ -129,6 +129,25 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task ApplyOnlineDetails_FillsAKeylessTrackFromAnOnlineKeyName()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = null }); // fails to decode → Failed, no analyzed key
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+        Assert.Null(library.TryGet("a.mp3")!.Key); // keyless to start
+
+        // GetSongBPM reports a key NAME ("Am") and never a Camelot code; the online key must still apply.
+        bool updated = library.ApplyOnlineDetails(
+            "a.mp3", new OnlineTrackMetadata(null, Camelot: null, KeyName: "Am", null, "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.Equal("8A", track.Key!.Camelot);
+        Assert.Equal("A Minor", track.Key.Name);
+    }
+
+    [Fact]
     public async Task Scan_CorruptFile_MarkedFailed_OthersStillAnalyzed()
     {
         var enumerator = new FakeFileEnumerator(File("good.mp3"), File("bad.mp3"));

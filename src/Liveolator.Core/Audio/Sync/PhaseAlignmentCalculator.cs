@@ -54,17 +54,24 @@ public static class PhaseAlignmentCalculator
         double followerDistance = BeatDistance(follower.PositionSeconds, follower.FirstBeatSeconds, follower.Bpm);
         double leaderDistance = BeatDistance(leader.PositionSeconds, leader.FirstBeatSeconds, leader.Bpm);
 
+        // Both distances are fractions of *that deck's own* beat, so they can only be subtracted on a
+        // common grid. Express the follower's phase in LEADER beats first (a follower beat spans
+        // leaderBpm/followerBpm leader beats); otherwise a half/double-tempo pairing (e.g. 70 vs 140)
+        // subtracts fractions of unequal-length beats and can lock the follower onto the leader's
+        // OFF-beat (doc 27 B2). When the tempos are equal the factor is 1 and this is the original math.
+        double followerInLeaderBeats = followerDistance * (leader.Bpm / follower.Bpm);
+
         // The follower must reach the leader's beat-distance. The signed error wrapped to (-0.5, 0.5]
-        // picks the shorter direction (advance vs. rewind) to the nearest aligned beat.
-        double errorBeats = leaderDistance - followerDistance;
+        // leader-beats picks the shortest correction onto the nearest leader beat (advance vs. rewind).
+        double errorBeats = leaderDistance - followerInLeaderBeats;
         return errorBeats - Math.Round(errorBeats); // wrap to (-0.5, 0.5]
     }
 
     /// <summary>
     /// Seconds to nudge the <paramref name="follower"/> playhead so its beat phase aligns with the
     /// <paramref name="leader"/>'s. Positive = move the playhead forward, negative = back; the result is
-    /// the shortest correction, always within ±half a follower beat. Returns 0 when either tempo is
-    /// non-positive (no shared grid to align to).
+    /// the shortest correction onto the nearest leader beat. Returns 0 when either tempo is non-positive
+    /// (no shared grid to align to).
     /// </summary>
     /// <param name="follower">The deck being snapped (position/anchor/effective BPM).</param>
     /// <param name="leader">The sync leader defining the target grid (position/anchor/effective BPM).</param>
@@ -73,8 +80,10 @@ public static class PhaseAlignmentCalculator
         if (follower.Bpm <= 0.0 || leader.Bpm <= 0.0)
             return 0.0;
 
-        double followerBeatSeconds = 60.0 / follower.Bpm;
-        return BeatPhaseError(follower, leader) * followerBeatSeconds;
+        // BeatPhaseError is in LEADER beats (the follower aligns to the leader's grid), so convert with
+        // the leader's beat duration. Equal tempo → leader beat == follower beat: the original behaviour.
+        double leaderBeatSeconds = 60.0 / leader.Bpm;
+        return BeatPhaseError(follower, leader) * leaderBeatSeconds;
     }
 }
 

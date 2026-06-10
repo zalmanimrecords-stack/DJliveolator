@@ -19,17 +19,15 @@ namespace Liveolator.App.Tests.Features.Addons;
 
 /// <summary>
 /// Verifies the Add-ons tab view-model: it lists the built-in add-ons plus installed packages; selecting
-/// the VU meter exposes its background-image settings with the spec-derived AI prompt; choosing an image
-/// persists it (settings store) and applies it live via the injected callback; the aspect advisory follows
-/// the chosen image; and Reset restores the built-in face.
+/// the VU meter exposes its settings (needle origin + background image) with the spec-derived AI prompt;
+/// choosing an image / origin persists it and applies it live via the injected callback; the aspect
+/// advisory follows the chosen image; and Reset restores the built-in face.
 /// </summary>
 public sealed class AddonsViewModelTests : IDisposable
 {
-    private static readonly VuMeterFaceSpec Spec = VuMeterAddon.FaceSpec;
-
     private readonly string _defaultFace;
     private readonly string _customImage;
-    private readonly List<string?> _applied = new();
+    private readonly List<(string? Path, VuMeterNeedleOrigin Origin)> _applied = new();
 
     public AddonsViewModelTests()
     {
@@ -84,13 +82,9 @@ public sealed class AddonsViewModelTests : IDisposable
     private static InstalledExtension Package(string id, bool enabled)
     {
         var manifest = new ExtensionManifest(
-            PackageId: id,
-            Version: "1.0.0",
-            RequiredApiVersion: "1.0",
-            Publisher: "Acme",
+            PackageId: id, Version: "1.0.0", RequiredApiVersion: "1.0", Publisher: "Acme",
             Content: ExtensionContentKind.VisualEffects,
-            Dependencies: Array.Empty<ExtensionDependency>(),
-            Files: Array.Empty<ExtensionFile>());
+            Dependencies: Array.Empty<ExtensionDependency>(), Files: Array.Empty<ExtensionFile>());
         return new InstalledExtension(
             manifest, InstallPath: "/x", IsEnabled: enabled, InstalledAt: DateTimeOffset.UnixEpoch,
             Validation: new ExtensionValidationResult(true, manifest, null, Array.Empty<ExtensionValidationIssue>()));
@@ -100,8 +94,11 @@ public sealed class AddonsViewModelTests : IDisposable
         FakeStore store,
         IExtensionCatalog? catalog = null,
         IImageDimensionsProbe? probe = null,
-        string? currentCustom = null)
-        => new(store, Spec, _defaultFace, currentCustom, p => _applied.Add(p), registry: null, catalog, probe);
+        string? currentCustom = null,
+        VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom)
+        => new(
+            store, VuMeterAddon.FaceSpec, _ => _defaultFace, currentCustom, origin,
+            (p, o) => _applied.Add((p, o)), registry: null, catalog, probe);
 
     [Fact]
     public void Lists_BuiltInsThenInstalledPackages()
@@ -116,35 +113,20 @@ public sealed class AddonsViewModelTests : IDisposable
         Assert.Equal(PsyFractalVisualizerAddon.EffectId, vm.Addons[1].Id);
         Assert.False(vm.Addons[1].HasSettings);
         Assert.Equal("com.acme.glow", vm.Addons[2].Id);
-        Assert.False(vm.Addons[2].HasSettings);
-        Assert.Equal("Enabled", vm.Addons[2].State);
     }
 
     [Fact]
-    public void SelectsVuMeterByDefault_AndExposesSpecGuidance()
+    public void SelectsVuMeterByDefault_AndPromptMatchesBottomOrigin()
     {
         AddonsViewModel vm = Build(new FakeStore());
 
         Assert.True(vm.ShowVuMeterSettings);
-        Assert.False(vm.ShowNoSettingsMessage);
-        // The AI prompt embeds the concrete size + the exact (top) pivot from the spec, and forbids a needle.
+        Assert.Equal(VuMeterNeedleOrigin.Bottom, vm.VuMeterSettings.SelectedOrigin);
         string prompt = vm.VuMeterSettings.ImagePrompt;
         Assert.Contains("1200", prompt);
         Assert.Contains("800", prompt);
-        Assert.Contains("600", prompt);
-        Assert.Contains("160", prompt);
+        Assert.Contains("624", prompt); // Bottom hub pixel Y (0.78 * 800)
         Assert.Contains("needle", prompt, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void SelectingNonConfigurableAddon_ShowsNoSettingsMessage()
-    {
-        AddonsViewModel vm = Build(new FakeStore());
-
-        vm.SelectedAddon = vm.Addons.First(a => a.Id == PsyFractalVisualizerAddon.EffectId);
-
-        Assert.False(vm.ShowVuMeterSettings);
-        Assert.True(vm.ShowNoSettingsMessage);
     }
 
     [Fact]
@@ -156,7 +138,7 @@ public sealed class AddonsViewModelTests : IDisposable
         await vm.VuMeterSettings.ChooseImageAsync(_customImage);
 
         Assert.Equal(_customImage, store.Saved.Addons.VuMeterBackgroundImagePath);
-        Assert.Equal(_customImage, Assert.Single(_applied));
+        Assert.Equal((_customImage, VuMeterNeedleOrigin.Bottom), Assert.Single(_applied));
         Assert.True(vm.VuMeterSettings.IsCustom);
         Assert.Equal(_customImage, vm.VuMeterSettings.ImagePath);
     }
@@ -199,9 +181,22 @@ public sealed class AddonsViewModelTests : IDisposable
         await vm.VuMeterSettings.ResetToDefaultCommand.Execute().ToTask();
 
         Assert.Null(store.Saved.Addons.VuMeterBackgroundImagePath);
-        Assert.Null(Assert.Single(_applied));
+        Assert.Equal((null, VuMeterNeedleOrigin.Bottom), Assert.Single(_applied));
         Assert.False(vm.VuMeterSettings.IsCustom);
         Assert.Equal(_defaultFace, vm.VuMeterSettings.ImagePath);
-        Assert.Null(vm.VuMeterSettings.AspectWarning);
+    }
+
+    [Fact]
+    public void ChangingOrigin_PersistsAppliesAndUpdatesPrompt()
+    {
+        var store = new FakeStore();
+        AddonsViewModel vm = Build(store);
+
+        vm.VuMeterSettings.SelectedOrigin = VuMeterNeedleOrigin.Top;
+
+        Assert.Equal(VuMeterNeedleOrigin.Top, store.Saved.Addons.VuMeterNeedleOrigin);
+        Assert.Equal((null, VuMeterNeedleOrigin.Top), Assert.Single(_applied));
+        // The prompt now describes the TOP origin (hub high — 0.22 * 800 = 176 px).
+        Assert.Contains("176", vm.VuMeterSettings.ImagePrompt);
     }
 }

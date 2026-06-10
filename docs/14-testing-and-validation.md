@@ -5,10 +5,10 @@
 > Spotify-loopback manual checks) and does **not** reflect Liveolator. The current reality is:
 > pure-Core xUnit (no native), the `IBassMixerBackend`/`IBassPlayback` **fake-backend** pattern that
 > exercises the BASS engine + sync math without native libs, the `BassAudioEngineSmokeTests`
-> native-missing **fallback-contract** test, and the `Avalonia.Headless` UiShots. Solution-wide as of
-> 2026-06-07: **1,279 tests passing, 0 failed, 0 skipped** across 8 projects. There is **no CI** yet
-> (a recommended next step — see doc 24 §5). This doc should be rewritten to the above; until then,
-> treat `docs/18` + `docs/24` as the source of truth for test status.
+> native-missing **fallback-contract** test, and the `Avalonia.Headless` UiShots. **CI now exists**
+> (`.github/workflows/ci.yml` — a windows + macOS matrix running `dotnet build` + `dotnet test` on
+> push/PR), so the earlier "no CI yet" note is obsolete. This doc should be rewritten to the above;
+> until then, treat `docs/18` + `docs/27` (the latest system review) as the source of truth for test status.
 
 ## Purpose
 

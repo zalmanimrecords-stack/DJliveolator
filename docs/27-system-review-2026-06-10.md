@@ -23,16 +23,32 @@
 > Where this doc and `docs/18`/`docs/22` disagree on a code fact, **this doc wins** — it was measured
 > against the working tree on 2026-06-10. `docs/18` remains the living module map.
 >
-> **Update (2026-06-10, same day):** first quick-win wave landed (TDD-first, still uncommitted):
-> **B5** (the opacity knob / `ToggleLayer` no longer bumps the composition version → no full compositor
-> rebuild; opacity is now a live per-frame uniform fed to `LayeredQuadRenderer.Render`; also fixed the
-> related medium bug — filler layers now use `VisualSourceKind.None` instead of the non-existent
-> `core/vu-meter` generator), **B6** (re-scan no longer destroys manual beat-grid/BPM edits —
-> `MediaLibrary.PreserveModifiedEntry` hook + `MusicLibrary` override), **B8** (Tab no longer breaks
-> focus traversal inside editable controls), and the **ATL re-analysis log flood** (the `run`
-> observation — `AtlMetadataReader` now short-circuits missing files; startup stdout 1.8 MB → 73 B).
-> All changed projects build and their suites are green (Core 818, Audio 183, Visuals 112, App
-> `MainWindowTests` 7). **B0 reassessed:** it is *not* the one-line "isolate
+> **Update (2026-06-10, same day):** quick-win wave landed (TDD-first; committed via the parallel branch
+> work). Six of the eight verified High bugs + the `run` observation are fixed:
+> **B1** (live EQ biquad coefficient swap is now an atomic reference publish in `StatefulBiquad` — no
+> torn 40-byte read on the audio thread), **B2** (phase-alignment now expresses the follower's phase in
+> leader-beats before comparing — a half/double pairing like 70-vs-140 aligns to the nearest leader beat
+> instead of the off-beat; equal-tempo sync is byte-identical), **B3** (beat loops snap to the grid under
+> Quantize — `BeatLoopCalculator.SnapToBeat` + `SetLoop` gating), **B4** — *still open* (keylock; large),
+> **B5** (opacity/`ToggleLayer` no longer bumps the
+> composition version → no full compositor rebuild; opacity is a live per-frame uniform; filler layers
+> use `VisualSourceKind.None` not the non-existent `core/vu-meter`), **B6** (re-scan no longer destroys
+> manual beat-grid/BPM edits — `MediaLibrary.PreserveModifiedEntry` + `MusicLibrary` override), **B7**
+> (online key now applied — new `KeyName` parser + `ApplyOnlineDetails` fallback), **B8** (Tab no longer
+> breaks focus traversal in editable controls), and the **ATL re-analysis log flood** (`AtlMetadataReader`
+> short-circuits missing files; startup stdout 1.8 MB → 73 B). Suites green: Core 842, Audio 188,
+> Visuals 112, App `MainWindowTests` 7. **7 of 8 verified High fixed** — only **B4 (keylock)** remains,
+> a large `BASS_FX` build-out (restructures the native deck stream graph; unverifiable without hardware).
+>
+> A follow-on Medium/Low wave also landed (Core/Audio/Media/docs — chosen to avoid colliding with the
+> parallel FRKTL/VuMeter work): **re-snap now seeks from the raw playhead** (latency-shift fix,
+> `TwoDeckBassEngine.Sync`), **`JsonFileSnapshotIo` save gate + unique temp** (concurrent-save race),
+> **`TempoEstimator` autocorrelation normalized by overlap** (BPM up-bias), **periodic Hann window**,
+> and the stale docs (README "design phase"→working app, docs/14 "no CI", `fetch-bass.ps1` synopsis,
+> the `DeckBpmNudge` comment). Suites green afterward: Core 842, Audio 189, Media 107, Visuals 114.
+> Still-open Mediums deliberately deferred because they touch files under active parallel refactor
+> (VisualControl view binding, waveform accent color, DI-provider dispose, dual-clock unification,
+> per-layer rebuild on SetLayerSource) or need a UX decision (BpmNudge-while-synced). **B0 reassessed:** it is *not* the one-line "isolate
 > `RxApp` statics" fix implied below — assembly parallelization is already off and the statics are set
 > per-class. The real cause is a **flaky, intermittent cross-suite race**: many view-models start
 > fire-and-forget `Task.Run` background work whose callbacks marshal through the tests' global

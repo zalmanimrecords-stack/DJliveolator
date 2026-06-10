@@ -155,6 +155,25 @@ public class TwoDeckBassEngineSyncTests
     }
 
     [Fact]
+    public void UpdateSync_ReSnap_SeeksFromTheRawPlayhead_NotTheLatencyShiftedBase()
+    {
+        // With a real (non-zero) output latency, the re-snap must still land on the master grid from the
+        // RAW playhead: the -lat compensation cancels in the deck-to-deck error measurement, so it must
+        // NOT shift the absolute seek target. The old code seeked from (rawPos - lat + reSnap), landing
+        // the deck ~lat behind the beat on every re-snap (doc 27 medium).
+        var settings = PhaseLockSettings.Default with { OutputLatencySeconds = 0.02 };
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend, settings);
+        engine.SetSyncLock(1, true);
+        SetBeatPhase(backend, 100, 0.35); // master beyond the re-snap threshold
+        SetBeatPhase(backend, 101, 0.00); // slave on its beat (raw playhead = 0)
+
+        engine.UpdateSync(0);
+
+        Assert.Equal(SyncLockState.Drifting, engine.SyncState(1));
+        Assert.Equal(0.35 * BeatSeconds / Length, backend.PositionFraction[101], 6); // not shifted by lat
+    }
+
+    [Fact]
     public void Release_ClearsMaster_RevertsRate_AndReportsOff()
     {
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend);

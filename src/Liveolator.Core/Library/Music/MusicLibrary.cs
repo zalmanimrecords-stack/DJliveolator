@@ -242,10 +242,17 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                 existing.Bpm?.FirstBeatSeconds ?? 0)
             : existing.Bpm;
 
+        // Fill/replace a missing-or-weak key from the online result. Prefer an explicit Camelot code;
+        // fall back to parsing a key NAME (e.g. GetSongBPM reports "Am", never a Camelot code — without
+        // this fallback the online key was silently discarded, doc 27 B7).
         MusicalKey? key = existing.Key;
-        if ((key is null || key.Confidence < 0.2)
-            && Camelot.TryToMusicalKey(online.Camelot, out MusicalKey? onlineKey))
-            key = onlineKey;
+        if (key is null || key.Confidence < 0.2)
+        {
+            if (Camelot.TryToMusicalKey(online.Camelot, out MusicalKey? fromCamelot))
+                key = fromCamelot;
+            else if (KeyName.TryParse(online.KeyName, out MusicalKey? fromName))
+                key = fromName;
+        }
 
         Upsert(existing with
         {

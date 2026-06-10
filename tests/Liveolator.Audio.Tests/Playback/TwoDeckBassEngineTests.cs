@@ -721,6 +721,35 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void SetLoop_WithQuantizeArmed_SnapsTheInPointToTheBeatGrid()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");          // handle 100, length 100 s, first beat 0
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        engine.SetQuantize(0, true);
+        backend.PositionFraction[100] = 0.104; // set after arming Quantize: playhead at 10.4 s, off-grid
+
+        engine.SetLoop(0, 4.0);               // 4 beats -> 2 s region, snapped start
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(10.5, start, precision: 6); // snapped to the nearest beat (21 * 0.5 s), not the raw 10.4
+        Assert.Equal(12.5, end, precision: 6);
+    }
+
+    [Fact]
+    public void SetLoop_WithoutQuantize_StartsAtTheRawPlayhead()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        backend.PositionFraction[100] = 0.104; // 10.4 s, off-grid; Quantize off (default)
+
+        engine.SetLoop(0, 4.0);
+
+        Assert.Equal(10.4, backend.Loops[100].Start, precision: 6); // unchanged — no grid snap
+    }
+
+    [Fact]
     public void SetLoop_UnknownBaseBpm_IsIgnored()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

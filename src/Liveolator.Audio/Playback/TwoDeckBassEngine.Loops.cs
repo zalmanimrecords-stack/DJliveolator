@@ -49,6 +49,12 @@ public sealed partial class TwoDeckBassEngine
             // Convert the musical beat length to a concrete time region starting at the current playhead,
             // using the deck's natural BPM so the loop is musically <beats> beats regardless of pitch.
             double startSeconds = _backend.GetDeckPositionSeconds(deck.Handle);
+
+            // With Quantize armed, snap the loop in-point onto the deck's beat grid so the loop boundaries
+            // fall on the kick instead of wherever the playhead happened to be (doc 27 B3).
+            if (s.Quantize)
+                startSeconds = BeatLoopCalculator.SnapToBeat(startSeconds, s.FirstBeat, s.BaseBpm);
+
             LoopRegion region = BeatLoopCalculator.Region(startSeconds, beats, s.BaseBpm);
             _backend.SetDeckLoop(deck.Handle, region.StartSeconds, region.EndSeconds);
             s.LoopBeats = beats;

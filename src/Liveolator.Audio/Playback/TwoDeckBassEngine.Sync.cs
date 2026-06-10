@@ -215,7 +215,13 @@ public sealed partial class TwoDeckBassEngine
             double length = _backend.GetDeckLengthSeconds(deck.Handle);
             if (length > 0.0)
             {
-                double target = Math.Clamp((slavePhase.PositionSeconds + correction.ReSnapSeconds) / length, 0.0, 1.0);
+                // Seek from the RAW playhead, not the latency-compensated phase base. The -lat term is
+                // valid only for the deck-to-deck error MEASUREMENT (where it cancels); used as an
+                // absolute seek target it would land the deck OutputLatencySeconds behind the beat.
+                // ReSnapSeconds already encodes the correct signed move. Mirrors PhaseAlignToLeader.
+                // (doc 27 medium — now live because production OutputLatencySeconds is non-zero.)
+                double rawPosition = _backend.GetDeckPositionSeconds(deck.Handle);
+                double target = Math.Clamp((rawPosition + correction.ReSnapSeconds) / length, 0.0, 1.0);
                 _backend.SetDeckPositionFraction(deck.Handle, target);
             }
         }

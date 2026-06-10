@@ -14,7 +14,14 @@ internal sealed class StatefulBiquad
     private readonly double[] _x2;
     private readonly double[] _y1;
     private readonly double[] _y2;
-    private BiquadCoefficients _coefficients = BiquadCoefficients.Bypass;
+
+    // SetCoefficients runs on the UI/action thread while Process runs on the BASS audio thread.
+    // BiquadCoefficients is a 40-byte (5×double) struct, so a plain field assignment is NOT atomic:
+    // the audio thread could read a half-written set (new B0/B1/B2 with old A1/A2), which can place the
+    // poles outside the unit circle for a block and click. Publish the whole set behind a single
+    // reference swapped atomically (Volatile.Write/Read) so the audio thread always reads one
+    // consistent set; the holder is never mutated after publication. (doc 27 B1)
+    private BiquadCoefficients[] _coefficients = { BiquadCoefficients.Bypass };
 
     public StatefulBiquad(int channels)
     {
@@ -27,12 +34,14 @@ internal sealed class StatefulBiquad
     }
 
     /// <summary>Swap the active coefficients; delay history is preserved so the change is click-free.</summary>
-    public void SetCoefficients(BiquadCoefficients coefficients) => _coefficients = coefficients;
+    public void SetCoefficients(BiquadCoefficients coefficients)
+        => Volatile.Write(ref _coefficients, new[] { coefficients });
 
     /// <summary>Filter one sample for the given audio channel, advancing that channel's delay line.</summary>
     public double Process(int channel, double x)
     {
-        double y = _coefficients.Process(x, _x1[channel], _x2[channel], _y1[channel], _y2[channel]);
+        BiquadCoefficients coefficients = Volatile.Read(ref _coefficients)[0];
+        double y = coefficients.Process(x, _x1[channel], _x2[channel], _y1[channel], _y2[channel]);
         _x2[channel] = _x1[channel];
         _x1[channel] = x;
         _y2[channel] = _y1[channel];

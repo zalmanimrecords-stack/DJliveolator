@@ -183,6 +183,24 @@ public class LiveProfileStoreTests
     }
 
     [Fact]
+    public async Task VisualMacros_ConcurrentSaves_NeverThrow_AndLeaveAReadableFile()
+    {
+        using var dir = new TempDirectory();
+        var store = new LiveProfileStore(dir.Path);
+        var macros = new[] { new VisualMacro("intensity", 0, 1, 0.5, new MacroTarget(0, "opacity")) };
+
+        // Fire many overlapping saves to the SAME path. The save gate + unique temp file must serialize
+        // them so none throw on a shared temp and the live file is never left corrupt (doc 27 medium fix).
+        var saves = new System.Collections.Generic.List<Task>();
+        for (int i = 0; i < 16; i++)
+            saves.Add(store.SaveVisualMacrosAsync(macros));
+        await Task.WhenAll(saves);
+
+        IReadOnlyList<VisualMacro> loaded = await store.LoadVisualMacrosAsync();
+        Assert.Equal(macros, loaded); // one intact write survived — not a torn/partial file
+    }
+
+    [Fact]
     public async Task VisualMacros_OlderSchemaVersion_ReturnsEmpty_AndWarns()
     {
         using var dir = new TempDirectory();

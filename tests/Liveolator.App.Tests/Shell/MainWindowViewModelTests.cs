@@ -100,7 +100,7 @@ public sealed class MainWindowViewModelTests
             new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
         var mappings = new MappingsViewModel(new FakeMidiControlSession());
         var addons = new AddonsViewModel(
-            new FakeSettingsStore(), VuMeterAddon.FaceSpec, "default-face.png");
+            new FakeSettingsStore(), VuMeterAddon.FaceSpec, _ => "default-face.png");
         var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
         return new MainWindowViewModel(

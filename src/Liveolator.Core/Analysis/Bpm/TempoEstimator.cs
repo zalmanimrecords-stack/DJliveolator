@@ -60,12 +60,17 @@ public sealed class TempoEstimator
             double acc = 0;
             for (int i = lag; i < n; i++)
                 acc += x[i] * x[i - lag];
-            correlations[lag] = acc;
-            sum += acc;
+
+            // Normalize by the overlap count (n - lag): a raw sum has fewer terms at longer lags, so
+            // without this it is systematically smaller for slow tempos and the search is biased toward
+            // shorter lags / faster BPM (doc 27 medium fix). The unbiased per-lag mean removes that tilt.
+            double normAcc = acc / (n - lag);
+            correlations[lag] = normAcc;
+            sum += normAcc;
             count++;
-            if (acc > bestVal)
+            if (normAcc > bestVal)
             {
-                bestVal = acc;
+                bestVal = normAcc;
                 bestLag = lag;
             }
         }
@@ -74,9 +79,12 @@ public sealed class TempoEstimator
             bestLag, bestVal, correlations, minLag, maxLag, envelopeRateHz);
         bestVal = correlations[bestLag];
         double bpm = 60.0 * envelopeRateHz / bestLag;
+        // Confidence compares the winning lag's strength to the average, scaled by the signal's variance
+        // (zero-lag energy as a per-sample mean) so it stays on the same normalized footing as the lags.
+        double variance = zeroLag / n;
         double meanAcc = count > 0 ? sum / count : 0;
-        double confidence = zeroLag > 0
-            ? Math.Clamp((bestVal - meanAcc) / zeroLag, 0.0, 1.0)
+        double confidence = variance > 0
+            ? Math.Clamp((bestVal - meanAcc) / variance, 0.0, 1.0)
             : 0.0;
         return new TempoEstimate(bpm, confidence);
     }

@@ -119,7 +119,8 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckBpmNudge:
                 // Relative delta in BPM (+0.1 / -0.1 from nudge buttons). The engine's SetDeckBpm
-                // clamps to the ±8% pitch range, so no explicit clamp is needed here.
+                // saturates at the ±8% pitch rail, so repeated nudges past the rail simply hold there
+                // (no explicit clamp needed here).
                 _engine.SetDeckBpm(slot, _engine.DeckBpm(slot) + action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
