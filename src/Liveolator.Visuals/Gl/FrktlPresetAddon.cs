@@ -3,8 +3,8 @@ using Liveolator.Core.Visuals;
 namespace Liveolator.Visuals.Gl;
 
 /// <summary>
-/// Built-in reference for the controllable-preset standard (doc 28): a MilkDrop-style full-frame
-/// generator that samples the previous frame (<c>uPreviousFrame</c>) for trails/warp, layered with
+/// Built-in reference for the controllable-preset standard (doc 28): <b>FRKTL</b>, a full-frame generator
+/// that samples the previous frame (<c>uPreviousFrame</c>) for frame-feedback trails/warp, layered with
 /// audio- and beat-reactive energy. It registers both the generator effect and a <see cref="GeneratorPreset"/>
 /// that exposes exactly five controllable parameters (GLOW / WARP / SPEED / ZOOM / DECAY), each drivable
 /// live from a UI knob or an external controller via <c>VisualSetMacro</c>.
@@ -14,11 +14,11 @@ namespace Liveolator.Visuals.Gl;
 /// Intel); <c>ShaderText.Sanitize</c> is the backstop. Feedback is engaged automatically because the
 /// shader declares <c>uPreviousFrame</c> (see <see cref="GeneratorPass"/>).
 /// </remarks>
-public static class MilkdropStarterPresetAddon
+public static class FrktlPresetAddon
 {
-    public const string PackageId = "liveolator.builtin.milkdrop";
+    public const string PackageId = "liveolator.builtin.frktl";
     public const string EffectId = PackageId + "/generator";
-    public const string PresetId = PackageId + "/starter";
+    public const string PresetId = PackageId + "/preset";
     public const string Version = "1.0.0";
 
     public const string FragmentShader = """
@@ -108,10 +108,10 @@ public static class MilkdropStarterPresetAddon
         },
         Role: VisualEffectRole.Generator);
 
-    /// <summary>The starter preset exposing all five generator parameters as controllable knobs (doc 28).</summary>
+    /// <summary>The FRKTL preset exposing all five generator parameters as controllable knobs (doc 28).</summary>
     public static GeneratorPreset Preset() => new(
         PresetId,
-        "Milkdrop Starter",
+        "FRKTL",
         EffectId,
         Version,
         new[]
@@ -130,16 +130,16 @@ public static class MilkdropStarterPresetAddon
             "Liveolator",
             "assets");
         Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, "milkdrop-starter.frag");
+        string path = Path.Combine(directory, "frktl.frag");
         if (!File.Exists(path) || File.ReadAllText(path) != FragmentShader)
             File.WriteAllText(path, FragmentShader);
         return path;
     }
 
     /// <summary>
-    /// Registers the generator effect and its starter preset. Both share the package id so an
-    /// uninstall/reload removes them together. Failure to write the shader degrades to a warning and
-    /// leaves the registries untouched (never crashes composition — doc 08 rule).
+    /// Registers the generator effect and its preset. Both share the package id so an uninstall/reload
+    /// removes them together. Failure to write the shader degrades to a warning and leaves the registries
+    /// untouched (never crashes composition — doc 08 rule).
     /// </summary>
     public static bool TryRegister(
         IVisualEffectRegistry effects,
@@ -156,7 +156,7 @@ public static class MilkdropStarterPresetAddon
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            onWarning?.Invoke($"Built-in Milkdrop starter preset unavailable ({ex.Message}).");
+            onWarning?.Invoke($"Built-in FRKTL preset unavailable ({ex.Message}).");
             return false;
         }
     }

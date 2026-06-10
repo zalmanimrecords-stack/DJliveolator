@@ -8,15 +8,15 @@ namespace Liveolator.Core.Tests.Visuals;
 
 public class GeneratorPresetExpansionTests
 {
-    private const string GeneratorId = "liveolator.builtin/milkdrop";
-    private const string PresetId = "liveolator.builtin/milkdrop-starter";
+    private const string GeneratorId = "liveolator.builtin/generator";
+    private const string PresetId = "liveolator.builtin/starter";
     private const string InstanceId = "gen-instance-1";
 
     private static VisualEffectDescriptor Generator() => new(
         GeneratorId,
         "1.0.0",
         "liveolator.builtin",
-        "shaders/milkdrop.frag",
+        "shaders/generator.frag",
         new[]
         {
             new VisualEffectParameter("glow", "uGlow", 0.0, 1.0, 0.5),
@@ -26,7 +26,7 @@ public class GeneratorPresetExpansionTests
         Role: VisualEffectRole.Generator);
 
     private static GeneratorPreset Preset(params string[] controllableIds)
-        => new(PresetId, "Milkdrop Starter", GeneratorId, "1.0.0",
+        => new(PresetId, "Starter", GeneratorId, "1.0.0",
             controllableIds.Select(id => new ControllableParameter(id, id.ToUpperInvariant())).ToArray());
 
     [Fact]

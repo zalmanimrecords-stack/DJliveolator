@@ -9,7 +9,7 @@ namespace Liveolator.App.Features.Live.Modules;
 /// </summary>
 public static class VisualSourceLabel
 {
-    // EffectIds whose local part is a placeholder carry no meaning on their own (e.g. the milkdrop
+    // EffectIds whose local part is a placeholder carry no meaning on their own (e.g. the frktl
     // package's single "generator"); for these the package's own name reads far nicer to a performer.
     private static readonly HashSet<string> GenericLocalNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -19,7 +19,7 @@ public static class VisualSourceLabel
     // Tokens that should stay uppercase rather than be title-cased (acronyms common to VJ/DJ effects).
     private static readonly HashSet<string> Acronyms = new(StringComparer.OrdinalIgnoreCase)
     {
-        "vu", "fx", "hd", "rgb", "led", "vj", "dj", "uv",
+        "vu", "fx", "hd", "rgb", "led", "vj", "dj", "uv", "frktl",
     };
 
     /// <summary>

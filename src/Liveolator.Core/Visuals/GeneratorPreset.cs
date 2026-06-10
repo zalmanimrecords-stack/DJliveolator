@@ -1,7 +1,7 @@
 namespace Liveolator.Core.Visuals;
 
 /// <summary>
-/// A MilkDrop-style preset (doc 28): a full-frame GLSL <see cref="VisualEffectRole.Generator"/>
+/// A frame-feedback / full-frame generator preset (doc 28): a GLSL <see cref="VisualEffectRole.Generator"/>
 /// (referenced by <see cref="GeneratorEffectId"/>) together with the declaration of which of its
 /// parameters are exposed as live, externally controllable knobs. The set is bounded to keep the
 /// performer's control surface focused — see <see cref="MaxControllableParameters"/>.

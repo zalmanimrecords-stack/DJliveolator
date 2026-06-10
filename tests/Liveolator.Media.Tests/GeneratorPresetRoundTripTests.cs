@@ -25,7 +25,7 @@ public sealed class GeneratorPresetRoundTripTests : IDisposable
     };
 
     private const string PackageId = "com.example.vis";
-    private const string GeneratorId = "com.example.vis/milkdrop";
+    private const string GeneratorId = "com.example.vis/generator";
 
     private readonly string _root =
         Path.Combine(Path.GetTempPath(), "liveolator-preset-addon-tests", Guid.NewGuid().ToString("N"));
@@ -53,7 +53,7 @@ public sealed class GeneratorPresetRoundTripTests : IDisposable
     private static VisualEffectDescriptor[] GeneratorDescriptor() => new[]
     {
         new VisualEffectDescriptor(
-            GeneratorId, "1.0.0", PackageId, "shaders/milkdrop.frag",
+            GeneratorId, "1.0.0", PackageId, "shaders/generator.frag",
             new[]
             {
                 new VisualEffectParameter("glow", "uGlow", 0, 1, 0.5),
@@ -79,7 +79,7 @@ public sealed class GeneratorPresetRoundTripTests : IDisposable
         {
             ["visual-effects.json"] = JsonSerializer.SerializeToUtf8Bytes(GeneratorDescriptor(), JsonOptions),
             ["presets.json"] = JsonSerializer.SerializeToUtf8Bytes(presets, JsonOptions),
-            ["shaders/milkdrop.frag"] = Shader(),
+            ["shaders/generator.frag"] = Shader(),
         });
 
         var (effects, presetRegistry) = await LoadPackageAsync(package, new FakeShaderProbe("uGlow", "uWarp"));
@@ -104,7 +104,7 @@ public sealed class GeneratorPresetRoundTripTests : IDisposable
         {
             ["visual-effects.json"] = JsonSerializer.SerializeToUtf8Bytes(GeneratorDescriptor(), JsonOptions),
             ["presets.json"] = JsonSerializer.SerializeToUtf8Bytes(presets, JsonOptions),
-            ["shaders/milkdrop.frag"] = Shader(),
+            ["shaders/generator.frag"] = Shader(),
         });
 
         var (effects, presetRegistry) = await LoadPackageAsync(package, new FakeShaderProbe("uGlow", "uWarp"));
@@ -129,7 +129,7 @@ public sealed class GeneratorPresetRoundTripTests : IDisposable
         {
             ["visual-effects.json"] = JsonSerializer.SerializeToUtf8Bytes(GeneratorDescriptor(), JsonOptions),
             ["presets.json"] = JsonSerializer.SerializeToUtf8Bytes(presets, JsonOptions),
-            ["shaders/milkdrop.frag"] = Shader(),
+            ["shaders/generator.frag"] = Shader(),
         });
 
         var (_, presetRegistry) = await LoadPackageAsync(package, new FakeShaderProbe("uGlow", "uWarp"));

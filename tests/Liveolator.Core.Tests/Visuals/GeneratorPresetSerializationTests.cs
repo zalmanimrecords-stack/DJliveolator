@@ -22,9 +22,9 @@ public class GeneratorPresetSerializationTests
     public void Preset_RoundTripsThroughJson()
     {
         var original = new GeneratorPreset(
-            "liveolator.builtin/milkdrop-starter",
-            "Milkdrop Starter",
-            "liveolator.builtin/milkdrop",
+            "liveolator.builtin/starter",
+            "Starter",
+            "liveolator.builtin/generator",
             "1.0.0",
             new[]
             {

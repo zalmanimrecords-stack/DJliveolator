@@ -12,7 +12,7 @@ namespace Liveolator.App.Tests.Live.Modules;
 public sealed class PresetControlsViewModelTests
 {
     private const string PackageId = "com.example.vis";
-    private const string GeneratorId = "com.example.vis/milkdrop";
+    private const string GeneratorId = "com.example.vis/generator";
     private const string PresetId = "com.example.vis/aurora";
 
     public PresetControlsViewModelTests()
@@ -26,7 +26,7 @@ public sealed class PresetControlsViewModelTests
         effects.ReplacePackage(PackageId, new[]
         {
             new VisualEffectDescriptor(
-                GeneratorId, "1.0.0", PackageId, "shaders/milkdrop.frag",
+                GeneratorId, "1.0.0", PackageId, "shaders/generator.frag",
                 new[]
                 {
                     new VisualEffectParameter("glow", "uGlow", 0, 1, 0.5),

@@ -10,7 +10,7 @@ public class GeneratorPresetTests
     private static ControllableParameter Param(string id) => new(id, id.ToUpperInvariant());
 
     private static GeneratorPreset Preset(params ControllableParameter[] controllable)
-        => new("liveolator.builtin/milkdrop-starter", "Milkdrop Starter", "liveolator.builtin/milkdrop", "1.0.0", controllable);
+        => new("liveolator.builtin/starter", "Starter", "liveolator.builtin/generator", "1.0.0", controllable);
 
     [Fact]
     public void Accepts_UpToFiveControllableParameters()
@@ -40,7 +40,7 @@ public class GeneratorPresetTests
     [Fact]
     public void Rejects_BlankPresetId()
         => Assert.Throws<ArgumentException>(
-            () => new GeneratorPreset(" ", "Name", "liveolator.builtin/milkdrop", "1.0.0", Array.Empty<ControllableParameter>()));
+            () => new GeneratorPreset(" ", "Name", "liveolator.builtin/generator", "1.0.0", Array.Empty<ControllableParameter>()));
 
     [Fact]
     public void Rejects_BlankGeneratorEffectId()
@@ -50,7 +50,7 @@ public class GeneratorPresetTests
     [Fact]
     public void GeneratorVersion_DefaultsTo_OneZeroZero_WhenBlank()
     {
-        var preset = new GeneratorPreset("preset", "Name", "liveolator.builtin/milkdrop", " ", Array.Empty<ControllableParameter>());
+        var preset = new GeneratorPreset("preset", "Name", "liveolator.builtin/generator", " ", Array.Empty<ControllableParameter>());
         Assert.Equal("1.0.0", preset.GeneratorVersion);
     }
 

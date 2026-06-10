@@ -136,9 +136,9 @@ public static class ServiceConfig
             visualEffects,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
-        // Built-in MilkDrop-style controllable preset (doc 28): a feedback generator plus a starter preset
-        // exposing five controllable knobs. Registered into both the effect and preset registries.
-        MilkdropStarterPresetAddon.TryRegister(
+        // Built-in FRKTL controllable preset (doc 28): a frame-feedback generator plus a preset exposing
+        // five controllable knobs. Registered into both the effect and preset registries.
+        FrktlPresetAddon.TryRegister(
             visualEffects, generatorPresets,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 

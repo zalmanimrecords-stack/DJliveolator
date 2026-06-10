@@ -15,7 +15,7 @@ namespace Liveolator.Visuals.Tests.Gl;
 /// </summary>
 public class GlVisualPerformanceEnginePresetTests
 {
-    private const string GeneratorId = "com.example.vis/milkdrop";
+    private const string GeneratorId = "com.example.vis/generator";
     private const string PresetId = "com.example.vis/aurora";
 
     private static VisualMacro Brightness() => new(
@@ -35,7 +35,7 @@ public class GlVisualPerformanceEnginePresetTests
     });
 
     private static VisualEffectDescriptor GeneratorDescriptor() => new(
-        GeneratorId, "1.0.0", "com.example.vis", "shaders/milkdrop.frag",
+        GeneratorId, "1.0.0", "com.example.vis", "shaders/generator.frag",
         new[]
         {
             new VisualEffectParameter("glow", "uGlow", 0, 1, 0.5),

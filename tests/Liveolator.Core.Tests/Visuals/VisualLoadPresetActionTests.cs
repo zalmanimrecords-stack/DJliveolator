@@ -15,7 +15,7 @@ namespace Liveolator.Core.Tests.Visuals;
 public class VisualLoadPresetActionTests
 {
     private const string PackageId = "com.example.vis";
-    private const string GeneratorId = "com.example.vis/milkdrop";
+    private const string GeneratorId = "com.example.vis/generator";
     private const string PresetId = "com.example.vis/aurora";
 
     private readonly FakeVisualPerformanceEngine _engine;
@@ -35,7 +35,7 @@ public class VisualLoadPresetActionTests
         _effects.ReplacePackage(PackageId, new[]
         {
             new VisualEffectDescriptor(
-                GeneratorId, "1.0.0", PackageId, "shaders/milkdrop.frag",
+                GeneratorId, "1.0.0", PackageId, "shaders/generator.frag",
                 new[]
                 {
                     new VisualEffectParameter("glow", "uGlow", 0, 1, 0.5),

@@ -1,4 +1,6 @@
-# 28 — Controllable Preset Generator Add-on (MilkDrop-style, externally controllable)
+# 28 — Controllable Preset Generator Add-on (frame-feedback, externally controllable)
+
+> The built-in reference preset is named **FRKTL** (not "Milkdrop").
 
 > Status: **PLAN / TODO** (2026-06-10). Research-backed work plan. Not yet implemented.
 > Builds on: doc 26 (visual add-on standard), doc 21 (extension system), doc 08 (compositor),
@@ -6,7 +8,7 @@
 
 ## Goal
 
-A new add-on type that works on a MilkDrop-like principle (full-frame procedural GLSL
+A new add-on type that works on a frame-feedback principle (full-frame procedural GLSL
 generators with frame-feedback for trails/warp), **with one key difference**: each **preset**
 declares **up to 5 controllable parameters** that are exposed as labelled knobs in the UI and
 can be driven by an external MIDI controller (e.g. a knob mapped to `GLOW`). Which parameters
@@ -45,7 +47,7 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
    are the *controllable* ones (with display labels). Macros today are global and the UI encoders
    are hardcoded — nothing ties "this preset exposes GLOW/SPEED/WARP" together.
 2. **No dynamic UI** that renders the *active preset's* ≤5 labelled knobs (the 8 encoders are fixed).
-3. **No frame-feedback in `GeneratorPass`** — it allocates a single FBO; MilkDrop-style trails/warp
+3. **No frame-feedback in `GeneratorPass`** — it allocates a single FBO; frame-feedback trails/warp
    need a previous-frame texture (double-buffer / ping-pong + a `uPreviousFrame` sampler).
 4. **No ≤5 validation** for "controllable" params (descriptor allows ≤64 total).
 5. **MIDI-learn convenience** to bind a hardware knob to one of the active preset's 5 params.
@@ -115,7 +117,7 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
       skipped + logged via `onWarning` while other packs still load (doc 21 tolerance). Tests:
       [GeneratorPresetRoundTripTests.cs](../tests/Liveolator.Media.Tests/GeneratorPresetRoundTripTests.cs)
       (registers a valid preset; rejects undeclared-parameter and unknown-generator presets). Media suite 106/106.
-- [ ] **Built-in reference preset(s)** — at least one in-process `MilkdropStarterPresetAddon`
+- [ ] **Built-in reference preset(s)** — at least one in-process `FrktlPresetAddon`
       (mirrors `PsyFractalVisualizerAddon.TryRegister`) shipping a generator shader with feedback +
       a preset exposing 5 params (e.g. `GLOW`, `WARP`, `SPEED`, `ZOOM`, `DECAY`). Registered in
       `ServiceConfig.WireVisuals` after extension reload, same as the other built-ins.
@@ -132,12 +134,12 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
 - [x] Re-allocates on viewport change and clears every slot to transparent on allocation, so a feedback
       shader's first previous-frame sample is black and a resize shows no stale trails.
 - [x] Premultiplied-alpha output contract kept; `uTime`/beat/`uBass..uHigh`/`uLevel` still feed the shader.
-- [x] **Built-in `MilkdropStarterPresetAddon`** ([file](../src/Liveolator.Visuals/Gl/MilkdropStarterPresetAddon.cs)):
+- [x] **Built-in `FrktlPresetAddon`** ([file](../src/Liveolator.Visuals/Gl/FrktlPresetAddon.cs)):
       a feedback generator (trails + swirl warp + audio/beat energy) exposing 5 controllable params
-      (GLOW/WARP/SPEED/ZOOM/DECAY) as a preset; ASCII-only shader. Registered into both registries in
-      `ServiceConfig`. Tests: [MilkdropStarterPresetAddonTests.cs](../tests/Liveolator.Visuals.Tests/Gl/MilkdropStarterPresetAddonTests.cs)
-      (generator role, 5 params, clean expansion, declares `uPreviousFrame`, ASCII-only). Visuals 105/105.
-- [ ] **Manual GL verification (owner):** load `liveolator.builtin.milkdrop/starter` onto a layer, confirm
+      (GLOW/WARP/SPEED/ZOOM/DECAY) as the **FRKTL** preset; ASCII-only shader. Registered into both
+      registries in `ServiceConfig`. Tests: [FrktlPresetAddonTests.cs](../tests/Liveolator.Visuals.Tests/Gl/FrktlPresetAddonTests.cs)
+      (generator role, 5 params, clean expansion, declares `uPreviousFrame`, ASCII-only). Visuals suite green.
+- [ ] **Manual GL verification (owner):** load `liveolator.builtin.frktl/preset` onto a layer, confirm
       trails/warp react to audio + beat, and the GLOW knob changes the look live. (Tracked in Phase 7.)
 
 ## Phase 4 — Engine: load a preset (`GlVisualPerformanceEngine` / `IVisualPerformanceEngine`) ✅ DONE
@@ -209,7 +211,7 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
 
 - [ ] `dotnet build` + `dotnet test` green (Core + Visuals test projects).
 - [ ] Manual GL verification steps (append to `Liveolator.Visuals/CLAUDE.md` checklist): load the
-      built-in MilkDrop starter preset, confirm trails/warp react to audio + beat, turn the GLOW knob
+      built-in FRKTL preset, confirm trails/warp react to audio + beat, turn the GLOW knob
       (UI) and a learned MIDI knob → `uGlow` changes live; switch preset → knob set + labels change.
 - [ ] Update docs: this file → mark sections done; add a short "controllable preset" section to
       doc 26; note the new action kind in doc 04's catalogue.

@@ -6,13 +6,13 @@ using Xunit;
 namespace Liveolator.Visuals.Tests.Gl;
 
 /// <summary>
-/// Pure checks for the built-in MilkDrop starter preset (doc 28). The GL rendering is verified manually
-/// (needs a display); here we pin the contract that makes it loadable and feedback-capable.
+/// Pure checks for the built-in FRKTL preset (doc 28). The GL rendering is verified manually (needs a
+/// display); here we pin the contract that makes it loadable and feedback-capable.
 /// </summary>
-public class MilkdropStarterPresetAddonTests
+public class FrktlPresetAddonTests
 {
     private static VisualEffectDescriptor Descriptor() =>
-        MilkdropStarterPresetAddon.Descriptor("milkdrop-starter.frag");
+        FrktlPresetAddon.Descriptor("frktl.frag");
 
     [Fact]
     public void Descriptor_IsAGeneratorWithFiveParameters()
@@ -25,28 +25,29 @@ public class MilkdropStarterPresetAddonTests
     [Fact]
     public void Preset_ExposesFiveControllableParameters_WithinTheDocCeiling()
     {
-        GeneratorPreset preset = MilkdropStarterPresetAddon.Preset();
+        GeneratorPreset preset = FrktlPresetAddon.Preset();
         Assert.Equal(5, preset.Controllable.Count);
         Assert.True(preset.Controllable.Count <= GeneratorPreset.MaxControllableParameters);
-        Assert.Equal(MilkdropStarterPresetAddon.EffectId, preset.GeneratorEffectId);
+        Assert.Equal(FrktlPresetAddon.EffectId, preset.GeneratorEffectId);
+        Assert.Equal("FRKTL", preset.Name);
     }
 
     [Fact]
     public void Preset_ExpandsCleanlyAgainstItsOwnDescriptor()
     {
         GeneratorPresetBinding binding = GeneratorPresetExpansion.Expand(
-            MilkdropStarterPresetAddon.Preset(), Descriptor(), layerIndex: 0);
+            FrktlPresetAddon.Preset(), Descriptor(), layerIndex: 0);
 
         Assert.Equal(5, binding.Macros.Count);
-        Assert.All(binding.Macros, m => Assert.Equal(MilkdropStarterPresetAddon.EffectId, m.Target.EffectInstanceId));
-        Assert.Contains(binding.Macros, m => m.Name == $"{MilkdropStarterPresetAddon.PresetId}.glow");
+        Assert.All(binding.Macros, m => Assert.Equal(FrktlPresetAddon.EffectId, m.Target.EffectInstanceId));
+        Assert.Contains(binding.Macros, m => m.Name == $"{FrktlPresetAddon.PresetId}.glow");
     }
 
     [Fact]
     public void Shader_DeclaresPreviousFrameSampler_SoFeedbackEngages()
-        => Assert.Contains("uPreviousFrame", MilkdropStarterPresetAddon.FragmentShader);
+        => Assert.Contains("uPreviousFrame", FrktlPresetAddon.FragmentShader);
 
     [Fact]
     public void Shader_IsAsciiOnly_ToAvoidIntelPreprocessorEof()
-        => Assert.True(MilkdropStarterPresetAddon.FragmentShader.All(ch => ch <= '\x7F'));
+        => Assert.True(FrktlPresetAddon.FragmentShader.All(ch => ch <= '\x7F'));
 }

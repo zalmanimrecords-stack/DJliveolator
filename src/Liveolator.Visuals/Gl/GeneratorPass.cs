@@ -41,7 +41,7 @@ internal sealed class GeneratorPass : IDisposable
     private uint _vbo;
 
     // Two texture/FBO slots so a generator can sample the previous frame (uPreviousFrame) for
-    // MilkDrop-style trails/warp (doc 28). Ping-pong is only engaged when the shader declares the
+    // frame-feedback trails/warp (doc 28). Ping-pong is only engaged when the shader declares the
     // sampler; otherwise slot 0 is used exactly like the original single-buffer path (VU / psy-fractal
     // are unaffected). _front is the slot rendered into this frame; the other holds the previous frame.
     private readonly uint[] _textures = new uint[2];

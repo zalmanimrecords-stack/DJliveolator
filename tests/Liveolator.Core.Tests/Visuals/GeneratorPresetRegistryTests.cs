@@ -7,7 +7,7 @@ namespace Liveolator.Core.Tests.Visuals;
 
 public class GeneratorPresetRegistryTests
 {
-    private static GeneratorPreset Preset(string presetId, string generatorEffectId = "liveolator.builtin/milkdrop")
+    private static GeneratorPreset Preset(string presetId, string generatorEffectId = "liveolator.builtin/generator")
         => new(presetId, presetId, generatorEffectId, "1.0.0",
             new[] { new ControllableParameter("glow", "GLOW") });
 
@@ -15,7 +15,7 @@ public class GeneratorPresetRegistryTests
     public void ReplacePackage_RegistersPresets_ThenTryGetResolvesById()
     {
         var registry = new GeneratorPresetRegistry();
-        GeneratorPreset preset = Preset("liveolator.builtin/milkdrop-starter");
+        GeneratorPreset preset = Preset("liveolator.builtin/starter");
 
         registry.ReplacePackage("liveolator.builtin", new[] { preset });
 
