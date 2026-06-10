@@ -2,7 +2,6 @@ using System;
 using System.Collections.ObjectModel;
 using System.Reactive;
 using Liveolator.App.Shell;
-using Liveolator.Core.Actions;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -16,8 +15,8 @@ namespace Liveolator.App.Features.Addons;
 /// The Add-ons tab (doc 26): one place that lists every add-on — the built-in visual generators plus any
 /// installed extension packages — each with a Settings button. Today only the built-in VU meter is
 /// configurable (swap its dial-face/background image while the needle stays standard); other add-ons are
-/// listed read-only. UI-free and unit-testable with fakes — it emits <c>PerformanceAction</c>s through
-/// the dispatcher and persists via <see cref="ISettingsStore"/>, never calling an engine directly (doc 04).
+/// listed read-only. UI-free and unit-testable with fakes — it persists via <see cref="ISettingsStore"/>
+/// and applies changes through an injected callback, never calling an engine directly (doc 04).
 /// </summary>
 public sealed class AddonsViewModel : ViewModelBase
 {
@@ -25,23 +24,21 @@ public sealed class AddonsViewModel : ViewModelBase
     private AddonItemViewModel? _selectedAddon;
 
     public AddonsViewModel(
-        IPerformanceActionDispatcher dispatcher,
         ISettingsStore store,
         VuMeterFaceSpec vuMeterFaceSpec,
         string defaultVuMeterFacePath,
-        int? vuMeterFaceLayerSlot,
         string? currentVuMeterCustomFacePath = null,
+        Action<string?>? applyVuMeterBackground = null,
         IVisualEffectRegistry? registry = null,
         IExtensionCatalog? extensions = null,
         IImageDimensionsProbe? imageProbe = null)
     {
-        ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(vuMeterFaceSpec);
 
         _vuMeterSettings = new VuMeterBackgroundSettingsViewModel(
-            dispatcher, store, vuMeterFaceLayerSlot, defaultVuMeterFacePath, vuMeterFaceSpec,
-            currentVuMeterCustomFacePath, imageProbe);
+            store, vuMeterFaceSpec, defaultVuMeterFacePath,
+            currentVuMeterCustomFacePath, applyVuMeterBackground, imageProbe);
 
         OpenSettingsCommand = ReactiveCommand.Create<AddonItemViewModel>(item => SelectedAddon = item);
 

@@ -126,7 +126,12 @@ public static class ServiceConfig
         // Register the built-in VU-meter generator (doc 26 reference add-on) AFTER the extension reload
         // so it is not removed, and under its own package id so it never collides with an installed pack.
         // A generator layer can then render out of the box and react to the live master level.
-        VuMeterAddon.TryRegister(visualEffects, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        // The persisted custom dial-face (Add-ons tab) becomes the generator's background at startup; a
+        // null/missing path falls back to the built-in face.
+        VuMeterAddon.TryRegister(
+            visualEffects,
+            backgroundPath: appSettings.Addons.VuMeterBackgroundImagePath,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         PsyFractalVisualizerAddon.TryRegister(
             visualEffects,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
@@ -270,7 +275,7 @@ public static class ServiceConfig
 
         (VisualActionHandler visualHandler, GlVisualPerformanceEngine visualEngine) =
             WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, generatorPresets, audioLevel,
-                loggerFactory, appSettings.Addons.VuMeterBackgroundImagePath);
+                loggerFactory);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -524,20 +529,39 @@ public static class ServiceConfig
         services.AddSingleton<MappingsViewModel>();
 
         // Add-ons tab (doc 26): list built-in add-ons + installed packages and configure the built-in VU
-        // meter — replace its dial-face (background) image live (VisualSetLayerSource at the face layer)
-        // and persist it. The face slot is resolved from the engine's startup scene (null headless or when
-        // the scene has no built-in meter; the choice still persists for the next launch in that case).
+        // meter — replace its dial-face (background) image and persist it. The VU meter is a single
+        // self-contained generator that samples its face as the background, so applying a new image is a
+        // re-register of the generator descriptor + a recomposition (re-dispatching the VU layer's source
+        // forces the renderer to rebuild the generator and reload the image). Works in any scene that
+        // contains the VU generator; null engine (headless) just persists for next launch.
         services.AddSingleton<IImageDimensionsProbe, SkiaImageDimensionsProbe>();
         services.AddSingleton<AddonsViewModel>(sp =>
         {
+            var dispatcher = sp.GetRequiredService<IPerformanceActionDispatcher>();
             IVisualPerformanceEngine? engine = sp.GetService<IVisualPerformanceEngine>();
+            int? vuLayer = FindVuMeterLayer(engine)?.Slot;
+
+            // Apply a chosen dial-face live: re-register the VU generator with the new background, then
+            // nudge the VU layer's source so the compositor rebuilds the generator and loads the image.
+            void ApplyBackground(string? path)
+            {
+                VuMeterAddon.TryRegister(
+                    visualEffects, backgroundPath: path,
+                    onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+                if (vuLayer is int slot)
+                    dispatcher.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.VisualSetLayerSource,
+                        Slot: slot,
+                        Argument: VisualSourceActionCodec.Encode(
+                            new VisualSourceRef(VisualSourceKind.Generator, VuMeterAddon.EffectId))));
+            }
+
             return new AddonsViewModel(
-                sp.GetRequiredService<IPerformanceActionDispatcher>(),
                 sp.GetRequiredService<ISettingsStore>(),
                 VuMeterAddon.FaceSpec,
                 VuMeterAddon.FaceImagePath(),
-                FindVuMeterFaceLayer(engine),
                 appSettings.Addons.VuMeterBackgroundImagePath,
+                ApplyBackground,
                 sp.GetService<IVisualEffectRegistry>(),
                 sp.GetService<IExtensionCatalog>(),
                 sp.GetService<IImageDimensionsProbe>());
@@ -668,15 +692,14 @@ public static class ServiceConfig
         IVisualEffectRegistry effectRegistry,
         IGeneratorPresetRegistry presetRegistry,
         IVisualAudioLevelSource audioLevel,
-        ILoggerFactory loggerFactory,
-        string? customVuMeterFacePath)
+        ILoggerFactory loggerFactory)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore, customVuMeterFacePath);
+        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore);
         IReadOnlyList<VisualMacro> macros;
         try
         {
@@ -719,33 +742,21 @@ public static class ServiceConfig
     // The compositor's first slice needs a renderable image layer. Generate a placeholder image and
     // wrap it in a one-scene bank; on any failure fall back to an empty bank (Show Visuals then logs
     // and no-ops rather than crashing startup). A real scene catalog from persistence (doc 13) replaces this.
-    private static VisualBank BuildStarterBank(string? customVuMeterFacePath = null)
+    private static VisualBank BuildStarterBank()
     {
         try
         {
             string imagePath = StarterImage.EnsureCreated();
-            // A persisted custom VU-meter face (Add-ons tab) replaces the built-in face at startup, but
-            // only when the file still exists — a moved/deleted custom image falls back to the built-in
-            // face rather than rendering an empty layer (global #16/#26).
-            string vuFacePath = !string.IsNullOrWhiteSpace(customVuMeterFacePath) && File.Exists(customVuMeterFacePath)
-                ? customVuMeterFacePath
-                : VuMeterAddon.FaceImagePath();
             var background = new VisualLayer(
                 name: "Starter",
                 source: new VisualSourceRef(VisualSourceKind.Image, imagePath),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
                 opacity: 1.0);
-            // The built-in VU meter (doc 26 reference) shows by default like the reference photo: a faithful
-            // static dial FACE (Skia-rendered: bezel/screws/aged scale/red zone/VU METER/brass hub) with the
-            // live NEEDLE generator composited over it. The face fills the frame; the needle (transparent
-            // background) swings with the master level. If either asset fails the renderer skips it.
-            var vuFace = new VisualLayer(
-                name: "VU Meter Face",
-                source: new VisualSourceRef(VisualSourceKind.Image, vuFacePath),
-                effects: Array.Empty<EffectRef>(),
-                blend: BlendMode.Normal,
-                opacity: 1.0);
+            // The built-in VU meter (doc 26 reference) is a SINGLE self-contained generator: it samples its
+            // dial face (the built-in VuMeterFace, or a custom image set from the Add-ons tab) as the
+            // background and draws the live needle over it. One opaque layer fills the frame and reacts to
+            // the master level; if the generator fails the renderer skips it.
             var vuMeter = new VisualLayer(
                 name: "VU Meter",
                 source: new VisualSourceRef(VisualSourceKind.Generator, VuMeterAddon.EffectId),
@@ -753,7 +764,7 @@ public static class ServiceConfig
                 blend: BlendMode.Normal,
                 opacity: 1.0);
             // The fractal generator is an alternate visual kept on top at zero opacity, so its own Visual
-            // Control toggle can bring it over the VU meter without disturbing the meter's face+needle pair.
+            // Control toggle can bring it over the VU meter without disturbing the meter.
             var psyFractal = new VisualLayer(
                 name: "Psy Fractal Visualizer",
                 source: new VisualSourceRef(VisualSourceKind.Generator, PsyFractalVisualizerAddon.EffectId),
@@ -762,7 +773,7 @@ public static class ServiceConfig
                 opacity: 0.0);
             var scene = new VisualScene(
                 name: "Starter",
-                layers: new[] { background, vuFace, vuMeter, psyFractal },
+                layers: new[] { background, vuMeter, psyFractal },
                 macroValues: new Dictionary<string, double>(),
                 transition: TransitionStyle.Cut,
                 beatBehavior: BeatBehavior.None);
@@ -784,8 +795,7 @@ public static class ServiceConfig
     // banks follow in name order. When nothing is saved, the engine ships the single placeholder starter
     // bank. Tolerant: a missing/corrupt/old snapshot is skipped (the store already warned), never fatal —
     // blocking on these small JSON files in the composition root mirrors the settings/macros load above.
-    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(
-        ILiveProfileStore profileStore, string? customVuMeterFacePath = null)
+    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(ILiveProfileStore profileStore)
     {
         var banks = new List<VisualBank>();
         try
@@ -810,7 +820,7 @@ public static class ServiceConfig
 
         // Always have at least one bank so the engine + Scene Grid have something to address.
         if (banks.Count == 0)
-            banks.Add(BuildStarterBank(customVuMeterFacePath));
+            banks.Add(BuildStarterBank());
 
         return banks;
     }
@@ -866,31 +876,6 @@ public static class ServiceConfig
             if (layer.Source.Kind == VisualSourceKind.Generator
                 && string.Equals(layer.Source.Reference, VuMeterAddon.EffectId, StringComparison.Ordinal))
                 return (i, layer.Opacity > 0.0);
-        }
-        return null;
-    }
-
-    // Locates the VU-meter FACE image layer in the engine's startup scene so the Add-ons tab can swap it
-    // live: the Image layer immediately before the VU-meter needle generator (see BuildStarterBank's
-    // layer order). Returns null when there is no built-in meter (e.g. a user-authored startup scene),
-    // in which case the persisted face choice still applies on the next launch.
-    private static int? FindVuMeterFaceLayer(IVisualPerformanceEngine? engine)
-    {
-        VisualScene? scene = engine?.ActiveBank.Scene(0);
-        if (scene is null)
-            return null;
-
-        for (int i = 0; i < scene.Layers.Count; i++)
-        {
-            VisualLayer layer = scene.Layers[i];
-            if (layer.Source.Kind != VisualSourceKind.Generator
-                || !string.Equals(layer.Source.Reference, VuMeterAddon.EffectId, StringComparison.Ordinal))
-                continue;
-
-            int faceIndex = i - 1;
-            return faceIndex >= 0 && scene.Layers[faceIndex].Source.Kind == VisualSourceKind.Image
-                ? faceIndex
-                : null;
         }
         return null;
     }

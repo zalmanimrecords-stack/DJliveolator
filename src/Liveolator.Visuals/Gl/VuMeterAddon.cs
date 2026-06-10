@@ -27,12 +27,12 @@ public static class VuMeterAddon
 
     public const string Version = "1.0.0";
 
-    // The needle-only generator: it draws JUST the moving black needle (and its short counterweight
-    // tail) on a TRANSPARENT background, so it composites over the static face image (VuMeterFace) and
-    // reacts to the audio while the printed dial stays fixed. Contract per doc 26: #version 330 core,
-    // in vec2 vTexCoord, out vec4 fragColor, premultiplied-alpha output; uLevel drives the needle angle.
-    // It works in FACE PIXEL SPACE using the shared VuMeterGeometry, so the needle aligns with the arc
-    // the face renderer printed. Built from the geometry constants so there is one source of truth.
+    // The self-contained VU-meter generator: it samples the dial-FACE background image (uBackground —
+    // the built-in VuMeterFace by default, or the user's custom image set from the Add-ons tab) and draws
+    // the moving needle OVER it, so a single generator layer is the whole meter (no separate face layer
+    // needed). Contract per doc 26: #version 330 core, in vec2 vTexCoord, out vec4 fragColor; uLevel
+    // drives the needle angle. It works in FACE PIXEL SPACE using the shared VuMeterGeometry so the needle
+    // aligns with the printed arc. Built from the geometry constants so there is one source of truth.
     public static readonly string FragmentShader = BuildShader();
 
     private static string BuildShader()
@@ -44,7 +44,8 @@ public static class VuMeterAddon
             in vec2 vTexCoord;
             out vec4 fragColor;
 
-            uniform float uLevel;   // smoothed VU level 0..1 (the needle position)
+            uniform float uLevel;          // smoothed VU level 0..1 (the needle position)
+            uniform sampler2D uBackground; // the dial face (built-in or a custom image)
 
             const float PI = 3.14159265;
             const float FW = {{F(VuMeterGeometry.FaceWidth)}};
@@ -62,7 +63,9 @@ public static class VuMeterAddon
             }
 
             void main() {
-                // Face pixel space (y down), so it registers with the printed face at any window aspect.
+                // Face pixel space (origin top-left, y down): vTexCoord.y=0 is the top of the composited
+                // output, matching the top-row-first face image, so the needle registers with the printed
+                // face (VuMeterFace) at any window aspect.
                 vec2 pix = vec2(vTexCoord.x * FW, vTexCoord.y * FH);
 
                 float ang = mix(AMIN, AMAX, clamp(uLevel, 0.0, 1.0)) * PI / 180.0;
@@ -77,24 +80,31 @@ public static class VuMeterAddon
                 float d = sdSeg(pix, tail, tip);
                 float needle = smoothstep(halfW, halfW - 1.6, d);
 
-                vec3 col = vec3(0.05);                     // near-black needle
-                fragColor = vec4(col * needle, needle);    // premultiplied; transparent elsewhere
+                // The dial face is the background image; the needle is drawn over it with a soft shadow
+                // so it stays legible on any custom face. Opaque output — this layer IS the whole meter.
+                vec3 col = texture(uBackground, vTexCoord).rgb;
+                float shadow = smoothstep(halfW + 3.0, halfW + 0.5, d);
+                col *= (1.0 - 0.30 * shadow);
+                col = mix(col, vec3(0.04), needle);        // near-black needle
+                fragColor = vec4(col, 1.0);
             }
             """;
     }
 
     /// <summary>
-    /// Builds the descriptor for the built-in needle generator. No tunable parameters — the dial face
-    /// (colours, scale, red zone) is the static <see cref="VuMeterFace"/> image; the generator only
-    /// animates the needle from <c>uLevel</c>.
+    /// Builds the descriptor for the built-in VU-meter generator. No tunable parameters — the dial face
+    /// is the <paramref name="backgroundPath"/> image (the built-in <see cref="VuMeterFace"/> by default,
+    /// or a custom one) sampled as <c>uBackground</c>; the generator only animates the needle from
+    /// <c>uLevel</c> over it.
     /// </summary>
-    public static VisualEffectDescriptor Descriptor(string shaderPath) => new(
+    public static VisualEffectDescriptor Descriptor(string shaderPath, string backgroundPath) => new(
         EffectId,
         Version,
         PackageId,
         shaderPath,
         Array.Empty<VisualEffectParameter>(),
-        Role: VisualEffectRole.Generator);
+        Role: VisualEffectRole.Generator,
+        BackgroundImagePath: backgroundPath);
 
     /// <summary>The static dial-face image this needle composites over (rendered by <see cref="VuMeterFace"/>).</summary>
     public static string FaceImagePath() => VuMeterFace.EnsureCreated();
@@ -138,13 +148,23 @@ public static class VuMeterAddon
     /// layer can reference <see cref="EffectId"/>. Best-effort: a write/registry failure logs and leaves
     /// the app running without the built-in generator (the rest of the visuals still render).
     /// </summary>
-    public static bool TryRegister(IVisualEffectRegistry registry, Action<string>? onWarning = null)
+    /// <summary>
+    /// (Re-)registers the VU-meter generator with a dial-face background. <paramref name="backgroundPath"/>
+    /// is the custom face image to show behind the needle; a null/blank/missing path falls back to the
+    /// built-in <see cref="VuMeterFace"/>. Calling it again with a new path live-swaps the background once
+    /// the composition is refreshed (the renderer rebuilds the generator from this descriptor).
+    /// </summary>
+    public static bool TryRegister(
+        IVisualEffectRegistry registry, string? backgroundPath = null, Action<string>? onWarning = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         try
         {
             string shaderPath = EnsureShaderCreated();
-            registry.ReplacePackage(PackageId, new[] { Descriptor(shaderPath) });
+            string background = !string.IsNullOrWhiteSpace(backgroundPath) && File.Exists(backgroundPath)
+                ? backgroundPath
+                : FaceImagePath();
+            registry.ReplacePackage(PackageId, new[] { Descriptor(shaderPath, background) });
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)

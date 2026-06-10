@@ -32,7 +32,8 @@ public sealed record VisualEffectDescriptor(
     IReadOnlyList<VisualEffectParameter> Parameters,
     VisualEffectRole Role = VisualEffectRole.Effect,
     int MinimumOpenGlMajor = 3,
-    int MinimumOpenGlMinor = 3);
+    int MinimumOpenGlMinor = 3,
+    string? BackgroundImagePath = null);
 
 public interface IVisualEffectRegistry
 {

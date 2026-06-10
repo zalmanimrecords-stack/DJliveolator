@@ -4,7 +4,6 @@ using System.IO;
 using System.Reactive;
 using System.Threading.Tasks;
 using Liveolator.App.Shell;
-using Liveolator.Core.Actions;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
@@ -14,22 +13,22 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Addons;
 
 /// <summary>
-/// Settings for the built-in VU-meter add-on: replace the static dial-face (background) image while the
-/// needle stays standard. Picking an image <b>persists</b> it (<see cref="ISettingsStore"/>) and applies
-/// it <b>live</b> by dispatching a <see cref="PerformanceActionKind.VisualSetLayerSource"/> at the face
-/// layer's slot (doc 04 — the UI is just another action source; never a direct engine call). The page
-/// documents the required size + needle pivot from <see cref="VuMeterFaceSpec"/> so a custom face lines
-/// up with the needle. UI-free and unit-testable with fakes.
+/// Settings for the built-in VU-meter add-on: replace its dial-face (background) image while the needle
+/// stays standard. The VU meter is a single self-contained generator that samples its face as the
+/// background, so picking an image <b>persists</b> it (<see cref="ISettingsStore"/>) and applies it
+/// <b>live</b> through <see cref="_applyLiveBackground"/> (the composition root re-registers the generator
+/// with the new background and refreshes the composition — never a direct engine call from the VM). The
+/// page documents the required size + needle pivot from <see cref="VuMeterFaceSpec"/> so a custom face
+/// lines up with the needle. UI-free and unit-testable with fakes.
 /// </summary>
 public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
 {
     // Aspect tolerance before warning the face will be stretched out of shape (±2% of the target ratio).
     private const double AspectTolerance = 0.02;
 
-    private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly ISettingsStore _store;
     private readonly IImageDimensionsProbe? _imageProbe;
-    private readonly int? _faceLayerSlot;
+    private readonly Action<string?>? _applyLiveBackground;
     private readonly string _defaultFacePath;
 
     private string _imagePath;
@@ -38,19 +37,17 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
     private string _status = string.Empty;
 
     public VuMeterBackgroundSettingsViewModel(
-        IPerformanceActionDispatcher dispatcher,
         ISettingsStore store,
-        int? faceLayerSlot,
-        string defaultFacePath,
         VuMeterFaceSpec spec,
+        string defaultFacePath,
         string? currentCustomPath = null,
+        Action<string?>? applyLiveBackground = null,
         IImageDimensionsProbe? imageProbe = null)
     {
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         Spec = spec ?? throw new ArgumentNullException(nameof(spec));
-        _faceLayerSlot = faceLayerSlot;
         _defaultFacePath = defaultFacePath ?? throw new ArgumentNullException(nameof(defaultFacePath));
+        _applyLiveBackground = applyLiveBackground;
         _imageProbe = imageProbe;
 
         _isCustom = !string.IsNullOrWhiteSpace(currentCustomPath);
@@ -174,7 +171,7 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
         if (!await PersistAsync(trimmed).ConfigureAwait(false))
             return;
 
-        ApplyFace(trimmed);
+        _applyLiveBackground?.Invoke(trimmed);
         ImagePath = trimmed;
         IsCustom = true;
         RecomputeAspectWarning(trimmed);
@@ -186,7 +183,7 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
         if (!await PersistAsync(null).ConfigureAwait(false))
             return;
 
-        ApplyFace(_defaultFacePath);
+        _applyLiveBackground?.Invoke(null);
         ImagePath = _defaultFacePath;
         IsCustom = false;
         AspectWarning = null;
@@ -209,21 +206,6 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
             Status = $"Could not save the setting: {ex.Message}";
             return false;
         }
-    }
-
-    // Apply live via the action dispatcher (the seam) — swap the face layer's image source immediately.
-    // With no face layer in the running scene (e.g. headless/tests), there is nothing to apply live;
-    // the persisted choice still takes effect on the next launch.
-    private void ApplyFace(string path)
-    {
-        if (_faceLayerSlot is not { } slot)
-            return;
-
-        string encoded = VisualSourceActionCodec.Encode(new VisualSourceRef(VisualSourceKind.Image, path));
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.VisualSetLayerSource,
-            Slot: slot,
-            Argument: encoded));
     }
 
     private void RecomputeAspectWarning(string path)

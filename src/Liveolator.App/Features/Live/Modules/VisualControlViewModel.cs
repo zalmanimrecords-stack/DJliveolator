@@ -251,7 +251,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             .Where(effect => effect.Role == VisualEffectRole.Generator)
             .OrderBy(effect => effect.EffectId, StringComparer.OrdinalIgnoreCase)
             .Select(effect => new VisualChannelSourceOption(
-                effect.EffectId,
+                VisualSourceLabel.Humanize(effect.EffectId),
                 "PLUGINS",
                 new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId))));
 

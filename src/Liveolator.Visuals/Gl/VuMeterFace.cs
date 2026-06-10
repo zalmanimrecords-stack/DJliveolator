@@ -13,7 +13,8 @@ namespace Liveolator.Visuals.Gl;
 public static class VuMeterFace
 {
     // Bump when the drawing changes so an existing install regenerates the cached PNG.
-    private const string Version = "v1";
+    // v2: top-pivot layout — hub near the top, scale arc + needle hang downward.
+    private const string Version = "v2";
 
     private static readonly SKColor Ink = new(0x1A, 0x17, 0x14);
     private static readonly SKColor Red = new(0xC0, 0x24, 0x1B);

@@ -7,8 +7,6 @@ using System.Reactive.Threading.Tasks;
 using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Addons;
-using Liveolator.App.Tests.Live;
-using Liveolator.Core.Actions;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -21,17 +19,17 @@ namespace Liveolator.App.Tests.Features.Addons;
 
 /// <summary>
 /// Verifies the Add-ons tab view-model: it lists the built-in add-ons plus installed packages; selecting
-/// the VU meter exposes its background-image settings with the spec-derived guidance; choosing an image
-/// persists it (settings store) and applies it live (VisualSetLayerSource at the face slot); the aspect
-/// advisory follows the chosen image; and Reset restores the built-in face.
+/// the VU meter exposes its background-image settings with the spec-derived AI prompt; choosing an image
+/// persists it (settings store) and applies it live via the injected callback; the aspect advisory follows
+/// the chosen image; and Reset restores the built-in face.
 /// </summary>
 public sealed class AddonsViewModelTests : IDisposable
 {
-    private const int FaceSlot = 1;
     private static readonly VuMeterFaceSpec Spec = VuMeterAddon.FaceSpec;
 
     private readonly string _defaultFace;
     private readonly string _customImage;
+    private readonly List<string?> _applied = new();
 
     public AddonsViewModelTests()
     {
@@ -99,20 +97,18 @@ public sealed class AddonsViewModelTests : IDisposable
     }
 
     private AddonsViewModel Build(
-        FakeDispatcher dispatcher,
         FakeStore store,
-        int? faceSlot = FaceSlot,
         IExtensionCatalog? catalog = null,
         IImageDimensionsProbe? probe = null,
         string? currentCustom = null)
-        => new(dispatcher, store, Spec, _defaultFace, faceSlot, currentCustom, registry: null, catalog, probe);
+        => new(store, Spec, _defaultFace, currentCustom, p => _applied.Add(p), registry: null, catalog, probe);
 
     [Fact]
     public void Lists_BuiltInsThenInstalledPackages()
     {
         var catalog = new FakeCatalog { Installed = new[] { Package("com.acme.glow", enabled: true) } };
 
-        AddonsViewModel vm = Build(new FakeDispatcher(), new FakeStore(), catalog: catalog);
+        AddonsViewModel vm = Build(new FakeStore(), catalog: catalog);
 
         Assert.Equal(3, vm.Addons.Count);
         Assert.Equal(VuMeterAddon.EffectId, vm.Addons[0].Id);
@@ -127,7 +123,7 @@ public sealed class AddonsViewModelTests : IDisposable
     [Fact]
     public void SelectsVuMeterByDefault_AndExposesSpecGuidance()
     {
-        AddonsViewModel vm = Build(new FakeDispatcher(), new FakeStore());
+        AddonsViewModel vm = Build(new FakeStore());
 
         Assert.True(vm.ShowVuMeterSettings);
         Assert.False(vm.ShowNoSettingsMessage);
@@ -143,7 +139,7 @@ public sealed class AddonsViewModelTests : IDisposable
     [Fact]
     public void SelectingNonConfigurableAddon_ShowsNoSettingsMessage()
     {
-        AddonsViewModel vm = Build(new FakeDispatcher(), new FakeStore());
+        AddonsViewModel vm = Build(new FakeStore());
 
         vm.SelectedAddon = vm.Addons.First(a => a.Id == PsyFractalVisualizerAddon.EffectId);
 
@@ -152,58 +148,37 @@ public sealed class AddonsViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task ChooseImage_PersistsAndAppliesLiveAtFaceSlot()
+    public async Task ChooseImage_PersistsAndAppliesBackgroundLive()
     {
-        var dispatcher = new FakeDispatcher();
         var store = new FakeStore();
-        AddonsViewModel vm = Build(dispatcher, store);
+        AddonsViewModel vm = Build(store);
 
         await vm.VuMeterSettings.ChooseImageAsync(_customImage);
 
         Assert.Equal(_customImage, store.Saved.Addons.VuMeterBackgroundImagePath);
+        Assert.Equal(_customImage, Assert.Single(_applied));
         Assert.True(vm.VuMeterSettings.IsCustom);
         Assert.Equal(_customImage, vm.VuMeterSettings.ImagePath);
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.VisualSetLayerSource, action.Kind);
-        Assert.Equal(FaceSlot, action.Slot);
-        Assert.True(VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? source));
-        Assert.Equal(VisualSourceKind.Image, source!.Kind);
-        Assert.Equal(_customImage, source.Reference);
     }
 
     [Fact]
-    public async Task ChooseImage_MissingFile_DoesNotPersistOrDispatch()
+    public async Task ChooseImage_MissingFile_DoesNotPersistOrApply()
     {
-        var dispatcher = new FakeDispatcher();
         var store = new FakeStore();
-        AddonsViewModel vm = Build(dispatcher, store);
+        AddonsViewModel vm = Build(store);
 
         await vm.VuMeterSettings.ChooseImageAsync(Path.Combine(Path.GetTempPath(), "does-not-exist-xyz.png"));
 
-        Assert.Empty(dispatcher.Dispatched);
+        Assert.Empty(_applied);
         Assert.Null(store.Saved.Addons.VuMeterBackgroundImagePath);
         Assert.False(vm.VuMeterSettings.IsCustom);
-    }
-
-    [Fact]
-    public async Task ChooseImage_WithoutFaceSlot_PersistsButDoesNotDispatch()
-    {
-        var dispatcher = new FakeDispatcher();
-        var store = new FakeStore();
-        AddonsViewModel vm = Build(dispatcher, store, faceSlot: null);
-
-        await vm.VuMeterSettings.ChooseImageAsync(_customImage);
-
-        Assert.Equal(_customImage, store.Saved.Addons.VuMeterBackgroundImagePath);
-        Assert.Empty(dispatcher.Dispatched);
     }
 
     [Fact]
     public async Task ChooseImage_NonMatchingAspect_WarnsAndStandardAspectDoesNot()
     {
         var probe = new FakeProbe { Width = 1000, Height = 1000 }; // 1:1, not 3:2
-        AddonsViewModel vm = Build(new FakeDispatcher(), new FakeStore(), probe: probe);
+        AddonsViewModel vm = Build(new FakeStore(), probe: probe);
 
         await vm.VuMeterSettings.ChooseImageAsync(_customImage);
         Assert.False(string.IsNullOrEmpty(vm.VuMeterSettings.AspectWarning));
@@ -217,20 +192,16 @@ public sealed class AddonsViewModelTests : IDisposable
     [Fact]
     public async Task ResetToDefault_ClearsPathAndAppliesDefaultFace()
     {
-        var dispatcher = new FakeDispatcher();
         var store = new FakeStore();
-        AddonsViewModel vm = Build(dispatcher, store, currentCustom: _customImage);
+        AddonsViewModel vm = Build(store, currentCustom: _customImage);
         Assert.True(vm.VuMeterSettings.IsCustom);
 
         await vm.VuMeterSettings.ResetToDefaultCommand.Execute().ToTask();
 
         Assert.Null(store.Saved.Addons.VuMeterBackgroundImagePath);
+        Assert.Null(Assert.Single(_applied));
         Assert.False(vm.VuMeterSettings.IsCustom);
         Assert.Equal(_defaultFace, vm.VuMeterSettings.ImagePath);
         Assert.Null(vm.VuMeterSettings.AspectWarning);
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.True(VisualSourceActionCodec.TryDecode(action.Argument, out VisualSourceRef? source));
-        Assert.Equal(_defaultFace, source!.Reference);
     }
 }

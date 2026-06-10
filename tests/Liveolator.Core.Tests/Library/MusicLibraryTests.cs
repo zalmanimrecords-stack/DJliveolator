@@ -62,6 +62,33 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task Scan_ModifiedFile_PreservesManualBeatGrid_AndReStampsFingerprint()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        // The DJ hand-corrects the grid; this locks the analysis (AnalysisIsManual = true).
+        library.SetManualBeatGrid("a.mp3", bpm: 138.5, firstBeatSeconds: 0.25);
+
+        // The file is re-tagged in an external app → same path, new size/mtime → classified Modified.
+        enumerator.Files[0] = new ScannedFile("a.mp3", 2000, T.AddMinutes(5));
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(track.AnalysisIsManual);            // the manual lock survives the re-scan
+        Assert.Equal(138.5, track.Bpm!.Bpm);            // hand-set BPM not clobbered by re-analysis
+        Assert.Equal(0.25, track.Bpm.FirstBeatSeconds); // hand-set first beat not clobbered
+        Assert.Equal(1, decoder.DecodeCalls["a.mp3"]);  // manual entry kept → not re-decoded
+
+        // The fingerprint was re-stamped to the new file, so a further scan sees it Unchanged
+        // (no perpetual "Modified" that would keep trying to rebuild the locked track).
+        await library.ScanAsync(new[] { "music" });
+        Assert.Equal(1, decoder.DecodeCalls["a.mp3"]);
+    }
+
+    [Fact]
     public async Task UpdateManualDetails_PersistsBpmKeyGenreAndNotes()
     {
         var enumerator = new FakeFileEnumerator(File("a.mp3"));

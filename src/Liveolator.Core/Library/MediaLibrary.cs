@@ -28,6 +28,15 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     /// <summary>Builds a Failed entry when <see cref="CreateEntryAsync"/> throws.</summary>
     protected abstract TEntry CreateFailedEntry(ScannedFile file, string error);
 
+    /// <summary>
+    /// When a catalogued file changes on disk, gives a subclass the chance to <b>keep</b> the existing
+    /// entry's user-authored analysis instead of rebuilding it from scratch (which would silently
+    /// discard manual edits — global standard #7). Return the entry to keep, re-stamped to
+    /// <paramref name="file"/> so the new fingerprint is recorded and the file is not re-flagged
+    /// Modified on the next scan, or <c>null</c> to rebuild normally. Default: always rebuild.
+    /// </summary>
+    protected virtual TEntry? PreserveModifiedEntry(TEntry existing, ScannedFile file) => null;
+
     public IReadOnlyCollection<TEntry> All { get { lock (_gate) return _byPath.Values.ToArray(); } }
     public int Count { get { lock (_gate) return _byPath.Count; } }
 
@@ -146,6 +155,22 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new ScanProgress(done, total, delta.File.Path));
+
+            // A changed file may carry user-authored analysis we must not destroy; let the subclass
+            // keep it (re-stamped to the new fingerprint) rather than rebuilding from the decoder.
+            if (delta.Change == ScanChange.Modified)
+            {
+                TEntry? existing;
+                lock (_gate)
+                    _byPath.TryGetValue(delta.File.Path, out existing);
+                if (existing is not null && PreserveModifiedEntry(existing, delta.File) is { } preserved)
+                {
+                    lock (_gate)
+                        _byPath[delta.File.Path] = preserved;
+                    done++;
+                    continue;
+                }
+            }
 
             TEntry entry;
             try

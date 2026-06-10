@@ -53,6 +53,11 @@ internal sealed class GeneratorPass : IDisposable
     private int _uPreviousFrame = -1;
     private bool _hasFeedback;
 
+    // Optional dial/background image a generator samples as uBackground (the VU meter's face — built-in
+    // or custom). Loaded once from the descriptor; bound on texture unit 1 (unit 0 is the feedback slot).
+    private uint _backgroundTexture;
+    private int _uBackground = -1;
+
     private int _uResolution = -1;
     private int _uBeatPhase = -1;
     private int _uBarPhase = -1;
@@ -81,6 +86,7 @@ internal sealed class GeneratorPass : IDisposable
             string fragment = File.ReadAllText(descriptor.ShaderPath);
             BuildProgram(fragment);
             BuildQuad();
+            LoadBackground();
             _valid = true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ShaderCompilationException)
@@ -130,6 +136,16 @@ internal sealed class GeneratorPass : IDisposable
             _gl.ActiveTexture(TextureUnit.Texture0);
             _gl.BindTexture(TextureTarget.Texture2D, _textures[previous]);
             _gl.Uniform1(_uPreviousFrame, 0);
+        }
+
+        // A generator with a background image (the VU meter's dial face) samples it as uBackground on
+        // unit 1, leaving unit 0 free for the feedback slot above.
+        if (_backgroundTexture != 0 && _uBackground >= 0)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _backgroundTexture);
+            _gl.Uniform1(_uBackground, 1);
+            _gl.ActiveTexture(TextureUnit.Texture0);
         }
 
         if (_uResolution >= 0)
@@ -209,6 +225,7 @@ internal sealed class GeneratorPass : IDisposable
         _uTime = _gl.GetUniformLocation(program, "uTime");
         _uPreviousFrame = _gl.GetUniformLocation(program, "uPreviousFrame");
         _hasFeedback = _uPreviousFrame >= 0;
+        _uBackground = _gl.GetUniformLocation(program, "uBackground");
         foreach (VisualEffectParameter parameter in _descriptor.Parameters)
             _parameterLocations[parameter.Uniform] = _gl.GetUniformLocation(program, parameter.Uniform);
     }
@@ -226,6 +243,41 @@ internal sealed class GeneratorPass : IDisposable
             throw new ShaderCompilationException($"{type} failed to compile: {log}");
         }
         return shader;
+    }
+
+    // Loads the descriptor's optional dial/background image into a GL texture (sampled as uBackground).
+    // Best-effort: a missing/undecodable file leaves the generator without a background (the shader then
+    // samples an unbound sampler → black), logged rather than failing the whole generator.
+    private unsafe void LoadBackground()
+    {
+        if (_uBackground < 0 || string.IsNullOrWhiteSpace(_descriptor.BackgroundImagePath))
+            return;
+
+        try
+        {
+            RgbaImage image = new SkiaImageLoader().Load(_descriptor.BackgroundImagePath);
+            uint texture = _gl.GenTexture();
+            _gl.BindTexture(TextureTarget.Texture2D, texture);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+            fixed (byte* pixels = image.Pixels)
+            {
+                _gl.TexImage2D(
+                    TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
+                    (uint)image.Width, (uint)image.Height, 0,
+                    PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            }
+            _gl.BindTexture(TextureTarget.Texture2D, 0);
+            _backgroundTexture = texture;
+        }
+        catch (ImageLoadException ex)
+        {
+            _logger.LogWarning(
+                ex, "Visual generator '{Effect}' background image could not be loaded; rendering without it.",
+                _descriptor.EffectId);
+        }
     }
 
     private unsafe void BuildQuad()
@@ -309,6 +361,7 @@ internal sealed class GeneratorPass : IDisposable
             if (_textures[slot] != 0) _gl.DeleteTexture(_textures[slot]);
             if (_framebuffers[slot] != 0) _gl.DeleteFramebuffer(_framebuffers[slot]);
         }
+        if (_backgroundTexture != 0) _gl.DeleteTexture(_backgroundTexture);
         if (_vbo != 0) _gl.DeleteBuffer(_vbo);
         if (_vao != 0) _gl.DeleteVertexArray(_vao);
         if (_program != 0) _gl.DeleteProgram(_program);
