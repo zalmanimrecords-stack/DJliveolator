@@ -1,3 +1,4 @@
+using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
@@ -259,7 +260,8 @@ public static class ServiceConfig
         services.AddSingleton<IVisualAudioLevelSource>(audioLevel);
 
         (VisualActionHandler visualHandler, GlVisualPerformanceEngine visualEngine) =
-            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel, loggerFactory);
+            WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, audioLevel, loggerFactory,
+                appSettings.Addons.VuMeterBackgroundImagePath);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
         // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
@@ -511,6 +513,27 @@ public static class ServiceConfig
         if (enableSystemMetrics)
             services.AddSingleton<ISystemMetricsSampler, ProcessSystemMetricsSampler>();
         services.AddSingleton<MappingsViewModel>();
+
+        // Add-ons tab (doc 26): list built-in add-ons + installed packages and configure the built-in VU
+        // meter — replace its dial-face (background) image live (VisualSetLayerSource at the face layer)
+        // and persist it. The face slot is resolved from the engine's startup scene (null headless or when
+        // the scene has no built-in meter; the choice still persists for the next launch in that case).
+        services.AddSingleton<IImageDimensionsProbe, SkiaImageDimensionsProbe>();
+        services.AddSingleton<AddonsViewModel>(sp =>
+        {
+            IVisualPerformanceEngine? engine = sp.GetService<IVisualPerformanceEngine>();
+            return new AddonsViewModel(
+                sp.GetRequiredService<IPerformanceActionDispatcher>(),
+                sp.GetRequiredService<ISettingsStore>(),
+                VuMeterAddon.FaceSpec,
+                VuMeterAddon.FaceImagePath(),
+                FindVuMeterFaceLayer(engine),
+                appSettings.Addons.VuMeterBackgroundImagePath,
+                sp.GetService<IVisualEffectRegistry>(),
+                sp.GetService<IExtensionCatalog>(),
+                sp.GetService<IImageDimensionsProbe>());
+        });
+
         services.AddSingleton<ShellStatusViewModel>();
         services.AddSingleton<MainWindowViewModel>();
 
@@ -635,14 +658,15 @@ public static class ServiceConfig
         ILiveProfileStore profileStore,
         IVisualEffectRegistry effectRegistry,
         IVisualAudioLevelSource audioLevel,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        string? customVuMeterFacePath)
     {
         var brightnessMacro = new VisualMacro(
             GlVisualPerformanceEngine.BrightnessMacro,
             min: 0.0, max: 1.0, @default: 1.0,
             target: new MacroTarget(Layer: 0, Parameter: GlVisualPerformanceEngine.BrightnessMacro));
 
-        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore);
+        IReadOnlyList<VisualBank> banks = LoadBanksOrStarter(profileStore, customVuMeterFacePath);
         IReadOnlyList<VisualMacro> macros;
         try
         {
@@ -672,7 +696,10 @@ public static class ServiceConfig
         // during composition (that would crash headless/CI). The engine reads the shared clock, so the
         // window pulses on the same beat the Live tab taps.
         services.AddSingleton<IVisualStage>(
-            new VisualStage(() => visualEngine.Run("Liveolator Visuals"), loggerFactory.CreateLogger<VisualStage>()));
+            new VisualStage(
+                visible => visualEngine.Run("Liveolator Visuals", visible: visible),
+                () => visualEngine.RequestPresent(),
+                loggerFactory.CreateLogger<VisualStage>()));
 
         return (visualHandler, visualEngine);
     }
@@ -680,11 +707,17 @@ public static class ServiceConfig
     // The compositor's first slice needs a renderable image layer. Generate a placeholder image and
     // wrap it in a one-scene bank; on any failure fall back to an empty bank (Show Visuals then logs
     // and no-ops rather than crashing startup). A real scene catalog from persistence (doc 13) replaces this.
-    private static VisualBank BuildStarterBank()
+    private static VisualBank BuildStarterBank(string? customVuMeterFacePath = null)
     {
         try
         {
             string imagePath = StarterImage.EnsureCreated();
+            // A persisted custom VU-meter face (Add-ons tab) replaces the built-in face at startup, but
+            // only when the file still exists — a moved/deleted custom image falls back to the built-in
+            // face rather than rendering an empty layer (global #16/#26).
+            string vuFacePath = !string.IsNullOrWhiteSpace(customVuMeterFacePath) && File.Exists(customVuMeterFacePath)
+                ? customVuMeterFacePath
+                : VuMeterAddon.FaceImagePath();
             var background = new VisualLayer(
                 name: "Starter",
                 source: new VisualSourceRef(VisualSourceKind.Image, imagePath),
@@ -697,7 +730,7 @@ public static class ServiceConfig
             // background) swings with the master level. If either asset fails the renderer skips it.
             var vuFace = new VisualLayer(
                 name: "VU Meter Face",
-                source: new VisualSourceRef(VisualSourceKind.Image, VuMeterAddon.FaceImagePath()),
+                source: new VisualSourceRef(VisualSourceKind.Image, vuFacePath),
                 effects: Array.Empty<EffectRef>(),
                 blend: BlendMode.Normal,
                 opacity: 1.0);
@@ -739,7 +772,8 @@ public static class ServiceConfig
     // banks follow in name order. When nothing is saved, the engine ships the single placeholder starter
     // bank. Tolerant: a missing/corrupt/old snapshot is skipped (the store already warned), never fatal —
     // blocking on these small JSON files in the composition root mirrors the settings/macros load above.
-    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(ILiveProfileStore profileStore)
+    private static IReadOnlyList<VisualBank> LoadBanksOrStarter(
+        ILiveProfileStore profileStore, string? customVuMeterFacePath = null)
     {
         var banks = new List<VisualBank>();
         try
@@ -764,7 +798,7 @@ public static class ServiceConfig
 
         // Always have at least one bank so the engine + Scene Grid have something to address.
         if (banks.Count == 0)
-            banks.Add(BuildStarterBank());
+            banks.Add(BuildStarterBank(customVuMeterFacePath));
 
         return banks;
     }
@@ -819,6 +853,31 @@ public static class ServiceConfig
             if (layer.Source.Kind == VisualSourceKind.Generator
                 && string.Equals(layer.Source.Reference, VuMeterAddon.EffectId, StringComparison.Ordinal))
                 return (i, layer.Opacity > 0.0);
+        }
+        return null;
+    }
+
+    // Locates the VU-meter FACE image layer in the engine's startup scene so the Add-ons tab can swap it
+    // live: the Image layer immediately before the VU-meter needle generator (see BuildStarterBank's
+    // layer order). Returns null when there is no built-in meter (e.g. a user-authored startup scene),
+    // in which case the persisted face choice still applies on the next launch.
+    private static int? FindVuMeterFaceLayer(IVisualPerformanceEngine? engine)
+    {
+        VisualScene? scene = engine?.ActiveBank.Scene(0);
+        if (scene is null)
+            return null;
+
+        for (int i = 0; i < scene.Layers.Count; i++)
+        {
+            VisualLayer layer = scene.Layers[i];
+            if (layer.Source.Kind != VisualSourceKind.Generator
+                || !string.Equals(layer.Source.Reference, VuMeterAddon.EffectId, StringComparison.Ordinal))
+                continue;
+
+            int faceIndex = i - 1;
+            return faceIndex >= 0 && scene.Layers[faceIndex].Source.Kind == VisualSourceKind.Image
+                ? faceIndex
+                : null;
         }
         return null;
     }

@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+             xmlns:addons="clr-namespace:Liveolator.App.Features.Addons"
+             x:Class="Liveolator.App.Features.Addons.AddonsView"
+             x:DataType="addons:AddonsViewModel">
+  <Grid ColumnDefinitions="320,*" Margin="24">
+
+    <!-- Add-on list -->
+    <DockPanel Grid.Column="0" Margin="0,0,20,0">
+      <TextBlock DockPanel.Dock="Top" Classes="section" Text="ADD-ONS" Margin="0,0,0,12" />
+      <ListBox Classes="rows"
+               ItemsSource="{Binding Addons}"
+               SelectedItem="{Binding SelectedAddon, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="addons:AddonItemViewModel">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Title}" />
+                <TextBlock Classes="faint" Text="{Binding Description}" TextWrapping="Wrap" />
+                <TextBlock Classes="faint mono" Text="{Binding State}" />
+              </StackPanel>
+              <Button Grid.Column="1" Classes="spartan" Content="Settings"
+                      VerticalAlignment="Center" Margin="8,0,0,0"
+                      IsVisible="{Binding HasSettings}"
+                      Click="OnAddonSettingsClick" />
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+
+    <!-- Selected add-on settings -->
+    <ScrollViewer Grid.Column="1">
+      <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
+
+        <!-- VU meter: swap the dial-face background image -->
+        <StackPanel IsVisible="{Binding ShowVuMeterSettings}">
+          <StackPanel Spacing="20"
+                      DataContext="{Binding VuMeterSettings}"
+                      x:DataType="addons:VuMeterBackgroundSettingsViewModel">
+
+            <TextBlock Classes="section" Text="VU METER — BACKGROUND IMAGE" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <TextBlock Classes="faint" Text="Current face (background) image — the needle stays standard" />
+                <SelectableTextBlock Classes="mono" Text="{Binding ImagePath}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="accent" Content="Choose image…" Click="OnBrowseFace" />
+                  <Button Classes="spartan" Content="Reset to default"
+                          Command="{Binding ResetToDefaultCommand}" IsEnabled="{Binding IsCustom}" />
+                </StackPanel>
+                <TextBlock Classes="faint" Foreground="{DynamicResource Amber}"
+                           Text="{Binding AspectWarning}" TextWrapping="Wrap"
+                           IsVisible="{Binding AspectWarning, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="faint" Text="{Binding Status}" />
+              </StackPanel>
+            </Border>
+
+            <TextBlock Classes="section" Text="FACE IMAGE GUIDELINES" />
+            <Border Classes="panel">
+              <StackPanel Spacing="10" Margin="14">
+                <TextBlock Classes="faint" Text="{Binding SizeRequirement}" TextWrapping="Wrap" />
+                <TextBlock Classes="faint" Text="{Binding PivotRequirement}" TextWrapping="Wrap" />
+                <TextBlock Classes="faint" Text="{Binding NeedleSweep}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- Add-on with no configurable settings yet -->
+        <StackPanel IsVisible="{Binding ShowNoSettingsMessage}">
+          <TextBlock Classes="section" Text="SETTINGS" />
+          <Border Classes="panel">
+            <TextBlock Classes="faint" Margin="14" TextWrapping="Wrap"
+                       Text="This add-on has no configurable settings yet." />
+          </Border>
+        </StackPanel>
+
+      </StackPanel>
+    </ScrollViewer>
+
+  </Grid>
+</UserControl>

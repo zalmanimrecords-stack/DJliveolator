@@ -61,6 +61,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     private long _compositionVersion;
     private int _previewFrameCounter;
 
+    // Set from any thread (the UI's "OPEN VISUAL SCREEN") and read on the window thread to reveal a
+    // window that was started hidden for the in-app preview.
+    private volatile bool _presentRequested;
+
     public event EventHandler<VisualPreviewFrame>? PreviewFrameReady;
 
     /// <summary>Single-bank engine (the original first-slice shape). Equivalent to one-element bank list.</summary>
@@ -256,12 +260,28 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     /// <param name="title">Window title.</param>
     /// <param name="width">Initial window width in pixels.</param>
     /// <param name="height">Initial window height in pixels.</param>
-    public void Run(string title = "Liveolator Visuals", int width = 1280, int height = 720)
+    /// <param name="visible">
+    /// When false the window starts hidden: the render loop still runs and publishes preview frames (so
+    /// the in-app Program Out monitor is live without a second screen), and a later
+    /// <see cref="RequestPresent"/> reveals it. When true the window shows immediately.
+    /// </param>
+    public void Run(string title = "Liveolator Visuals", int width = 1280, int height = 720, bool visible = true)
     {
+        // A hidden start begins un-presented; clear any stale reveal request from a prior run so the
+        // background preview window does not pop open on its own.
+        if (!visible)
+            _presentRequested = false;
+
         var options = WindowOptions.Default with
         {
             Title = title,
             Size = new Vector2D<int>(width, height),
+            IsVisible = visible,
+            // Cap the loop: with VSync the visible window paints to the monitor's refresh, but a hidden
+            // window has no presentation to throttle it, so without a cap it would spin the GPU. 60 is
+            // ample for the projector output and the preview feed.
+            FramesPerSecond = 60,
+            UpdatesPerSecond = 60,
             API = new GraphicsAPI(
                 ContextAPI.OpenGL,
                 ContextProfile.Core,
@@ -331,6 +351,11 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         {
             if (gl is null)
                 return;
+
+            // Reveal a hidden preview window when the operator asks for the output screen (OPEN VISUAL
+            // SCREEN). Checked on the window thread, where touching IWindow is safe.
+            if (_presentRequested && !window.IsVisible)
+                window.IsVisible = true;
             try
             {
                 if (renderedVersion != CompositionVersion)
@@ -368,6 +393,12 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
 
         window.Run();
     }
+
+    /// <summary>
+    /// Requests that a window started hidden (preview-only) reveal itself on its next frame. Thread-safe;
+    /// a no-op when the window is already visible or no render loop is running.
+    /// </summary>
+    public void RequestPresent() => _presentRequested = true;
 
     public void Dispose()
     {

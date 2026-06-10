@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
+using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
@@ -17,6 +18,8 @@ using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
+using Liveolator.App.Tests.Live;
+using Liveolator.Visuals.Gl;
 using Xunit;
 
 namespace Liveolator.App.Tests.Shell;
@@ -96,11 +99,14 @@ public sealed class MainWindowViewModelTests
         var visualLibrary = new VisualLibraryViewModel(
             new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
         var mappings = new MappingsViewModel(new FakeMidiControlSession());
+        var addons = new AddonsViewModel(
+            new FakeDispatcher(), new FakeSettingsStore(),
+            VuMeterAddon.FaceSpec, "default-face.png", vuMeterFaceLayerSlot: null);
         var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
-            visualLibrary, mappings, settings, midiLearn, status);
+            visualLibrary, mappings, addons, settings, midiLearn, status);
     }
 
     [Fact]

@@ -22,6 +22,9 @@ public sealed record AppSettings
     /// <summary>Diagnostics/logging preferences (the on-disk log verbosity).</summary>
     public DiagnosticsSettings Diagnostics { get; init; } = DiagnosticsSettings.Default;
 
+    /// <summary>Per-add-on preferences (e.g. the custom VU-meter face image).</summary>
+    public AddonSettings Addons { get; init; } = AddonSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -34,5 +37,6 @@ public sealed record AppSettings
             Extensions = Extensions.Normalized(),
             Visuals = Visuals.Normalized(),
             Diagnostics = Diagnostics.Normalized(),
+            Addons = Addons.Normalized(),
         };
 }

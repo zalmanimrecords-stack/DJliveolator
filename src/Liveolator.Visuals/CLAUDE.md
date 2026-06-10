@@ -77,5 +77,9 @@ The GL compositor lives in `Gl/`:
 
 **App wiring:** `ServiceConfig.WireVisuals` registers the engine as `IVisualPerformanceEngine`, joins
 its `VisualActionHandler` to the one dispatcher, and binds the engine to the `LiveClockSelector`-chosen
-clock. `Run()` is launched on demand via `IVisualStage` (the RENDER-WINDOW SEAM) — never at
-composition, so the app stays headless-safe.
+clock. `Run()` is launched via `IVisualStage` (the RENDER-WINDOW SEAM) — never at composition, so the
+app stays headless-safe. `App.OnFrameworkInitializationCompleted` (desktop lifetime only) calls
+`IVisualStage.Start()` to run the loop **hidden** from launch, so the in-app Program Out preview is live
+without opening the output window; `Run(visible:false)` starts hidden and `RequestPresent()` reveals it
+when the operator hits OPEN VISUAL SCREEN (`IVisualStage.Show()`). The loop is FPS-capped (60) so a
+hidden window — which has no vsync presentation to throttle it — does not spin the GPU.

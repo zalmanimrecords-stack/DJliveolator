@@ -222,6 +222,37 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsVuMeterBackgroundImagePath()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with
+        {
+            Addons = new AddonSettings(@"C:\faces\brass-dial.png"),
+        };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(@"C:\faces\brass-dial.png", loaded.Addons.VuMeterBackgroundImagePath);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutAddons_UsesDefault()
+    {
+        // Back-compat: a file written before the add-on settings existed must read the built-in face
+        // (null custom path), not break the load (global #20/#22).
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":40,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Null(loaded.Addons.VuMeterBackgroundImagePath);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

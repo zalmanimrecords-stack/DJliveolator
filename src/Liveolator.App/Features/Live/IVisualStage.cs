@@ -7,9 +7,18 @@ namespace Liveolator.App.Features.Live;
 /// </summary>
 public interface IVisualStage
 {
-    /// <summary>True while the visuals window thread is alive.</summary>
+    /// <summary>True while the visuals render-loop thread is alive (hidden or shown).</summary>
     bool IsShown { get; }
 
-    /// <summary>Launch the visuals window (idempotent — a no-op while already shown).</summary>
+    /// <summary>
+    /// Start the render loop hidden (idempotent). Feeds the in-app preview without opening the output
+    /// window; call at app startup so the Program Out monitor is live from launch.
+    /// </summary>
+    void Start();
+
+    /// <summary>
+    /// Reveal the output window (idempotent). Reveals the already-running hidden loop, or starts it
+    /// visible if it is not running yet.
+    /// </summary>
     void Show();
 }

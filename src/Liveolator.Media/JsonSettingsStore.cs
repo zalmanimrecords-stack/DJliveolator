@@ -23,7 +23,8 @@ public sealed record SettingsSnapshot(
     string? ActiveUiThemeId = null,
     double? WaveformZoomSeconds = null,
     double? NudgeSeconds = null,
-    string? MinimumLogLevel = null)
+    string? MinimumLogLevel = null,
+    string? VuMeterBackgroundImagePath = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -106,6 +107,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 snapshot.NudgeSeconds ?? VisualsSettings.DefaultNudgeSeconds),
             Diagnostics = new DiagnosticsSettings(
                 snapshot.MinimumLogLevel ?? DiagnosticsSettings.DefaultMinimumLevel),
+            Addons = new AddonSettings(snapshot.VuMeterBackgroundImagePath),
         }.Normalized();
     }
 
@@ -128,7 +130,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Extensions.ActiveUiThemeId,
             normalized.Visuals.WaveformZoomSeconds,
             normalized.Visuals.NudgeSeconds,
-            normalized.Diagnostics.MinimumLevel);
+            normalized.Diagnostics.MinimumLevel,
+            normalized.Addons.VuMeterBackgroundImagePath);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

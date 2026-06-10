@@ -4,9 +4,12 @@
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
 > tracks reality. Update this file whenever a module lands. Last updated: **2026-06-08**.
 >
-> **See also `docs/24-system-review-2026-06-07.md`** — a ten-expert full-system review with a
-> verified bug map and the recommended next 10 steps. Where doc 24 and this file disagree on a
-> code fact, doc 24 wins (it was measured against the working tree on 2026-06-07).
+> **See `docs/27-system-review-2026-06-10.md`** (latest) — a ten-expert full-system review with a
+> verified bug map and the recommended next 10 steps; **supersedes `docs/24-system-review-2026-06-07.md`**.
+> Where doc 27 and this file disagree on a code fact, doc 27 wins (measured against the working tree on
+> 2026-06-10). Doc 27 closed five of doc 24's headline holes (shared-clock pitch scaling, UI-thread sync
+> pump, GL scene re-read, CI, fetch-bass FLAC parity) and verified eight new High bugs — read doc 27 §5
+> before opening the next branch.
 
 ## How to read this
 
@@ -19,6 +22,12 @@
   with the blocker named.
 
 ## Core test count
+
+Solution-wide baseline measured **2026-06-10** for doc 27 (`dotnet test --no-build`): build clean;
+**8 of 9 projects fully green** — Core **781**, Audio **181**, Media **101**, Visuals **95**, MIDI 27,
+Online 23, Integration 25 (= 1,233 passing). `Liveolator.App.Tests` = **300 pass / 11 fail** on the
+in-flight tree (**301 / 10** on clean HEAD); **every failure is the pre-existing ReactiveUI
+global-scheduler isolation issue in `LibrariesViewModel*`** (see note below + doc 27 B0). Earlier note:
 
 Solution-wide CI baseline: **1,290 passing, 0 failed, 0 skipped** across 8 test projects, measured
 **2026-06-08** (`dotnet test Liveolator.sln --configuration Release --no-restore`): Core 660,

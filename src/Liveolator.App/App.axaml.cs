@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Liveolator.App.Composition;
 using Liveolator.App.Features.Libraries;
+using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
@@ -44,6 +45,12 @@ public partial class App : Application
             // Restore device selections and extension settings into the Settings tab. Without this,
             // the pickers always start at "(none)" even when settings.json contains a controller.
             _ = services.GetRequiredService<SettingsViewModel>().InitializeAsync();
+
+            // Start the visual render loop hidden so the in-app Program Out preview is live from launch
+            // (the loop is what feeds preview frames). "OPEN VISUAL SCREEN" later reveals the output
+            // window. Only here, in the real desktop lifetime — never during composition or headless
+            // tests — so the app stays headless-safe; GL failures are logged and swallowed by the stage.
+            services.GetService<IVisualStage>()?.Start();
         }
 
         base.OnFrameworkInitializationCompleted();

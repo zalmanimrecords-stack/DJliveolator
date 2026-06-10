@@ -16,6 +16,16 @@
 > **except controller mapping**, which follows the **Ableton control-surface model** (Track D), not
 > Mixxx's per-control mapping.
 >
+> **Update (2026-06-10):** a fresh ten-expert review landed in **`docs/27-system-review-2026-06-10.md`**,
+> which **supersedes doc 24 (and the priorities below) for the next wave**. It confirmed the last wave
+> **closed five of doc 24's headline holes** (shared-clock pitch scaling, UI-thread sync pump, GL scene
+> re-read, CI, fetch-bass FLAC parity) and verified **eight new High bugs** — incl. live-EQ coefficient
+> torn-read, half/double-tempo phase mis-alignment, beat-loops not grid-snapped, no keylock, the opacity
+> knob forcing a full compositor rebuild, re-scan destroying manual edits, online key never applied, and
+> a global Tab handler that breaks focus traversal. **Baseline finding:** the local suite is **red** (10
+> `LibrariesViewModel*` failures, a pre-existing ReactiveUI global-scheduler isolation issue) — step 1 in
+> doc 27 §5 is to green it and gate merges. Read **doc 27 §5** before opening the next branch.
+>
 > **Update (2026-06-07):** a ten-expert full-system review landed in **`docs/24-system-review-2026-06-07.md`**
 > (verified bug map + recommended next 10 steps; solution green at **1,279 tests**). Since this doc was
 > written, the in-flight wave built **A9 continuous leader/follower phase-lock** (`PhaseLockController`,

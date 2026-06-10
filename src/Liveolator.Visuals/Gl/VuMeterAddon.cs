@@ -100,6 +100,23 @@ public static class VuMeterAddon
     public static string FaceImagePath() => VuMeterFace.EnsureCreated();
 
     /// <summary>
+    /// The spec a custom face (background) image must follow so the standard needle still registers with
+    /// it — surfaced to the Add-ons settings page. Derived from <see cref="VuMeterGeometry"/> (single
+    /// source of truth) so the published size/pivot can never drift from the shader and face renderer.
+    /// </summary>
+    public static VuMeterFaceSpec FaceSpec { get; } = new(
+        RecommendedWidth: VuMeterGeometry.FaceWidth,
+        RecommendedHeight: VuMeterGeometry.FaceHeight,
+        PivotXFraction: VuMeterGeometry.PivotXFrac,
+        PivotYFraction: VuMeterGeometry.PivotYFrac,
+        PivotXPixels: (int)Math.Round(VuMeterGeometry.PivotXPx),
+        PivotYPixels: (int)Math.Round(VuMeterGeometry.PivotYPx),
+        ArcRadiusFraction: VuMeterGeometry.ArcRadiusFrac,
+        ArcRadiusPixels: (int)Math.Round(VuMeterGeometry.ArcRadiusPx),
+        NeedleMinDegrees: VuMeterGeometry.NeedleMinDeg,
+        NeedleMaxDegrees: VuMeterGeometry.NeedleMaxDeg);
+
+    /// <summary>
     /// Ensures the shader exists and returns its absolute path. Idempotent: writes only when missing.
     /// Throws on a genuine write failure — callers that want best-effort startup should guard the call.
     /// </summary>
