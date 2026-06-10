@@ -22,6 +22,12 @@ public sealed record VisualMacrosSnapshot(int Version, IReadOnlyList<VisualMacro
     public const int CurrentVersion = 1;
 }
 
+/// <summary>Versioned on-disk shape of a package's controllable generator presets (doc 28).</summary>
+public sealed record GeneratorPresetsSnapshot(int Version, IReadOnlyList<GeneratorPreset> Presets)
+{
+    public const int CurrentVersion = 1;
+}
+
 /// <summary>Versioned on-disk shape of a saved autopilot rule-set / show (doc 10/13).</summary>
 public sealed record AutopilotRuleSetSnapshot(int Version, AutopilotRuleSet RuleSet)
 {
