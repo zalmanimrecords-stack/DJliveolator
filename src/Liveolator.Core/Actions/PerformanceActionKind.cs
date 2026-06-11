@@ -95,4 +95,22 @@ public enum PerformanceActionKind
     /// macros, which are then driven by <see cref="VisualSetMacro"/> from UI knobs / external controllers.
     /// </summary>
     VisualLoadPreset,
+
+    // Auto-mix (doc 11) — hands-free deck-to-deck transition, beat-locked to the one shared clock.
+    // Appended at the tail to preserve the serialized numeric values of existing kinds.
+
+    /// <summary>Start an automatic deck-to-deck transition, or abort the one in flight.</summary>
+    AutomixToggle,
+
+    /// <summary>
+    /// Set the auto-mix transition length: Value is the 0..1 knob position, resolved to a bar-count
+    /// detent (2/4/8/16/32/64 bars) by the auto-mix engine. Applies to the NEXT transition.
+    /// </summary>
+    AutomixSetDuration,
+
+    /// <summary>
+    /// Select the auto-mix transition style: Argument is the <c>AutomixStyle</c> name
+    /// (CrossFade / EqMix / FxMix).
+    /// </summary>
+    AutomixSetStyle,
 }

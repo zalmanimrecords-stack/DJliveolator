@@ -48,7 +48,16 @@
 > the `DeckBpmNudge` comment). Suites green afterward: Core 842, Audio 189, Media 107, Visuals 114.
 > Still-open Mediums deliberately deferred because they touch files under active parallel refactor
 > (VisualControl view binding, waveform accent color, DI-provider dispose, dual-clock unification,
-> per-layer rebuild on SetLayerSource) or need a UX decision (BpmNudge-while-synced). **B0 reassessed:** it is *not* the one-line "isolate
+> per-layer rebuild on SetLayerSource) or need a UX decision (BpmNudge-while-synced).
+>
+> **B0 — FIXED (2026-06-11).** Root cause: `LibrariesViewModel`'s fire-and-forget catalog re-analysis
+> `Task.Run` leaked past the view-model and, under the tests' `ImmediateScheduler`, mutated UI
+> collections on a background thread — racing/crashing later test classes (the failing test varied run
+> to run). Fix: `LibrariesViewModel` is now `IDisposable` with the pass on a token linked to a per-VM
+> CTS that Dispose cancels + bounded-waits; the three test classes that start the pass dispose their VMs.
+> The App suite is now **deterministically green — 354 passed / 0 failed / 1 skipped across 5 consecutive
+> runs** (was intermittently 10–11 failures or a crash). Pushed to master (`004241a`). **B0 reassessed
+> (original note):** it is *not* the one-line "isolate
 > `RxApp` statics" fix implied below — assembly parallelization is already off and the statics are set
 > per-class. The real cause is a **flaky, intermittent cross-suite race**: many view-models start
 > fire-and-forget `Task.Run` background work whose callbacks marshal through the tests' global

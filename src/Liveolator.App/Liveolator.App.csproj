@@ -26,6 +26,11 @@
     <InternalsVisibleTo Include="Liveolator.App.Tests" />
   </ItemGroup>
 
+  <!-- UI skin assets (doc 30): filmstrip PNGs for skinnable knobs/faders, loaded via avares://. -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
     <ProjectReference Include="..\Liveolator.Audio\Liveolator.Audio.csproj" />

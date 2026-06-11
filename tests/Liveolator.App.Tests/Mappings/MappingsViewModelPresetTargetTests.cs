@@ -60,6 +60,23 @@ public sealed class MappingsViewModelPresetTargetTests
         Assert.Contains(vm.Targets, t => t.Action == PerformanceActionKind.VisualBlackout); // fixed targets remain
     }
 
+    [Theory]
+    [InlineData(0, "High")]
+    [InlineData(0, "Mid")]
+    [InlineData(0, "Low")]
+    [InlineData(1, "High")]
+    [InlineData(1, "Mid")]
+    [InlineData(1, "Low")]
+    public void Targets_IncludeAnEqBandPerDeck_SoEqIsLearnableFromTheUi(int slot, string band)
+    {
+        // Without these, an EQ knob on a non-default controller can never be re-learned (doc 27).
+        var vm = new MappingsViewModel(new FakeMidiControlSession());
+
+        MappingTargetViewModel target = Assert.Single(
+            vm.Targets, t => t.Action == PerformanceActionKind.MixerEqBand && t.Slot == slot && t.Argument == band);
+        Assert.Equal(ActionInputMode.Absolute, target.PreferredInputMode);
+    }
+
     [Fact]
     public async Task Learning_APresetTarget_ArmsTheSessionWithTheMacroNameAsArgument()
     {

@@ -12,13 +12,19 @@ public interface IMidiLearnSession
     bool IsArmed { get; }
 
     /// <summary>Arms capture for <paramref name="action"/> at <paramref name="slot"/>.</summary>
+    /// <param name="relativeEncoding">
+    /// How a relative encoder reports deltas (two's-complement / offset-binary / signed-bit). The
+    /// inferred binding carries it so an encoder that does not use the two's-complement default decodes
+    /// correctly (direction/magnitude) instead of inverting or garbling (doc 27).
+    /// </param>
     void Begin(
         PerformanceActionKind action,
         int slot = 0,
         string? argument = null,
         ActionInputMode? preferredInputMode = null,
         double relativeTicksPerRevolution = 1.0,
-        bool invert = false);
+        bool invert = false,
+        RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement);
 
     /// <summary>Feeds an inbound message; when armed, the first one is captured into a binding.</summary>
     void Observe(MidiMessage message);

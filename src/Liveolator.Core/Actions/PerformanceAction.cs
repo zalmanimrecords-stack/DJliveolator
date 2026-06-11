@@ -15,10 +15,14 @@ namespace Liveolator.Core.Actions;
 /// when unused.</param>
 /// <param name="Target">Optional stable instance identifier for actions that address a loaded
 /// extension instance, such as one VST effect in a rack.</param>
+/// <param name="Origin">Optional emitting-source tag (e.g. "automix"). Null = a human gesture
+/// (UI/controller). Automation stamps its origin so a human touching the same parameter can be
+/// detected and yielded to — automation must never fight the performer (doc 10/11).</param>
 public sealed record PerformanceAction(
     PerformanceActionKind Kind,
     ActionInputMode InputMode = ActionInputMode.Momentary,
     double Value = 0,
     int Slot = 0,
     string? Argument = null,
-    string? Target = null);
+    string? Target = null,
+    string? Origin = null);

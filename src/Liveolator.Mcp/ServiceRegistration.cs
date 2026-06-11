@@ -40,6 +40,10 @@ internal static class ServiceRegistration
         // shared FRKTL presets folder, so the app picks them up. Writer/validation live in Media/Core.
         services.AddSingleton<VisualPresetSession>();
 
+        // Control-skin authoring (doc 30): lets an agent design parametric knob/slider looks and save them
+        // as .ctrlskin into the shared control-skins folder. Writer/validation live in Media/Core.
+        services.AddSingleton<ControlSkinSession>();
+
         AddOnlineEnrichment(services, config);
         return services;
     }

@@ -36,21 +36,22 @@
        App.axaml (Application.Resources).
        ============================================================ -->
 
-  <!-- rotary knob + linear fader default brushes (themed from the tokens) -->
+  <!-- rotary knob + linear fader brushes. These bind to the control-skin keys (App.axaml), which default
+       to the theme tokens but are overridden by an active parametric control skin (doc 30). -->
   <Style Selector="controls|Knob">
-    <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
-    <Setter Property="TrackBrush" Value="{DynamicResource S4}" />
-    <Setter Property="CapBrush" Value="{DynamicResource S2}" />
-    <Setter Property="PointerBrush" Value="{DynamicResource Text}" />
+    <Setter Property="ArcBrush" Value="{DynamicResource KnobArc}" />
+    <Setter Property="TrackBrush" Value="{DynamicResource KnobTrack}" />
+    <Setter Property="CapBrush" Value="{DynamicResource KnobCap}" />
+    <Setter Property="PointerBrush" Value="{DynamicResource KnobPointer}" />
   </Style>
   <Style Selector="controls|Knob:disabled">
     <Setter Property="ArcBrush" Value="{DynamicResource S4}" />
     <Setter Property="Opacity" Value="0.7" />
   </Style>
   <Style Selector="controls|Fader">
-    <Setter Property="FillBrush" Value="{DynamicResource Accent}" />
-    <Setter Property="TrackBrush" Value="{DynamicResource S4}" />
-    <Setter Property="ThumbBrush" Value="{DynamicResource Text}" />
+    <Setter Property="FillBrush" Value="{DynamicResource FaderFill}" />
+    <Setter Property="TrackBrush" Value="{DynamicResource FaderTrack}" />
+    <Setter Property="ThumbBrush" Value="{DynamicResource FaderThumb}" />
   </Style>
   <Style Selector="controls|Fader:disabled">
     <Setter Property="Opacity" Value="0.6" />

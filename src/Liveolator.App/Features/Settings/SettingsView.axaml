@@ -105,6 +105,14 @@
           <ComboBox ItemsSource="{Binding UiThemeIds}"
                     SelectedItem="{Binding ActiveUiThemeId}" />
 
+          <TextBlock Classes="faint" Text="Knob skin (applies on Save)" />
+          <ComboBox ItemsSource="{Binding KnobSkinIds}"
+                    SelectedItem="{Binding ActiveKnobSkinId}" />
+
+          <TextBlock Classes="faint" Text="Slider skin (applies on Save)" />
+          <ComboBox ItemsSource="{Binding SliderSkinIds}"
+                    SelectedItem="{Binding ActiveSliderSkinId}" />
+
           <ListBox Classes="rows"
                    ItemsSource="{Binding InstalledExtensions}"
                    SelectedItem="{Binding SelectedExtension}"

@@ -186,6 +186,73 @@ public class PhaseAlignmentCalculatorTests
     }
 
     [Fact]
+    public void BarPhaseNudge_BeatAlignedButOneBeatIntoTheBar_SnapsBackOntoTheDownbeat()
+    {
+        // 4/4 at 120 BPM: beat = 0.5 s, bar = 2 s. The follower sits exactly ON a beat (beat error = 0)
+        // but one beat into its bar — the case beat-phase sync happily locks and an automated bass swap
+        // cannot tolerate. Bar alignment must move it the shortest way onto the leader's downbeat: -0.5 s.
+        var leader = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 0.5, FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        Assert.Equal(0.0, PhaseAlignmentCalculator.PhaseNudgeSeconds(follower, leader), precision: 6);
+        Assert.Equal(-0.5, PhaseAlignmentCalculator.BarPhaseNudgeSeconds(follower, leader, beatsPerBar: 4), precision: 6);
+    }
+
+    [Fact]
+    public void BarPhaseNudge_AlreadyOnTheSameDownbeat_IsZero()
+    {
+        var deck = new DeckPhase(PositionSeconds: 4.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        Assert.Equal(0.0, PhaseAlignmentCalculator.BarPhaseNudgeSeconds(deck, deck, beatsPerBar: 4), precision: 6);
+    }
+
+    [Fact]
+    public void BarPhaseNudge_ThreeBeatsIn_WrapsForwardToTheNextDownbeat()
+    {
+        // Three beats into the bar (0.75 bar): forward +0.25 bar (+0.5 s) is shorter than back -1.5 s.
+        var leader = new DeckPhase(PositionSeconds: 0.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 1.5, FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        Assert.Equal(0.5, PhaseAlignmentCalculator.BarPhaseNudgeSeconds(follower, leader, beatsPerBar: 4), precision: 6);
+    }
+
+    [Fact]
+    public void BarPhaseError_HonorsEachDeckFirstBeatAnchor()
+    {
+        // Same tempo, different anchors: each deck's bar grid starts at ITS anchor. Leader is on its
+        // downbeat; the follower's anchor shifts its grid by 0.1 s, so it is 0.9 s = 1.8 beats = 0.45 bar
+        // into its bar => error wraps to -0.45 bar.
+        var leader = new DeckPhase(PositionSeconds: 2.0, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 1.0, FirstBeatSeconds: 0.1, Bpm: 120.0);
+
+        Assert.Equal(-0.45, PhaseAlignmentCalculator.BarPhaseError(follower, leader, beatsPerBar: 4), precision: 6);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-4)]
+    public void BarPhaseNudge_NonPositiveBeatsPerBar_IsZero(int beatsPerBar)
+    {
+        var leader = new DeckPhase(0.0, 0.0, 120.0);
+        var follower = new DeckPhase(0.5, 0.0, 120.0);
+        Assert.Equal(0.0, PhaseAlignmentCalculator.BarPhaseNudgeSeconds(follower, leader, beatsPerBar), precision: 6);
+    }
+
+    [Fact]
+    public void BarPhaseNudge_AppliedNudge_AlsoLandsOnABeat()
+    {
+        // Bar alignment is a superset of beat alignment (equal tempos): after applying the bar nudge the
+        // beat-phase error must also be zero — the two grids never diverge.
+        var leader = new DeckPhase(PositionSeconds: 0.73, FirstBeatSeconds: 0.0, Bpm: 120.0);
+        var follower = new DeckPhase(PositionSeconds: 0.31, FirstBeatSeconds: 0.0, Bpm: 120.0);
+
+        double nudge = PhaseAlignmentCalculator.BarPhaseNudgeSeconds(follower, leader, beatsPerBar: 4);
+        var snapped = follower with { PositionSeconds = follower.PositionSeconds + nudge };
+
+        Assert.Equal(0.0, PhaseAlignmentCalculator.BeatPhaseError(snapped, leader), precision: 6);
+        Assert.Equal(0.0, PhaseAlignmentCalculator.BarPhaseError(snapped, leader, beatsPerBar: 4), precision: 6);
+    }
+
+    [Fact]
     public void PhaseNudge_EqualsBeatPhaseError_TimesBeatSeconds()
     {
         // The seconds nudge is just the wrapped beat error scaled by the follower's beat length — the two

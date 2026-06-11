@@ -17,4 +17,11 @@ public interface IPerformanceActionDispatcher
 
     /// <summary>Raised when any handled action changes feedback state.</summary>
     event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
+
+    /// <summary>
+    /// Raised for every dispatched action (on the dispatching thread, before routing). Lets
+    /// automation observe live input and yield to a human gesture on a parameter it is driving
+    /// (filtered via <see cref="PerformanceAction.Origin"/>) — never to re-route or veto actions.
+    /// </summary>
+    event EventHandler<PerformanceAction>? ActionDispatched;
 }

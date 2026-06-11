@@ -25,7 +25,9 @@ public sealed record SettingsSnapshot(
     double? NudgeSeconds = null,
     string? MinimumLogLevel = null,
     string? VuMeterBackgroundImagePath = null,
-    int? VuMeterNeedleOrigin = null)
+    int? VuMeterNeedleOrigin = null,
+    string? ActiveKnobSkinId = null,
+    string? ActiveSliderSkinId = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -101,6 +103,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             {
                 DeveloperMode = snapshot.DeveloperMode,
                 ActiveUiThemeId = snapshot.ActiveUiThemeId,
+                ActiveKnobSkinId = snapshot.ActiveKnobSkinId,
+                ActiveSliderSkinId = snapshot.ActiveSliderSkinId,
             },
             // Fields written before they existed read null → their defaults (back-compat, #20/#22).
             Visuals = new VisualsSettings(
@@ -134,7 +138,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Visuals.WaveformZoomSeconds,
             normalized.Visuals.NudgeSeconds,
             normalized.Diagnostics.MinimumLevel,
-            normalized.Addons.VuMeterBackgroundImagePath);
+            normalized.Addons.VuMeterBackgroundImagePath,
+            ActiveKnobSkinId: normalized.Extensions.ActiveKnobSkinId,
+            ActiveSliderSkinId: normalized.Extensions.ActiveSliderSkinId);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

@@ -87,6 +87,29 @@ public class MidiLearnSessionTests
     }
 
     [Fact]
+    public void Observe_DefaultsToTwosComplementEncoding()
+    {
+        _session.Begin(PerformanceActionKind.BeatNudgeForward);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 33, 65));
+
+        Assert.Equal(RelativeEncoding.TwosComplement, _learned!.Relative);
+    }
+
+    [Theory]
+    [InlineData(RelativeEncoding.OffsetBinary)]
+    [InlineData(RelativeEncoding.SignedBit)]
+    [InlineData(RelativeEncoding.TwosComplement)]
+    public void Observe_CapturesTheChosenRelativeEncoding(RelativeEncoding encoding)
+    {
+        _session.Begin(PerformanceActionKind.BeatNudgeForward, relativeEncoding: encoding);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 33, 65));
+
+        Assert.Equal(encoding, _learned!.Relative); // an encoder that isn't two's-complement decodes correctly
+    }
+
+    [Fact]
     public void Observe_PreservesActionArgument()
     {
         _session.Begin(PerformanceActionKind.DeckHotCue, slot: 1, argument: "4");

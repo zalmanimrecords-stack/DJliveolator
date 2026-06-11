@@ -7,9 +7,11 @@ using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
+using Liveolator.App.Skins;
 using Liveolator.App.Theme;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Skins;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Liveolator.App;
@@ -27,6 +29,13 @@ public partial class App : Application
         if (settings.Extensions.ActiveUiThemeId is { } themeId
             && services.GetRequiredService<IUiThemeManager>().TryGet(themeId, out UiThemeDefinition theme))
             UiThemeApplier.Apply(this, theme);
+
+        // Apply the persisted control skins AFTER the theme so any colour the skin omits falls back to the
+        // themed token (doc 30). A missing/uninstalled id resolves to null = the built-in look.
+        IControlSkinCatalog skins = services.GetRequiredService<IControlSkinCatalog>();
+        ControlSkinApplier.Apply(this,
+            ResolveSkin(skins, settings.Extensions.ActiveKnobSkinId),
+            ResolveSkin(skins, settings.Extensions.ActiveSliderSkinId));
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -55,4 +64,7 @@ public partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    private static ControlSkinFile? ResolveSkin(IControlSkinCatalog catalog, string? skinId)
+        => skinId is not null && catalog.TryGet(skinId, out ControlSkinFile skin) ? skin : null;
 }

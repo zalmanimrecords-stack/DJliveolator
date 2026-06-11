@@ -4,11 +4,14 @@ using System.Reactive.Linq;
 using Liveolator.App.Diagnostics;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Shell;
+using Liveolator.App.Skins;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Skins;
+using Liveolator.Media.Skins;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Settings;
@@ -57,6 +60,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IExtensionContentReloader? _contentReloader;
     private readonly PerformanceDeckSet? _decks;
     private readonly ILogFileLocator? _logLocator;
+    private readonly IControlSkinCatalog? _controlSkins;
+    private readonly IControlSkinApplier? _controlSkinApplier;
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
@@ -69,6 +74,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private ExtensionItemViewModel? _selectedExtension;
     private bool _developerMode;
     private string? _activeUiThemeId;
+    private string? _activeKnobSkinId;
+    private string? _activeSliderSkinId;
     private double _waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds;
     private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
     private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
@@ -86,7 +93,9 @@ public sealed class SettingsViewModel : ViewModelBase
         IUiThemeManager? themes = null,
         IExtensionContentReloader? contentReloader = null,
         PerformanceDeckSet? decks = null,
-        ILogFileLocator? logLocator = null)
+        ILogFileLocator? logLocator = null,
+        IControlSkinCatalog? controlSkins = null,
+        IControlSkinApplier? controlSkinApplier = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
@@ -101,6 +110,8 @@ public sealed class SettingsViewModel : ViewModelBase
         _contentReloader = contentReloader;
         _decks = decks;
         _logLocator = logLocator;
+        _controlSkins = controlSkins;
+        _controlSkinApplier = controlSkinApplier;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
@@ -136,6 +147,15 @@ public sealed class SettingsViewModel : ViewModelBase
     public ObservableCollection<int> BufferOptions { get; } = new();
     public ObservableCollection<ExtensionItemViewModel> InstalledExtensions { get; } = new();
     public ObservableCollection<string> UiThemeIds { get; } = new() { "Spartan" };
+
+    /// <summary>Sentinel list entry for "use the built-in control look" (persists as a null skin id).</summary>
+    public const string NoSkin = "(built-in)";
+
+    /// <summary>Available knob-skin ids (doc 30), led by the <see cref="NoSkin"/> sentinel.</summary>
+    public ObservableCollection<string> KnobSkinIds { get; } = new() { NoSkin };
+
+    /// <summary>Available slider-skin ids (doc 30), led by the <see cref="NoSkin"/> sentinel.</summary>
+    public ObservableCollection<string> SliderSkinIds { get; } = new() { NoSkin };
 
     /// <summary>The selectable log verbosity levels (least to most severe).</summary>
     public ObservableCollection<string> LogLevels { get; } = new();
@@ -198,6 +218,20 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         get => _activeUiThemeId;
         set => this.RaiseAndSetIfChanged(ref _activeUiThemeId, value);
+    }
+
+    /// <summary>Selected knob skin id (doc 30), or <see cref="NoSkin"/> for the built-in look. Applied live on Save.</summary>
+    public string? ActiveKnobSkinId
+    {
+        get => _activeKnobSkinId;
+        set => this.RaiseAndSetIfChanged(ref _activeKnobSkinId, value);
+    }
+
+    /// <summary>Selected slider skin id (doc 30), or <see cref="NoSkin"/> for the built-in look. Applied live on Save.</summary>
+    public string? ActiveSliderSkinId
+    {
+        get => _activeSliderSkinId;
+        set => this.RaiseAndSetIfChanged(ref _activeSliderSkinId, value);
     }
 
     /// <summary>Deck waveform zoom — seconds of audio shown in the zoomed (playing) view; lower = more
@@ -317,6 +351,8 @@ public sealed class SettingsViewModel : ViewModelBase
             {
                 DeveloperMode = DeveloperMode,
                 ActiveUiThemeId = ActiveUiThemeId == "Spartan" ? null : ActiveUiThemeId,
+                ActiveKnobSkinId = ActiveKnobSkinId == NoSkin ? null : ActiveKnobSkinId,
+                ActiveSliderSkinId = ActiveSliderSkinId == NoSkin ? null : ActiveSliderSkinId,
             },
             Visuals = new VisualsSettings(WaveformZoomSeconds, NudgeSeconds),
             Diagnostics = new DiagnosticsSettings(SelectedLogLevel),
@@ -324,6 +360,8 @@ public sealed class SettingsViewModel : ViewModelBase
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
         _loadedSettings = settings.Normalized();
+        // Re-skin the live controls so an authored knob/slider look takes effect without a restart (doc 30).
+        ApplyControlSkins(_loadedSettings.Extensions);
         // Apply the (normalized) zoom + nudge step to the live decks so the change takes effect without a restart.
         _decks?.SetWaveformZoom(_loadedSettings.Visuals.WaveformZoomSeconds);
         _decks?.SetNudgeSeconds(_loadedSettings.Visuals.NudgeSeconds);
@@ -410,7 +448,49 @@ public sealed class SettingsViewModel : ViewModelBase
             foreach (UiThemeDefinition theme in _themes.AvailableThemes)
                 if (!UiThemeIds.Contains(theme.Id))
                     UiThemeIds.Add(theme.Id);
+
+        // Populate the skin pickers BEFORE selecting, so a persisted id is present in its list (else the
+        // ComboBox would reset the selection when its items change).
+        PopulateSkinIds();
+        ActiveKnobSkinId = SkinIdOrDefault(KnobSkinIds, settings.Extensions.ActiveKnobSkinId);
+        ActiveSliderSkinId = SkinIdOrDefault(SliderSkinIds, settings.Extensions.ActiveSliderSkinId);
     }
+
+    private void PopulateSkinIds()
+    {
+        KnobSkinIds.Clear();
+        KnobSkinIds.Add(NoSkin);
+        SliderSkinIds.Clear();
+        SliderSkinIds.Add(NoSkin);
+        if (_controlSkins is null)
+            return;
+
+        foreach (LoadedControlSkin skin in _controlSkins.Skins)
+        {
+            ObservableCollection<string> target =
+                string.Equals(skin.File.Kind, ControlSkinKind.Slider, StringComparison.OrdinalIgnoreCase)
+                    ? SliderSkinIds
+                    : KnobSkinIds;
+            if (!target.Contains(skin.SkinId))
+                target.Add(skin.SkinId);
+        }
+    }
+
+    // A persisted skin id that is no longer installed falls back to the built-in look rather than erroring.
+    private static string SkinIdOrDefault(ObservableCollection<string> available, string? persisted)
+        => persisted is not null && available.Contains(persisted) ? persisted : NoSkin;
+
+    private void ApplyControlSkins(ExtensionSettings extensions)
+    {
+        if (_controlSkinApplier is null)
+            return;
+        _controlSkinApplier.Apply(ResolveSkin(extensions.ActiveKnobSkinId), ResolveSkin(extensions.ActiveSliderSkinId));
+    }
+
+    private ControlSkinFile? ResolveSkin(string? skinId)
+        => skinId is not null && _controlSkins is not null && _controlSkins.TryGet(skinId, out ControlSkinFile skin)
+            ? skin
+            : null;
 
     // Re-matches the prior capture selection after a re-enumeration: the "(none)" sentinel stays
     // "(none)", an existing device by id is kept, and a vanished device falls back to "(none)".

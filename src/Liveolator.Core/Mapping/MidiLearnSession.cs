@@ -16,6 +16,7 @@ public sealed class MidiLearnSession : IMidiLearnSession
     private ActionInputMode? _preferredInputMode;
     private double _relativeTicksPerRevolution = 1.0;
     private bool _invert;
+    private RelativeEncoding _relativeEncoding = RelativeEncoding.TwosComplement;
 
     /// <inheritdoc />
     public bool IsArmed { get; private set; }
@@ -30,7 +31,8 @@ public sealed class MidiLearnSession : IMidiLearnSession
         string? argument = null,
         ActionInputMode? preferredInputMode = null,
         double relativeTicksPerRevolution = 1.0,
-        bool invert = false)
+        bool invert = false,
+        RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
     {
         _action = action;
         _slot = slot;
@@ -38,6 +40,7 @@ public sealed class MidiLearnSession : IMidiLearnSession
         _preferredInputMode = preferredInputMode;
         _relativeTicksPerRevolution = relativeTicksPerRevolution;
         _invert = invert;
+        _relativeEncoding = relativeEncoding;
         IsArmed = true;
     }
 
@@ -66,6 +69,7 @@ public sealed class MidiLearnSession : IMidiLearnSession
 
         return new ControllerBinding(
             triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument,
+            Relative: _relativeEncoding,
             RelativeTicksPerRevolution: _relativeTicksPerRevolution,
             Invert: _invert);
     }

@@ -61,6 +61,17 @@
     <SolidColorBrush x:Key="Waveform" Color="{DynamicResource WaveformColor}" />
     <SolidColorBrush x:Key="WaveformAhead" Color="{DynamicResource WaveformColor}" Opacity="0.5" />
 
+    <!-- Control-skin brushes (doc 30): the Knob/Fader styles bind to THESE (not the raw tokens) so a
+         parametric control skin can override just the controls. They default to the theme tokens, so the
+         built-in look is unchanged; ControlSkinApplier replaces them from the active knob/slider skin. -->
+    <SolidColorBrush x:Key="KnobArc" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="KnobTrack" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="KnobCap" Color="{DynamicResource S2Color}" />
+    <SolidColorBrush x:Key="KnobPointer" Color="{DynamicResource TextColor}" />
+    <SolidColorBrush x:Key="FaderFill" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="FaderTrack" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="FaderThumb" Color="{DynamicResource TextColor}" />
+
     <!-- Retint Fluent's accent so standard controls (combobox, scrollbar, selection, etc.) follow the blue line. -->
     <Color x:Key="SystemAccentColor">#2F80F6</Color>
     <Color x:Key="SystemAccentColorDark1">#2A73DD</Color>

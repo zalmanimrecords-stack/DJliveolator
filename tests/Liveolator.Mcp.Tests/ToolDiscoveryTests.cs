@@ -23,6 +23,9 @@ public sealed class ToolDiscoveryTests
         Assert.Contains("reanalyze_pending_tracks", names);
         Assert.Contains("scan_visual_folders", names);
         Assert.Contains("build_harmonic_playlist", names);
+        Assert.Contains("get_control_skin_spec", names);
+        Assert.Contains("create_control_skin", names);
+        Assert.Contains("list_control_skins", names);
         Assert.Equal(names.Length, names.Distinct(StringComparer.Ordinal).Count());
     }
 }

@@ -85,6 +85,46 @@ public static class PhaseAlignmentCalculator
         double leaderBeatSeconds = 60.0 / leader.Bpm;
         return BeatPhaseError(follower, leader) * leaderBeatSeconds;
     }
+
+    /// <summary>
+    /// The signed BAR-phase error between two decks, in bars wrapped to (-0.5, 0.5]. Beat-phase
+    /// alignment can lock the follower's beat 3 onto the leader's downbeat — audibly in sync but
+    /// musically a bar off, which an automated EQ/bass-swap transition cannot tolerate (doc 11
+    /// Auto-Mix; doc 27 known gap). Folding on the bar grid instead picks the shortest correction
+    /// onto the nearest leader DOWNBEAT. Returns 0 when either tempo is non-positive or
+    /// <paramref name="beatsPerBar"/> is not positive.
+    /// </summary>
+    /// <remarks>
+    /// Implemented on the same wrapped-phase math as <see cref="BeatPhaseError"/> by treating the bar
+    /// as the grid unit (tempo ÷ beats-per-bar), so beat- and bar-alignment cannot diverge. The
+    /// first-beat anchor is taken as bar origin; analysis measures a within-beat anchor, not a true
+    /// musical downbeat, so this guarantees a CONSISTENT bar grid between the decks, not that bar 1
+    /// of the song lands on bar 1 — an honest v1 limitation (doc 16 phrase cues are the upgrade).
+    /// </remarks>
+    public static double BarPhaseError(DeckPhase follower, DeckPhase leader, int beatsPerBar)
+    {
+        if (beatsPerBar <= 0)
+            return 0.0;
+        return BeatPhaseError(
+            follower with { Bpm = follower.Bpm / beatsPerBar },
+            leader with { Bpm = leader.Bpm / beatsPerBar });
+    }
+
+    /// <summary>
+    /// Seconds to nudge the <paramref name="follower"/> playhead so its BAR phase aligns with the
+    /// <paramref name="leader"/>'s — the shortest correction onto the nearest leader downbeat.
+    /// Used by auto-mix arming as a one-shot, inaudible (pre-fade) seek; the continuous
+    /// <c>PhaseLockController</c> stays beat-based, which preserves bar alignment once established.
+    /// Returns 0 when either tempo or <paramref name="beatsPerBar"/> is not positive.
+    /// </summary>
+    public static double BarPhaseNudgeSeconds(DeckPhase follower, DeckPhase leader, int beatsPerBar)
+    {
+        if (follower.Bpm <= 0.0 || leader.Bpm <= 0.0 || beatsPerBar <= 0)
+            return 0.0;
+
+        double leaderBarSeconds = beatsPerBar * (60.0 / leader.Bpm);
+        return BarPhaseError(follower, leader, beatsPerBar) * leaderBarSeconds;
+    }
 }
 
 /// <summary>

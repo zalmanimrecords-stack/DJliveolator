@@ -12,7 +12,7 @@ namespace Liveolator.App.Controls;
 /// it writes flows out via the binding, so the action layer (doc 04) is unchanged. Disabled knobs render
 /// in the neutral track color and ignore input.
 /// </summary>
-public sealed class Knob : Control
+public class Knob : Control
 {
     /// <summary>Pixels of vertical drag that span the full 0..1 range.</summary>
     private const double DragRangePixels = 160.0;

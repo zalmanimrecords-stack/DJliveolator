@@ -45,6 +45,8 @@ public sealed class JsonSettingsStoreTests : IDisposable
             {
                 DeveloperMode = true,
                 ActiveUiThemeId = "com.example.theme/night",
+                ActiveKnobSkinId = "liveolator.control-skins/cobalt-knob",
+                ActiveSliderSkinId = "liveolator.control-skins/amber-slider",
             },
         };
 
@@ -57,6 +59,8 @@ public sealed class JsonSettingsStoreTests : IDisposable
         Assert.Equal("Push", loaded.Midi.FeedbackOutputName);
         Assert.True(loaded.Extensions.DeveloperMode);
         Assert.Equal("com.example.theme/night", loaded.Extensions.ActiveUiThemeId);
+        Assert.Equal("liveolator.control-skins/cobalt-knob", loaded.Extensions.ActiveKnobSkinId);
+        Assert.Equal("liveolator.control-skins/amber-slider", loaded.Extensions.ActiveSliderSkinId);
     }
 
     [Fact]

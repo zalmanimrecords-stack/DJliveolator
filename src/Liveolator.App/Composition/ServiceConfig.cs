@@ -8,6 +8,7 @@ using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
+using Liveolator.App.Skins;
 using Liveolator.App.Theme;
 using Liveolator.App.Shell;
 using Liveolator.Audio;
@@ -150,6 +151,14 @@ public static class ServiceConfig
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         frktlPresetLoader.Load();
         services.AddSingleton(frktlPresetLoader);
+
+        // User/agent-authored control skins (doc 30): a folder of .ctrlskin files (parametric knob/slider
+        // looks). Loaded here so the chosen skin can be applied in App.OnFrameworkInitializationCompleted
+        // and the Settings pickers can list what exists. Tolerant: a bad file is skipped, not fatal.
+        var controlSkins = new Liveolator.Media.Skins.ControlSkinFolderLoader(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
+        services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
 
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);
@@ -527,7 +536,10 @@ public static class ServiceConfig
             sp.GetRequiredService<IExtensionContentReloader>(),
             // The shared decks so a saved waveform-zoom change applies live (without a restart).
             sp.GetRequiredService<PerformanceDeckSet>(),
-            sp.GetService<ILogFileLocator>()));
+            sp.GetService<ILogFileLocator>(),
+            // Control skins (doc 30): the catalog feeds the pickers; the applier re-skins live on Save.
+            sp.GetRequiredService<IControlSkinCatalog>(),
+            sp.GetRequiredService<IControlSkinApplier>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the

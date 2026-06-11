@@ -13,7 +13,7 @@ namespace Liveolator.App.Controls;
 /// presentation — the value flows out through the binding to the view-model, so the action layer
 /// (doc 04) is unchanged. Disabled faders render neutral and ignore input.
 /// </summary>
-public sealed class Fader : Control
+public class Fader : Control
 {
     private const double KeyStep = 0.05;
     /// <summary>Holding Shift slows the drag by this factor for precise level/crossfade trims.</summary>

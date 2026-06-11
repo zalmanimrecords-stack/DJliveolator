@@ -21,6 +21,9 @@ public sealed class PerformanceActionDispatcher : IPerformanceActionDispatcher, 
     /// <inheritdoc />
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
+    /// <inheritdoc />
+    public event EventHandler<PerformanceAction>? ActionDispatched;
+
     /// <param name="handlers">The concern handlers; every kind must be owned by exactly one.</param>
     /// <param name="logger">Sink for handler failures and unhandled-kind warnings.</param>
     /// <param name="synchronizer">Marshals feedback notifications to the subscriber thread;
@@ -71,6 +74,17 @@ public sealed class PerformanceActionDispatcher : IPerformanceActionDispatcher, 
     public void Dispatch(PerformanceAction action)
     {
         ArgumentNullException.ThrowIfNull(action);
+
+        // Observation only — raised before routing so automation sees every gesture (including ones
+        // whose handler later fails) and can yield. A throwing observer must not drop the action.
+        try
+        {
+            ActionDispatched?.Invoke(this, action);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ActionDispatched observer failed for {Kind}; action still routed.", action.Kind);
+        }
 
         if (!_routes.TryGetValue(action.Kind, out IPerformanceActionHandler? handler))
         {
