@@ -143,6 +143,24 @@ Now produce the .frktl JSON for this look: <DESCRIBE THE LOOK HERE>
 
 ---
 
+## Generating presets via MCP (for AI agents)
+
+An agent connected to the Liveolator MCP server (`Liveolator.Mcp`, doc 17) can author presets directly —
+no copy-paste. Three tools on the visual concern:
+
+- **`get_visual_preset_spec`** — returns the `.frktl` format, the host uniform contract, the rules, the
+  folder presets are written to, and a complete example. **Call this first** so the generated shader and
+  parameters are valid.
+- **`create_visual_preset`** — takes the whole `.frktl` document as a JSON string (`presetJson`) plus an
+  optional `overwrite` flag. It validates (same rules as above) and writes `<slug>.frktl` into the presets
+  folder; on failure nothing is written and the reason comes back in `error`. Returns the derived
+  `presetId` (`liveolator.frktl.user/<slug>`) and the file path.
+- **`list_visual_presets`** — lists the installed presets (name + id + path).
+
+Typical agent flow: `get_visual_preset_spec` → compose the JSON for the requested look → `create_visual_preset`.
+The MCP server writes into the same folder the app reads, so a created preset appears in the picker on the
+next launch / reload. (The MCP server's `--data-dir` must point at the same data root as the app.)
+
 ## Worked example — `aurora-veil.frktl`
 
 ```jsonc

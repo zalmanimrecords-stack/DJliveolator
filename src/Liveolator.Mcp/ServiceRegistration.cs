@@ -36,6 +36,10 @@ internal static class ServiceRegistration
         services.AddSingleton<IVisualMediaProbe>(_ => new CompositeVisualMediaProbe());
         services.AddSingleton<VisualSession>();
 
+        // FRKTL preset authoring (doc 29): lets an agent generate + save .frktl visual presets into the
+        // shared FRKTL presets folder, so the app picks them up. Writer/validation live in Media/Core.
+        services.AddSingleton<VisualPresetSession>();
+
         AddOnlineEnrichment(services, config);
         return services;
     }

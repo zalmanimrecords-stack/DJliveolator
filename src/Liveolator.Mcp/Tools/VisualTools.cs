@@ -68,4 +68,37 @@ public sealed class VisualTools
             throw new ArgumentException($"No catalogued visual asset at '{path}'. Scan its folder first, or check the path.");
         return VisualAssetInfo.From(asset);
     }
+
+    // --- FRKTL controllable presets (doc 28/29): an agent can author new generative visuals --------------
+
+    [McpServerTool(Name = "get_visual_preset_spec")]
+    [Description("Get the authoring contract for a FRKTL visual preset: the .frktl JSON format, the host " +
+                 "shader uniforms available (uTime, uBeatPhase, uLevel, uBass..uHigh, uPreviousFrame for " +
+                 "feedback, etc.), the rules (<=5 controllable parameters, ASCII-only shader), the folder " +
+                 "presets are written to, and a complete worked example. ALWAYS call this before " +
+                 "create_visual_preset so the generated shader and parameters are valid.")]
+    public static VisualPresetSpec GetVisualPresetSpec(VisualPresetSession session)
+        => session.Spec();
+
+    [McpServerTool(Name = "create_visual_preset")]
+    [Description("Create a FRKTL controllable visual preset from a complete .frktl JSON document and save " +
+                 "it into the FRKTL presets folder, where the app picks it up. The JSON must follow the " +
+                 "format from get_visual_preset_spec (name + up to 5 controllable parameters + a GLSL " +
+                 "fragment shader). The preset is validated before writing; on failure nothing is written " +
+                 "and the reason is returned in 'error'. The file name and preset id are derived from the " +
+                 "name. Each controllable parameter becomes a knob the performer can turn or MIDI-map.")]
+    public static VisualPresetResult CreateVisualPreset(
+        VisualPresetSession session,
+        [Description("The entire .frktl document as a JSON string (keys: name, author?, description?, " +
+                     "parameters[], shader). See get_visual_preset_spec for the exact shape and an example.")]
+        string presetJson,
+        [Description("Overwrite an existing preset file with the same derived name. Default true.")]
+        bool overwrite = true)
+        => session.Create(presetJson, overwrite);
+
+    [McpServerTool(Name = "list_visual_presets")]
+    [Description("List the FRKTL presets currently installed in the presets folder (name + preset id + " +
+                 "file path), so an agent can see what exists before creating or replacing one.")]
+    public static IReadOnlyList<VisualPresetSummary> ListVisualPresets(VisualPresetSession session)
+        => session.List();
 }

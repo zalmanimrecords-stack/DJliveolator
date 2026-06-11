@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Liveolator.Core.Visuals;
 
@@ -93,7 +92,7 @@ public sealed class FrktlPresetFolderLoader
                 return;
             }
 
-            string slug = Slug(Path.GetFileNameWithoutExtension(path));
+            string slug = FrktlPresetNaming.Slug(Path.GetFileNameWithoutExtension(path));
             string effectId = $"{PackageId}/{slug}";
             if (!seenEffectIds.Add(effectId))
             {
@@ -114,28 +113,5 @@ public sealed class FrktlPresetFolderLoader
         {
             _onWarning?.Invoke($"FRKTL preset '{fileName}' was skipped ({ex.Message}).");
         }
-    }
-
-    // A filesystem-safe, stable id segment from the file name: lowercase, non-alphanumerics → '-', collapsed.
-    private static string Slug(string name)
-    {
-        var builder = new StringBuilder(name.Length);
-        bool lastDash = false;
-        foreach (char ch in name.Trim().ToLowerInvariant())
-        {
-            if (ch is (>= 'a' and <= 'z') or (>= '0' and <= '9'))
-            {
-                builder.Append(ch);
-                lastDash = false;
-            }
-            else if (!lastDash && builder.Length > 0)
-            {
-                builder.Append('-');
-                lastDash = true;
-            }
-        }
-
-        string slug = builder.ToString().Trim('-');
-        return slug.Length == 0 ? "preset" : slug;
     }
 }
