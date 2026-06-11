@@ -1,22 +1,16 @@
 namespace Liveolator.Core.Automix;
 
 /// <summary>
-/// Where the auto-mix engine is in its lifecycle. The audible blend exists only in
-/// <see cref="Transitioning"/>; every earlier phase is silent preparation that can abort without the
-/// floor ever hearing a problem (the supreme invariant: no auto-mix failure may interrupt the music
-/// that is already playing).
+/// Where the auto-mix engine is in its lifecycle. Engaging is IMMEDIATE (doc 11, owner direction):
+/// the incoming deck is synced + started on the spot and the slow blend begins right away — sync
+/// convergence happens during the quiet start of the curve, not as a gate before it. The invariant
+/// stands: no auto-mix failure may interrupt the music that is already playing.
 /// </summary>
 public enum AutomixPhase
 {
-    /// <summary>No transition armed.</summary>
+    /// <summary>No transition running.</summary>
     Idle,
 
-    /// <summary>Plan accepted; incoming deck synced/seeked, waiting for the leader's next downbeat to start it.</summary>
-    Arming,
-
-    /// <summary>Incoming deck rolling silently; waiting for a confirmed beat lock (or timeout → abort).</summary>
-    Syncing,
-
-    /// <summary>Beat-locked and bar-anchored; the style profile is driving the mixer.</summary>
+    /// <summary>Incoming deck launched and syncing; the style profile is driving the mixer.</summary>
     Transitioning,
 }

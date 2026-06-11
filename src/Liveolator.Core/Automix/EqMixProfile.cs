@@ -8,8 +8,9 @@ namespace Liveolator.Core.Automix;
 /// </summary>
 /// <remarks>
 /// The swap is anchored at progress 0.5 and spans one beat (1/<see cref="AutomixTransitionShape.BeatsTotal"/>).
-/// Because every duration detent is an even bar count and the transition starts on a downbeat, the
-/// midpoint IS a downbeat — the swap is bar-quantized by construction, with no extra state.
+/// The transition anchor is beat-quantized and every duration detent is an even bar count, so the
+/// midpoint always lands on a beat boundary (and on a downbeat whenever the blend started on one) —
+/// quantized by construction, with no extra state.
 /// </remarks>
 public sealed class EqMixProfile : IAutomixStyleProfile
 {

@@ -14,10 +14,12 @@ namespace Liveolator.Core.Automix;
 /// the same controls a human uses, through the same dispatcher.
 /// </summary>
 /// <remarks>
-/// Safety invariants (advisor spec §5): the audible blend cannot begin until the incoming deck
-/// REPORTS a confirmed beat lock; any human gesture on a watched control is an instant, silent
-/// handover (freeze, never snap back, never re-grab); and no failure path ever modifies the deck
-/// that is currently playing — an auto-mix failure must be inaudible.
+/// Engage is IMMEDIATE (owner direction): the incoming deck is seeked to its mix-in point, SYNC is
+/// engaged (tempo match + phase snap), it starts playing, and the slow blend begins on the next
+/// pump tick — sync convergence happens under the quiet start of the curve, where the incoming deck
+/// is barely audible, not as a gate before it. Safety invariants: any human gesture on a watched
+/// control is an instant, silent handover (freeze, never snap back, never re-grab), and no failure
+/// path ever modifies the deck that is currently playing — an auto-mix failure must be inaudible.
 /// </remarks>
 public sealed class AutomixController : IMasterClockTickListener, IDisposable
 {
@@ -73,12 +75,13 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     private int _requestedBars = AutomixDurationKnob.DefaultBars;
     private AutomixStyle _style = AutomixStyle.CrossFade;
     private AutomixRefusal _lastRefusal = AutomixRefusal.None;
-    private double _syncStartBeat;
     private double _startBeat;
+    private bool _anchored;
+    private double _startFromPositionSeconds;
+    private double _leaderBpm;
+    private bool _clockFallbackLogged;
     private double _lastProgress;
     private int _lockedTicks;
-    private int _lastBarNumber;
-    private bool _hasBarRef;
     private bool _barAlignChecked;
     private bool _startedIncoming;
     private int _ticksInPhase;
@@ -160,7 +163,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             if (_phase == AutomixPhase.Idle)
                 TryStartLocked(actions);
             else
-                AbortLocked(stopIncoming: false, "performer pressed AUTOMIX", actions);
+                AbortLocked("performer pressed AUTOMIX", actions);
         }
         DispatchAll(actions);
         RaiseChanged();
@@ -196,24 +199,14 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             _ticksInPhase++;
             if (_ticksInPhase > MaxTicksPerPhase)
             {
-                AbortLocked(_startedIncoming, "phase watchdog expired (clock not advancing?)", actions);
+                // Nothing has advanced for ~a minute (dead clock AND a stalled outgoing playhead):
+                // free the controls; the floor's audio is untouched by this path.
+                AbortLocked("transition watchdog expired (nothing advancing)", actions);
                 changed = true;
             }
             else
             {
-                BeatClockState state = _clock.Current;
-                double beatNow = state.BeatCount + Math.Clamp(state.BeatPhase, 0.0, 1.0);
-                bool downbeat = _hasBarRef && state.BarNumber != _lastBarNumber;
-                _lastBarNumber = state.BarNumber;
-                _hasBarRef = true;
-
-                changed = _phase switch
-                {
-                    AutomixPhase.Arming => TickArmingLocked(downbeat, beatNow, actions),
-                    AutomixPhase.Syncing => TickSyncingLocked(downbeat, beatNow, actions),
-                    AutomixPhase.Transitioning => TickTransitioningLocked(beatNow, actions),
-                    _ => false,
-                };
+                changed = TickTransitioningLocked(ElapsedBeatsLocked(), actions);
             }
         }
         DispatchAll(actions);
@@ -274,83 +267,80 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         _shape = new AutomixTransitionShape(fromSide, 1.0 - fromSide, plan.PlannedBars * _settings.BeatsPerBar);
         _fromRestore = _decks.Mixer.Channel(fromSlot);
         _lastFrame = null;
-        _startedIncoming = false;
         _lockedTicks = 0;
         _barAlignChecked = false;
-        _hasBarRef = false;
+        _anchored = false;
+        _clockFallbackLogged = false;
         _ticksInPhase = 0;
         _lastProgress = 0.0;
+        _startFromPositionSeconds = from.PositionSeconds;
+        _leaderBpm = from.EffectiveBpm > 0.0 ? from.EffectiveBpm : from.BaseBpm;
 
-        // Pre-set the style's entry values while the incoming deck is still inaudible: crossfader to
-        // the outgoing extreme, and (EQ MIX) the incoming low band killed before it ever opens.
+        // Everything happens NOW (owner direction): pre-set the style's entry values (crossfader on
+        // the outgoing extreme; EQ MIX kills the incoming low band), seek the incoming deck to its
+        // mix-in point, engage SYNC (tempo match + phase snap), and PLAY. The slow blend starts on
+        // the next pump tick — sync convergence happens under the quiet start of the curve, where
+        // the incoming deck is barely audible, instead of as a multi-bar gate before it.
         DiffFrameLocked(_profile.Evaluate(0.0, _shape), actions);
+        _startedIncoming = !to.IsPlaying;
+        if (_startedIncoming && to.LengthSeconds > 0.0)
+            actions.Add(Deck(PerformanceActionKind.DeckSeek, toSlot,
+                ActionInputMode.Absolute, plan.MixInSeconds / to.LengthSeconds));
         if (!to.SyncLocked)
             actions.Add(Deck(PerformanceActionKind.DeckSyncToggle, toSlot));
+        if (_startedIncoming)
+            actions.Add(Deck(PerformanceActionKind.DeckPlayPause, toSlot));
 
-        _phase = AutomixPhase.Arming;
+        _phase = AutomixPhase.Transitioning;
         _logger.LogInformation(
-            "Auto-mix armed: deck {From} → deck {To}, {Bars} bars, style {Style} (requested {Requested}).",
+            "Auto-mix started: deck {From} → deck {To}, {Bars} bars, style {Style} (requested {Requested}).",
             fromSlot, toSlot, plan.PlannedBars, plan.EffectiveStyle, _style);
     }
 
-    // ----- phases -----
+    // ----- the transition tick -----
 
-    private bool TickArmingLocked(bool downbeat, double beatNow, List<PerformanceAction> actions)
+    // Beats elapsed since the transition started, read from the ONE shared clock (anchored on the
+    // first tick, quantized to a beat boundary). If the shared clock has no tempo yet (the sync
+    // engage has not propagated), fall back to the outgoing deck's own playhead advance — the same
+    // grid the clock derives from, so progress starts moving immediately either way.
+    private double ElapsedBeatsLocked()
     {
-        if (!downbeat)
-            return false;
-
-        // Launch the incoming deck on the leader's downbeat, from its mix-in point. Starting a deck
-        // already rolling (the performer cued it early) is respected — no seek, no restart.
-        AutomixDeckSnapshot to = _decks.ReadDeck(_plan!.ToSlot);
-        if (!to.IsPlaying)
+        BeatClockState state = _clock.Current;
+        if (state.Bpm > 0.0)
         {
-            if (to.LengthSeconds > 0.0)
-                actions.Add(Deck(PerformanceActionKind.DeckSeek, _plan.ToSlot,
-                    ActionInputMode.Absolute, _plan.MixInSeconds / to.LengthSeconds));
-            actions.Add(Deck(PerformanceActionKind.DeckPlayPause, _plan.ToSlot));
-            _startedIncoming = true;
+            double beatNow = state.BeatCount + Math.Clamp(state.BeatPhase, 0.0, 1.0);
+            if (!_anchored)
+            {
+                _startBeat = Math.Floor(beatNow);
+                _anchored = true;
+            }
+            return Math.Max(0.0, beatNow - _startBeat);
         }
 
-        _syncStartBeat = beatNow;
-        _phase = AutomixPhase.Syncing;
-        return true;
+        if (!_clockFallbackLogged)
+        {
+            _logger.LogInformation("Auto-mix: shared clock idle; pacing the blend from the outgoing playhead.");
+            _clockFallbackLogged = true;
+        }
+        AutomixDeckSnapshot from = _decks.ReadDeck(_plan!.FromSlot);
+        return Math.Max(0.0, (from.PositionSeconds - _startFromPositionSeconds) * (_leaderBpm / 60.0));
     }
 
-    private bool TickSyncingLocked(bool downbeat, double beatNow, List<PerformanceAction> actions)
+    private bool TickTransitioningLocked(double elapsedBeats, List<PerformanceAction> actions)
     {
+        // One inaudible bar-grid correction once the lock has settled, while the incoming deck is
+        // still quiet (early in the curve). Past that window a seek would be audible — skip it and
+        // let the continuous beat lock carry the blend.
         AutomixDeckSnapshot to = _decks.ReadDeck(_plan!.ToSlot);
         _lockedTicks = to.SyncState == SyncLockState.Locked ? _lockedTicks + 1 : 0;
-
-        bool confirmed = _lockedTicks >= _settings.LockConfirmTicks;
-        if (confirmed && !_barAlignChecked)
+        if (!_barAlignChecked && _lockedTicks >= _settings.LockConfirmTicks)
         {
-            BarAlignIncomingLocked(to, actions);
+            if (_lastProgress <= 0.25)
+                BarAlignIncomingLocked(to, actions);
             _barAlignChecked = true;
         }
 
-        // The blend anchors on the first downbeat after a CONFIRMED lock — beat-locked, bar-aligned,
-        // bar-anchored. This is the "no room for error" gate: an unlocked pairing never becomes audible.
-        if (confirmed && _barAlignChecked && downbeat)
-        {
-            _startBeat = beatNow;
-            _lastProgress = 0.0;
-            _phase = AutomixPhase.Transitioning;
-            _logger.LogInformation("Auto-mix transition started at beat {Beat:F2}.", beatNow);
-            return true;
-        }
-
-        if (beatNow - _syncStartBeat > _settings.SyncTimeoutBars * _settings.BeatsPerBar)
-        {
-            AbortLocked(_startedIncoming, "incoming deck did not beat-lock in time", actions);
-            return true;
-        }
-        return false;
-    }
-
-    private bool TickTransitioningLocked(double beatNow, List<PerformanceAction> actions)
-    {
-        double progress = Math.Clamp((beatNow - _startBeat) / _shape!.BeatsTotal, 0.0, 1.0);
+        double progress = Math.Clamp(elapsedBeats / _shape!.BeatsTotal, 0.0, 1.0);
         _lastProgress = progress;
         DiffFrameLocked(_profile!.Evaluate(progress, _shape), actions);
 
@@ -384,24 +374,13 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         ResetLocked();
     }
 
-    private void AbortLocked(bool stopIncoming, string reason, List<PerformanceAction> actions)
+    private void AbortLocked(string reason, List<PerformanceAction> actions)
     {
-        _logger.LogWarning("Auto-mix aborted in {Phase}: {Reason}.", _phase, reason);
+        _logger.LogWarning("Auto-mix aborted at progress {Progress:F2}: {Reason}.", _lastProgress, reason);
 
-        if (stopIncoming && _plan is not null)
-        {
-            // Silent-preparation failure (e.g. lock timeout): retire the deck WE started; the floor
-            // never heard it. The outgoing deck is untouched on every abort path.
-            AutomixDeckSnapshot to = _decks.ReadDeck(_plan.ToSlot);
-            if (to.IsPlaying)
-                actions.Add(Deck(PerformanceActionKind.DeckPlayPause, _plan.ToSlot));
-            if (to.SyncLocked)
-                actions.Add(Deck(PerformanceActionKind.DeckSyncToggle, _plan.ToSlot));
-            RestoreFromChannelLocked(actions);
-        }
-        // Performer takeover (stopIncoming = false): freeze everything exactly where it is — no
-        // snap-back, nothing released. The human inherits a beat-locked incoming deck (safest state).
-
+        // Freeze everything exactly where it is — no snap-back, nothing released, nothing paused.
+        // The human inherits a beat-locked incoming deck (the safest hand-over state) and both
+        // decks keep playing; the floor hears no discontinuity from the abort itself.
         ResetLocked();
     }
 
@@ -427,6 +406,8 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         _lastFrame = null;
         _lockedTicks = 0;
         _barAlignChecked = false;
+        _anchored = false;
+        _clockFallbackLogged = false;
         _startedIncoming = false;
         _ticksInPhase = 0;
         _lastProgress = 0.0;
@@ -542,7 +523,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             if (!mixerTouch && !deckTouch)
                 return;
 
-            AbortLocked(stopIncoming: false, $"performer touched {action.Kind}", new List<PerformanceAction>());
+            AbortLocked($"performer touched {action.Kind}", new List<PerformanceAction>());
             aborted = true;
         }
         if (aborted)

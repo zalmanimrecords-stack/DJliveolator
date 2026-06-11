@@ -57,28 +57,74 @@ public class AutomixControllerTests
 
     private void RunToTransitioning()
     {
-        _controller.Toggle();                       // Arming
-        Tick(beat: 0.0, bar: 0);                    // establish the bar reference
-        Tick(beat: 4.0, bar: 1);                    // downbeat → incoming deck launched, Syncing
+        _controller.Toggle();                       // sync + seek + play, immediately
         _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Locked,
             syncLocked: true));
-        Tick(beat: 4.2, bar: 1);                    // locked ×1
-        Tick(beat: 4.4, bar: 1);                    // locked ×2 (confirmed) + bar-align check
-        Tick(beat: 8.0, bar: 2);                    // downbeat after confirmed lock → Transitioning
+        Tick(beat: 8.0, bar: 2);                    // first tick anchors the blend at beat 8
     }
 
     [Fact]
-    public void Toggle_ArmsAndPreparesTheIncomingDeckSilently()
+    public void Toggle_LaunchesTheIncomingDeckImmediately_SyncSeekAndPlay()
     {
         _controller.Toggle();
 
-        Assert.Equal(AutomixPhase.Arming, _controller.Phase);
-        // Entry frame: crossfader hard on the outgoing side (deck A = 0.0) while nothing is audible yet.
+        Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
+        // Entry frame: crossfader hard on the outgoing side (deck A = 0.0) — the incoming deck starts inaudible.
         PerformanceAction crossfade = Assert.Single(Emitted(PerformanceActionKind.MixerCrossfade));
         Assert.Equal(0.0, crossfade.Value, precision: 9);
-        // SYNC is engaged on the incoming deck through the same action a human would press.
+        // Seeked to its mix-in point (the first-beat anchor as a fraction), synced, and started — NOW,
+        // not on some future downbeat: the blend runs while sync converges (owner direction).
+        PerformanceAction seek = Assert.Single(Emitted(PerformanceActionKind.DeckSeek));
+        Assert.Equal(1, seek.Slot);
+        Assert.Equal(0.4 / 300.0, seek.Value, precision: 9);
         PerformanceAction sync = Assert.Single(Emitted(PerformanceActionKind.DeckSyncToggle));
         Assert.Equal(1, sync.Slot);
+        PerformanceAction play = Assert.Single(Emitted(PerformanceActionKind.DeckPlayPause));
+        Assert.Equal(1, play.Slot);
+    }
+
+    [Fact]
+    public void Toggle_IncomingAlreadyRolling_RespectsItsPositionAndTransport()
+    {
+        // The performer cued deck B early and it is already playing: no seek, no play — just sync.
+        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 12.0));
+
+        _controller.Toggle();
+
+        Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
+        Assert.Empty(Emitted(PerformanceActionKind.DeckSeek));
+        Assert.Empty(Emitted(PerformanceActionKind.DeckPlayPause));
+        Assert.Single(Emitted(PerformanceActionKind.DeckSyncToggle));
+    }
+
+    [Fact]
+    public void Blend_AdvancesWhileSyncIsStillConverging()
+    {
+        // The crossfade must crawl WHILE the sync loop converges — not wait for a confirmed lock.
+        _controller.Toggle();
+        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Active,
+            syncLocked: true));
+
+        Tick(beat: 8.0, bar: 2);  // anchor
+        Tick(beat: 10.0, bar: 2); // 2 of 8 beats in, still not Locked
+
+        Assert.Equal(0.25, _controller.Progress, precision: 9);
+        Assert.Equal(0.25, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
+    }
+
+    [Fact]
+    public void Blend_PacesFromTheOutgoingPlayhead_WhenTheSharedClockIsIdle()
+    {
+        // Sync engage has not propagated to the shared clock yet (or it is idle): progress still
+        // moves, derived from the outgoing deck's own playhead — the same grid the clock follows.
+        _controller.Toggle();
+        _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: 10.0)); // +2 s at 120 BPM = 4 beats
+
+        _clock.Current = BeatClockState.Idle;
+        _controller.OnMasterClockTick(0);
+
+        Assert.Equal(0.5, _controller.Progress, precision: 9); // 4 of 8 beats
+        Assert.Equal(0.5, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
     }
 
     [Fact]
@@ -91,57 +137,6 @@ public class AutomixControllerTests
         Assert.Equal(AutomixPhase.Idle, _controller.Phase);
         Assert.Equal(AutomixRefusal.NothingPlaying, _controller.LastRefusal);
         Assert.Empty(_dispatcher.Dispatched);
-    }
-
-    [Fact]
-    public void Arming_LaunchesTheIncomingDeckOnTheLeaderDownbeat_FromItsMixInPoint()
-    {
-        _controller.Toggle();
-        Tick(beat: 0.0, bar: 0);
-        Assert.Empty(Emitted(PerformanceActionKind.DeckPlayPause)); // not before a downbeat
-
-        Tick(beat: 4.0, bar: 1);
-
-        PerformanceAction seek = Assert.Single(Emitted(PerformanceActionKind.DeckSeek));
-        Assert.Equal(1, seek.Slot);
-        Assert.Equal(0.4 / 300.0, seek.Value, precision: 9); // the first-beat anchor as a fraction
-        PerformanceAction play = Assert.Single(Emitted(PerformanceActionKind.DeckPlayPause));
-        Assert.Equal(1, play.Slot);
-        Assert.Equal(AutomixPhase.Syncing, _controller.Phase);
-    }
-
-    [Fact]
-    public void Syncing_TheBlendDoesNotStartUntilTheLockIsConfirmed()
-    {
-        _controller.Toggle();
-        Tick(beat: 0.0, bar: 0);
-        Tick(beat: 4.0, bar: 1);
-        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Active));
-
-        // Downbeats keep passing but the deck never reports Locked — the blend must not begin.
-        Tick(beat: 8.0, bar: 2);
-        Tick(beat: 12.0, bar: 3);
-
-        Assert.Equal(AutomixPhase.Syncing, _controller.Phase);
-    }
-
-    [Fact]
-    public void Syncing_LockTimeout_AbortsAndRetiresTheDeckItStarted()
-    {
-        _controller.Toggle();
-        Tick(beat: 0.0, bar: 0);
-        Tick(beat: 4.0, bar: 1);
-        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Active,
-            syncLocked: true));
-
-        // Default timeout = 4 bars = 16 beats past the sync start (beat 4).
-        Tick(beat: 21.0, bar: 5);
-
-        Assert.Equal(AutomixPhase.Idle, _controller.Phase);
-        // The deck WE started is paused and its SYNC released; the playing deck A was never touched.
-        Assert.Equal(2, Emitted(PerformanceActionKind.DeckPlayPause).Count); // launch + retire
-        Assert.Equal(2, Emitted(PerformanceActionKind.DeckSyncToggle).Count); // engage + release
-        Assert.All(Emitted(PerformanceActionKind.DeckPlayPause), a => Assert.Equal(1, a.Slot));
     }
 
     [Fact]
@@ -236,16 +231,14 @@ public class AutomixControllerTests
     public void BarAlignment_SeeksTheIncomingDeck_WhenItLockedOntoTheWrongBeatOfTheBar()
     {
         _controller.Toggle();
-        Tick(beat: 0.0, bar: 0);
-        Tick(beat: 4.0, bar: 1);
         // Beat-locked, but one beat (0.5 s at 120 BPM) into its bar relative to the leader's grid:
         // leader at anchor+8.0 s (a downbeat), incoming at anchor+0.5 s (beat 2 of its bar).
         _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: 8.4));
         _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.9, syncState: SyncLockState.Locked,
             syncLocked: true));
 
-        Tick(beat: 4.2, bar: 1);
-        Tick(beat: 4.4, bar: 1); // lock confirmed → one-shot bar alignment
+        Tick(beat: 8.0, bar: 2);  // anchor; locked ×1
+        Tick(beat: 8.2, bar: 2);  // locked ×2 → one-shot bar alignment (still in the quiet start)
 
         PerformanceAction correction = Emitted(PerformanceActionKind.DeckSeek)[^1];
         Assert.Equal(1, correction.Slot);
