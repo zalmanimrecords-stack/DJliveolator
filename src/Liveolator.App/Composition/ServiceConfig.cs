@@ -61,16 +61,23 @@ public static class ServiceConfig
         IAudioOutputDeviceCatalog? outputCatalogOverride = null,
         IAudioCaptureDeviceCatalog? captureCatalogOverride = null,
         IAudioCaptureSourceFactory? captureFactoryOverride = null,
-        bool enableSystemMetrics = true)
+        bool enableSystemMetrics = true,
+        string? persistenceRootDirectory = null)
     {
         var services = new ServiceCollection();
+
+        // EVERY on-disk store below roots here. Tests MUST pass a temp directory — building the real
+        // composition root with the default once autosaved fake test tracks ("a.mp3"…) into the user's
+        // real %APPDATA%/Liveolator live set, which the app then tried to load on every launch.
+        string persistenceRoot = persistenceRootDirectory ?? JsonCatalogStore.DefaultRoot();
 
         // --- Persisted preferences (doc 12) ---
         // Loaded once up-front because the realtime engine needs the chosen output device + buffer
         // BEFORE it opens BASS. Blocking is acceptable in the composition root at startup (one small JSON
         // file) and the load is tolerant: a missing/corrupt file yields AppSettings.Default. The same
         // store instance is registered below so the Settings tab reads/writes the very same file.
-        var settingsStore = new JsonSettingsStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var settingsStore = new JsonSettingsStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         AppSettings appSettings = settingsStore.LoadAsync().GetAwaiter().GetResult();
 
         // --- On-disk logging (doc 12 diagnostics): the single place "log to a file" becomes wiring.
@@ -80,7 +87,7 @@ public static class ServiceConfig
         // Settings "Open logs folder" link. Global handlers capture otherwise-unhandled exceptions.
         var logOptions = new FileLoggerOptions
         {
-            Directory = AppLogging.DefaultDirectory(),
+            Directory = Path.Combine(persistenceRoot, "logs"),
             MinimumLevel = AppLogging.ParseLevel(appSettings.Diagnostics.MinimumLevel),
         };
         ILoggerFactory loggerFactory = AppLogging.CreateFactory(logOptions);
@@ -93,10 +100,12 @@ public static class ServiceConfig
         // persisted under the per-user live/ root. The seam lives in Core; LiveProfileStore is the Media
         // binding. Registered so the host (and later the MIDI / Settings agents) can load/save snapshots;
         // a saved visual bank is loaded at startup below to feed the visual engine (scenes → banks).
-        var liveProfileStore = new LiveProfileStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var liveProfileStore = new LiveProfileStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<ILiveProfileStore>(liveProfileStore);
         services.AddSingleton<ITrackVisualProgramStore>(
             _ => new JsonTrackVisualProgramStore(
+                persistenceRoot,
                 onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
 
         // --- Declarative extension packages -----------------------------------------------------
@@ -104,9 +113,9 @@ public static class ServiceConfig
         // Enabled package content is loaded before the window is created so the selected UI theme
         // can be applied in App.OnFrameworkInitializationCompleted.
         var trustedPublishers = new JsonTrustedPublisherStore(
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         var extensionCatalog = new ExtensionCatalog(
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         var extensionValidator = new ExtensionPackageValidator(trustedPublishers);
         var extensionInstaller = new ExtensionInstaller(
             extensionValidator, extensionCatalog, appSettings.Extensions.DeveloperMode);
@@ -149,6 +158,7 @@ public static class ServiceConfig
         // shader + up to five controllable knobs), loaded after the built-ins so they extend the picker.
         var frktlPresetLoader = new Liveolator.Media.Visuals.FrktlPresetFolderLoader(
             visualEffects, generatorPresets,
+            folder: Path.Combine(persistenceRoot, "frktl-presets"),
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         frktlPresetLoader.Load();
         services.AddSingleton(frktlPresetLoader);
@@ -157,6 +167,7 @@ public static class ServiceConfig
         // looks). Loaded here so the chosen skin can be applied in App.OnFrameworkInitializationCompleted
         // and the Settings pickers can list what exists. Tolerant: a bad file is skipped, not fatal.
         var controlSkins = new Liveolator.Media.Skins.ControlSkinFolderLoader(
+            folder: Path.Combine(persistenceRoot, "control-skins"),
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
         services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
@@ -175,7 +186,7 @@ public static class ServiceConfig
         // The scanner and native processor bridge are deliberately separate. Without the optional
         // native helper/bridge, plugins remain visible as unavailable placeholders and audio passes
         // through unchanged.
-        string vstCatalogPath = Path.Combine(JsonCatalogStore.DefaultRoot(), "vst3-catalog.json");
+        string vstCatalogPath = Path.Combine(persistenceRoot, "vst3-catalog.json");
         string scannerName = OperatingSystem.IsWindows()
             ? "liveolator-vst3-scanner.exe"
             : "liveolator-vst3-scanner";
@@ -188,7 +199,7 @@ public static class ServiceConfig
         // Restore persisted audio-effect rack state at startup and persist on every change, so VST3
         // chains / parameters / missing-plugin placeholders survive restarts (app-shell wave).
         var rackStateStore = new JsonAudioEffectRackStateStore(
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         foreach (AudioEffectRackState state in rackStateStore.LoadAsync().GetAwaiter().GetResult())
             effectRacks.GetRack(state.Slot).Restore(state);
         services.AddSingleton<IAudioEffectPluginCatalog>(vstCatalog);
@@ -222,7 +233,8 @@ public static class ServiceConfig
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
         // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
         // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
-        var catalogStore = new JsonCatalogStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var catalogStore = new JsonCatalogStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IMusicCatalogStore>(catalogStore);
         services.AddSingleton<IVisualCatalogStore>(catalogStore);
         // Visual-media library (doc 08/13, Track C C1): the same Core library + composite probe the MCP
@@ -238,11 +250,13 @@ public static class ServiceConfig
         services.AddSingleton<IFileRemover, FileSystemFileRemover>();
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
-            _ => new JsonPlaylistStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+            _ => new JsonPlaylistStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
         // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
         // next run and survive a deck reload (tolerant: a missing/corrupt file degrades to no cues).
-        var hotCueStore = new JsonHotCueStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var hotCueStore = new JsonHotCueStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IHotCueStore>(hotCueStore);
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
@@ -314,15 +328,17 @@ public static class ServiceConfig
         // shown but not auto-played on launch. After restoring, every later edit is saved on the queue's
         // Changed event (fire-and-forget, faults logged) so a crash loses at most the last edit. Tolerant:
         // a missing/corrupt set degrades to an empty queue (global standards #16/#26).
-        var liveSetStore = new JsonLiveSetStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var liveSetStore = new JsonLiveSetStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<ILiveSetStore>(liveSetStore);
         RestoreAndPersistLiveSet(livePlaylist, liveSetStore);
         var deckBSetStore = new JsonLiveSetStore(
+            persistenceRoot,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w), fileName: "deck-b-set.json");
         RestoreAndPersistLiveSet(deckBPlaylist, deckBSetStore);
 
-        var deckSessionStore =
-            new JsonDeckSessionStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        var deckSessionStore = new JsonDeckSessionStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IDeckSessionStore>(deckSessionStore);
 
         // Per-deck queues, addressed by the playlist action's Slot (A = 0, B = 1).

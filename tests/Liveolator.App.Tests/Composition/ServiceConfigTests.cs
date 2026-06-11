@@ -190,6 +190,8 @@ public sealed class ServiceConfigTests
         Assert.Contains(descriptor.Parameters, parameter => parameter.Id == "palette");
     }
 
+    // Roots all persistence in a temp directory so these tests never touch %APPDATA%/Liveolator.
+    // The root is not deleted per-test (the provider outlives the helper); the OS temp cleaner gets it.
     private static ServiceProvider BuildForTest() =>
-        (ServiceProvider)ServiceConfig.Build(enableSystemMetrics: false);
+        new TempPersistenceRoot().Build();
 }

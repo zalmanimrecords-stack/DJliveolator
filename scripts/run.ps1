@@ -41,6 +41,29 @@ function Resolve-CurrentRid {
     throw "Unsupported platform for automatic BASS RID detection."
 }
 
+function Stop-LiveolatorApp {
+    $running = @(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue)
+    if ($running.Count -eq 0) { return }
+
+    Write-Host "Stopping $($running.Count) running Liveolator instance(s)..."
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+}
+
+function Resolve-AppExecutable {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$Configuration
+    )
+
+    $outDir = Join-Path $RepoRoot "src/Liveolator.App/bin/$Configuration/net8.0"
+    if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+        return Join-Path $outDir 'Liveolator.App.exe'
+    }
+
+    return Join-Path $outDir 'Liveolator.App'
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $appProject = Join-Path $repoRoot 'src/Liveolator.App/Liveolator.App.csproj'
 $rid = Resolve-CurrentRid
@@ -58,6 +81,8 @@ if (-not $SkipFetch) {
     }
 }
 
+Stop-LiveolatorApp
+
 Write-Host "Building Liveolator.App ($Configuration)..."
 dotnet build $appProject -c $Configuration
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -67,6 +92,28 @@ if ($BuildOnly) {
     exit 0
 }
 
+$appExe = Resolve-AppExecutable -RepoRoot $repoRoot -Configuration $Configuration
+if (-not (Test-Path -LiteralPath $appExe)) {
+    Write-Error "Built app not found at $appExe"
+    exit 1
+}
+
+$logDir = if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+    Join-Path $env:APPDATA 'Liveolator/logs/liveolator.log'
+} elseif ($IsMacOS) {
+    Join-Path $env:HOME 'Library/Application Support/Liveolator/logs/liveolator.log'
+} else {
+    Join-Path $env:HOME '.local/share/Liveolator/logs/liveolator.log'
+}
+
 Write-Host "Starting Liveolator..."
-dotnet run --project $appProject -c $Configuration --no-build
-exit $LASTEXITCODE
+Write-Host "  $appExe"
+Write-Host "  Log: $logDir"
+
+& $appExe
+$exitCode = $LASTEXITCODE
+if ($exitCode -ne 0) {
+    Write-Host "Liveolator exited with code $exitCode. If no window appeared, check the log path above." -ForegroundColor Yellow
+}
+
+exit $exitCode

@@ -38,8 +38,8 @@ public class UiShots
         Directory.CreateDirectory(outDir);
 
         var devices = new HeadlessDeviceProvider();
-        using var services = (ServiceProvider)ServiceConfig.Build(
-            devices, devices, devices, devices, enableSystemMetrics: false);
+        using var persistenceRoot = new Composition.TempPersistenceRoot();
+        using var services = persistenceRoot.Build(devices, devices, devices, devices);
         var shell = services.GetRequiredService<MainWindowViewModel>();
 
         var window = new MainWindow { DataContext = shell, Width = 1440, Height = 900 };

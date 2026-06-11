@@ -1,4 +1,3 @@
-using Liveolator.Media;
 using Microsoft.Extensions.Logging;
 
 namespace Liveolator.App.Diagnostics;
@@ -11,9 +10,6 @@ namespace Liveolator.App.Diagnostics;
 /// </summary>
 public static class AppLogging
 {
-    /// <summary>The default log folder: <c>%APPDATA%/Liveolator/logs</c>, beside the rest of the app data.</summary>
-    public static string DefaultDirectory() => Path.Combine(JsonCatalogStore.DefaultRoot(), "logs");
-
     /// <summary>Parses a persisted <c>DiagnosticsSettings.MinimumLevel</c> string into a <see cref="LogLevel"/>.</summary>
     public static LogLevel ParseLevel(string? minimumLevel)
         => Enum.TryParse(minimumLevel, ignoreCase: true, out LogLevel level) ? level : LogLevel.Information;

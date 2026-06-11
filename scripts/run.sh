@@ -65,6 +65,13 @@ if [[ "$SKIP_FETCH" -eq 0 ]]; then
   fi
 fi
 
+if pgrep -x Liveolator.App >/dev/null 2>&1; then
+  count="$(pgrep -x Liveolator.App | wc -l | tr -d ' ')"
+  echo "Stopping ${count} running Liveolator instance(s)..."
+  pkill -x Liveolator.App || true
+  sleep 0.5
+fi
+
 echo "Building Liveolator.App ($CONFIGURATION)..."
 dotnet build "$app_project" -c "$CONFIGURATION"
 
@@ -73,5 +80,18 @@ if [[ "$BUILD_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+app_exe="$repo_root/src/Liveolator.App/bin/$CONFIGURATION/net8.0/Liveolator.App"
+if [[ ! -x "$app_exe" ]]; then
+  echo "Built app not found at $app_exe" >&2
+  exit 1
+fi
+
+case "$(uname -s)" in
+  Darwin) log_file="$HOME/Library/Application Support/Liveolator/logs/liveolator.log" ;;
+  *) log_file="$HOME/.local/share/Liveolator/logs/liveolator.log" ;;
+esac
+
 echo "Starting Liveolator..."
-dotnet run --project "$app_project" -c "$CONFIGURATION" --no-build
+echo "  $app_exe"
+echo "  Log: $log_file"
+exec "$app_exe"
