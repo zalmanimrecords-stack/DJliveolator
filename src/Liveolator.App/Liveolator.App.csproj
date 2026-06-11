@@ -8,6 +8,13 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Distribution identity: the installer (installer/windows) reads Version from here,
+         so the exe metadata, setup filename, and Add/Remove Programs entry always agree. -->
+    <Version>0.1.0</Version>
+    <ApplicationIcon>Liveolator.ico</ApplicationIcon>
+    <Product>Liveolator</Product>
+    <Company>Zalman Im Records</Company>
+    <Copyright>© 2026 Zalman Im Records</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
@@ -73,6 +80,16 @@
   <Target Name="WarnMissingBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' == ''">
     <Message Importance="high"
              Text="BASS native lib not found under runtimes\$(BassRid)\native\ — Live Mode will be disabled at runtime. Run scripts/fetch-bass to enable realtime audio." />
+  </Target>
+
+  <!-- Publish copies only ResolvedFileToPublish items, so the Build-time copy above never
+       reaches the publish folder — without this, installed builds would silently lose Live Mode. -->
+  <Target Name="CopyBassNativeToPublish" AfterTargets="Publish" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(PublishDir)" />
   </Target>
 
 </Project>
