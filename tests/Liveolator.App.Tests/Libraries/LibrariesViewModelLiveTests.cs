@@ -35,6 +35,7 @@ public sealed class LibrariesViewModelLiveTests
                 : ActionFeedbackState.Unavailable;
 
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }
 
     private sealed class FakeBeatClock : IBeatClock

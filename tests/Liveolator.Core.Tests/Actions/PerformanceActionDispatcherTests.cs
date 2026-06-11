@@ -53,6 +53,36 @@ public class PerformanceActionDispatcherTests
     }
 
     [Fact]
+    public void Dispatch_RaisesActionDispatched_ForEveryAction_IncludingUnrouted()
+    {
+        var transport = new FakeActionHandler(PerformanceActionKind.TransportStop);
+        using var dispatcher = Build(new[] { transport });
+        var seen = new List<PerformanceAction>();
+        dispatcher.ActionDispatched += (_, a) => seen.Add(a);
+
+        var routed = new PerformanceAction(PerformanceActionKind.TransportStop, Origin: "automix");
+        var unrouted = new PerformanceAction(PerformanceActionKind.VisualBlackout);
+        dispatcher.Dispatch(routed);
+        dispatcher.Dispatch(unrouted);
+
+        Assert.Equal(new[] { routed, unrouted }, seen);
+        Assert.Equal("automix", seen[0].Origin);
+    }
+
+    [Fact]
+    public void Dispatch_ThrowingActionObserver_DoesNotDropTheAction()
+    {
+        var handler = new FakeActionHandler(PerformanceActionKind.BeatTapTempo);
+        using var dispatcher = Build(new[] { handler });
+        dispatcher.ActionDispatched += (_, _) => throw new InvalidOperationException("observer boom");
+
+        dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.BeatTapTempo));
+
+        Assert.Single(handler.Handled);
+        Assert.Contains(_logger.Entries, e => e.Level == LogLevel.Error);
+    }
+
+    [Fact]
     public void GetFeedback_RoutesToOwningHandler()
     {
         var handler = new FakeActionHandler(PerformanceActionKind.BeatLock)

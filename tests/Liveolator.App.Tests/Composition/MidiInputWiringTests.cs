@@ -190,6 +190,7 @@ public sealed class MidiInputWiringTests
     {
         public List<PerformanceAction> Dispatched { get; } = new();
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
             => ActionFeedbackState.Unavailable;

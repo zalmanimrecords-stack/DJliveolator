@@ -140,11 +140,25 @@ Liveolator.App/Skins/IControlSkinApplier         seam so the Avalonia-free Setti
   tab has a Knob-skin + Slider-skin picker (filtered by kind), applied live on Save via `IControlSkinApplier`.
 - Proven by `artifacts/ui-shots/control-skins-applied.png` (PLAIN knobs/faders re-skinned through styles).
 
-## Follow-ups (not in POC)
+## Photographic filmstrip controls — Phase 1 (knob) + Phase 3 (fader), shipped POCs
 
-- **Phase 2:** `UiSkinManifest` in Core + validation + `UiSkinResolver`; let `UiThemeApplier`
-  publish the active skin so views pick `SkinnableKnob` vs `Knob` from the theme.
-- **Phase 3:** `SkinnableFader` (track + cap), crossfader, vertical/horizontal.
-- **Authoring:** a `tools/` filmstrip baker (render any knob design → strip) + docs, mirroring
-  the `.frktl` preset authoring flow (`docs/29`).
-- Wire the active skin into `DeckView`/`MixerView`/`MacroEncodersView` once Phase 2 lands.
+Alongside the parametric path, two controls render from PNG assets for full realism:
+
+- **`SkinnableKnob : Knob`** + `KnobSkin` — a vertical filmstrip (frame = `round(value·(N-1))`).
+  Sample `Assets/Skins/aurora/knob.png` (65 frames). Proof: `artifacts/ui-shots/skinnable-knob.png`.
+- **`SkinnableFader : Fader`** + `FaderSkin` — the DJ track+cap model: a track image down the control
+  plus a thumb cap blitted at the value position (`VerticalThumbCentreY`). Vertical in this POC. Sample
+  `Assets/Skins/aurora/fader-track.png` + `fader-thumb.png`. Proof: `artifacts/ui-shots/skinnable-fader.png`.
+
+Both inherit all interaction from the vector control and fall back to `base.Render` when `Skin` is null
+(so back-compat is exact). Sample assets are baked from the vector look by skipped regenerator tests
+(`KnobFilmstripBaker`, `FaderSkinBaker`); swapping in photographed/3D PNGs is the only step to full realism.
+
+## Follow-ups (not yet built)
+
+- Horizontal `SkinnableFader` (crossfader) — rotate the same track+thumb or ship a horizontal asset set.
+- Let a `.ctrlskin` reference filmstrip/track PNGs (not just a palette), so the picker can choose the
+  *photographic* `SkinnableKnob`/`SkinnableFader` per control — uniting the parametric + filmstrip paths.
+- Wire the chosen skin into `DeckView`/`MixerView`/`MacroEncodersView` (today they use the styled vector
+  controls, which the parametric skin already retints live).
+- **Authoring:** a `tools/` filmstrip baker (render any design → strip) + docs, mirroring `docs/29`.

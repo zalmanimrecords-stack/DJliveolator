@@ -9,7 +9,7 @@
         WindowState="FullScreen"
         SystemDecorations="None"
         Title="Liveolator"
-        Background="{DynamicResource Bg}">
+        Background="{DynamicResource AppBackground}">
 
   <Window.Styles>
     <!-- Connection LED: faint when no device, dim when linked-idle, green on live MIDI signal.

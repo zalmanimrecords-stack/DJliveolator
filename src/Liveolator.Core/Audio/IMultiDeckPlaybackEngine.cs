@@ -40,6 +40,10 @@ public interface IMultiDeckPlaybackEngine
     /// <summary>Current playback position as a normalized 0..1 fraction of the track (0 if nothing loaded).</summary>
     double Position(int slot);
 
+    /// <summary>The loaded track's length in seconds, or 0 when nothing is loaded. Lets read-ahead
+    /// logic (auto-mix placement, doc 11) reason in real time without a native reference.</summary>
+    double LengthSeconds(int slot);
+
     /// <summary>
     /// Move the playhead. When <paramref name="relative"/> is false, <paramref name="position"/> is an
     /// absolute 0..1 fraction; when true it is a signed delta added to the current position. The engine

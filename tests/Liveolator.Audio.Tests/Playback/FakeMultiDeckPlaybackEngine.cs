@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
@@ -6,7 +6,7 @@ using Liveolator.Core.Audio.Sync;
 namespace Liveolator.Audio.Tests.Playback;
 
 /// <summary>
-/// In-memory <see cref="IMultiDeckPlaybackEngine"/> for testing the playlist→audio binding with no
+/// In-memory <see cref="IMultiDeckPlaybackEngine"/> for testing the playlistâ†’audio binding with no
 /// native BASS: records the load/play/stop sequence per slot and can be told to throw on load to
 /// exercise the tolerant degrade path.
 /// </summary>
@@ -67,6 +67,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
 
     // --- Unused transport surface for these tests (the binding only loads/plays/stops). ---
     public double Position(int slot) => 0;
+    public double LengthSeconds(int slot) => 0;
     public void Seek(int slot, double position, bool relative) { }
     public void Jog(int slot, double deltaSeconds) { }
     public double PitchPosition(int slot) => 0.5;

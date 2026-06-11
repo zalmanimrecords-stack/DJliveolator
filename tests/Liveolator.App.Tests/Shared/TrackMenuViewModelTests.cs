@@ -28,6 +28,7 @@ public sealed class TrackMenuViewModelTests
                 ? new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)
                 : ActionFeedbackState.Unavailable;
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }
 
     private sealed class FakePlaylistStore : IPlaylistStore

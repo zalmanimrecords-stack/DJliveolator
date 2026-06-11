@@ -25,6 +25,8 @@ public sealed class FakeDispatcher : IPerformanceActionDispatcher
 
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
+    public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
+
     public void RaiseFeedback(PerformanceActionKind kind, int slot, ActionFeedbackState state)
         => FeedbackChanged?.Invoke(this, new ActionFeedbackChanged(kind, slot, state));
 }

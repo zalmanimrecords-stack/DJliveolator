@@ -44,8 +44,9 @@ public enum PerformanceActionKind
     DeckPitch, DeckBpm, DeckSyncOnce, DeckQuantizeToggle,
     // Mixer (doc 11)
     MixerCrossfade, MixerChannelGain, MixerEqBand, MixerFilter, MixerCueToggle,
-    // Auto-mix (doc 11) — hands-free assist
-    AutoMixToggle, AutoMixSkipToNext,
+    // Auto-mix (doc 11) — hands-free assist (built 2026-06-11: AutomixToggle engages/aborts,
+    // AutomixSetDuration carries the TIME knob, AutomixSetStyle picks CrossFade/EqMix/FxMix)
+    AutomixToggle, AutomixSetDuration, AutomixSetStyle,
     // Playlist
     PlaylistInsertTrackNext, PlaylistMoveTrack, PlaylistRemoveFutureTrack,
     PlaylistSkipOnNextBar,
@@ -58,8 +59,15 @@ public sealed record PerformanceAction(
     ActionInputMode InputMode = ActionInputMode.Momentary,
     double Value = 0,            // absolute 0..1, or relative delta
     int Slot = 0,                // scene/bank/overlay/track index where relevant
-    string? Argument = null);    // macro name, etc.
+    string? Argument = null,     // macro name, etc.
+    string? Target = null,       // stable extension-instance id (e.g. one VST in a rack)
+    string? Origin = null);      // emitting-source tag ("automix"); null = human gesture
 ```
+
+The dispatcher also raises an observation event, `ActionDispatched`, for every dispatched
+action (before routing). It exists for one purpose: automation (auto-mix) watches live input
+and **yields to any human gesture** on a parameter it is driving, filtering its own actions
+out via `Origin`. Observers can never veto or re-route an action.
 
 Design requirements (from the plan):
 

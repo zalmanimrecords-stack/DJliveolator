@@ -21,6 +21,12 @@ public sealed class LearningPerformanceActionDispatcher : IPerformanceActionDisp
         remove => _inner.FeedbackChanged -= value;
     }
 
+    public event EventHandler<PerformanceAction>? ActionDispatched
+    {
+        add => _inner.ActionDispatched += value;
+        remove => _inner.ActionDispatched -= value;
+    }
+
     public void Dispatch(PerformanceAction action)
     {
         if (!_learn.TryCaptureUiAction(action))

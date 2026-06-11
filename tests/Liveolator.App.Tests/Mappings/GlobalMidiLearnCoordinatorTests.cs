@@ -144,6 +144,7 @@ public sealed class GlobalMidiLearnCoordinatorTests
             add { }
             remove { }
         }
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
         public void Dispatch(PerformanceAction action) => Actions.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
             => ActionFeedbackState.Unavailable;

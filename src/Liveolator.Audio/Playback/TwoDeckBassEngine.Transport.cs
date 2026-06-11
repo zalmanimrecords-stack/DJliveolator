@@ -95,6 +95,15 @@ public sealed partial class TwoDeckBassEngine
             return _slots[slot].Deck is { } deck ? _backend.GetDeckPositionFraction(deck.Handle) : 0.0;
     }
 
+    public double LengthSeconds(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+            return _slots[slot].Deck is { } deck
+                ? Math.Max(0.0, _backend.GetDeckLengthSeconds(deck.Handle))
+                : 0.0;
+    }
+
     public void Seek(int slot, double position, bool relative)
     {
         ValidateSlot(slot);

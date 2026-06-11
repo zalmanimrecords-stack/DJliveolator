@@ -306,6 +306,49 @@ the next increment.
   samples, scaled by the cue-leg gain, pushed into the cue device). So enabling Cue routes a deck into the
   headphones independently of the crossfader/master. The per-deck cue-send routing is native (manual-verify
   on the CMD STUDIO 2A); the gain math is unit-tested.
+
+### ✅ Auto-mix — one-button beat-locked transitions — `Liveolator.Core/Automix/` (doc 11, 2026-06-11)
+
+The hands-free deck-to-deck transition engine, riding the ONE shared beat clock (no second timer):
+`AutomixController` is ticked by `MasterClockBridge` on the same 10 ms `MasterClockPump` cadence that
+drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
+(`EngineAutomixDeckReader` over the engine + `MixerActionHandler`), and writes ONLY
+`PerformanceAction`s stamped `Origin: "automix"`.
+
+| Built | File |
+|-------|------|
+| State machine (Idle→Arming→Syncing→Transitioning; abort = silent freeze) | `AutomixController` (Core) |
+| Action kinds + handler (`AutomixToggle`/`AutomixSetDuration`/`AutomixSetStyle`) | `AutomixActionHandler` (Core) |
+| Go/no-go gates (typed refusals; degrade, never guess) | `AutomixPreflight`, `AutomixRefusal`, `AutomixPlan` (Core) |
+| Read-ahead placement v1 (mix-in = first beat; duration auto-shortens to fit) | `AutomixPlacement` (Core) |
+| Style profiles as pure curves over progress 0..1 | `CrossFadeProfile`, `EqMixProfile` (bass swap), `FxMixProfile` (filter sweep) (Core) |
+| TIME knob detents (2/4/8/16/32/64 bars, default 16; all even so the midpoint swap is a downbeat) | `AutomixDurationKnob` (Core) |
+| Bar-phase alignment (beat lock can be a beat off within the bar — fatal for a bass swap) | `PhaseAlignmentCalculator.BarPhaseError`/`BarPhaseNudgeSeconds` (Core) |
+| Pump-tick seam | `IMasterClockTickListener` + `MasterClockBridge(listener:)` (Core) |
+| Mixer UI: AUTOMIX button + TIME knob + CROSS/EQ/FX keys | `MixerView`/`MixerViewModel` (App) |
+
+- **"No room for error" gating:** the audible blend begins only on a downbeat after the incoming deck
+  REPORTS `SyncLockState.Locked` for consecutive ticks; a pairing that cannot lock times out (4 bars)
+  and aborts before anything was audible. Preflight refuses on: nothing playing, incoming empty,
+  unknown BPM, folded tempo gap > ±8 % (no keylock yet), outgoing track too near its end (duration
+  auto-shortens first), incoming track too short. A missing first-beat anchor degrades EQ/FX MIX to
+  the grid-free CROSS FADE — never a guessed bass-swap point.
+- **Performer takeover:** `PerformanceAction` gained an optional `Origin` tag and the dispatcher an
+  `ActionDispatched` observation event; any human gesture on the mixer or the involved decks freezes
+  the automation instantly (no snap-back, no re-grab; the incoming deck stays sync-locked — the
+  safest hand-over). Completion: crossfader lands on the incoming side, the outgoing deck is paused
+  (position kept), SYNC is released (matched rate retained), and the outgoing channel strip is
+  restored to the performer's pre-transition values.
+- The engine seam gained `LengthSeconds(slot)` (read-ahead needs real time remaining).
+- **Tests:** Core `Automix/*` (controller state machine with fake clock/reader/dispatcher, profiles'
+  golden values + "two basses never together" property, preflight, placement, knob detents),
+  bar-phase tests in `PhaseAlignmentCalculatorTests`, dispatcher observation tests, App
+  `MixerViewModelTests` (emit/feedback/disabled-when-headless).
+- **Deferred:** hot-cue-1 / silence-`IntroStart` as mix-in priorities (need cue positions readable
+  through the deck seam); auto-trigger whole-playlist mode (doc 11 Mixxx Auto-DJ model); echo-out FX
+  when a real FX engine lands; energy/phrase outro detection (doc 16 v2; changes the analyzer
+  version). Native runtime behaviour (audible blend on real BASS decks) is a MANUAL checklist item.
+
 ### ✅ Two-deck DJ engine + master mix → clock — `Liveolator.Audio/Playback/` (doc 11, increment 2)
 
 The two decks now feed one master mix, the mixer's gain/EQ/filter route to real per-deck channels, and

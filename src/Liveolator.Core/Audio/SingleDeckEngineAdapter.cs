@@ -51,6 +51,8 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
     // DeckActionHandler runs one code path; the two-deck BASS engine is the path that implements them.
     public double Position(int slot) { EnsureSlot(slot); return 0; }
 
+    public double LengthSeconds(int slot) { EnsureSlot(slot); return 0; }
+
     public void Seek(int slot, double position, bool relative) => EnsureSlot(slot);
 
     public void Jog(int slot, double deltaSeconds) => EnsureSlot(slot);

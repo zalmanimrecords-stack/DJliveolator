@@ -41,6 +41,9 @@
     <Color x:Key="KickColor">#27C56A</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
+    <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage
+         (e.g. Analog chrome+wood) makes UiThemeApplier replace this with an ImageBrush at runtime. -->
+    <SolidColorBrush x:Key="AppBackground" Color="{DynamicResource BgColor}" />
     <SolidColorBrush x:Key="S1" Color="{DynamicResource S1Color}" />
     <SolidColorBrush x:Key="S2" Color="{DynamicResource S2Color}" />
     <SolidColorBrush x:Key="S3" Color="{DynamicResource S3Color}" />

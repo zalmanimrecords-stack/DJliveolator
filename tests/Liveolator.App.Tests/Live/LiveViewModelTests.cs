@@ -29,6 +29,7 @@ public sealed class LiveViewModelTests
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0) => ActionFeedbackState.Unavailable;
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }
 
     private sealed class FakeLiveBeatTimer : ILiveBeatTimer

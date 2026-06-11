@@ -21,6 +21,7 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
+using Liveolator.Core.Automix;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
@@ -324,6 +325,7 @@ public static class ServiceConfig
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
         MasterClockPump? syncPump = null;
+        AutomixController? automixController = null;
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
@@ -331,8 +333,16 @@ public static class ServiceConfig
             // them lock to the sync-master deck when one is engaged (else the audio-mix base). The bridge
             // pump drives the deck clock and flips the switch independently of UI responsiveness.
             services.AddSingleton<IBeatClock>(sharedVisualClock);
+            // Auto-mix (doc 11) rides the SAME pump tick that drives sync + the shared clock — one beat
+            // mechanism for the whole application. It reads decks/mixer through the reader seam and
+            // writes only PerformanceActions (attached to the dispatcher below, once it exists).
+            automixController = new AutomixController(
+                sharedVisualClock,
+                new EngineAutomixDeckReader(deckEngine!, mixerHandler),
+                loggerFactory: loggerFactory);
+            services.AddSingleton(automixController);
             var syncBridge = new MasterClockBridge(
-                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
+                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock, automixController);
             syncPump = new MasterClockPump(syncBridge, hostClock);
             services.AddSingleton(syncPump);
         }
@@ -350,13 +360,21 @@ public static class ServiceConfig
             audioEffectHandler,
         };
         if (realtimeUp)
+        {
             handlers.Add(new DeckActionHandler(deckEngine!));
+            var automixHandler = new AutomixActionHandler(automixController!, loggerFactory);
+            services.AddSingleton(automixHandler);
+            handlers.Add(automixHandler);
+        }
 
         var dispatcher = new PerformanceActionDispatcher(
             handlers,
             loggerFactory.CreateLogger<PerformanceActionDispatcher>(),
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton(dispatcher);
+
+        // The auto-mix engine emits through (and observes performer input on) the one dispatcher.
+        automixController?.Attach(dispatcher);
 
         // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
         // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the

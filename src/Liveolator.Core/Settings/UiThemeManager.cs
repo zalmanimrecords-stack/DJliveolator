@@ -10,6 +10,18 @@ public sealed class UiThemeManager : IUiThemeManager
         "DimColor", "FaintColor", "AccentColor", "AccentLightColor", "AccentDarkColor",
         "AccentWellColor", "AccentInkColor", "RedColor", "GreenColor", "AmberColor",
         "VioletColor", "MidiActiveColor", "WaveformColor", "KickColor",
+        // Optional per-control colours (doc 30): let a theme style the knobs/faders directly (e.g. a
+        // vintage cream cap + amber arc) independently of the surface/text tokens. Override the control
+        // brush resources the Knob/Fader styles bind to. An active control skin still wins over these.
+        "KnobArcColor", "KnobTrackColor", "KnobCapColor", "KnobPointerColor",
+        "FaderFillColor", "FaderTrackColor", "FaderThumbColor",
+    };
+
+    // Image tokens carry an asset reference (avares:// or file path), not a colour — e.g. a window
+    // background texture (doc 30). Validated only for shape; the App resolves it to an ImageBrush.
+    private static readonly IReadOnlySet<string> ImageTokens = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "BackgroundImage",
     };
 
     private static readonly IReadOnlySet<string> NumericTokens = new HashSet<string>(StringComparer.Ordinal)
@@ -54,6 +66,11 @@ public sealed class UiThemeManager : IUiThemeManager
             {
                 if (string.IsNullOrWhiteSpace(value) || value.Length > 200)
                     errors.Add($"Token '{key}' contains an invalid font family.");
+            }
+            else if (ImageTokens.Contains(key))
+            {
+                if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl))
+                    errors.Add($"Token '{key}' must be a non-empty asset reference (avares:// or a file path).");
             }
             else
             {

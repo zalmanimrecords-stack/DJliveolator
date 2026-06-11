@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
@@ -144,6 +144,7 @@ public class DeckActionHandlerTests
         public void Stop(int slot) => Stopped.Add(slot);
 
         public double Position(int slot) => _position[slot];
+        public double LengthSeconds(int slot) => 0;
         public void Seek(int slot, double position, bool relative)
         {
             Seeks.Add((slot, position, relative));
@@ -192,7 +193,7 @@ public class DeckActionHandlerTests
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
 
-        // A synced deck reports Active and makes the other deck the master — enough for the handler's
+        // A synced deck reports Active and makes the other deck the master â€” enough for the handler's
         // feedback translation; the real lock-state machine lives in the engine.
         public int? SyncMaster
         {
@@ -653,7 +654,7 @@ public class DeckActionHandlerTests
     public void DeckSetFirstBeat_ThreadsTheAnchorToTheEngine()
     {
         // The keystone for phase-sync (doc 22 A1): the analyzed first-beat (downbeat) anchor reaches the
-        // engine through its own action, so Quantize aligns beats — not just tempo — instead of snapping
+        // engine through its own action, so Quantize aligns beats â€” not just tempo â€” instead of snapping
         // to a 0 anchor.
         var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);

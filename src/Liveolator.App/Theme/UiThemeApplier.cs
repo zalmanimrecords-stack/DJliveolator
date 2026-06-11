@@ -1,5 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Liveolator.Core.Settings;
 
 namespace Liveolator.App.Theme;
@@ -27,6 +30,14 @@ public static class UiThemeApplier
             ["MidiActiveColor"] = "MidiActive",
             ["WaveformColor"] = "Waveform",
             ["KickColor"] = "Kick",
+            // Per-control colours (doc 30): override the brush resources the Knob/Fader styles bind to.
+            ["KnobArcColor"] = "KnobArc",
+            ["KnobTrackColor"] = "KnobTrack",
+            ["KnobCapColor"] = "KnobCap",
+            ["KnobPointerColor"] = "KnobPointer",
+            ["FaderFillColor"] = "FaderFill",
+            ["FaderTrackColor"] = "FaderTrack",
+            ["FaderThumbColor"] = "FaderThumb",
         };
 
     public static void Apply(Application application, UiThemeDefinition theme)
@@ -60,6 +71,44 @@ public static class UiThemeApplier
         }
 
         ApplyFluentAccent(application, theme.Tokens);
+        ApplyBackground(application, theme.Tokens);
+    }
+
+    // The app (main-window) background: a theme may replace the solid Bg with a texture image (doc 30 —
+    // e.g. the Analog chrome+wood look). A theme without a BackgroundImage resets AppBackground to the
+    // solid Bg just applied, so switching back to a flat theme clears any previous image.
+    private static void ApplyBackground(Application application, IReadOnlyDictionary<string, string> tokens)
+    {
+        if (tokens.TryGetValue("BackgroundImage", out string? reference)
+            && TryLoadImageBrush(reference, out IBrush? image))
+        {
+            application.Resources["AppBackground"] = image;
+            return;
+        }
+
+        if (application.TryGetResource("Bg", null, out object? solid) && solid is IBrush brush)
+            application.Resources["AppBackground"] = brush;
+    }
+
+    private static bool TryLoadImageBrush(string reference, out IBrush? brush)
+    {
+        brush = null;
+        try
+        {
+            var uri = new Uri(reference, UriKind.Absolute);
+            // Built-in/extension textures ship as avares:// resources; a user file path is opened directly.
+            using Stream stream = uri.IsAbsoluteUri && uri.Scheme == "file"
+                ? File.OpenRead(uri.LocalPath)
+                : AssetLoader.Open(uri);
+            brush = new ImageBrush(new Bitmap(stream)) { Stretch = Stretch.UniformToFill };
+            return true;
+        }
+        catch (Exception ex) when (ex is UriFormatException or IOException or FileNotFoundException)
+        {
+            // A missing/unreadable texture falls back to the solid background rather than crashing the theme.
+            System.Diagnostics.Trace.TraceWarning($"Theme background image '{reference}' could not be loaded ({ex.Message}).");
+            return false;
+        }
     }
 
     private static void ApplyFluentAccent(

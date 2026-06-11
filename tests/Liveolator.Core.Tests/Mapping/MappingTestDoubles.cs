@@ -12,6 +12,8 @@ internal sealed class RecordingDispatcher : IPerformanceActionDispatcher
 
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
+    public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
+
     public void Dispatch(PerformanceAction action)
     {
         if (ThrowOnDispatch)
