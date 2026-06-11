@@ -17,6 +17,21 @@ public class JsonLiveSetStoreTests
     }
 
     [Fact]
+    public async Task TwoStores_WithDistinctFileNames_PersistIndependentSets()
+    {
+        using var dir = new TempDirectory();
+        var deckA = new JsonLiveSetStore(dir.Path);
+        var deckB = new JsonLiveSetStore(dir.Path, fileName: "deck-b-set.json");
+
+        await deckA.SaveAsync(new[] { "/m/a.wav" });
+        await deckB.SaveAsync(new[] { "/m/b.wav" });
+
+        Assert.NotEqual(deckA.Path, deckB.Path);
+        Assert.Equal(new[] { "/m/a.wav" }, await deckA.LoadAsync());
+        Assert.Equal(new[] { "/m/b.wav" }, await deckB.LoadAsync());
+    }
+
+    [Fact]
     public async Task Load_Missing_ReturnsNull()
     {
         using var dir = new TempDirectory();

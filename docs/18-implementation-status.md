@@ -804,6 +804,24 @@ subscribes to `NowChanged` and drives the underlying player.
 - **Deferred:** the **native `IDeckPreloader`** (pre-buffering the upcoming BASS stream, verified
   manually) — the pure preloader sequencing + seam are ready for it; `NextTrackPreloader` is wired
   only once an `IDeckPreloader` is registered. Note `Played` history is modeled (enum) but not yet surfaced.
+- **✅ Per-deck queues + load-or-queue policy (2026-06-11):** deck B now has its **own**
+  `LivePlaylist` + `PlaylistAudioPlayer` (slot 1) and a persisted set file (`live/deck-b-set.json`,
+  `JsonLiveSetStore` grew a `fileName` parameter). `PlaylistActionHandler` takes a list of queues and
+  routes append/insert/remove/skip by the action's `Slot` (Move keeps `Slot` = target index, deck A
+  only); new kind `PlaylistAppendTrack`. The shared Core policy **`DeckTrackLoader`** is the single
+  load-a-track path for every UI surface (Libraries Play/Load buttons, track context menus): it (1)
+  verifies the file is reachable BEFORE dispatching — a missing file / offline drive (e.g. an
+  unavailable mapped network drive, the cause of the silent BASS `FileOpen` failures) now reports a
+  clear status and dispatches nothing; (2) when the target deck **is playing**, it appends to that
+  deck's queue (`PlaylistAppendTrack`) instead of cutting the floor's audio — the queued track plays
+  when the current one ends (via `DeckEnded` auto-advance). The DJ tab shows a "DECK B · QUEUE"
+  section (removable future entries, `Slot = 1`). Each deck header now also shows a live
+  **elapsed / remaining time readout** (`DeckViewModel.ElapsedText/RemainingText`, derived from the
+  playhead × decoded duration; placeholders until the duration is known). Tested: Core
+  `DeckTrackLoaderTests` (5) + `PlaylistActionHandlerTests` (slot routing), App
+  `TrackContextActionsTests` / `LibrariesViewModelLiveTests` (queue + missing-file policy),
+  `DjViewModelTests` (deck B queue), `DeckViewModelTests` (time readout), Media
+  `JsonLiveSetStoreTests` (independent set files).
 
 ### ✅ Autopilot rule engine — `Liveolator.Core/Autopilot/` (doc 10)
 
