@@ -109,8 +109,8 @@
                 ToolTip.Tip="Nudge the track right (fine cueing)" />
       </UniformGrid>
 
-      <!-- EQ / filter / pitch knobs -->
-      <UniformGrid Columns="5">
+      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
+      <UniformGrid Columns="4">
         <StackPanel Spacing="6" HorizontalAlignment="Center">
           <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
                          Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
@@ -146,15 +146,6 @@
             <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
           </Grid>
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
-        </StackPanel>
-        <StackPanel Spacing="6" HorizontalAlignment="Center">
-          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
-                         Value="{Binding Pitch.Value}" IsEnabled="{Binding Pitch.IsEnabled}" />
-          <Grid ColumnDefinitions="*,*" Width="62">
-            <TextBlock Classes="tick" Text="−100%" />
-            <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+100%" />
-          </Grid>
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="PITCH" />
         </StackPanel>
       </UniformGrid>
     </StackPanel>

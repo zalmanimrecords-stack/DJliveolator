@@ -7,11 +7,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Liveolator.Core.Automix;
 
 /// <summary>
-/// The auto-mix engine (doc 11 Auto-Mix): a one-button, beat-locked deck-to-deck transition driven
-/// entirely off the ONE shared beat clock. Ticked by the <see cref="MasterClockBridge"/> on the same
-/// 10 ms pump that runs sync correction; reads decks/mixer through <see cref="IAutomixDeckReader"/>;
-/// writes ONLY <see cref="PerformanceAction"/>s (stamped <see cref="OriginTag"/>) — automation of
-/// the same controls a human uses, through the same dispatcher.
+/// The auto-mix engine (doc 11 Auto-Mix): a one-button, beat-locked deck-to-deck transition. Ticked
+/// by the <see cref="MasterClockBridge"/> on the same 10 ms pump that runs sync correction, and
+/// paced by the OUTGOING (sync-master) deck's own beat grid — the source the shared clock itself
+/// republishes, read at the source so a clock source-switch can never jump the blend. Reads
+/// decks/mixer through <see cref="IAutomixDeckReader"/>; writes ONLY <see cref="PerformanceAction"/>s
+/// (stamped <see cref="OriginTag"/>) — automation of the same controls a human uses, through the
+/// same dispatcher.
 /// </summary>
 /// <remarks>
 /// Engage is IMMEDIATE (owner direction): the incoming deck is seeked to its mix-in point, SYNC is
@@ -57,7 +59,6 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         PerformanceActionKind.DeckSetLoop,
     };
 
-    private readonly IBeatClock _clock;
     private readonly IAutomixDeckReader _decks;
     private readonly AutomixSettings _settings;
     private readonly ILogger _logger;
@@ -76,10 +77,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     private AutomixStyle _style = AutomixStyle.CrossFade;
     private AutomixRefusal _lastRefusal = AutomixRefusal.None;
     private double _startBeat;
-    private bool _anchored;
-    private double _startFromPositionSeconds;
-    private double _leaderBpm;
-    private bool _clockFallbackLogged;
+    private double _maxElapsedBeats;
     private double _lastProgress;
     private int _lockedTicks;
     private bool _barAlignChecked;
@@ -89,12 +87,10 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     private AutomixFrame? _lastFrame;
 
     public AutomixController(
-        IBeatClock clock,
         IAutomixDeckReader decks,
         AutomixSettings? settings = null,
         ILoggerFactory? loggerFactory = null)
     {
-        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _decks = decks ?? throw new ArgumentNullException(nameof(decks));
         _settings = settings ?? AutomixSettings.Default;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AutomixController>();
@@ -263,18 +259,25 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
 
         _plan = plan;
         _profile = ProfileFor(plan.EffectiveStyle);
-        double fromSide = fromSlot == 0 ? 0.0 : 1.0;
-        _shape = new AutomixTransitionShape(fromSide, 1.0 - fromSide, plan.PlannedBars * _settings.BeatsPerBar);
+        // The crossfader ramps from WHEREVER it is now to the incoming extreme — engaging must not
+        // yank the fader (rude visually, and audible when both decks are up). The incoming side is
+        // always an extreme so the blend completes fully.
+        double toSide = toSlot == 0 ? 0.0 : 1.0;
+        _shape = new AutomixTransitionShape(
+            _decks.Mixer.Crossfader, toSide, plan.PlannedBars * _settings.BeatsPerBar);
         _fromRestore = _decks.Mixer.Channel(fromSlot);
         _lastFrame = null;
         _lockedTicks = 0;
         _barAlignChecked = false;
-        _anchored = false;
-        _clockFallbackLogged = false;
         _ticksInPhase = 0;
         _lastProgress = 0.0;
-        _startFromPositionSeconds = from.PositionSeconds;
-        _leaderBpm = from.EffectiveBpm > 0.0 ? from.EffectiveBpm : from.BaseBpm;
+        _maxElapsedBeats = 0.0;
+        // The blend is paced by the OUTGOING deck's own playhead (it is the sync master — the very
+        // grid the shared clock republishes). Reading the grid at its source is immune to the
+        // shared clock switching sources when the sync engage lands (a BeatCount jump there slammed
+        // the fader across in one tick — the bug this replaces). Start on the leader's next beat
+        // boundary so style midpoints stay beat-quantized.
+        _startBeat = Math.Ceiling(LeaderBeatsLocked(from));
 
         // Everything happens NOW (owner direction): pre-set the style's entry values (crossfader on
         // the outgoing extreme; EQ MIX kills the incoming low band), seek the incoming deck to its
@@ -299,31 +302,21 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
 
     // ----- the transition tick -----
 
-    // Beats elapsed since the transition started, read from the ONE shared clock (anchored on the
-    // first tick, quantized to a beat boundary). If the shared clock has no tempo yet (the sync
-    // engage has not propagated), fall back to the outgoing deck's own playhead advance — the same
-    // grid the clock derives from, so progress starts moving immediately either way.
+    // The outgoing (master) deck's continuous beat position on its own analyzed grid. Media-time
+    // seconds × base BPM measures audible beats regardless of the pitch fader (rate scales both).
+    private static double LeaderBeatsLocked(AutomixDeckSnapshot from)
+        => from.BaseBpm > 0.0
+            ? (from.PositionSeconds - from.FirstBeatSeconds) * (from.BaseBpm / 60.0)
+            : 0.0;
+
+    // Beats elapsed since the transition's quantized start, latched monotonic so a loop wrap or a
+    // jitter in the position read can never run the blend backwards.
     private double ElapsedBeatsLocked()
     {
-        BeatClockState state = _clock.Current;
-        if (state.Bpm > 0.0)
-        {
-            double beatNow = state.BeatCount + Math.Clamp(state.BeatPhase, 0.0, 1.0);
-            if (!_anchored)
-            {
-                _startBeat = Math.Floor(beatNow);
-                _anchored = true;
-            }
-            return Math.Max(0.0, beatNow - _startBeat);
-        }
-
-        if (!_clockFallbackLogged)
-        {
-            _logger.LogInformation("Auto-mix: shared clock idle; pacing the blend from the outgoing playhead.");
-            _clockFallbackLogged = true;
-        }
         AutomixDeckSnapshot from = _decks.ReadDeck(_plan!.FromSlot);
-        return Math.Max(0.0, (from.PositionSeconds - _startFromPositionSeconds) * (_leaderBpm / 60.0));
+        double elapsed = LeaderBeatsLocked(from) - _startBeat;
+        _maxElapsedBeats = Math.Max(_maxElapsedBeats, Math.Max(0.0, elapsed));
+        return _maxElapsedBeats;
     }
 
     private bool TickTransitioningLocked(double elapsedBeats, List<PerformanceAction> actions)
@@ -406,11 +399,10 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         _lastFrame = null;
         _lockedTicks = 0;
         _barAlignChecked = false;
-        _anchored = false;
-        _clockFallbackLogged = false;
         _startedIncoming = false;
         _ticksInPhase = 0;
         _lastProgress = 0.0;
+        _maxElapsedBeats = 0.0;
     }
 
     // ----- alignment / dispatch plumbing -----

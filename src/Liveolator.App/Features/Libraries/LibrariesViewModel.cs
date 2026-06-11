@@ -29,6 +29,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly IBeatClock? _beatClock;
     private readonly IMusicCatalogStore? _store;
     private readonly Shared.TrackContextActions? _contextActions;
+    private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private string? _selectedArtist;
@@ -65,13 +66,18 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IBeatClock? beatClock = null,
         IMusicCatalogStore? store = null,
         Playlists.PlaylistBuilderViewModel? playlistBuilder = null,
-        Shared.TrackContextActions? contextActions = null)
+        Shared.TrackContextActions? contextActions = null,
+        Core.Playlist.DeckTrackLoader? deckLoader = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _store = store;
         _contextActions = contextActions;
+        // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
+        // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
+        _deckLoader = deckLoader
+            ?? (dispatcher is null ? null : new Core.Playlist.DeckTrackLoader(dispatcher, System.IO.File.Exists));
         PlaylistBuilder = playlistBuilder;
         if (_contextActions is not null)
         {
@@ -688,39 +694,39 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     }
 
     // Load + play the selected track via the action layer (doc 04) — the UI never touches the engine.
+    // Same load-or-queue policy as the deck loads: a playing deck A queues the track instead of cutting
+    // it off, and an unreachable file reports why instead of failing deep in the engine (global #26).
     private void PlaySelected()
     {
-        if (_dispatcher is null || _selectedTrack is null)
+        if (_dispatcher is null || _deckLoader is null || _selectedTrack is null)
             return;
 
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack,
-            Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            Argument: _selectedTrack.Track.File.Path));
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetFirstBeat,
-            Value: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0)); // downbeat anchor → phase-match (doc 22 A1)
-        _dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
+        Core.Playlist.DeckLoadResult result = _deckLoader.Load(
+            slot: 0,
+            _selectedTrack.Track.File.Path,
+            bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
+            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0); // downbeat anchor → phase-match (doc 22 A1)
+        if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded)
+            _dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
+        LoadStatus = result.Message;
     }
 
     private void Stop()
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.TransportStop));
 
     // Stage the selected track on a deck slot (A = 0, B = 1) via the action layer — no auto-play
-    // (load ≠ play; the performer beat-matches, then brings the deck in).
+    // (load ≠ play; the performer beat-matches, then brings the deck in). A playing deck queues the
+    // track instead; an unreachable file dispatches nothing and reports why (global #26).
     private void LoadToDeck(int slot)
     {
-        if (_dispatcher is null || _selectedTrack is null)
+        if (_deckLoader is null || _selectedTrack is null)
             return;
 
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Slot: slot,
-            Value: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            Argument: _selectedTrack.Track.File.Path));
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetFirstBeat, Slot: slot,
-            Value: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0)); // downbeat anchor → phase-match (doc 22 A1)
-        LoadStatus = $"Loaded \"{_selectedTrack.Title}\" → Deck {(slot == 0 ? "A" : "B")}";
+        LoadStatus = _deckLoader.Load(
+            slot,
+            _selectedTrack.Track.File.Path,
+            bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
+            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0).Message; // doc 22 A1
     }
 
     // A deck slot is loadable only if the engine backs it — discovered via the feedback seam

@@ -458,6 +458,74 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public async Task Load_PopulatesAllThreeBandPeaks_FromTheOverview()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithBands(durationSeconds: 4);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+
+        Task highSet = WaitForProperty(vm, nameof(DeckViewModel.HighPeaks));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await highSet;
+
+        // All three bands feed the layered strip (kick in front, mid body, high caps).
+        Assert.NotNull(vm.KickPeaks);
+        Assert.NotNull(vm.MidPeaks);
+        Assert.NotNull(vm.HighPeaks);
+    }
+
+    [Fact]
+    public async Task Load_ClearsPreviousBandPeaks_WhileTheNewOverviewDecodes()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithBands(durationSeconds: 4);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+
+        Task highSet = WaitForProperty(vm, nameof(DeckViewModel.HighPeaks));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\first.flac"));
+        await highSet;
+
+        // A second load must show the empty state (no stale bands from the previous track) until the
+        // new overview lands — same contract the broadband waveform already keeps. The null transition
+        // of each band raises PropertyChanged before the new overview repopulates it.
+        bool clearedDuringLoad = false;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DeckViewModel.HighPeaks) && vm.HighPeaks is null &&
+                vm.KickPeaks is null && vm.MidPeaks is null)
+            {
+                clearedDuringLoad = true;
+            }
+        };
+        // Wait for the REPOPULATED value — the load first raises HighPeaks with null (the clear this
+        // test is about), so a wait on the first change would complete too early.
+        Task reloaded = WaitForHighPeaksValue(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\second.flac"));
+        await reloaded;
+
+        Assert.True(clearedDuringLoad, "band peaks should be nulled at load start (empty state, no stale strip)");
+        Assert.NotNull(vm.HighPeaks);
+    }
+
+    private static Task WaitForHighPeaksValue(DeckViewModel vm)
+    {
+        var tcs = new TaskCompletionSource();
+        void Handler(object? _, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(DeckViewModel.HighPeaks) && vm.HighPeaks is not null)
+            {
+                vm.PropertyChanged -= Handler;
+                tcs.TrySetResult();
+            }
+        }
+        vm.PropertyChanged += Handler;
+        return tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public void TrackLoad_PopulatesTitleAndMeta_FromResolver()
     {
         var dispatcher = new FakeDispatcher();

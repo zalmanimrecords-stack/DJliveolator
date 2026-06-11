@@ -55,6 +55,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
     private IReadOnlyList<float>? _kickPeaks;
+    private IReadOnlyList<float>? _midPeaks;
+    private IReadOnlyList<float>? _highPeaks;
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
     private double _trackBpm;
@@ -228,12 +230,28 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>The loaded track's low-frequency (kick) band peaks (0..1), aligned 1:1 with
-    /// <see cref="Waveform"/>; null when none is decoded. The strip draws these as a distinct overlay so
-    /// the kick transients are visible for beat-sync alignment.</summary>
+    /// <see cref="Waveform"/>; null when none is decoded. The strip draws these as the FRONT layer,
+    /// bright, so the kick transients are visible for beat-sync alignment.</summary>
     public IReadOnlyList<float>? KickPeaks
     {
         get => _kickPeaks;
         private set => this.RaiseAndSetIfChanged(ref _kickPeaks, value);
+    }
+
+    /// <summary>The mid band peaks (0..1), aligned 1:1 with <see cref="Waveform"/>; null when none is
+    /// decoded. With <see cref="HighPeaks"/> they drive the strip's layered 3-band render (the body).</summary>
+    public IReadOnlyList<float>? MidPeaks
+    {
+        get => _midPeaks;
+        private set => this.RaiseAndSetIfChanged(ref _midPeaks, value);
+    }
+
+    /// <summary>The high band peaks (0..1), aligned 1:1 with <see cref="Waveform"/>; null when none is
+    /// decoded. Drawn as pale caps behind the body.</summary>
+    public IReadOnlyList<float>? HighPeaks
+    {
+        get => _highPeaks;
+        private set => this.RaiseAndSetIfChanged(ref _highPeaks, value);
     }
 
     /// <summary>
@@ -626,6 +644,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Progress = 0;
         Waveform = null;          // empty state while the new overview decodes (no fake waveform)
         KickPeaks = null;
+        MidPeaks = null;
+        HighPeaks = null;
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
@@ -662,6 +682,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             Waveform = overview.IsEmpty ? null : overview.Peaks;
             KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
+            MidPeaks = overview.IsEmpty ? null : overview.MidPeaks;
+            HighPeaks = overview.IsEmpty ? null : overview.HighPeaks;
             // Now the duration is known: build the (first-beat-anchored) grid and size the zoom window in
             // real time (so the follow view shows a consistent ~PlayingZoomSeconds regardless of length).
             _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
@@ -677,6 +699,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         {
             Waveform = null; // belt-and-braces around the await boundary
             KickPeaks = null;
+            MidPeaks = null;
+            HighPeaks = null;
             BeatGrid = Array.Empty<double>();
         }
     }

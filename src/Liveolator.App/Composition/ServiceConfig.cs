@@ -337,7 +337,6 @@ public static class ServiceConfig
             // mechanism for the whole application. It reads decks/mixer through the reader seam and
             // writes only PerformanceActions (attached to the dispatcher below, once it exists).
             automixController = new AutomixController(
-                sharedVisualClock,
                 new EngineAutomixDeckReader(deckEngine!, mixerHandler),
                 loggerFactory: loggerFactory);
             services.AddSingleton(automixController);

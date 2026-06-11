@@ -10,22 +10,25 @@ public sealed record LiveSetSnapshot(int Version, IReadOnlyList<string> TrackPat
 }
 
 /// <summary>
-/// Persists the single live DJ set as one JSON file at <c>&lt;root&gt;/live/current-set.json</c>
-/// (the doc 13 layout). Mirrors <see cref="JsonPlaylistStore"/>: tolerant loads (missing / unreadable /
+/// Persists one live DJ set as one JSON file under <c>&lt;root&gt;/live/</c> (the doc 13 layout) —
+/// <c>current-set.json</c> by default (deck A's set); a second instance with another file name holds
+/// deck B's queue. Mirrors <see cref="JsonPlaylistStore"/>: tolerant loads (missing / unreadable /
 /// incompatible-version → <c>null</c> + warning, never a throw) and atomic temp-then-move saves so an
 /// interrupted write never corrupts the set (global standards #16/#26, #20/#22).
 /// </summary>
 public sealed class JsonLiveSetStore : ILiveSetStore
 {
-    private const string FileName = "current-set.json";
+    private const string DefaultFileName = "current-set.json";
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
     private readonly string _path;
     private readonly Action<string>? _onWarning;
 
-    public JsonLiveSetStore(string? rootDirectory = null, Action<string>? onWarning = null)
+    public JsonLiveSetStore(
+        string? rootDirectory = null, Action<string>? onWarning = null, string fileName = DefaultFileName)
     {
-        _path = System.IO.Path.Combine(rootDirectory ?? JsonCatalogStore.DefaultRoot(), "live", FileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        _path = System.IO.Path.Combine(rootDirectory ?? JsonCatalogStore.DefaultRoot(), "live", fileName);
         _onWarning = onWarning;
     }
 

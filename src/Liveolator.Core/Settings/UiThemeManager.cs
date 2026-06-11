@@ -10,6 +10,7 @@ public sealed class UiThemeManager : IUiThemeManager
         "DimColor", "FaintColor", "AccentColor", "AccentLightColor", "AccentDarkColor",
         "AccentWellColor", "AccentInkColor", "RedColor", "GreenColor", "AmberColor",
         "VioletColor", "MidiActiveColor", "WaveformColor", "KickColor",
+        "WaveMidColor", "WaveHighColor",
         // Optional per-control colours (doc 30): let a theme style the knobs/faders directly (e.g. a
         // vintage cream cap + amber arc) independently of the surface/text tokens. Override the control
         // brush resources the Knob/Fader styles bind to. An active control skin still wins over these.

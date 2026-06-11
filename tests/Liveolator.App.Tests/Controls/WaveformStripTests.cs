@@ -4,8 +4,10 @@ using Xunit;
 namespace Liveolator.App.Tests.Controls;
 
 /// <summary>
-/// Covers the strip's pure click-to-seek math (<see cref="WaveformStrip.FractionFromX"/>); the render
-/// itself is visual and verified via the UI-shots harness, not here.
+/// Covers the strip's pure math — click-to-seek (<see cref="WaveformStrip.FractionFromX"/>), the
+/// peak-hold column sampler (<see cref="WaveformStrip.ColumnPeak"/>) and the hot-kick quantizer
+/// (<see cref="WaveformStrip.HotLevel"/>); the render itself is visual and verified via the UI-shots
+/// harness, not here.
 /// </summary>
 public sealed class WaveformStripTests
 {
@@ -70,5 +72,46 @@ public sealed class WaveformStripTests
     {
         Assert.Equal(50.0, WaveformStrip.MarkerX(0.50, start: 0.45, span: 0.10, width: 100)!.Value, 6);
         Assert.Null(WaveformStrip.MarkerX(0.20, start: 0.45, span: 0.10, width: 100));
+    }
+
+    [Fact]
+    public void ColumnPeak_HoldsTheMaxAcrossEveryBucketInTheColumn()
+    {
+        // 10 buckets squeezed into a 5px strip → each 1px column covers 2 buckets. The kick at index 3
+        // must surface in the column that spans buckets 2..3 — never lost to single-index sampling.
+        var values = new float[10];
+        values[3] = 0.9f;
+
+        float peak = WaveformStrip.ColumnPeak(values, x: 1, step: 1, width: 5, start: 0, span: 1);
+
+        Assert.Equal(0.9f, peak, 3);
+    }
+
+    [Fact]
+    public void ColumnPeak_OutsideTheData_ClampsToTheEdges()
+    {
+        var values = new[] { 0.2f, 0.4f };
+
+        // A column past the end of the window still reads the last bucket instead of indexing out.
+        float peak = WaveformStrip.ColumnPeak(values, x: 99, step: 1, width: 100, start: 0, span: 1);
+
+        Assert.Equal(0.4f, peak, 3);
+    }
+
+    [Fact]
+    public void ColumnPeak_EmptyData_ReturnsZero()
+    {
+        Assert.Equal(0f, WaveformStrip.ColumnPeak(System.Array.Empty<float>(), 1, 1, 100, 0, 1));
+    }
+
+    [Theory]
+    [InlineData(0.5f, 0)]    // a normal kick keeps the plain band colour
+    [InlineData(0.84f, 0)]   // just under the hot threshold
+    [InlineData(0.85f, 1)]   // at the threshold the core starts to heat up
+    [InlineData(0.93f, 2)]
+    [InlineData(1.0f, 3)]    // the hardest kicks burn white-hot
+    public void HotLevel_QuantizesKickStrengthIntoCoreHeat(float kick, int expectedLevel)
+    {
+        Assert.Equal(expectedLevel, WaveformStrip.HotLevel(kick));
     }
 }

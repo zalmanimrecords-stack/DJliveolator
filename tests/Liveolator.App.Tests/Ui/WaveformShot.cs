@@ -11,11 +11,12 @@ using Liveolator.App.Controls;
 namespace Liveolator.App.Tests.Ui;
 
 /// <summary>
-/// Renders the deck <see cref="WaveformStrip"/> with synthetic peaks + a kick pattern and saves a PNG,
-/// so the green-kick-on-yellow-body look can be eyeballed against the design intent (the tabs in
-/// <see cref="UiShots"/> show "NO TRACK", so they can't exercise the waveform colours). It pulls the
-/// real <c>Waveform</c>/<c>WaveformAhead</c>/<c>Kick</c> brush tokens from the booted App, so it also
-/// proves those resources resolve.
+/// Renders the deck <see cref="WaveformStrip"/> with a synthetic 3-band pattern (kick / mid body /
+/// high caps) and saves a PNG, so the layered kick-forward look — bright amber kicks glowing in front
+/// of the steel-blue body — can be eyeballed against the design intent (the tabs in <see cref="UiShots"/>
+/// show "NO TRACK", so they can't exercise the waveform colours). It pulls the real
+/// <c>Waveform</c>/<c>WaveformAhead</c>/<c>Kick</c>/<c>WaveMid</c>/<c>WaveHigh</c> brush tokens from the
+/// booted App, so it also proves those resources resolve.
 /// </summary>
 public class WaveformShot
 {
@@ -26,22 +27,29 @@ public class WaveformShot
         var body = (IBrush)app.FindResource("Waveform")!;
         var ahead = (IBrush)app.FindResource("WaveformAhead")!;
         var kickBrush = (IBrush)app.FindResource("Kick")!;
+        var midBrush = (IBrush)app.FindResource("WaveMid")!;
+        var highBrush = (IBrush)app.FindResource("WaveHigh")!;
         var well = (IBrush)app.FindResource("S2")!;
 
         const int n = 256;
         var peaks = new float[n];
         var kick = new float[n];
+        var mid = new float[n];
+        var high = new float[n];
         for (int i = 0; i < n; i++)
         {
             double t = i / (double)n;
             // A musical-ish body envelope so the strip looks like a real track, not a flat block.
             peaks[i] = (float)(0.30 + 0.50 * Math.Abs(Math.Sin(t * Math.PI * 7)) * (0.6 + 0.4 * Math.Sin(t * Math.PI * 2)));
+            mid[i] = peaks[i] * 0.75f;
+            // Hats: a shimmering high texture, denser on the off-beats.
+            high[i] = (float)(0.25 + 0.45 * Math.Abs(Math.Sin(t * Math.PI * 32)));
         }
-        // A kick on every 16th column (a steady four-on-the-floor) with a short tail, everything else silent —
-        // so only the kicks light up green over the yellow body.
+        // A kick on every 16th column (a steady four-on-the-floor) with a short tail, everything else
+        // silent — only the kicks light up in front. Every 4th kick is a hot one (white-hot core).
         for (int i = 0; i < n; i += 16)
         {
-            kick[i] = 0.95f;
+            kick[i] = i % 64 == 0 ? 1.0f : 0.88f;
             if (i + 1 < n) kick[i + 1] = 0.55f;
         }
 
@@ -49,10 +57,14 @@ public class WaveformShot
         {
             Peaks = peaks,
             KickPeaks = kick,
+            MidPeaks = mid,
+            HighPeaks = high,
             Progress = 0.45,
             BarBrush = ahead,
             PlayedBrush = body,
             KickBrush = kickBrush,
+            MidBrush = midBrush,
+            HighBrush = highBrush,
         };
 
         var window = new Window

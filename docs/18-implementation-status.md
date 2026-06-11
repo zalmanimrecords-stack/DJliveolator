@@ -317,7 +317,7 @@ drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
 
 | Built | File |
 |-------|------|
-| State machine (Idle→Arming→Syncing→Transitioning; abort = silent freeze) | `AutomixController` (Core) |
+| State machine (Idle→Transitioning; engage is IMMEDIATE; abort = silent freeze) | `AutomixController` (Core) |
 | Action kinds + handler (`AutomixToggle`/`AutomixSetDuration`/`AutomixSetStyle`) | `AutomixActionHandler` (Core) |
 | Go/no-go gates (typed refusals; degrade, never guess) | `AutomixPreflight`, `AutomixRefusal`, `AutomixPlan` (Core) |
 | Read-ahead placement v1 (mix-in = first beat; duration auto-shortens to fit) | `AutomixPlacement` (Core) |
@@ -327,12 +327,16 @@ drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
 | Pump-tick seam | `IMasterClockTickListener` + `MasterClockBridge(listener:)` (Core) |
 | Mixer UI: AUTOMIX button + TIME knob + CROSS/EQ/FX keys | `MixerView`/`MixerViewModel` (App) |
 
-- **"No room for error" gating:** the audible blend begins only on a downbeat after the incoming deck
-  REPORTS `SyncLockState.Locked` for consecutive ticks; a pairing that cannot lock times out (4 bars)
-  and aborts before anything was audible. Preflight refuses on: nothing playing, incoming empty,
-  unknown BPM, folded tempo gap > ±8 % (no keylock yet), outgoing track too near its end (duration
-  auto-shortens first), incoming track too short. A missing first-beat anchor degrades EQ/FX MIX to
-  the grid-free CROSS FADE — never a guessed bass-swap point.
+- **Engage is IMMEDIATE (owner direction, 2026-06-11 rev):** pressing AUTOMIX seeks the incoming deck
+  to its mix-in point, engages SYNC (tempo match + phase snap), starts it, and the slow blend begins
+  on the next pump tick — sync convergence happens under the QUIET start of the curve (the incoming
+  deck is barely audible there), not as a multi-bar gate before it. The blend anchor is beat-quantized
+  from the shared clock; if the clock is momentarily idle, progress paces from the outgoing deck's own
+  playhead (the same grid). The confirmed-lock check now gates only the one-shot bar-grid correction
+  (run while progress ≤ 0.25, where a seek is inaudible). Preflight still refuses on: nothing playing,
+  incoming empty, unknown BPM, folded tempo gap > ±8 % (no keylock yet), outgoing track too near its
+  end (duration auto-shortens first), incoming track too short. A missing first-beat anchor degrades
+  EQ/FX MIX to the grid-free CROSS FADE — never a guessed bass-swap point.
 - **Performer takeover:** `PerformanceAction` gained an optional `Origin` tag and the dispatcher an
   `ActionDispatched` observation event; any human gesture on the mixer or the involved decks freezes
   the automation instantly (no snap-back, no re-grab; the incoming deck stays sync-locked — the

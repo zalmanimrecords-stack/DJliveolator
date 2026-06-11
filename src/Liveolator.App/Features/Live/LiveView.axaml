@@ -33,8 +33,10 @@
             <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                      MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
                                       BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
                                       KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
                                       Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
                                       BeatGrid="{Binding DeckA.BeatGrid}"
                                       KickAnchor="{Binding DeckA.KickAnchorFraction}"
@@ -47,8 +49,10 @@
             <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                      MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
                                       BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
                                       KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
                                       Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
                                       BeatGrid="{Binding DeckB.BeatGrid}"
                                       KickAnchor="{Binding DeckB.KickAnchorFraction}"
@@ -58,8 +62,8 @@
         </StackPanel>
       </Border>
 
-      <!-- DECK A · MIXER · DECK B -->
-      <Grid ColumnDefinitions="*,300,*">
+      <!-- DECK A · MIXER · DECK B — MaxWidth caps each deck at ~400px (2×400 + 300 mixer + 2×16 margins) -->
+      <Grid ColumnDefinitions="*,300,*" MaxWidth="1132">
         <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="2" Content="{Binding DeckB}" />

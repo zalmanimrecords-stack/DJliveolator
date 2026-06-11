@@ -13,7 +13,7 @@ public class AutomixActionHandlerTests
 
     public AutomixActionHandlerTests()
     {
-        _controller = new AutomixController(new IdleClock(), new EmptyReader());
+        _controller = new AutomixController(new EmptyReader());
         _controller.Attach(new NullDispatcher());
         _handler = new AutomixActionHandler(_controller);
     }
@@ -78,17 +78,6 @@ public class AutomixActionHandlerTests
 
         Assert.Contains(PerformanceActionKind.AutomixSetDuration, seen);
         Assert.Contains(PerformanceActionKind.AutomixToggle, seen);
-    }
-
-    private sealed class IdleClock : IBeatClock
-    {
-        public BeatClockState Current => BeatClockState.Idle;
-
-        public event EventHandler<BeatClockState>? StateChanged
-        {
-            add { }
-            remove { }
-        }
     }
 
     private sealed class NullDispatcher : IPerformanceActionDispatcher

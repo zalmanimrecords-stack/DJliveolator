@@ -1,7 +1,6 @@
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Automix;
-using Liveolator.Core.Beat;
 using Liveolator.Core.Mixer;
 using Xunit;
 
@@ -9,19 +8,22 @@ namespace Liveolator.Core.Tests.Automix;
 
 public class AutomixControllerTests
 {
-    private readonly FakeBeatClock _clock = new();
+    // Geometry used throughout: deck A (FROM) at 120 BPM, first beat 0.4 s ⇒ beat = 0.5 s. At the
+    // starting position 8.0 s the leader sits at beat 15.2, so the blend's quantized start is beat 16
+    // (position 8.4 s) and elapsed beats e ⇔ position 8.4 + 0.5·e. Duration = 2 bars = 8 beats.
     private readonly FakeAutomixDeckReader _decks = new();
     private readonly FakeDispatcher _dispatcher = new();
     private readonly AutomixController _controller;
 
     public AutomixControllerTests()
     {
-        _controller = new AutomixController(_clock, _decks);
+        _controller = new AutomixController(_decks);
         _controller.Attach(_dispatcher);
 
-        // Deck A playing mid-track on a bar boundary, deck B loaded and parked — the standard hand-over.
+        // Deck A playing mid-track, deck B loaded and parked; crossfader fully on A.
         _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: 8.0));
         _decks.Set(1, Snapshot(isPlaying: false, positionSeconds: 0.0));
+        _decks.Mixer = MixerState.Default.WithCrossfader(0.0);
         _controller.SetDurationKnob(0.0); // 2 bars = 8 beats — keeps the timeline short
     }
 
@@ -38,17 +40,10 @@ public class AutomixControllerTests
             FirstBeatSeconds: firstBeat, PositionSeconds: positionSeconds, LengthSeconds: length,
             SyncState: syncState, SyncLocked: syncLocked);
 
-    private void Tick(double beat, int bar)
+    // One pump tick with the OUTGOING playhead at the given position — the blend's only pacemaker.
+    private void TickAtFromPosition(double positionSeconds)
     {
-        _clock.Current = BeatClockState.Idle with
-        {
-            Bpm = 120.0,
-            BeatCount = (int)Math.Floor(beat),
-            BeatPhase = beat - Math.Floor(beat),
-            BarNumber = bar,
-            IsLocked = true,
-            Source = BeatClockSource.Deck,
-        };
+        _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: positionSeconds));
         _controller.OnMasterClockTick(0);
     }
 
@@ -60,7 +55,7 @@ public class AutomixControllerTests
         _controller.Toggle();                       // sync + seek + play, immediately
         _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Locked,
             syncLocked: true));
-        Tick(beat: 8.0, bar: 2);                    // first tick anchors the blend at beat 8
+        TickAtFromPosition(8.4);                    // the quantized start beat (elapsed 0)
     }
 
     [Fact]
@@ -69,7 +64,7 @@ public class AutomixControllerTests
         _controller.Toggle();
 
         Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
-        // Entry frame: crossfader hard on the outgoing side (deck A = 0.0) — the incoming deck starts inaudible.
+        // Entry frame: the crossfader starts from where it already is (no rude jump on engage).
         PerformanceAction crossfade = Assert.Single(Emitted(PerformanceActionKind.MixerCrossfade));
         Assert.Equal(0.0, crossfade.Value, precision: 9);
         // Seeked to its mix-in point (the first-beat anchor as a fraction), synced, and started — NOW,
@@ -81,6 +76,16 @@ public class AutomixControllerTests
         Assert.Equal(1, sync.Slot);
         PerformanceAction play = Assert.Single(Emitted(PerformanceActionKind.DeckPlayPause));
         Assert.Equal(1, play.Slot);
+    }
+
+    [Fact]
+    public void Toggle_StartsTheRampFromTheCurrentCrossfaderPosition()
+    {
+        _decks.Mixer = MixerState.Default.WithCrossfader(0.3);
+
+        _controller.Toggle();
+
+        Assert.Equal(0.3, Assert.Single(Emitted(PerformanceActionKind.MixerCrossfade)).Value, precision: 9);
     }
 
     [Fact]
@@ -98,36 +103,6 @@ public class AutomixControllerTests
     }
 
     [Fact]
-    public void Blend_AdvancesWhileSyncIsStillConverging()
-    {
-        // The crossfade must crawl WHILE the sync loop converges — not wait for a confirmed lock.
-        _controller.Toggle();
-        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Active,
-            syncLocked: true));
-
-        Tick(beat: 8.0, bar: 2);  // anchor
-        Tick(beat: 10.0, bar: 2); // 2 of 8 beats in, still not Locked
-
-        Assert.Equal(0.25, _controller.Progress, precision: 9);
-        Assert.Equal(0.25, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
-    }
-
-    [Fact]
-    public void Blend_PacesFromTheOutgoingPlayhead_WhenTheSharedClockIsIdle()
-    {
-        // Sync engage has not propagated to the shared clock yet (or it is idle): progress still
-        // moves, derived from the outgoing deck's own playhead — the same grid the clock follows.
-        _controller.Toggle();
-        _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: 10.0)); // +2 s at 120 BPM = 4 beats
-
-        _clock.Current = BeatClockState.Idle;
-        _controller.OnMasterClockTick(0);
-
-        Assert.Equal(0.5, _controller.Progress, precision: 9); // 4 of 8 beats
-        Assert.Equal(0.5, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
-    }
-
-    [Fact]
     public void Toggle_NothingPlaying_RefusesWithATypedReason()
     {
         _decks.Set(0, Snapshot(isPlaying: false, positionSeconds: 8.0));
@@ -140,12 +115,52 @@ public class AutomixControllerTests
     }
 
     [Fact]
+    public void Blend_AdvancesWhileSyncIsStillConverging()
+    {
+        // The crossfade must crawl WHILE the sync loop converges — not wait for a confirmed lock.
+        _controller.Toggle();
+        _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.4, syncState: SyncLockState.Active,
+            syncLocked: true));
+
+        TickAtFromPosition(9.4); // 2 of 8 beats past the quantized start, still not Locked
+
+        Assert.Equal(0.25, _controller.Progress, precision: 9);
+        Assert.Equal(0.25, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
+    }
+
+    [Fact]
+    public void Blend_HoldsAtZeroUntilTheLeaderCrossesItsNextBeat()
+    {
+        // Engaged at beat 15.2: progress stays 0 until the leader reaches beat 16, so the style
+        // midpoints stay beat-quantized without delaying the engage itself.
+        _controller.Toggle();
+
+        TickAtFromPosition(8.0);
+        Assert.Equal(0.0, _controller.Progress, precision: 9);
+        TickAtFromPosition(8.9); // beat 17 = 1 of 8 beats in
+
+        Assert.Equal(0.125, _controller.Progress, precision: 9);
+    }
+
+    [Fact]
+    public void Blend_NeverRunsBackwards_WhenTheLeaderPlayheadJumpsBack()
+    {
+        // A loop wrap (or seek jitter) on the outgoing deck must not pull the blend backwards.
+        RunToTransitioning();
+        TickAtFromPosition(9.4); // progress 0.25
+
+        TickAtFromPosition(8.6); // playhead jumped back
+
+        Assert.Equal(0.25, _controller.Progress, precision: 9);
+    }
+
+    [Fact]
     public void Transitioning_DrivesTheCrossfaderAlongTheProfile()
     {
         RunToTransitioning();
         Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
 
-        Tick(beat: 10.0, bar: 2); // 2 of 8 beats in → progress 0.25
+        TickAtFromPosition(9.4); // 2 of 8 beats in → progress 0.25
 
         Assert.Equal(0.25, _controller.Progress, precision: 9);
         PerformanceAction latest = Emitted(PerformanceActionKind.MixerCrossfade)[^1];
@@ -157,7 +172,7 @@ public class AutomixControllerTests
     {
         RunToTransitioning();
 
-        Tick(beat: 16.0, bar: 4); // 8 of 8 beats → progress 1.0 → finish
+        TickAtFromPosition(12.4); // 8 of 8 beats → progress 1.0 → finish
 
         Assert.Equal(AutomixPhase.Idle, _controller.Phase);
         Assert.Equal(1.0, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
@@ -180,7 +195,7 @@ public class AutomixControllerTests
             PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, 0.7));
 
         Assert.Equal(AutomixPhase.Idle, _controller.Phase);
-        Tick(beat: 12.0, bar: 3);
+        TickAtFromPosition(10.4);
         // Nothing new from automix after the takeover — no snap-back, no re-grab.
         Assert.Equal(dispatchedBefore + 1, _dispatcher.Dispatched.Count);
     }
@@ -200,7 +215,7 @@ public class AutomixControllerTests
     {
         RunToTransitioning();
 
-        Tick(beat: 9.0, bar: 2); // emits automix-stamped mixer actions through the dispatcher
+        TickAtFromPosition(8.9); // emits automix-stamped mixer actions through the dispatcher
 
         Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
     }
@@ -232,13 +247,12 @@ public class AutomixControllerTests
     {
         _controller.Toggle();
         // Beat-locked, but one beat (0.5 s at 120 BPM) into its bar relative to the leader's grid:
-        // leader at anchor+8.0 s (a downbeat), incoming at anchor+0.5 s (beat 2 of its bar).
-        _decks.Set(0, Snapshot(isPlaying: true, positionSeconds: 8.4));
+        // leader on a downbeat (beat 16 = bar 4), incoming at anchor+0.5 s (beat 2 of its bar).
         _decks.Set(1, Snapshot(isPlaying: true, positionSeconds: 0.9, syncState: SyncLockState.Locked,
             syncLocked: true));
 
-        Tick(beat: 8.0, bar: 2);  // anchor; locked ×1
-        Tick(beat: 8.2, bar: 2);  // locked ×2 → one-shot bar alignment (still in the quiet start)
+        TickAtFromPosition(8.4);  // locked ×1 (progress 0 — still in the quiet start)
+        TickAtFromPosition(8.4);  // locked ×2 → one-shot bar alignment (leader exactly on beat 16)
 
         PerformanceAction correction = Emitted(PerformanceActionKind.DeckSeek)[^1];
         Assert.Equal(1, correction.Slot);
@@ -257,17 +271,6 @@ public class AutomixControllerTests
     }
 
     // ----- fakes -----
-
-    private sealed class FakeBeatClock : IBeatClock
-    {
-        public BeatClockState Current { get; set; } = BeatClockState.Idle;
-
-        public event EventHandler<BeatClockState>? StateChanged
-        {
-            add { }
-            remove { }
-        }
-    }
 
     private sealed class FakeAutomixDeckReader : IAutomixDeckReader
     {

@@ -113,4 +113,12 @@ public enum PerformanceActionKind
     /// (CrossFade / EqMix / FxMix).
     /// </summary>
     AutomixSetStyle,
+
+    /// <summary>
+    /// Appends a track to a deck's live queue without touching what is playing: Slot is the deck
+    /// (A = 0, B = 1), Argument is the track path. Emitted instead of <see cref="DeckLoadTrack"/>
+    /// when the target deck is playing, so a load can never cut off the floor's audio — the queued
+    /// track plays when the current one ends (doc 09/11).
+    /// </summary>
+    PlaylistAppendTrack,
 }

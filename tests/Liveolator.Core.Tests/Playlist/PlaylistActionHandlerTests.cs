@@ -24,8 +24,69 @@ public class PlaylistActionHandlerTests
     [Fact]
     public void HandledKinds_CoverThePlaylistActions()
     {
-        Assert.Equal(4, _handler.HandledKinds.Count);
+        Assert.Equal(5, _handler.HandledKinds.Count);
         Assert.Contains(PerformanceActionKind.PlaylistSkipOnNextBar, _handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.PlaylistAppendTrack, _handler.HandledKinds);
+    }
+
+    [Fact]
+    public void AppendTrack_AppendsToTheEndOfTheQueue_WithoutTouchingNow()
+    {
+        _playlist.Load(new[] { "a.mp3", "b.mp3" });
+
+        Handle(PerformanceActionKind.PlaylistAppendTrack, argument: "x.mp3");
+
+        Assert.Equal("a.mp3", _playlist.Now!.TrackPath); // playing track untouched
+        Assert.Equal("x.mp3", _playlist.Upcoming[^1].TrackPath);
+    }
+
+    [Fact]
+    public void AppendTrack_WithoutArgument_IsIgnored()
+    {
+        _playlist.Load(new[] { "a.mp3" });
+
+        Handle(PerformanceActionKind.PlaylistAppendTrack, argument: null);
+
+        Assert.Empty(_playlist.Upcoming);
+    }
+
+    [Fact]
+    public void AppendTrack_RoutesToTheSlotsOwnQueue()
+    {
+        var deckB = new LivePlaylist(_scheduler, new CapturingLogger<LivePlaylist>());
+        var handler = new PlaylistActionHandler(
+            new ILivePlaylist[] { _playlist, deckB }, new CapturingLogger<PlaylistActionHandler>());
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.PlaylistAppendTrack, Argument: "x.mp3", Slot: 1));
+
+        Assert.Empty(_playlist.Upcoming); // deck A's queue untouched
+        Assert.Equal("x.mp3", deckB.Upcoming[0].TrackPath);
+    }
+
+    [Fact]
+    public void AppendTrack_ForAnUnbackedSlot_IsIgnored()
+    {
+        var exception = Record.Exception(() => Handle(
+            PerformanceActionKind.PlaylistAppendTrack, argument: "x.mp3", slot: 1));
+
+        Assert.Null(exception);
+        Assert.Empty(_playlist.Upcoming);
+    }
+
+    [Fact]
+    public void RemoveFutureTrack_RoutesToTheSlotsOwnQueue()
+    {
+        var deckB = new LivePlaylist(_scheduler, new CapturingLogger<LivePlaylist>());
+        deckB.Load(new[] { "a.mp3", "b.mp3" });
+        Guid bId = deckB.Upcoming[0].Id;
+        var handler = new PlaylistActionHandler(
+            new ILivePlaylist[] { _playlist, deckB }, new CapturingLogger<PlaylistActionHandler>());
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.PlaylistRemoveFutureTrack, Argument: bId.ToString(), Slot: 1));
+
+        Assert.Empty(deckB.Upcoming);
     }
 
     [Fact]
@@ -108,7 +169,8 @@ public class PlaylistActionHandlerTests
     [Fact]
     public void Constructor_RejectsNullDependencies()
     {
-        Assert.Throws<ArgumentNullException>(() => new PlaylistActionHandler(null!, new CapturingLogger<PlaylistActionHandler>()));
+        Assert.Throws<ArgumentNullException>(() => new PlaylistActionHandler(
+            (ILivePlaylist)null!, new CapturingLogger<PlaylistActionHandler>()));
         Assert.Throws<ArgumentNullException>(() => new PlaylistActionHandler(_playlist, null!));
     }
 }

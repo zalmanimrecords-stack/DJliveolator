@@ -81,14 +81,27 @@ public sealed class DecodedWaveformProviderTests
     [Fact]
     public async Task GetOverview_LongTrack_UsesDensityResolution_AboveTheRequestedFloor()
     {
-        // 8000 mono samples at 8 kHz = 1 s of audio → ~150 buckets (TargetBucketsPerSecond), which is far
+        // 1 s of audio at the default overview rate → ~150 buckets (TargetBucketsPerSecond), which is far
         // more than the small requested floor. This is what keeps each kick a crisp column when zoomed.
-        var decoder = new FakeDecoder(new[] { new float[8_000] });
-        var provider = new DecodedWaveformProvider(decoder); // 8 kHz overview rate
+        var decoder = new FakeDecoder(new[] { new float[DecodedWaveformProvider.DefaultOverviewSampleRate] });
+        var provider = new DecodedWaveformProvider(decoder);
 
         WaveformOverview overview = await provider.GetOverviewAsync("track.flac", bucketCount: 10);
 
         Assert.Equal(DecodedWaveformProvider.TargetBucketsPerSecond, overview.Count);
+    }
+
+    [Fact]
+    public async Task GetOverview_AtTheDefaultRate_CarriesAllThreeBands()
+    {
+        // The default decode rate must keep every band crossover under Nyquist — this is the contract
+        // the layered (kick-in-front) deck strip depends on.
+        var decoder = new FakeDecoder(new[] { new float[DecodedWaveformProvider.DefaultOverviewSampleRate] });
+        var provider = new DecodedWaveformProvider(decoder);
+
+        WaveformOverview overview = await provider.GetOverviewAsync("track.flac", bucketCount: 4);
+
+        Assert.True(overview.HasBands);
     }
 
     [Fact]

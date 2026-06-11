@@ -142,7 +142,10 @@ public static class MixerMath
 
     // --- RBJ Audio-EQ Cookbook biquad designs (normalized by a0) ---
 
-    private static BiquadCoefficients LowPass(double freq, int sampleRate)
+    /// <summary>2nd-order Butterworth low-pass design (RBJ cookbook, Q = 0.707). Public because it is
+    /// the one shared biquad design in Core: the waveform band splitter reuses it (via
+    /// <c>Waveform.BiquadFilter</c>) so analysis and mixer filters can never drift apart.</summary>
+    public static BiquadCoefficients LowPass(double freq, int sampleRate)
     {
         (double w0, double cosw0, double alpha) = Omega(freq, sampleRate, DefaultQ);
         double b1 = 1.0 - cosw0;
@@ -154,7 +157,9 @@ public static class MixerMath
         return Normalize(b0, b1, b2, a0, a1, a2);
     }
 
-    private static BiquadCoefficients HighPass(double freq, int sampleRate)
+    /// <summary>2nd-order Butterworth high-pass design (RBJ cookbook, Q = 0.707); see
+    /// <see cref="LowPass"/> for why this is public.</summary>
+    public static BiquadCoefficients HighPass(double freq, int sampleRate)
     {
         (double w0, double cosw0, double alpha) = Omega(freq, sampleRate, DefaultQ);
         double b0 = (1.0 + cosw0) / 2.0;

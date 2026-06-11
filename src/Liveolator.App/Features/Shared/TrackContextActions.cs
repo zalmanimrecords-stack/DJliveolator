@@ -27,6 +27,7 @@ public sealed class TrackContextActions
     private readonly IMetadataProvider? _metadataProvider;
     private readonly IAudioFingerprinter? _fingerprinter;
     private readonly ITrackEditor? _editor;
+    private readonly DeckTrackLoader? _deckLoader;
 
     public TrackContextActions(
         IPerformanceActionDispatcher? dispatcher,
@@ -36,7 +37,8 @@ public sealed class TrackContextActions
         IMusicCatalogStore? catalogStore = null,
         IMetadataProvider? metadataProvider = null,
         IAudioFingerprinter? fingerprinter = null,
-        ITrackEditor? editor = null)
+        ITrackEditor? editor = null,
+        DeckTrackLoader? deckLoader = null)
     {
         _dispatcher = dispatcher;
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -46,6 +48,10 @@ public sealed class TrackContextActions
         _metadataProvider = metadataProvider;
         _fingerprinter = fingerprinter;
         _editor = editor;
+        // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
+        // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
+        _deckLoader = deckLoader
+            ?? (dispatcher is null ? null : new DeckTrackLoader(dispatcher, System.IO.File.Exists));
 
         CanLoadToDeckA = DeckSlotAvailable(0);
         CanLoadToDeckB = DeckSlotAvailable(1);
@@ -135,20 +141,19 @@ public sealed class TrackContextActions
     }
 
     /// <summary>
-    /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it. <paramref name="bpm"/> is the
-    /// track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11);
-    /// <paramref name="firstBeatSeconds"/> is the analyzed downbeat anchor (0 = unknown), fed to phase-match
-    /// (doc 22 A1) right after the load.
+    /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it — unless that deck is
+    /// playing, in which case the track is appended to the deck's live queue instead (a load never
+    /// cuts off the floor's audio). An unreachable file (missing / offline drive) dispatches nothing
+    /// and reports why. <paramref name="bpm"/> is the track's analyzed tempo (0 = unknown), fed to the
+    /// deck as its Sync reference (doc 11); <paramref name="firstBeatSeconds"/> is the analyzed
+    /// downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1) right after the load.
     /// </summary>
     public void LoadToDeck(int slot, string trackPath, double bpm, double firstBeatSeconds = 0)
     {
-        if (_dispatcher is null || string.IsNullOrWhiteSpace(trackPath))
+        if (_deckLoader is null || string.IsNullOrWhiteSpace(trackPath))
             return;
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: bpm, Argument: trackPath));
-        _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetFirstBeat, Slot: slot, Value: firstBeatSeconds));
-        _onStatus?.Invoke($"Loaded \"{TitleOf(trackPath)}\" → Deck {(slot == 0 ? "A" : "B")}");
+        DeckLoadResult result = _deckLoader.Load(slot, trackPath, bpm, firstBeatSeconds);
+        ReportStatus(result.Message);
     }
 
     /// <summary>Reloads the saved-set names (call at startup and after a set is created/changed).</summary>

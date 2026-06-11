@@ -19,8 +19,11 @@ namespace Liveolator.Audio.Waveform;
 /// </remarks>
 public sealed class DecodedWaveformProvider : IWaveformProvider
 {
-    /// <summary>Default decode rate for the overview — enough to catch transients, cheap to hold.</summary>
-    public const int DefaultOverviewSampleRate = 8_000;
+    /// <summary>Default decode rate for the overview. 16 kHz puts Nyquist at 8 kHz so the high
+    /// (hats/air) band of the 3-band strip carries real signal — at 8 kHz nothing above 4 kHz survives
+    /// the decode and the high layer would be fiction. Still cheap: the transient mono buffer for a
+    /// 6-minute track is ~22 MB of floats, freed as soon as the overview is built.</summary>
+    public const int DefaultOverviewSampleRate = 16_000;
 
     /// <summary>
     /// Target overview resolution in buckets PER SECOND. A fixed total bucket count makes long tracks

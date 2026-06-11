@@ -73,24 +73,75 @@ public sealed class WaveformBuilderTests
         Assert.Throws<ArgumentOutOfRangeException>(() => WaveformBuilder.Build(new float[10], -1));
     }
 
-    // --- Low-frequency (kick) band ---
+    // --- Frequency bands (low/kick · mid · high) ---
 
     [Fact]
-    public void Build_WithoutSampleRate_HasNoLowBand()
+    public void Build_WithoutSampleRate_HasNoBands()
     {
         var overview = WaveformBuilder.Build(new float[1000], bucketCount: 32);
 
         Assert.False(overview.HasLowBand);
+        Assert.False(overview.HasBands);
         Assert.Null(overview.LowPeaks);
+        Assert.Null(overview.MidPeaks);
+        Assert.Null(overview.HighPeaks);
     }
 
     [Fact]
-    public void Build_WithSampleRate_PopulatesLowBand_AlignedToPeaks()
+    public void Build_WithSampleRate_PopulatesAllBands_AlignedToPeaks()
     {
         var overview = WaveformBuilder.Build(Sine(60, 8_000, 8_000, 0.8f), bucketCount: 32, sampleRate: 8_000);
 
         Assert.True(overview.HasLowBand);
+        Assert.True(overview.HasBands);
         Assert.Equal(overview.Peaks.Count, overview.LowPeaks!.Count);
+        Assert.Equal(overview.Peaks.Count, overview.MidPeaks!.Count);
+        Assert.Equal(overview.Peaks.Count, overview.HighPeaks!.Count);
+    }
+
+    [Fact]
+    public void Build_SampleRateTooLowForHighBand_StillProducesLowBand()
+    {
+        // 1 kHz sample rate (Nyquist 500 Hz) can't host the 2 kHz crossover — the high/mid bands must
+        // degrade away, but the kick band (200 Hz crossover) still fits and must survive.
+        var overview = WaveformBuilder.Build(Sine(60, 1_000, 1_000, 0.8f), bucketCount: 8, sampleRate: 1_000);
+
+        Assert.True(overview.HasLowBand);
+        Assert.False(overview.HasBands);
+        Assert.Null(overview.MidPeaks);
+        Assert.Null(overview.HighPeaks);
+    }
+
+    [Fact]
+    public void Build_EachBand_PassesItsOwnTone_RejectsTheOthers()
+    {
+        // Three pure tones at 16 kHz: a 60 Hz kick, an 800 Hz mid, a 6 kHz hat. Each must light up
+        // exactly its own band — that selectivity is what makes the kick layer readable in front.
+        const int fs = 16_000;
+        var kick = WaveformBuilder.Build(Sine(60, fs, fs, 0.8f), bucketCount: 16, sampleRate: fs);
+        var mid = WaveformBuilder.Build(Sine(800, fs, fs, 0.8f), bucketCount: 16, sampleRate: fs);
+        var hat = WaveformBuilder.Build(Sine(6_000, fs, fs, 0.8f), bucketCount: 16, sampleRate: fs);
+
+        Assert.True(Max(kick.LowPeaks!) > 0.5f);
+        Assert.True(Max(kick.MidPeaks!) < 0.1f);
+        Assert.True(Max(kick.HighPeaks!) < 0.1f);
+
+        Assert.True(Max(mid.LowPeaks!) < 0.15f);
+        Assert.True(Max(mid.MidPeaks!) > 0.5f);
+        Assert.True(Max(mid.HighPeaks!) < 0.1f);
+
+        Assert.True(Max(hat.LowPeaks!) < 0.1f);
+        Assert.True(Max(hat.MidPeaks!) < 0.15f);
+        Assert.True(Max(hat.HighPeaks!) > 0.5f);
+    }
+
+    [Fact]
+    public void Build_BandPeaks_AreClampedToUnity()
+    {
+        // A hot low tone (amplitude 1.5) must not push the kick band over 1 — the strip relies on 0..1.
+        var overview = WaveformBuilder.Build(Sine(60, 8_000, 8_000, 1.5f), bucketCount: 8, sampleRate: 8_000);
+
+        Assert.All(overview.LowPeaks!, p => Assert.InRange(p, 0f, 1f));
     }
 
     [Fact]

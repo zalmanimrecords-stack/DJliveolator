@@ -18,6 +18,12 @@ public sealed class FakeWaveformProvider : IWaveformProvider
     public static FakeWaveformProvider WithDuration(double durationSeconds, int peakCount = 8)
         => new(new WaveformOverview(new float[peakCount], durationSeconds));
 
+    /// <summary>An overview carrying all three frequency bands, like a real decode produces.</summary>
+    public static FakeWaveformProvider WithBands(double durationSeconds, int peakCount = 8)
+        => new(new WaveformOverview(
+            new float[peakCount], durationSeconds,
+            LowPeaks: new float[peakCount], MidPeaks: new float[peakCount], HighPeaks: new float[peakCount]));
+
     public Task<WaveformOverview> GetOverviewAsync(
         string filePath, int bucketCount, CancellationToken cancellationToken = default)
         => Task.FromResult(_overview);

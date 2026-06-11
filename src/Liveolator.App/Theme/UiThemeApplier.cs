@@ -30,6 +30,8 @@ public static class UiThemeApplier
             ["MidiActiveColor"] = "MidiActive",
             ["WaveformColor"] = "Waveform",
             ["KickColor"] = "Kick",
+            ["WaveMidColor"] = "WaveMid",
+            ["WaveHighColor"] = "WaveHigh",
             // Per-control colours (doc 30): override the brush resources the Knob/Fader styles bind to.
             ["KnobArcColor"] = "KnobArc",
             ["KnobTrackColor"] = "KnobTrack",
