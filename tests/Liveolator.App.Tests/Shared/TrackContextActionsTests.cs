@@ -53,7 +53,8 @@ public sealed class TrackContextActionsTests
     public void LoadToDeck_dispatches_DeckLoadTrack_with_slot_path_and_bpm()
     {
         var dispatcher = new RecordingDispatcher(deckCount: 2);
-        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
+        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
+            deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => true));
 
         actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5);
 
@@ -69,6 +70,51 @@ public sealed class TrackContextActionsTests
         Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, anchor.Kind);
         Assert.Equal(1, anchor.Slot);
         Assert.Equal(0.5, anchor.Value, precision: 6);
+    }
+
+    [Fact]
+    public void LoadToDeck_on_a_playing_deck_queues_the_track_instead()
+    {
+        var dispatcher = new PlayingDispatcher(playingSlot: 1);
+        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
+            deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => true));
+
+        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0);
+
+        PerformanceAction append = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.PlaylistAppendTrack, append.Kind);
+        Assert.Equal(1, append.Slot);
+        Assert.Equal("/m/a.wav", append.Argument);
+    }
+
+    [Fact]
+    public void LoadToDeck_with_an_unreachable_file_dispatches_nothing_and_reports()
+    {
+        var dispatcher = new RecordingDispatcher(deckCount: 2);
+        string? status = null;
+        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
+            onStatus: s => status = s,
+            deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => false));
+
+        actions.LoadToDeck(0, @"S:\offline\a.mp3", bpm: 126.0);
+
+        Assert.Empty(dispatcher.Dispatched);
+        Assert.NotNull(status);
+        Assert.Contains("missing", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class PlayingDispatcher : IPerformanceActionDispatcher
+    {
+        private readonly int _playingSlot;
+        public PlayingDispatcher(int playingSlot) => _playingSlot = playingSlot;
+        public List<PerformanceAction> Dispatched { get; } = new();
+        public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
+        public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
+            => kind == PerformanceActionKind.DeckPlayPause
+                ? new ActionFeedbackState(IsActive: slot == _playingSlot, IsAvailable: true, Value: 0)
+                : ActionFeedbackState.Unavailable;
+        public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
+        public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }
 
     [Theory]

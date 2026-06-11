@@ -303,6 +303,11 @@ public static class ServiceConfig
         var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), loggerFactory.CreateLogger<LivePlaylist>());
         services.AddSingleton<ILivePlaylist>(livePlaylist);
 
+        // Deck B's own live queue (doc 09/11): loading onto a PLAYING deck appends here instead of
+        // cutting the deck off (DeckTrackLoader policy); the queued track plays when the current one
+        // ends via the slot-1 PlaylistAudioPlayer below. Persisted in its own file beside deck A's set.
+        var deckBPlaylist = new LivePlaylist(new ImmediateBeatScheduler(), loggerFactory.CreateLogger<LivePlaylist>());
+
         // Persist + restore the live set so the DJ tab opens where the last run left off (doc 13) instead
         // of an empty queue. Restore runs HERE — synchronously, before the queue's audio binding is wired
         // (WirePlaylistAudio / the eager PlaylistAudioPlayer at the end of Build) — so the restored Now is
@@ -312,12 +317,18 @@ public static class ServiceConfig
         var liveSetStore = new JsonLiveSetStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<ILiveSetStore>(liveSetStore);
         RestoreAndPersistLiveSet(livePlaylist, liveSetStore);
+        var deckBSetStore = new JsonLiveSetStore(
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w), fileName: "deck-b-set.json");
+        RestoreAndPersistLiveSet(deckBPlaylist, deckBSetStore);
 
         var deckSessionStore =
             new JsonDeckSessionStore(onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IDeckSessionStore>(deckSessionStore);
 
-        var playlistHandler = new PlaylistActionHandler(livePlaylist, loggerFactory.CreateLogger<PlaylistActionHandler>());
+        // Per-deck queues, addressed by the playlist action's Slot (A = 0, B = 1).
+        var playlistHandler = new PlaylistActionHandler(
+            new ILivePlaylist[] { livePlaylist, deckBPlaylist },
+            loggerFactory.CreateLogger<PlaylistActionHandler>());
 
         // Register the realtime engine seams (constructed above, before the visual engine). Registering
         // IMultiDeckPlaybackEngine lets the deck handler address both decks AND lets the two-deck engine
@@ -403,7 +414,7 @@ public static class ServiceConfig
             dispatcher, () => visualEngine.ActiveScene, liveProfileStore);
         services.AddSingleton(visualSession);
 
-        WirePlaylistAudio(services, livePlaylist, dispatcher, deckEngine);
+        WirePlaylistAudio(services, livePlaylist, deckBPlaylist, dispatcher, deckEngine);
 
         // --- MIDI controller → dispatcher (doc 05/07) ---
         // Open the SETTINGS-chosen controller and route the live hardware through the SAME dispatcher via
@@ -510,7 +521,8 @@ public static class ServiceConfig
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetRequiredService<TrackContextActions>(),
             sp.GetService<IWaveformProvider>(),
-            sp.GetRequiredService<PerformanceDeckSet>()));
+            sp.GetRequiredService<PerformanceDeckSet>(),
+            deckBQueue: deckBPlaylist));
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
@@ -613,9 +625,10 @@ public static class ServiceConfig
         ServiceProvider provider = services.BuildServiceProvider();
         // Populate the "Add to playlist" submenu once at startup (best-effort; guarded internally).
         _ = provider.GetRequiredService<TrackContextActions>().RefreshPlaylistsAsync();
-        // Eagerly activate the live-queue audio binding (when the realtime engine is up) so it starts
-        // subscribing to NowChanged immediately — nothing else resolves it.
-        _ = provider.GetService<PlaylistAudioPlayer>();
+        // Eagerly activate the live-queue audio bindings (when the realtime engine is up) so both
+        // deck players start subscribing to NowChanged/DeckEnded immediately — nothing else resolves them.
+        foreach (PlaylistAudioPlayer player in provider.GetServices<PlaylistAudioPlayer>())
+            _ = player;
         provider.GetService<MasterClockPump>()?.Start();
         return provider;
     }
@@ -934,6 +947,7 @@ public static class ServiceConfig
     private static void WirePlaylistAudio(
         IServiceCollection services,
         ILivePlaylist livePlaylist,
+        ILivePlaylist deckBPlaylist,
         IPerformanceActionDispatcher dispatcher,
         IMultiDeckPlaybackEngine? deckEngine)
     {
@@ -948,6 +962,17 @@ public static class ServiceConfig
             deckEngine,
             path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
             slot: 0,
+            autoPlay: true,
+            autoPlayExistingNow: false));
+
+        // Deck B (slot 1) hosts its own queue, fed by load-while-playing appends (DeckTrackLoader):
+        // when deck B's track ends, the next queued track loads + plays on B automatically.
+        services.AddSingleton(sp => new PlaylistAudioPlayer(
+            deckBPlaylist,
+            dispatcher,
+            deckEngine,
+            path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
+            slot: 1,
             autoPlay: true,
             autoPlayExistingNow: false));
     }

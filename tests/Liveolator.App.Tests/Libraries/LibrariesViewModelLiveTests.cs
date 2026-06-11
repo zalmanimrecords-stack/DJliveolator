@@ -25,13 +25,14 @@ public sealed class LibrariesViewModelLiveTests
         public RecordingDispatcher(int deckCount = 1) => DeckCount = deckCount;
 
         public int DeckCount { get; }
+        public HashSet<int> PlayingSlots { get; } = new();
         public List<PerformanceAction> Dispatched { get; } = new();
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
 
         // Mirrors DeckActionHandler.GetFeedback: a deck slot is available iff slot < DeckCount.
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
             => kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount
-                ? new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)
+                ? new ActionFeedbackState(IsActive: PlayingSlots.Contains(slot), IsAvailable: true, Value: 0)
                 : ActionFeedbackState.Unavailable;
 
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
@@ -51,9 +52,15 @@ public sealed class LibrariesViewModelLiveTests
 
     private static LibrariesViewModel BuildLiveViewModel(
         RecordingDispatcher dispatcher, FakeBeatClock clock, params string[] files)
+        => BuildLiveViewModel(dispatcher, clock, fileExists: _ => true, files);
+
+    private static LibrariesViewModel BuildLiveViewModel(
+        RecordingDispatcher dispatcher, FakeBeatClock clock, Func<string, bool> fileExists, params string[] files)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(files), new FakeAudioDecoder());
-        var vm = new LibrariesViewModel(library, dispatcher, clock);
+        // Fake paths don't exist on disk; stub the loader's reachability probe so loads dispatch.
+        var vm = new LibrariesViewModel(library, dispatcher, clock,
+            deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, fileExists));
         vm.AddFolder("/music");
         return vm;
     }
@@ -139,6 +146,38 @@ public sealed class LibrariesViewModelLiveTests
         Assert.Equal(1, action.Slot);
         Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, dispatcher.Dispatched[1].Kind); // doc 22 A1
         Assert.Equal(1, dispatcher.Dispatched[1].Slot);
+    }
+
+    [Fact]
+    public async Task LoadToDeckB_WhileDeckBPlays_QueuesTheTrackOnDeckBInstead()
+    {
+        var dispatcher = new RecordingDispatcher(deckCount: 2);
+        dispatcher.PlayingSlots.Add(1);
+        var vm = BuildLiveViewModel(dispatcher, new FakeBeatClock(), "/music/Alpha.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks[0];
+
+        await vm.LoadToDeckBCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.PlaylistAppendTrack, action.Kind);
+        Assert.Equal(1, action.Slot);
+        Assert.Contains("Alpha.wav", action.Argument);
+        Assert.Contains("queue", vm.LoadStatus, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task LoadToDeckA_WithAnUnreachableFile_DispatchesNothing_AndReportsWhy()
+    {
+        var dispatcher = new RecordingDispatcher(deckCount: 2);
+        var vm = BuildLiveViewModel(dispatcher, new FakeBeatClock(), fileExists: _ => false, "/music/Alpha.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks[0];
+
+        await vm.LoadToDeckACommand.Execute().ToTask();
+
+        Assert.Empty(dispatcher.Dispatched);
+        Assert.Contains("missing", vm.LoadStatus, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

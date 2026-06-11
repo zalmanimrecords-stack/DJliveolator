@@ -62,6 +62,36 @@ public sealed class DjViewModelTests
     }
 
     [Fact]
+    public void DeckBQueue_ReflectsDeckBsOwnPlaylist_AndUpdatesOnChange()
+    {
+        LivePlaylist deckB = NewPlaylist();
+        var vm = new DjViewModel(new FakeDispatcher(), NewPlaylist(), deckBQueue: deckB);
+        Assert.True(vm.IsDeckBQueueEmpty);
+
+        deckB.Append("x.mp3"); // a load-while-playing lands here via PlaylistAppendTrack
+        deckB.Append("y.mp3");
+
+        Assert.Equal(2, vm.DeckBQueue.Count);
+        Assert.Equal("x", vm.DeckBQueue[0].Title);
+        Assert.False(vm.IsDeckBQueueEmpty);
+    }
+
+    [Fact]
+    public async Task DeckBQueue_Remove_EmitsPlaylistRemoveFutureTrack_ForSlot1()
+    {
+        var dispatcher = new FakeDispatcher();
+        LivePlaylist deckB = NewPlaylist();
+        deckB.Append("x.mp3");
+        var vm = new DjViewModel(dispatcher, NewPlaylist(), deckBQueue: deckB);
+
+        await vm.DeckBQueue[0].RemoveCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.PlaylistRemoveFutureTrack, action.Kind);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
     public async Task Skip_EmitsPlaylistSkipOnNextBar()
     {
         var dispatcher = new FakeDispatcher();

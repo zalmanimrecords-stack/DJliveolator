@@ -34,6 +34,13 @@
             <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
           </StackPanel>
         </Panel>
+        <!-- time readout: elapsed over remaining, advancing with the playhead -->
+        <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+          <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
+          <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding RemainingText}" ToolTip.Tip="Time remaining in the track" />
+        </StackPanel>
       </Grid>
 
       <!-- waveform now lives in the two dedicated rows above the decks (see LiveView/DjView) so the kick

@@ -680,6 +680,56 @@ public sealed class DeckViewModelTests
         Assert.Equal(0.42, vm.Progress, 6);
     }
 
+    // --- Elapsed / remaining time readout ---
+
+    [Fact]
+    public void TimeReadout_ShowsPlaceholders_BeforeATrackLoads()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        Assert.Equal("--:--", vm.ElapsedText);
+        Assert.Equal("--:--", vm.RemainingText);
+    }
+
+    [Fact]
+    public async Task TimeReadout_TracksThePlayhead_OnceTheDurationIsKnown()
+    {
+        var dispatcher = new FakeDispatcher();
+        var provider = FakeWaveformProvider.WithDuration(durationSeconds: 240);
+        var vm = new DeckViewModel(slot: 0, dispatcher, provider);
+
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        await gridSet;
+
+        Assert.Equal("0:00", vm.ElapsedText);
+        Assert.Equal("-4:00", vm.RemainingText);
+
+        // The playhead lands at 25% (seek feedback) → 1:00 elapsed of 4:00, 3:00 remaining.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.25));
+
+        Assert.Equal("1:00", vm.ElapsedText);
+        Assert.Equal("-3:00", vm.RemainingText);
+    }
+
+    [Fact]
+    public void TimeReadout_StaysOnPlaceholders_WhileTheDurationIsUnknown()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no waveform provider → duration never decodes
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120, Argument: @"C:\song.flac"));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5));
+
+        // No guessed time without a real duration (the readout must never invent numbers).
+        Assert.Equal("--:--", vm.ElapsedText);
+        Assert.Equal("--:--", vm.RemainingText);
+    }
+
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load
     // sets rather than racing it. Times out so a regression fails fast instead of hanging.
     private static Task WaitForBeatGrid(DeckViewModel vm) => WaitForProperty(vm, nameof(DeckViewModel.BeatGrid));

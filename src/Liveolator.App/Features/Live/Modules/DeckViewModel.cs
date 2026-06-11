@@ -76,6 +76,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
     private bool _applyingBpmFeedback;
+    private string _elapsedText = NoTime;
+    private string _remainingText = NoTime;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -276,7 +278,52 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public double Progress
     {
         get => _progress;
-        private set => this.RaiseAndSetIfChanged(ref _progress, value);
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _progress, value);
+            UpdateTimeTexts();
+        }
+    }
+
+    /// <summary>Time elapsed in the loaded track ("m:ss"), or the placeholder until the duration decodes.</summary>
+    public string ElapsedText
+    {
+        get => _elapsedText;
+        private set => this.RaiseAndSetIfChanged(ref _elapsedText, value);
+    }
+
+    /// <summary>Time remaining in the loaded track ("-m:ss"), or the placeholder until the duration decodes.</summary>
+    public string RemainingText
+    {
+        get => _remainingText;
+        private set => this.RaiseAndSetIfChanged(ref _remainingText, value);
+    }
+
+    private const string NoTime = "--:--";
+
+    // Elapsed/remaining derive from the playhead fraction × the decoded duration; recomputed on every
+    // playhead/seek update and when the duration becomes known. Unknown duration → placeholders, so the
+    // readout never shows a guessed time.
+    private void UpdateTimeTexts()
+    {
+        if (_durationSeconds <= 0.0)
+        {
+            ElapsedText = NoTime;
+            RemainingText = NoTime;
+            return;
+        }
+
+        double elapsed = Math.Clamp(_progress, 0.0, 1.0) * _durationSeconds;
+        ElapsedText = FormatTime(elapsed);
+        RemainingText = "-" + FormatTime(Math.Max(0.0, _durationSeconds - elapsed));
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        var time = TimeSpan.FromSeconds(seconds);
+        return time.TotalHours >= 1.0
+            ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
+            : $"{time.Minutes}:{time.Seconds:00}";
     }
 
     /// <summary>True when transport/EQ can be driven; the UI disables those controls otherwise.</summary>
@@ -650,6 +697,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
+        UpdateTimeTexts();        // back to placeholders until the new track's duration is known
         this.RaisePropertyChanged(nameof(KickAnchorFraction));
         ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
@@ -687,6 +735,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             // Now the duration is known: build the (first-beat-anchored) grid and size the zoom window in
             // real time (so the follow view shows a consistent ~PlayingZoomSeconds regardless of length).
             _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
+            UpdateTimeTexts(); // the elapsed/remaining readout can resolve now
             RecomputeBeatGrid();
             this.RaisePropertyChanged(nameof(KickAnchorFraction));
             ZoomWindow = ComputeZoomWindow();

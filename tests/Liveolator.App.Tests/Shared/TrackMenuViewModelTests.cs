@@ -46,7 +46,8 @@ public sealed class TrackMenuViewModelTests
     public async Task LoadToDeckB_delegates_to_actions_with_the_row_path()
     {
         var dispatcher = new RecordingDispatcher(deckCount: 2);
-        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
+        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
+            deckLoader: new DeckTrackLoader(dispatcher, _ => true));
         var menu = new TrackMenuViewModel("/m/track.wav", actions);
 
         await menu.LoadToDeckBCommand.Execute().ToTask();
@@ -63,7 +64,8 @@ public sealed class TrackMenuViewModelTests
     public async Task LoadToDeck_forwards_the_row_bpm_as_the_sync_reference()
     {
         var dispatcher = new RecordingDispatcher(deckCount: 2);
-        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore());
+        var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
+            deckLoader: new DeckTrackLoader(dispatcher, _ => true));
         var menu = new TrackMenuViewModel("/m/track.wav", actions, bpm: 124.0, firstBeatSeconds: 0.25);
 
         await menu.LoadToDeckACommand.Execute().ToTask();

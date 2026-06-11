@@ -67,7 +67,7 @@
 
     <!-- THE SET (live Now/Next/Later queue) -->
     <Border Grid.Row="2" Classes="panel">
-      <Grid RowDefinitions="Auto,*,Auto" Margin="16">
+      <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
 
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,12">
           <TextBlock Classes="section" VerticalAlignment="Center" Text="SET · NOW / NEXT / LATER" />
@@ -122,8 +122,30 @@
           </ItemsControl>
         </ScrollViewer>
 
+        <!-- DECK B QUEUE — tracks loaded onto a playing deck B land here and play when its current
+             track ends. Future entries are removable; the playing one is protected. -->
+        <StackPanel Grid.Row="2" Spacing="6" Margin="0,12,0,0" IsVisible="{Binding !IsDeckBQueueEmpty}">
+          <TextBlock Classes="faint" Text="DECK B · QUEUE" />
+          <ScrollViewer MaxHeight="140">
+            <ItemsControl ItemsSource="{Binding DeckBQueue}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="dj:SetEntryViewModel">
+                  <Grid ColumnDefinitions="64,*,Auto" Margin="0,3">
+                    <TextBlock Grid.Column="0" Classes="mono faint" Text="{Binding StateLabel}"
+                               Classes.accent="{Binding IsNow}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="key" Content="✕"
+                            Command="{Binding RemoveCommand}" IsVisible="{Binding !IsNow}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+
         <!-- PLAYED HISTORY (B5) — shown only once tracks have played; read-only, most-recent first -->
-        <StackPanel Grid.Row="2" Spacing="6" Margin="0,12,0,0" IsVisible="{Binding !IsPlayedEmpty}">
+        <StackPanel Grid.Row="3" Spacing="6" Margin="0,12,0,0" IsVisible="{Binding !IsPlayedEmpty}">
           <TextBlock Classes="faint" Text="PLAYED" />
           <ScrollViewer MaxHeight="120">
             <ItemsControl ItemsSource="{Binding Played}">

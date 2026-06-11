@@ -23,6 +23,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 {
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly ILivePlaylist? _playlist;
+    private readonly ILivePlaylist? _deckBQueue;
     private readonly MusicLibrary? _library;
     private readonly Shared.TrackContextActions? _contextActions;
     private readonly PerformanceDeckSet _decks;
@@ -43,17 +44,20 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         MusicLibrary? library = null,
         Shared.TrackContextActions? contextActions = null,
         IWaveformProvider? waveformProvider = null,
-        PerformanceDeckSet? decks = null)
+        PerformanceDeckSet? decks = null,
+        ILivePlaylist? deckBQueue = null)
     {
         _dispatcher = dispatcher;
         _playlist = playlist;
         _library = library;
         _contextActions = contextActions;
+        _deckBQueue = deckBQueue;
 
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider, library);
         Set = new ObservableCollection<SetEntryViewModel>();
         Played = new ObservableCollection<SetEntryViewModel>();
+        DeckBQueue = new ObservableCollection<SetEntryViewModel>();
 
         IObservable<bool> canEdit = Observable.Return(dispatcher is not null && playlist is not null);
         SkipCommand = ReactiveCommand.Create(SkipToNext, canEdit);
@@ -65,6 +69,12 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             _playlist.NowChanged += OnNowChanged;
             RefreshSet();
             CaptureQueuePosition(); // seed the played-history tracking from the initial queue
+        }
+
+        if (_deckBQueue is not null)
+        {
+            _deckBQueue.Changed += OnDeckBQueueChanged;
+            RefreshDeckBQueue();
         }
     }
 
@@ -83,6 +93,15 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when nothing has been played yet (the view hides the Played section).</summary>
     public bool IsPlayedEmpty => Played.Count == 0;
+
+    /// <summary>
+    /// Deck B's own queue (the playing entry first, then the upcoming order): tracks loaded onto a
+    /// playing deck B land here and play when the current track ends (doc 09/11).
+    /// </summary>
+    public ObservableCollection<SetEntryViewModel> DeckBQueue { get; }
+
+    /// <summary>True when deck B's queue is empty (the view hides its section).</summary>
+    public bool IsDeckBQueueEmpty => DeckBQueue.Count == 0;
 
     public ReactiveCommand<Unit, Unit> SkipCommand { get; }
     public ReactiveCommand<Unit, Unit> LoadFromLibraryCommand { get; }
@@ -103,6 +122,8 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
         _disposed = true;
         if (_playlist is not null)
             _playlist.NowChanged -= OnNowChanged;
+        if (_deckBQueue is not null)
+            _deckBQueue.Changed -= OnDeckBQueueChanged;
         // Only dispose the decks this view-model created; a shared set is owned by the composition root.
         if (_ownsDecks)
             _decks.Dispose();
@@ -181,6 +202,43 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
                 Set.Add(MakeEntry(entry, titles));
         }
         this.RaisePropertyChanged(nameof(IsSetEmpty));
+    }
+
+    private void OnDeckBQueueChanged(object? sender, EventArgs e)
+        => RxApp.MainThreadScheduler.Schedule(RefreshDeckBQueue);
+
+    // Mirrors RefreshSet for deck B's queue. Future entries are removable through the dispatcher,
+    // addressed to deck B's queue via Slot = 1; the playing entry is protected (null callback).
+    private void RefreshDeckBQueue()
+    {
+        DeckBQueue.Clear();
+        if (_deckBQueue is not null)
+        {
+            IReadOnlyDictionary<string, string> titles = BuildTitleLookup();
+            if (_deckBQueue.Now is { } now)
+                DeckBQueue.Add(MakeDeckBEntry(now, titles));
+            foreach (QueueEntry entry in _deckBQueue.Upcoming)
+                DeckBQueue.Add(MakeDeckBEntry(entry, titles));
+        }
+        this.RaisePropertyChanged(nameof(IsDeckBQueueEmpty));
+    }
+
+    private SetEntryViewModel MakeDeckBEntry(QueueEntry entry, IReadOnlyDictionary<string, string> titles)
+    {
+        string title = titles.TryGetValue(entry.TrackPath, out string? known)
+            ? known
+            : Path.GetFileNameWithoutExtension(entry.TrackPath);
+
+        Action? remove = _dispatcher is not null && entry.State != TrackState.Now
+            ? () =>
+            {
+                _dispatcher.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.PlaylistRemoveFutureTrack, Slot: 1, Argument: entry.Id.ToString()));
+                RefreshDeckBQueue();
+            }
+        : null;
+
+        return new SetEntryViewModel(entry, title, remove, _contextActions);
     }
 
     private SetEntryViewModel MakeEntry(QueueEntry entry, IReadOnlyDictionary<string, string> titles)
