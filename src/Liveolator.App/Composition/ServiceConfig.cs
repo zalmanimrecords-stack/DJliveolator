@@ -143,6 +143,14 @@ public static class ServiceConfig
             visualEffects, generatorPresets,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
+        // User-authored FRKTL presets (doc 29): a folder of self-contained .frktl files (each its own
+        // shader + up to five controllable knobs), loaded after the built-ins so they extend the picker.
+        var frktlPresetLoader = new Liveolator.Media.Visuals.FrktlPresetFolderLoader(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        frktlPresetLoader.Load();
+        services.AddSingleton(frktlPresetLoader);
+
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);
         services.AddSingleton<IExtensionValidator>(extensionValidator);

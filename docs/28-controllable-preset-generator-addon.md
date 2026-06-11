@@ -1,6 +1,8 @@
 # 28 — Controllable Preset Generator Add-on (frame-feedback, externally controllable)
 
 > The built-in reference preset is named **FRKTL** (not "Milkdrop").
+> User-authored presets live as self-contained `.frktl` files in a folder — see **[doc 29](29-frktl-preset-authoring.md)**
+> for the file format and an AI prompt that generates them.
 
 > Status: **PLAN / TODO** (2026-06-10). Research-backed work plan. Not yet implemented.
 > Builds on: doc 26 (visual add-on standard), doc 21 (extension system), doc 08 (compositor),
