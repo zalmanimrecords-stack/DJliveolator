@@ -20,7 +20,7 @@ public sealed class AnalogBackgroundBaker
     private const int ChromeHeight = 128;
     private const int Planks = 6;
 
-    [AvaloniaFact]
+    [AvaloniaFact(Skip = "Manual asset regenerator (doc 30); produces src/Liveolator.App/Assets/Themes/analog/background.png")]
     public void Bake_chrome_and_wood_background()
     {
         string dir = Path.Combine(RepoRoot(), "src", "Liveolator.App", "Assets", "Themes", "analog");
