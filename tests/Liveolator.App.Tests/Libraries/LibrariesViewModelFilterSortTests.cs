@@ -19,14 +19,24 @@ namespace Liveolator.App.Tests.Libraries;
 /// store (so the BPM/key/year/genre are deterministic, not decoder-derived) and drives the filter +
 /// sort surface, asserting the visible <see cref="LibrariesViewModel.Tracks"/> narrows and orders.
 /// </summary>
-public sealed class LibrariesViewModelFilterSortTests
+public sealed class LibrariesViewModelFilterSortTests : IDisposable
 {
     private static readonly DateTime T = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    // Each seeded VM starts a background re-analysis pass; track them so Dispose stops every pass before
+    // the test ends — a leaked pass mutates UI state on a background thread and races later tests (doc 27 B0).
+    private readonly List<IDisposable> _created = new();
 
     public LibrariesViewModelFilterSortTests()
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
         RxApp.TaskpoolScheduler = ImmediateScheduler.Instance;
+    }
+
+    public void Dispose()
+    {
+        foreach (IDisposable vm in _created)
+            vm.Dispose();
     }
 
     private static MusicTrack Track(
@@ -52,11 +62,12 @@ public sealed class LibrariesViewModelFilterSortTests
         Track("/music/short.mp3", "One Shot", "Sample", 128, "2A", 2026, durationSeconds: 59),
     };
 
-    private static async Task<LibrariesViewModel> SeededViewModelAsync()
+    private async Task<LibrariesViewModel> SeededViewModelAsync()
     {
         var store = new FakeMusicCatalogStore(seedTracks: Catalog, seedFolders: new[] { "/music" });
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
         var vm = new LibrariesViewModel(library, store: store);
+        _created.Add(vm);
         await vm.InitializeAsync();
         return vm;
     }

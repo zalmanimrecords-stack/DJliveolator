@@ -75,7 +75,7 @@ public sealed class LibrariesViewModelPersistenceTests
         // Second run: a fresh library (its enumerator finds nothing) + a store seeded with what the
         // first run saved. Restore must repopulate tracks and folders from the cache alone.
         var seeded = new FakeMusicCatalogStore(store.SavedTracks, store.SavedFolders);
-        var second = new LibrariesViewModel(EmptyLibrary(), store: seeded);
+        using var second = new LibrariesViewModel(EmptyLibrary(), store: seeded); // dispose stops any background pass
 
         await second.InitializeAsync();
 

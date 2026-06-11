@@ -20,7 +20,7 @@ namespace Liveolator.App.Features.Libraries;
 /// goes through the <see cref="IPerformanceActionDispatcher"/> (never a direct engine call — the
 /// doc 04 seam), and the live detected tempo is read from the <see cref="IBeatClock"/>.
 /// </summary>
-public sealed class LibrariesViewModel : ViewModelBase
+public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 {
     private static readonly TimeSpan MinimumVisibleDuration = TimeSpan.FromMinutes(1);
 
@@ -47,6 +47,13 @@ public sealed class LibrariesViewModel : ViewModelBase
     private double _scanProgressValue;
     private string _liveBpm = "—";
     private string _loadStatus = string.Empty;
+
+    // Lifetime control for the fire-and-forget background re-analysis: Dispose() cancels it and waits for
+    // it to wind down, so the pass never outlives the view-model. Without this the task leaks past its
+    // owner and (under the tests' immediate scheduler) mutates UI collections on a background thread,
+    // racing later tests — the root of the App suite's flakiness (doc 27 B0).
+    private readonly CancellationTokenSource _lifetime = new();
+    private Task _backgroundReanalysis = Task.CompletedTask;
 
     /// <param name="dispatcher">Action layer for playback intent; null disables Live Mode playback.</param>
     /// <param name="beatClock">Live beat clock to read the detected tempo from; null when Live Mode is off.</param>
@@ -325,7 +332,10 @@ public sealed class LibrariesViewModel : ViewModelBase
             _library, _store,
             onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e));
 
-        _ = Task.Run(async () =>
+        // Tie the pass to the view-model lifetime (Dispose cancels it) while still honouring any external
+        // token the caller supplied.
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        _backgroundReanalysis = Task.Run(async () =>
         {
             try
             {
@@ -340,18 +350,42 @@ public sealed class LibrariesViewModel : ViewModelBase
                             RefreshRows();
                     }));
 
-                await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+                await service.RunAsync(progress, linked.Token).ConfigureAwait(false);
                 RxApp.MainThreadScheduler.Schedule(RefreshRows);
             }
             catch (OperationCanceledException)
             {
-                // App shutting down / cancelled — nothing to do.
+                // App shutting down / view-model disposed — nothing to do.
             }
             catch (Exception ex)
             {
                 RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Background analysis error: {ex.Message}");
             }
-        }, cancellationToken);
+            finally
+            {
+                linked.Dispose();
+            }
+        }, linked.Token);
+    }
+
+    /// <summary>
+    /// Cancels and awaits the background re-analysis so it never outlives the view-model — no leaked work
+    /// mutating UI state after disposal (and deterministic teardown for tests, doc 27 B0).
+    /// </summary>
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        try
+        {
+            // The pass checks cancellation between tracks, so it winds down promptly; bound the wait so a
+            // stuck pass can never hang disposal.
+            _backgroundReanalysis.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception)
+        {
+            // The pass logs its own failures; a cancellation surfacing here is expected, not an error.
+        }
+        _lifetime.Dispose();
     }
 
     // Re-projects the current catalog into the visible rows, facets and folder statuses. UI-thread only

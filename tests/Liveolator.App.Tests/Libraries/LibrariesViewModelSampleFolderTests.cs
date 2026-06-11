@@ -18,12 +18,22 @@ namespace Liveolator.App.Tests.Libraries;
 /// The catalog is seeded with full-length (4-minute) tracks so the folder override — not the
 /// short-clip duration heuristic — is what flips the kind.
 /// </summary>
-public sealed class LibrariesViewModelSampleFolderTests
+public sealed class LibrariesViewModelSampleFolderTests : IDisposable
 {
+    // Seeded VMs start a background re-analysis pass; dispose them after each test so it never leaks into
+    // a later test and mutates UI state on a background thread (doc 27 B0).
+    private readonly List<IDisposable> _created = new();
+
     public LibrariesViewModelSampleFolderTests()
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
         RxApp.TaskpoolScheduler = ImmediateScheduler.Instance;
+    }
+
+    public void Dispose()
+    {
+        foreach (IDisposable vm in _created)
+            vm.Dispose();
     }
 
     private static MusicTrack FullTrack(string path) => new(
@@ -34,7 +44,7 @@ public sealed class LibrariesViewModelSampleFolderTests
     private static MusicLibrary EmptyLibrary()
         => new(new FakeFileEnumerator(), new FakeAudioDecoder());
 
-    private static async Task<(LibrariesViewModel vm, FakeMusicCatalogStore store)> SeededAsync(
+    private async Task<(LibrariesViewModel vm, FakeMusicCatalogStore store)> SeededAsync(
         string[]? sampleFolders = null)
     {
         var store = new FakeMusicCatalogStore(
@@ -42,6 +52,7 @@ public sealed class LibrariesViewModelSampleFolderTests
             seedFolders: new[] { "/loops" },
             seedSampleFolders: sampleFolders);
         var vm = new LibrariesViewModel(EmptyLibrary(), store: store);
+        _created.Add(vm);
         await vm.InitializeAsync();
         return (vm, store);
     }
