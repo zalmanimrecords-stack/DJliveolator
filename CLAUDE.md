@@ -94,12 +94,3 @@ docs/                     # architecture & design
   hardware — preserve that boundary.
 - Existing Zalmanolator algorithms worth porting: FFT/spectrum (`AudioAnalyzer`), BPM
   logic (`BpmDetector`), effect math (`KaleidoscopeKernel`, echo/particles → GLSL).
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For specific "where/how does X work" questions, use Grep and the `docs/` first. graphify's query seeding is lexical, so on this codebase's overloaded names (Load, Transition, Deck, Clip span both the DJ and VJ halves) `graphify query`/`explain` often return the wrong subgraph — verified failing on automix and deck-load probes 2026-06-11.
-- Read graphify-out/GRAPH_REPORT.md for broad, whole-architecture review (it is the reliable artifact). `graphify query`/`path`/`explain` are optional — try them only when a scoped subgraph would help, and fall back to Grep the moment results look off-target.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

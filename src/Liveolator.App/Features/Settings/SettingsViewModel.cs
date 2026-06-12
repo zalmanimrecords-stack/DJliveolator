@@ -3,8 +3,10 @@ using System.Reactive;
 using System.Reactive.Linq;
 using Liveolator.App.Diagnostics;
 using Liveolator.App.Features.Live.Modules;
+using Liveolator.App.Features.Mappings;
 using Liveolator.App.Shell;
 using Liveolator.App.Skins;
+using Liveolator.App.Theme;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Mapping;
@@ -62,6 +64,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly ILogFileLocator? _logLocator;
     private readonly IControlSkinCatalog? _controlSkins;
     private readonly IControlSkinApplier? _controlSkinApplier;
+    private readonly IUiThemeLiveApplier? _uiThemeLiveApplier;
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
@@ -95,7 +98,9 @@ public sealed class SettingsViewModel : ViewModelBase
         PerformanceDeckSet? decks = null,
         ILogFileLocator? logLocator = null,
         IControlSkinCatalog? controlSkins = null,
-        IControlSkinApplier? controlSkinApplier = null)
+        IControlSkinApplier? controlSkinApplier = null,
+        IUiThemeLiveApplier? uiThemeLiveApplier = null,
+        MappingsViewModel? mappings = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
@@ -112,6 +117,8 @@ public sealed class SettingsViewModel : ViewModelBase
         _logLocator = logLocator;
         _controlSkins = controlSkins;
         _controlSkinApplier = controlSkinApplier;
+        _uiThemeLiveApplier = uiThemeLiveApplier;
+        Mappings = mappings;
 
         foreach (int ms in BufferPresets)
             BufferOptions.Add(ms);
@@ -120,6 +127,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
         RefreshDevicesCommand = ReactiveCommand.Create(RefreshDevices);
         SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync);
+        ApplyThemeCommand = ReactiveCommand.Create(ApplyTheme);
         PreviewPackageCommand = ReactiveCommand.CreateFromTask(PreviewPackageAsync);
         InstallPackageCommand = ReactiveCommand.CreateFromTask(InstallPackageAsync);
         ToggleExtensionCommand = ReactiveCommand.CreateFromTask(ToggleExtensionAsync);
@@ -274,7 +282,11 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>True when a log file exists to open (false in headless/test composition).</summary>
     public bool CanOpenLogs => _logLocator is not null;
 
+    /// <summary>The MIDI mapping / learn surface, embedded in the MIDI settings tab (null in headless tests).</summary>
+    public MappingsViewModel? Mappings { get; }
+
     public ReactiveCommand<Unit, Unit> RefreshDevicesCommand { get; }
+    public ReactiveCommand<Unit, Unit> ApplyThemeCommand { get; }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenLogsFolderCommand { get; }
@@ -491,6 +503,26 @@ public sealed class SettingsViewModel : ViewModelBase
         => skinId is not null && _controlSkins is not null && _controlSkins.TryGet(skinId, out ControlSkinFile skin)
             ? skin
             : null;
+
+    // "Apply" button (doc 30): load the selected UI theme into the live app without a restart. Re-applies the
+    // current control skins on top so an active knob/slider skin still overrides the theme's control colours.
+    // Selecting "Spartan" resolves the built-in default theme, which resets every token (and clears any image).
+    private void ApplyTheme()
+    {
+        if (_uiThemeLiveApplier is null || _themes is null)
+            return;
+        if (ActiveUiThemeId is not { } id || !_themes.TryGet(id, out UiThemeDefinition theme))
+        {
+            Status = "No theme selected.";
+            return;
+        }
+
+        _uiThemeLiveApplier.Apply(theme);
+        _controlSkinApplier?.Apply(
+            ResolveSkin(ActiveKnobSkinId == NoSkin ? null : ActiveKnobSkinId),
+            ResolveSkin(ActiveSliderSkinId == NoSkin ? null : ActiveSliderSkinId));
+        Status = $"Applied theme '{theme.Name}'. Save to keep it for next launch.";
+    }
 
     // Re-matches the prior capture selection after a re-enumeration: the "(none)" sentinel stays
     // "(none)", an existing device by id is kept, and a vanished device falls back to "(none)".

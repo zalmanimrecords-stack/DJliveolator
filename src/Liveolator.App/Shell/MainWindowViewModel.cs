@@ -3,7 +3,6 @@ using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
-using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
@@ -25,7 +24,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         LiveViewModel live,
         DjViewModel dj,
         VisualLibraryViewModel visualLibrary,
-        MappingsViewModel mappings,
         AddonsViewModel addons,
         SettingsViewModel settings,
         GlobalMidiLearnCoordinator midiLearn,
@@ -35,7 +33,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
         ArgumentNullException.ThrowIfNull(visualLibrary);
-        ArgumentNullException.ThrowIfNull(mappings);
         ArgumentNullException.ThrowIfNull(addons);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(midiLearn);
@@ -52,7 +49,6 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("DJ", dj),
             new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
-            new("MAPPINGS", mappings),
             new("ADDONS", addons),
             new("SETTINGS", settings),
         };

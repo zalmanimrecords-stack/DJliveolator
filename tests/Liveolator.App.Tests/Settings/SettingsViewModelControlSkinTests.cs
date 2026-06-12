@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive.Concurrency;
@@ -5,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Skins;
+using Liveolator.App.Theme;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
@@ -124,6 +126,34 @@ public sealed class SettingsViewModelControlSkinTests
         Assert.True(applier.Called);
         Assert.Null(applier.LastKnob);
         Assert.Null(applier.LastSlider);
+    }
+
+    [Fact]
+    public void ApplyTheme_resolves_selected_theme_and_applies_it_live()
+    {
+        var themes = new UiThemeManager();
+        themes.ReplacePackage("test", new[] { NeonTheme() });
+        var applier = new FakeUiThemeLiveApplier();
+        var vm = new SettingsViewModel(
+            new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore(),
+            themes: themes, controlSkins: CatalogWithBoth(), controlSkinApplier: new FakeControlSkinApplier(),
+            uiThemeLiveApplier: applier);
+
+        vm.ActiveUiThemeId = "Neon";
+        vm.ApplyThemeCommand.Execute().Subscribe();
+
+        Assert.Equal("Neon", applier.LastApplied?.Id);
+        Assert.Contains("Applied theme 'Neon'", vm.Status);
+    }
+
+    // A valid theme definition for the manager (one accent colour is enough to pass validation).
+    private static UiThemeDefinition NeonTheme()
+        => new("Neon", "Neon", new Dictionary<string, string>(StringComparer.Ordinal) { ["AccentColor"] = "#FF00FF" });
+
+    private sealed class FakeUiThemeLiveApplier : IUiThemeLiveApplier
+    {
+        public UiThemeDefinition? LastApplied { get; private set; }
+        public void Apply(UiThemeDefinition theme) => LastApplied = theme;
     }
 
     // --- minimal fakes (the rich device fakes live in SettingsViewModelTests; these are just enough) ----

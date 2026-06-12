@@ -318,14 +318,22 @@ drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
 | Built | File |
 |-------|------|
 | State machine (Idle→Transitioning; engage is IMMEDIATE; abort = silent freeze) | `AutomixController` (Core) |
-| Action kinds + handler (`AutomixToggle`/`AutomixSetDuration`/`AutomixSetStyle`) | `AutomixActionHandler` (Core) |
+| Action kinds + handler (`AutomixToggle`/`AutomixSetDuration`) | `AutomixActionHandler` (Core) |
 | Go/no-go gates (typed refusals; degrade, never guess) | `AutomixPreflight`, `AutomixRefusal`, `AutomixPlan` (Core) |
 | Read-ahead placement v1 (mix-in = first beat; duration auto-shortens to fit) | `AutomixPlacement` (Core) |
-| Style profiles as pure curves over progress 0..1 | `CrossFadeProfile`, `EqMixProfile` (bass swap), `FxMixProfile` (filter sweep) (Core) |
-| TIME knob detents (2/4/8/16/32/64 bars, default 16; all even so the midpoint swap is a downbeat) | `AutomixDurationKnob` (Core) |
-| Bar-phase alignment (beat lock can be a beat off within the bar — fatal for a bass swap) | `PhaseAlignmentCalculator.BarPhaseError`/`BarPhaseNudgeSeconds` (Core) |
+| TIME knob detents (2/4/8/16/32/64 bars, default 16) | `AutomixDurationKnob` (Core) |
+| Bar-phase alignment (beat lock can be a beat off within the bar) | `PhaseAlignmentCalculator.BarPhaseError`/`BarPhaseNudgeSeconds` (Core) |
 | Pump-tick seam | `IMasterClockTickListener` + `MasterClockBridge(listener:)` (Core) |
-| Mixer UI: AUTOMIX button + TIME knob + CROSS/EQ/FX keys | `MixerView`/`MixerViewModel` (App) |
+| Mixer UI: AUTOMIX button + TIME knob | `MixerView`/`DjMixerView` + `MixerViewModel` (App) |
+
+> **2026-06-11 simplification (owner direction):** auto-mix is a **crossfade only** — the EQ-MIX /
+> FX-MIX style profiles and the style selector were removed (`AutomixStyle`, the three profile
+> classes, `AutomixSetStyle`, and the CROSS/EQ/FX keys; recoverable from git history). The
+> controller moves the crossfader position linearly in beats; equal-power loudness comes from the
+> mixer's existing `CrossfaderCurve.Smooth`. The blend is paced by the OUTGOING deck's own playhead
+> (not the shared clock's `BeatCount`, which jumps when the clock switches source on sync engage —
+> that jump slammed the fader across in one tick), monotonic-latched, with the ramp starting from
+> the crossfader's current position.
 
 - **Engage is IMMEDIATE (owner direction, 2026-06-11 rev):** pressing AUTOMIX seeks the incoming deck
   to its mix-in point, engages SYNC (tempo match + phase snap), starts it, and the slow blend begins
@@ -335,8 +343,8 @@ drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
   playhead (the same grid). The confirmed-lock check now gates only the one-shot bar-grid correction
   (run while progress ≤ 0.25, where a seek is inaudible). Preflight still refuses on: nothing playing,
   incoming empty, unknown BPM, folded tempo gap > ±8 % (no keylock yet), outgoing track too near its
-  end (duration auto-shortens first), incoming track too short. A missing first-beat anchor degrades
-  EQ/FX MIX to the grid-free CROSS FADE — never a guessed bass-swap point.
+  end (duration auto-shortens first), incoming track too short. A missing first-beat anchor only
+  skips the bar-align step — a tempo-synced crossfade is still safe.
 - **Performer takeover:** `PerformanceAction` gained an optional `Origin` tag and the dispatcher an
   `ActionDispatched` observation event; any human gesture on the mixer or the involved decks freezes
   the automation instantly (no snap-back, no re-grab; the incoming deck stays sync-locked — the
@@ -344,14 +352,15 @@ drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
   (position kept), SYNC is released (matched rate retained), and the outgoing channel strip is
   restored to the performer's pre-transition values.
 - The engine seam gained `LengthSeconds(slot)` (read-ahead needs real time remaining).
-- **Tests:** Core `Automix/*` (controller state machine with fake clock/reader/dispatcher, profiles'
-  golden values + "two basses never together" property, preflight, placement, knob detents),
+- **Tests:** Core `Automix/*` (controller state machine with fake reader/dispatcher — playhead
+  pacing, monotonic latch, takeover, completion — plus preflight, placement, knob detents),
   bar-phase tests in `PhaseAlignmentCalculatorTests`, dispatcher observation tests, App
   `MixerViewModelTests` (emit/feedback/disabled-when-headless).
-- **Deferred:** hot-cue-1 / silence-`IntroStart` as mix-in priorities (need cue positions readable
-  through the deck seam); auto-trigger whole-playlist mode (doc 11 Mixxx Auto-DJ model); echo-out FX
-  when a real FX engine lands; energy/phrase outro detection (doc 16 v2; changes the analyzer
-  version). Native runtime behaviour (audible blend on real BASS decks) is a MANUAL checklist item.
+- **Deferred:** EQ-MIX / FX-MIX style profiles (removed per owner direction — recover from git if
+  revisited); hot-cue-1 / silence-`IntroStart` as mix-in priorities (need cue positions readable
+  through the deck seam); auto-trigger whole-playlist mode (doc 11 Mixxx Auto-DJ model); energy/
+  phrase outro detection (doc 16 v2; changes the analyzer version). Native runtime behaviour
+  (audible blend on real BASS decks) is a MANUAL checklist item.
 
 ### ✅ Two-deck DJ engine + master mix → clock — `Liveolator.Audio/Playback/` (doc 11, increment 2)
 

@@ -44,9 +44,9 @@ public enum PerformanceActionKind
     DeckPitch, DeckBpm, DeckSyncOnce, DeckQuantizeToggle,
     // Mixer (doc 11)
     MixerCrossfade, MixerChannelGain, MixerEqBand, MixerFilter, MixerCueToggle,
-    // Auto-mix (doc 11) — hands-free assist (built 2026-06-11: AutomixToggle engages/aborts,
-    // AutomixSetDuration carries the TIME knob, AutomixSetStyle picks CrossFade/EqMix/FxMix)
-    AutomixToggle, AutomixSetDuration, AutomixSetStyle,
+    // Auto-mix (doc 11) — hands-free beat-locked crossfade (built 2026-06-11: AutomixToggle
+    // engages/aborts, AutomixSetDuration carries the TIME knob in bar detents)
+    AutomixToggle, AutomixSetDuration,
     // Playlist
     PlaylistInsertTrackNext, PlaylistMoveTrack, PlaylistRemoveFutureTrack,
     PlaylistSkipOnNextBar,

@@ -217,7 +217,6 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
       (UI) and a learned MIDI knob → `uGlow` changes live; switch preset → knob set + labels change.
 - [ ] Update docs: this file → mark sections done; add a short "controllable preset" section to
       doc 26; note the new action kind in doc 04's catalogue.
-- [ ] `graphify update .` after code lands (project rule).
 
 ## Open decisions (resolve in Phase 0)
 

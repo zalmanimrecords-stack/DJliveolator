@@ -7,9 +7,48 @@ public static class BuiltInUiThemes
     public const string PackageId = "liveolator.builtin.themes";
     public const string BrassworkId = "Brasswork";
     public const string AnalogId = "Analog";
+    public const string SpartanId = "Spartan";
 
     public static IReadOnlyList<UiThemeDefinition> All { get; } =
     [
+        // SPARTAN — the default look as a full theme, so "Apply" can switch BACK to it live and reset every
+        // token (incl. control colours + clearing any background image). These values MUST mirror the
+        // App.axaml defaults; SpartanMatchesAppDefaults (test) guards against drift.
+        new UiThemeDefinition(
+            SpartanId,
+            "Spartan",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["BgColor"] = "#0A0D13",
+                ["S1Color"] = "#141A26",
+                ["S2Color"] = "#0C1017",
+                ["S3Color"] = "#1A2130",
+                ["S4Color"] = "#26303F",
+                ["HairColor"] = "#232B38",
+                ["TextColor"] = "#E7ECF3",
+                ["DimColor"] = "#8B95A7",
+                ["FaintColor"] = "#5A6573",
+                ["AccentColor"] = "#2F80F6",
+                ["AccentLightColor"] = "#69A7FF",
+                ["AccentDarkColor"] = "#1E5EC5",
+                ["AccentWellColor"] = "#10294E",
+                ["AccentInkColor"] = "#FFFFFF",
+                ["RedColor"] = "#E5544A",
+                ["GreenColor"] = "#2F80F6",
+                ["AmberColor"] = "#2F80F6",
+                ["VioletColor"] = "#2F80F6",
+                ["MidiActiveColor"] = "#29C467",
+                ["WaveformColor"] = "#F0C23C",
+                ["KickColor"] = "#27C56A",
+                // Default control colours (match the App.axaml control-brush defaults).
+                ["KnobArcColor"] = "#2F80F6",
+                ["KnobTrackColor"] = "#26303F",
+                ["KnobCapColor"] = "#0C1017",
+                ["KnobPointerColor"] = "#E7ECF3",
+                ["FaderFillColor"] = "#2F80F6",
+                ["FaderTrackColor"] = "#26303F",
+                ["FaderThumbColor"] = "#E7ECF3",
+            }),
         // ANALOG (doc 30): a vintage-synth look — warm wood panels, an amber signal accent, and a
         // chrome+wood texture behind the shell (BackgroundImage). The knob/fader colour tokens give the
         // controls an ivory cap + amber arc without touching the surface/text tokens.

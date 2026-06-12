@@ -171,6 +171,7 @@ public static class ServiceConfig
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
         services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
+        services.AddSingleton<IUiThemeLiveApplier, ApplicationUiThemeLiveApplier>();
 
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);
@@ -584,7 +585,9 @@ public static class ServiceConfig
             sp.GetService<ILogFileLocator>(),
             // Control skins (doc 30): the catalog feeds the pickers; the applier re-skins live on Save.
             sp.GetRequiredService<IControlSkinCatalog>(),
-            sp.GetRequiredService<IControlSkinApplier>()));
+            sp.GetRequiredService<IControlSkinApplier>(),
+            sp.GetRequiredService<IUiThemeLiveApplier>(),
+            sp.GetRequiredService<MappingsViewModel>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the

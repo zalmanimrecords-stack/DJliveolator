@@ -7,7 +7,6 @@ using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
-using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
@@ -98,14 +97,13 @@ public sealed class MainWindowViewModelTests
             new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore());
         var visualLibrary = new VisualLibraryViewModel(
             new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
-        var mappings = new MappingsViewModel(new FakeMidiControlSession());
         var addons = new AddonsViewModel(
             new FakeSettingsStore(), VuMeterAddon.FaceSpec, _ => "default-face.png");
         var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
-            visualLibrary, mappings, addons, settings, midiLearn, status);
+            visualLibrary, addons, settings, midiLearn, status);
     }
 
     [Fact]
