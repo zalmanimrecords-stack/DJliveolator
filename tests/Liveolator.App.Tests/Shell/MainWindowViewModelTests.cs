@@ -7,6 +7,7 @@ using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;

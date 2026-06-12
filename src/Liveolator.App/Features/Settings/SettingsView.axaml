@@ -77,7 +77,16 @@
                             SelectedItem="{Binding SelectedMidiOutput}"
                             HorizontalAlignment="Stretch" />
                 </StackPanel>
+
+                <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}"
+                        HorizontalAlignment="Left" />
               </StackPanel>
+            </Border>
+
+            <!-- The MIDI mapping / learn surface, moved here from the old top-level MAPPINGS tab. -->
+            <TextBlock Classes="section" Text="MAPPING" />
+            <Border Classes="panel">
+              <mappings:MappingsView DataContext="{Binding Mappings}" Margin="14" />
             </Border>
           </StackPanel>
         </ScrollViewer>
@@ -224,10 +233,7 @@
     <!-- Always-visible action bar: Save applies to every tab's settings at once. -->
     <Border Grid.Row="1" Classes="panel" Margin="12" Padding="14">
       <StackPanel Spacing="10">
-        <StackPanel Orientation="Horizontal" Spacing="12">
-          <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
-          <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
-        </StackPanel>
+        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" HorizontalAlignment="Left" />
         <TextBlock Classes="faint" Text="{Binding Status}" />
       </StackPanel>
     </Border>
