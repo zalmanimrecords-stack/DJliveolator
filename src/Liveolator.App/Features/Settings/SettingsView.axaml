@@ -4,164 +4,227 @@
              xmlns:audio="clr-namespace:Liveolator.Core.Audio;assembly=Liveolator.Core"
              x:Class="Liveolator.App.Features.Settings.SettingsView"
              x:DataType="settings:SettingsViewModel">
-  <ScrollViewer>
-    <StackPanel Margin="24" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+  <!-- Settings are grouped into topic tabs (this screen grows over time); the Save / Detect bar is
+       docked below the tabs so it stays reachable from every tab. -->
+  <Grid RowDefinitions="*,Auto">
 
-      <TextBlock Classes="section" Text="AUDIO OUTPUT" />
-      <Border Classes="panel">
-        <StackPanel Spacing="12" Margin="14">
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Sound card / output device" />
-            <ComboBox ItemsSource="{Binding OutputDevices}"
-                      SelectedItem="{Binding SelectedOutputDevice}"
-                      HorizontalAlignment="Stretch">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="audio:AudioOutputDevice">
-                  <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-          </StackPanel>
+    <TabControl Grid.Row="0" Margin="12,12,12,0">
 
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Output buffer (ms) — lower = less latency, higher = safer" />
-            <ComboBox ItemsSource="{Binding BufferOptions}"
-                      SelectedItem="{Binding SelectedBufferMs}"
-                      HorizontalAlignment="Stretch" />
+      <TabItem Header="Audio">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="AUDIO OUTPUT" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Sound card / output device" />
+                  <ComboBox ItemsSource="{Binding OutputDevices}"
+                            SelectedItem="{Binding SelectedOutputDevice}"
+                            HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="audio:AudioOutputDevice">
+                        <TextBlock Text="{Binding Name}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Output buffer (ms) — lower = less latency, higher = safer" />
+                  <ComboBox ItemsSource="{Binding BufferOptions}"
+                            SelectedItem="{Binding SelectedBufferMs}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Classes="section" Text="LIVE CAPTURE" />
+            <Border Classes="panel">
+              <StackPanel Spacing="4" Margin="14">
+                <TextBlock Classes="faint" Text="Capture source (system loopback / line-in) — feeds the live engine" />
+                <ComboBox ItemsSource="{Binding CaptureDevices}"
+                          SelectedItem="{Binding SelectedCaptureDevice}"
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="audio:AudioCaptureDevice">
+                      <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+            </Border>
           </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="MIDI">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="MIDI CONTROLLERS" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Controller input (Push / CMD STUDIO 2A)" />
+                  <ComboBox ItemsSource="{Binding MidiInputDevices}"
+                            SelectedItem="{Binding SelectedMidiInput}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Feedback output (LEDs)" />
+                  <ComboBox ItemsSource="{Binding MidiOutputDevices}"
+                            SelectedItem="{Binding SelectedMidiOutput}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Appearance">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="THEME" />
+            <Border Classes="panel">
+              <StackPanel Spacing="6" Margin="14">
+                <TextBlock Classes="faint" Text="UI theme — the whole look (colours, surfaces, background). Applies after restart." />
+                <ComboBox ItemsSource="{Binding UiThemeIds}"
+                          SelectedItem="{Binding ActiveUiThemeId}"
+                          HorizontalAlignment="Stretch" />
+              </StackPanel>
+            </Border>
+
+            <TextBlock Classes="section" Text="CONTROLS (ADVANCED)" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <TextBlock Classes="faint"
+                           Text="Optional per-control skins, on top of the theme. Leave on (built-in) to follow the theme." />
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Knob skin (applies on Save)" />
+                  <ComboBox ItemsSource="{Binding KnobSkinIds}"
+                            SelectedItem="{Binding ActiveKnobSkinId}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Slider skin (applies on Save)" />
+                  <ComboBox ItemsSource="{Binding SliderSkinIds}"
+                            SelectedItem="{Binding ActiveSliderSkinId}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Decks">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="WAVEFORM" />
+            <Border Classes="panel">
+              <StackPanel Spacing="6" Margin="14">
+                <TextBlock Classes="faint"
+                           Text="Deck waveform zoom — seconds of audio shown while playing (lower = more zoomed in)" />
+                <Slider Minimum="{Binding WaveformZoomMin}" Maximum="{Binding WaveformZoomMax}"
+                        Value="{Binding WaveformZoomSeconds}" TickFrequency="1" IsSnapToTickEnabled="True"
+                        HorizontalAlignment="Stretch" />
+                <TextBlock Classes="faint" Text="{Binding WaveformZoomSeconds, StringFormat='Showing {0:F0} s around the playhead'}" />
+
+                <TextBlock Classes="faint" Margin="0,8,0,0"
+                           Text="Track-nudge step — how far the deck ◄ / ► buttons move the track per press" />
+                <Slider Minimum="{Binding NudgeMin}" Maximum="{Binding NudgeMax}"
+                        Value="{Binding NudgeSeconds}" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                        HorizontalAlignment="Stretch" />
+                <TextBlock Classes="faint" Text="{Binding NudgeSeconds, StringFormat='{}{0:F2} s per press'}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Extensions">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="EXTENSIONS" />
+            <Border Classes="panel">
+              <StackPanel Spacing="10" Margin="14">
+                <TextBlock Classes="faint" Text="Local signed package (.liveolator-pack)" />
+                <TextBox Classes="spartan"
+                         Watermark="C:\path\to\pack.liveolator-pack"
+                         Text="{Binding PackagePath}" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="spartan" Content="Preview" Command="{Binding PreviewPackageCommand}" />
+                  <Button Classes="accent" Content="Install" Command="{Binding InstallPackageCommand}" />
+                </StackPanel>
+
+                <CheckBox Content="Developer mode (allow unsigned packages after restart)"
+                          IsChecked="{Binding DeveloperMode}" />
+
+                <ListBox Classes="rows"
+                         ItemsSource="{Binding InstalledExtensions}"
+                         SelectedItem="{Binding SelectedExtension}"
+                         MinHeight="80">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="settings:ExtensionItemViewModel">
+                      <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                          <TextBlock Text="{Binding PackageId}" />
+                          <TextBlock Classes="faint" Text="{Binding Content}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Margin="12,0,0,0" Classes="faint" Text="{Binding State}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Classes="spartan" Content="Enable / Disable" Command="{Binding ToggleExtensionCommand}" />
+                  <Button Classes="spartan" Content="Uninstall" Command="{Binding UninstallExtensionCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Diagnostics">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="DIAGNOSTICS / LOGS" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Log detail (applies after restart) — raise to Debug/Trace when reproducing a problem" />
+                  <ComboBox ItemsSource="{Binding LogLevels}"
+                            SelectedItem="{Binding SelectedLogLevel}"
+                            HorizontalAlignment="Stretch" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Log file" />
+                  <SelectableTextBlock Classes="mono" Text="{Binding LogFilePath}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <Button Classes="spartan" Content="Open logs folder"
+                        Command="{Binding OpenLogsFolderCommand}" IsEnabled="{Binding CanOpenLogs}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+    </TabControl>
+
+    <!-- Always-visible action bar: Save applies to every tab's settings at once. -->
+    <Border Grid.Row="1" Classes="panel" Margin="12" Padding="14">
+      <StackPanel Spacing="10">
+        <StackPanel Orientation="Horizontal" Spacing="12">
+          <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
+          <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
         </StackPanel>
-      </Border>
-
-      <TextBlock Classes="section" Text="MIDI CONTROLLERS" />
-      <Border Classes="panel">
-        <StackPanel Spacing="12" Margin="14">
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Controller input (Push / CMD STUDIO 2A)" />
-            <ComboBox ItemsSource="{Binding MidiInputDevices}"
-                      SelectedItem="{Binding SelectedMidiInput}"
-                      HorizontalAlignment="Stretch" />
-          </StackPanel>
-
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Feedback output (LEDs)" />
-            <ComboBox ItemsSource="{Binding MidiOutputDevices}"
-                      SelectedItem="{Binding SelectedMidiOutput}"
-                      HorizontalAlignment="Stretch" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <TextBlock Classes="section" Text="LIVE CAPTURE" />
-      <Border Classes="panel">
-        <StackPanel Spacing="4">
-          <TextBlock Classes="faint" Text="Capture source (system loopback / line-in) — feeds the live engine" />
-          <ComboBox ItemsSource="{Binding CaptureDevices}"
-                    SelectedItem="{Binding SelectedCaptureDevice}"
-                    HorizontalAlignment="Stretch">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="audio:AudioCaptureDevice">
-                <TextBlock Text="{Binding Name}" />
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
-        </StackPanel>
-      </Border>
-
-      <TextBlock Classes="section" Text="WAVEFORM" />
-      <Border Classes="panel">
-        <StackPanel Spacing="6" Margin="14">
-          <TextBlock Classes="faint"
-                     Text="Deck waveform zoom — seconds of audio shown while playing (lower = more zoomed in)" />
-          <Slider Minimum="{Binding WaveformZoomMin}" Maximum="{Binding WaveformZoomMax}"
-                  Value="{Binding WaveformZoomSeconds}" TickFrequency="1" IsSnapToTickEnabled="True"
-                  HorizontalAlignment="Stretch" />
-          <TextBlock Classes="faint" Text="{Binding WaveformZoomSeconds, StringFormat='Showing {0:F0} s around the playhead'}" />
-
-          <TextBlock Classes="faint" Margin="0,8,0,0"
-                     Text="Track-nudge step — how far the deck ◄ / ► buttons move the track per press" />
-          <Slider Minimum="{Binding NudgeMin}" Maximum="{Binding NudgeMax}"
-                  Value="{Binding NudgeSeconds}" TickFrequency="0.01" IsSnapToTickEnabled="True"
-                  HorizontalAlignment="Stretch" />
-          <TextBlock Classes="faint" Text="{Binding NudgeSeconds, StringFormat='{}{0:F2} s per press'}" />
-        </StackPanel>
-      </Border>
-
-      <TextBlock Classes="section" Text="EXTENSIONS" />
-      <Border Classes="panel">
-        <StackPanel Spacing="10" Margin="14">
-          <TextBlock Classes="faint" Text="Local signed package (.liveolator-pack)" />
-          <TextBox Classes="spartan"
-                   Watermark="C:\path\to\pack.liveolator-pack"
-                   Text="{Binding PackagePath}" />
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Classes="spartan" Content="Preview" Command="{Binding PreviewPackageCommand}" />
-            <Button Classes="accent" Content="Install" Command="{Binding InstallPackageCommand}" />
-          </StackPanel>
-
-          <CheckBox Content="Developer mode (allow unsigned packages after restart)"
-                    IsChecked="{Binding DeveloperMode}" />
-
-          <TextBlock Classes="faint" Text="UI theme (applies after restart)" />
-          <ComboBox ItemsSource="{Binding UiThemeIds}"
-                    SelectedItem="{Binding ActiveUiThemeId}" />
-
-          <TextBlock Classes="faint" Text="Knob skin (applies on Save)" />
-          <ComboBox ItemsSource="{Binding KnobSkinIds}"
-                    SelectedItem="{Binding ActiveKnobSkinId}" />
-
-          <TextBlock Classes="faint" Text="Slider skin (applies on Save)" />
-          <ComboBox ItemsSource="{Binding SliderSkinIds}"
-                    SelectedItem="{Binding ActiveSliderSkinId}" />
-
-          <ListBox Classes="rows"
-                   ItemsSource="{Binding InstalledExtensions}"
-                   SelectedItem="{Binding SelectedExtension}"
-                   MinHeight="80">
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="settings:ExtensionItemViewModel">
-                <Grid ColumnDefinitions="*,Auto">
-                  <StackPanel>
-                    <TextBlock Text="{Binding PackageId}" />
-                    <TextBlock Classes="faint" Text="{Binding Content}" />
-                  </StackPanel>
-                  <TextBlock Grid.Column="1" Margin="12,0,0,0" Classes="faint" Text="{Binding State}" />
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <Button Classes="spartan" Content="Enable / Disable" Command="{Binding ToggleExtensionCommand}" />
-            <Button Classes="spartan" Content="Uninstall" Command="{Binding UninstallExtensionCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-
-      <TextBlock Classes="section" Text="DIAGNOSTICS / LOGS" />
-      <Border Classes="panel">
-        <StackPanel Spacing="12" Margin="14">
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Log detail (applies after restart) — raise to Debug/Trace when reproducing a problem" />
-            <ComboBox ItemsSource="{Binding LogLevels}"
-                      SelectedItem="{Binding SelectedLogLevel}"
-                      HorizontalAlignment="Stretch" />
-          </StackPanel>
-
-          <StackPanel Spacing="4">
-            <TextBlock Classes="faint" Text="Log file" />
-            <SelectableTextBlock Classes="mono" Text="{Binding LogFilePath}" TextWrapping="Wrap" />
-          </StackPanel>
-
-          <Button Classes="spartan" Content="Open logs folder"
-                  Command="{Binding OpenLogsFolderCommand}" IsEnabled="{Binding CanOpenLogs}" />
-        </StackPanel>
-      </Border>
-
-      <StackPanel Orientation="Horizontal" Spacing="12">
-        <Button Classes="spartan" Content="Detect equipment" Command="{Binding RefreshDevicesCommand}" />
-        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
+        <TextBlock Classes="faint" Text="{Binding Status}" />
       </StackPanel>
+    </Border>
 
-      <TextBlock Classes="faint" Text="{Binding Status}" />
-    </StackPanel>
-  </ScrollViewer>
+  </Grid>
 </UserControl>
