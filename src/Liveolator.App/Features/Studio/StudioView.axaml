@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:studio="clr-namespace:Liveolator.App.Features.Studio"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Studio.StudioView"
+             x:DataType="studio:StudioViewModel">
+
+  <DockPanel LastChildFill="True">
+
+    <!-- top bar: open/save a named set + push to the live decks -->
+    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <ComboBox MinWidth="180" ItemsSource="{Binding SavedSets}"
+                  SelectedItem="{Binding SelectedSaved}" PlaceholderText="Saved sets…" />
+        <Button Classes="spartan" Content="Open" Command="{Binding OpenCommand}" />
+        <Button Classes="spartan" Content="Delete" Command="{Binding DeleteCommand}" />
+        <Button Classes="spartan" Content="New" Command="{Binding NewCommand}" />
+        <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
+        <TextBox Classes="spartan" Width="240" Watermark="Set name" Text="{Binding Name}" />
+        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
+        <Button Classes="spartan" Content="Send to live set"
+                Command="{Binding SendToLiveSetCommand}" IsVisible="{Binding CanSendToLiveSet}" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- status line -->
+    <TextBlock DockPanel.Dock="Bottom" Classes="mono faint" Margin="0,12,0,0" Text="{Binding Status}" />
+
+    <!-- library picker | timeline | transition inspector -->
+    <Grid ColumnDefinitions="300,16,*,16,300">
+
+      <!-- LIBRARY -->
+      <Border Grid.Column="0" Classes="panel">
+        <DockPanel Margin="12">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="LIBRARY" Margin="0,0,0,8" />
+          <TextBox DockPanel.Dock="Top" Classes="spartan" Margin="0,0,0,8"
+                   Watermark="Search title, artist, key…" Text="{Binding LibrarySearch}" />
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button Classes="accent" Content="Add →" Command="{Binding AddTrackCommand}" />
+            <Button Classes="spartan" Content="Auto-build set" Command="{Binding AutoBuildCommand}" />
+          </StackPanel>
+          <ListBox Classes="rows" ItemsSource="{Binding Library}"
+                   SelectedItem="{Binding SelectedLibraryTrack}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="lib:TrackRowViewModel">
+                <Grid ColumnDefinitions="*,46,40" VerticalAlignment="Center">
+                  <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="2" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <!-- TIMELINE: one lane per entry, each with its incoming-transition badge + waveform -->
+      <Border Grid.Column="2" Classes="panel">
+        <DockPanel Margin="12">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="TIMELINE" Margin="0,0,0,8" />
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button Classes="spartan" Content="↑" Command="{Binding MoveUpCommand}" />
+            <Button Classes="spartan" Content="↓" Command="{Binding MoveDownCommand}" />
+            <Button Classes="spartan" Content="Remove" Command="{Binding RemoveCommand}" />
+          </StackPanel>
+          <ScrollViewer>
+            <ListBox Classes="rows" ItemsSource="{Binding Entries}"
+                     SelectedItem="{Binding SelectedEntry}" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="studio:StudioEntryViewModel">
+                  <StackPanel Spacing="2" Margin="0,2">
+                    <!-- incoming transition badge (absent on the first lane) -->
+                    <Border IsVisible="{Binding HasTransition}"
+                            Background="{DynamicResource S3}" CornerRadius="3"
+                            Padding="8,2" HorizontalAlignment="Left" Margin="0,2">
+                      <TextBlock Classes="mono accent" FontSize="10"
+                                 Text="{Binding TransitionIn.Summary}" />
+                    </Border>
+                    <!-- lane: facts + waveform -->
+                    <Border Background="{DynamicResource S2}" CornerRadius="4" Padding="8">
+                      <Grid RowDefinitions="Auto,46">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,56,44,56" Margin="0,0,0,4">
+                          <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                          <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                          <TextBlock Grid.Column="2" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                          <TextBlock Grid.Column="3" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" />
+                        </Grid>
+                        <controls:WaveformStrip Grid.Row="1"
+                                                Peaks="{Binding Peaks}"
+                                                KickPeaks="{Binding KickPeaks}"
+                                                MidPeaks="{Binding MidPeaks}"
+                                                HighPeaks="{Binding HighPeaks}" />
+                      </Grid>
+                    </Border>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <!-- TRANSITION INSPECTOR -->
+      <Border Grid.Column="4" Classes="panel">
+        <StackPanel Margin="12" Spacing="12">
+          <TextBlock Classes="section" Text="TRANSITION" />
+
+          <TextBlock Classes="faint" TextWrapping="Wrap"
+                     Text="Select a lane on the timeline to tune the blend that leads into it."
+                     IsVisible="{Binding SelectedEntry, Converter={x:Static ObjectConverters.IsNull}}" />
+
+          <StackPanel Spacing="12"
+                      IsVisible="{Binding SelectedEntry, Converter={x:Static ObjectConverters.IsNotNull}}">
+
+            <TextBlock Classes="faint" TextWrapping="Wrap"
+                       Text="First track — nothing blends into it."
+                       IsVisible="{Binding !SelectedEntry.HasTransition}" />
+
+            <StackPanel Spacing="12" IsVisible="{Binding SelectedEntry.HasTransition}">
+              <StackPanel Spacing="4">
+                <TextBlock Classes="faint" Text="KIND" />
+                <ComboBox HorizontalAlignment="Stretch"
+                          ItemsSource="{x:Static studio:StudioTransitionViewModel.Kinds}"
+                          SelectedItem="{Binding SelectedEntry.TransitionIn.Kind}" />
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="LENGTH (BEATS)" />
+                  <TextBlock Grid.Column="1" Classes="mono accent"
+                             Text="{Binding SelectedEntry.TransitionIn.LengthBeats, StringFormat='0'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="64" TickFrequency="4" IsSnapToTickEnabled="True"
+                        Value="{Binding SelectedEntry.TransitionIn.LengthBeats}" />
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock Classes="faint" Text="CURVE" />
+                <ComboBox HorizontalAlignment="Stretch"
+                          ItemsSource="{x:Static studio:StudioTransitionViewModel.Curves}"
+                          SelectedItem="{Binding SelectedEntry.TransitionIn.Curve}" />
+              </StackPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock Classes="faint" Text="ANCHOR" />
+                <ComboBox HorizontalAlignment="Stretch"
+                          ItemsSource="{x:Static studio:StudioTransitionViewModel.Anchors}"
+                          SelectedItem="{Binding SelectedEntry.TransitionIn.Anchor}" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </DockPanel>
+</UserControl>

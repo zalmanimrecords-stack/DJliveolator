@@ -352,7 +352,7 @@ public sealed class DeckViewModelTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task Sync_EmitsDeckSyncToggle_ForItsSlot(int slot)
+    public async Task Sync_EmitsDeckSyncOnce_ForItsSlot(int slot)
     {
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
@@ -361,21 +361,24 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSyncToggle, action.Kind);
+        Assert.Equal(PerformanceActionKind.DeckSyncOnce, action.Kind);
+        Assert.Equal(ActionInputMode.Momentary, action.InputMode);
         Assert.Equal(slot, action.Slot);
     }
 
     [Fact]
-    public void IsSyncEnabled_FollowsSyncFeedbackForItsSlot()
+    public async Task Sync_IsOneShot_EachPressEmitsAFreshDeckSyncOnce()
     {
+        // SYNC is a momentary beatmatch, not a latch: pressing it twice fires two independent
+        // DeckSyncOnce actions (a toggle would have alternated engage/release state instead).
         var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 1, dispatcher);
+        var vm = new DeckViewModel(slot: 0, dispatcher);
 
-        dispatcher.RaiseFeedback(
-            PerformanceActionKind.DeckSyncToggle, 1,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 1));
+        await vm.SyncCommand.Execute().ToTask();
+        await vm.SyncCommand.Execute().ToTask();
 
-        Assert.True(vm.IsSyncEnabled);
+        Assert.Equal(2, dispatcher.Dispatched.Count);
+        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncOnce, a.Kind));
     }
 
     [Fact]

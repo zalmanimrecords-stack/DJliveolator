@@ -7,6 +7,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
@@ -21,7 +22,6 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
-using Liveolator.Core.Automix;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
@@ -34,6 +34,7 @@ using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Studio;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 using Liveolator.Media;
@@ -257,6 +258,11 @@ public static class ServiceConfig
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(
                 persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // STUDIO pre-show sets (richer than a playlist: planned transitions) — one JSON file per set
+        // under live/studio-sets/, kept separate from the flat playlists above.
+        services.AddSingleton<IStudioSetStore>(
+            _ => new JsonStudioSetStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
         // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
         // next run and survive a deck reload (tolerant: a missing/corrupt file degrades to no cues).
@@ -357,7 +363,6 @@ public static class ServiceConfig
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
         MasterClockPump? syncPump = null;
-        AutomixController? automixController = null;
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
@@ -365,15 +370,8 @@ public static class ServiceConfig
             // them lock to the sync-master deck when one is engaged (else the audio-mix base). The bridge
             // pump drives the deck clock and flips the switch independently of UI responsiveness.
             services.AddSingleton<IBeatClock>(sharedVisualClock);
-            // Auto-mix (doc 11) rides the SAME pump tick that drives sync + the shared clock — one beat
-            // mechanism for the whole application. It reads decks/mixer through the reader seam and
-            // writes only PerformanceActions (attached to the dispatcher below, once it exists).
-            automixController = new AutomixController(
-                new EngineAutomixDeckReader(deckEngine!, mixerHandler),
-                loggerFactory: loggerFactory);
-            services.AddSingleton(automixController);
             var syncBridge = new MasterClockBridge(
-                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock, automixController);
+                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
             syncPump = new MasterClockPump(syncBridge, hostClock);
             services.AddSingleton(syncPump);
         }
@@ -393,9 +391,6 @@ public static class ServiceConfig
         if (realtimeUp)
         {
             handlers.Add(new DeckActionHandler(deckEngine!));
-            var automixHandler = new AutomixActionHandler(automixController!, loggerFactory);
-            services.AddSingleton(automixHandler);
-            handlers.Add(automixHandler);
         }
 
         var dispatcher = new PerformanceActionDispatcher(
@@ -403,9 +398,6 @@ public static class ServiceConfig
             loggerFactory.CreateLogger<PerformanceActionDispatcher>(),
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton(dispatcher);
-
-        // The auto-mix engine emits through (and observes performer input on) the one dispatcher.
-        automixController?.Attach(dispatcher);
 
         // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
         // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the
@@ -533,6 +525,17 @@ public static class ServiceConfig
             sp.GetRequiredService<IVisualThumbnailRenderer>(),
             sp.GetRequiredService<IFileRemover>(),
             sp.GetRequiredService<IConfirmationService>()));
+
+        // STUDIO tab: pre-show set planner — curate/auto-order a set with planned transitions on a
+        // timeline, then save (IStudioSetStore) or push to the live queue (ILivePlaylist). Reuses the
+        // harmonic planner + waveform provider; degrades gracefully when the realtime engine is absent.
+        services.AddSingleton<StudioViewModel>(sp => new StudioViewModel(
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetRequiredService<IStudioSetStore>(),
+            new StudioSetPlanner(),
+            sp.GetService<IWaveformProvider>(),
+            realtimeUp ? sp.GetService<ILivePlaylist>() : null,
+            sp.GetRequiredService<TrackContextActions>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).

@@ -22,16 +22,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private const double DefaultCueLevel = 1.0;
     private const double DefaultCueMix = 0.0; // 0 = full cue (PFL), 1 = full master
 
-    private const double DefaultAutoMixTime = 0.6; // detent index 3 of 5 → 16 bars
-
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IDeckLevelMeter? _levelMeter;
     private bool _isCueA;
     private bool _isCueB;
     private double _levelA;
     private double _levelB;
-    private bool _isAutoMixActive;
-    private string _autoMixBars = "16";
     private bool _disposed;
 
     public MixerViewModel(
@@ -66,28 +62,10 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
             "Cue / Master", Seed(PerformanceActionKind.MixerCueMix, slot: 0, DefaultCueMix),
             enabled ? v => Emit(PerformanceActionKind.MixerCueMix, v, slot: 0) : null);
 
-        // AUTOMIX (doc 11): available only when its handler is wired (realtime engine up) — the
-        // button stays disabled in headless/catalog mode rather than silently dropping the action.
-        IsAutoMixAvailable =
-            dispatcher?.GetFeedback(PerformanceActionKind.AutomixToggle, 0).IsAvailable ?? false;
-        IObservable<bool> canAutoMix = Observable.Return(IsAutoMixAvailable);
-        AutoMixCommand = ReactiveCommand.Create(
-            () => { _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.AutomixToggle)); },
-            canAutoMix);
-        AutoMixTime = new ContinuousControlViewModel(
-            "Time", Seed(PerformanceActionKind.AutomixSetDuration, slot: 0, DefaultAutoMixTime),
-            IsAutoMixAvailable ? v => Emit(PerformanceActionKind.AutomixSetDuration, v, slot: 0) : null);
-
         if (_dispatcher is not null)
         {
             _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
             _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
-            if (IsAutoMixAvailable)
-            {
-                _isAutoMixActive = _dispatcher.GetFeedback(PerformanceActionKind.AutomixToggle, 0).IsActive;
-                _autoMixBars =
-                    _dispatcher.GetFeedback(PerformanceActionKind.AutomixSetDuration, 0).Argument ?? "16";
-            }
             _dispatcher.FeedbackChanged += OnFeedback;
         }
     }
@@ -128,36 +106,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     /// <summary>Headphone-cue toggles per deck (MixerCueToggle — a ready handler).</summary>
     public ReactiveCommand<Unit, Unit> CueACommand { get; }
     public ReactiveCommand<Unit, Unit> CueBCommand { get; }
-
-    /// <summary>True when the auto-mix handler is wired (realtime engine up).</summary>
-    public bool IsAutoMixAvailable { get; }
-
-    /// <summary>Engage/abort the hands-free crossfade (AutomixToggle).</summary>
-    public ReactiveCommand<Unit, Unit> AutoMixCommand { get; }
-
-    /// <summary>The transition-length TIME knob (AutomixSetDuration; detents 2..64 bars).</summary>
-    public ContinuousControlViewModel AutoMixTime { get; }
-
-    /// <summary>True while a transition is armed/syncing/running (button LED, from feedback).</summary>
-    public bool IsAutoMixActive
-    {
-        get => _isAutoMixActive;
-        private set => this.RaiseAndSetIfChanged(ref _isAutoMixActive, value);
-    }
-
-    /// <summary>The resolved transition length in bars, as reported by the engine.</summary>
-    public string AutoMixBars
-    {
-        get => _autoMixBars;
-        private set
-        {
-            this.RaiseAndSetIfChanged(ref _autoMixBars, value);
-            this.RaisePropertyChanged(nameof(AutoMixBarsLabel));
-        }
-    }
-
-    /// <summary>Knob caption, e.g. "16 BARS".</summary>
-    public string AutoMixBarsLabel => $"{_autoMixBars} BARS";
 
     /// <summary>True while deck A/B is routed to the headphone cue bus (from dispatcher feedback).</summary>
     public bool IsCueA
@@ -218,14 +166,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.MixerCueMix:
                     CueMix.SetFromFeedback(e.State.Value);
-                    break;
-                case PerformanceActionKind.AutomixToggle:
-                    IsAutoMixActive = e.State.IsActive;
-                    break;
-                case PerformanceActionKind.AutomixSetDuration:
-                    AutoMixTime.SetFromFeedback(e.State.Value);
-                    if (e.State.Argument is { } bars)
-                        AutoMixBars = bars;
                     break;
             }
         });

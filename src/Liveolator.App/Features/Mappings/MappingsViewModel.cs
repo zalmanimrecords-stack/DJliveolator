@@ -221,7 +221,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         [
             new("Deck A: Play / Pause", PerformanceActionKind.DeckPlayPause, 0),
             new("Deck A: Cue", PerformanceActionKind.DeckCue, 0),
-            new("Deck A: Sync", PerformanceActionKind.DeckSyncToggle, 0, ActionInputMode.Toggle),
+            new("Deck A: Sync", PerformanceActionKind.DeckSyncOnce, 0, ActionInputMode.Momentary),
             new("Deck A: Jog / track position", PerformanceActionKind.DeckJog, 0,
                 ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck A: Channel fader", PerformanceActionKind.MixerChannelGain, 0),
@@ -232,7 +232,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Deck A: Headphone cue", PerformanceActionKind.MixerCueToggle, 0),
             new("Deck B: Play / Pause", PerformanceActionKind.DeckPlayPause, 1),
             new("Deck B: Cue", PerformanceActionKind.DeckCue, 1),
-            new("Deck B: Sync", PerformanceActionKind.DeckSyncToggle, 1, ActionInputMode.Toggle),
+            new("Deck B: Sync", PerformanceActionKind.DeckSyncOnce, 1, ActionInputMode.Momentary),
             new("Deck B: Jog / track position", PerformanceActionKind.DeckJog, 1,
                 ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck B: Channel fader", PerformanceActionKind.MixerChannelGain, 1),

@@ -118,10 +118,10 @@ public sealed class MidiInputWiringTests
         Assert.NotNull(pipeline);
         Assert.True(provider.OpenOutputCalled);
 
-        // Persistent sync feedback is routed to the bound control LED.
-        var sync = FindBinding(PerformanceActionKind.DeckSyncToggle, slot: 0);
+        // Sync feedback is routed to the bound control LED.
+        var sync = FindBinding(PerformanceActionKind.DeckSyncOnce, slot: 0);
         dispatcher.RaiseFeedback(new ActionFeedbackChanged(
-            PerformanceActionKind.DeckSyncToggle, Slot: 0,
+            PerformanceActionKind.DeckSyncOnce, Slot: 0,
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0)));
 
         Assert.Contains(output.Sent, m => m.Data1 == sync.Data1 && m.Channel == sync.Channel);

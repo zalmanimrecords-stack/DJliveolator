@@ -131,6 +131,19 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
 
         MusicTrack? track = _library.All
             .FirstOrDefault(t => string.Equals(t.File.Path, trackPath, StringComparison.OrdinalIgnoreCase));
+
+        // The loaded path can differ in form from the catalog's (e.g. a mapped drive vs the UNC share the
+        // track was scanned under, or a deck-queue path), so an exact match can miss a track that IS in the
+        // library. Fall back to a file-name match so the deck still surfaces its Key·BPM·duration (deck B
+        // was showing no BPM because of this).
+        if (track is null)
+        {
+            string fileName = System.IO.Path.GetFileName(trackPath);
+            if (!string.IsNullOrEmpty(fileName))
+                track = _library.All.FirstOrDefault(t =>
+                    string.Equals(System.IO.Path.GetFileName(t.File.Path), fileName, StringComparison.OrdinalIgnoreCase));
+        }
+
         if (track is null)
             return null;
 

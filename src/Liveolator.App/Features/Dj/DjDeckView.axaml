@@ -25,16 +25,12 @@
           <TextBlock Foreground="{DynamicResource AccentInk}" FontWeight="SemiBold" FontSize="14"
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
-        <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-          <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
-            <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-            <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
-          </StackPanel>
-          <StackPanel Spacing="1" IsVisible="{Binding !HasTrackMeta}">
-            <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
-            <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
-          </StackPanel>
-        </Panel>
+        <!-- One header for both decks: the loaded track's name is always the title (the A/B badge already
+             shows which deck this is), and the Key·BPM·duration line shows once that meta is known. -->
+        <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" Spacing="1">
+          <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" IsVisible="{Binding HasTrackMeta}" />
+        </StackPanel>
         <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
           <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
                      Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
@@ -67,7 +63,7 @@
                       ArcBrush="{DynamicResource Accent}"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       IsEnabled="{Binding IsEnabled}"
-                      BeatGrid="{Binding BeatGrid}" IsBeatPulsing="{Binding IsPlaying}"
+                      KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
                       ToolTip.Tip="Drag the platter to seek — clockwise advances, counter-clockwise rewinds" />
 
         <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
@@ -95,8 +91,9 @@
                 Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
         </Button>
-        <Button Classes="key" Classes.on="{Binding IsSyncEnabled}" Content="SYNC"
-                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
+        <Button Classes="key" Content="SYNC"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Match tempo + phase to the other deck (one-shot)" />
       </UniformGrid>
 
       <!-- BPM: horizontal fader (0..1 normalised) + nudge buttons for manual beat-sync -->

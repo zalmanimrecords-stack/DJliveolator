@@ -69,8 +69,6 @@ public enum PerformanceActionKind
     AudioFxSetParameter,
     AudioFxLoadPreset,
 
-    // Auto-mix (doc 11) — hands-free assist
-
     // Playlist
     PlaylistInsertTrackNext,
     PlaylistMoveTrack,
@@ -95,18 +93,6 @@ public enum PerformanceActionKind
     /// macros, which are then driven by <see cref="VisualSetMacro"/> from UI knobs / external controllers.
     /// </summary>
     VisualLoadPreset,
-
-    // Auto-mix (doc 11) — a hands-free beat-locked crossfade between the decks.
-    // (Persisted bindings serialize kinds by NAME — JsonStringEnumConverter — so ordering is free.)
-
-    /// <summary>Start an automatic deck-to-deck crossfade, or abort the one in flight.</summary>
-    AutomixToggle,
-
-    /// <summary>
-    /// Set the auto-mix transition length: Value is the 0..1 knob position, resolved to a bar-count
-    /// detent (2/4/8/16/32/64 bars) by the auto-mix engine. Applies to the NEXT transition.
-    /// </summary>
-    AutomixSetDuration,
 
     /// <summary>
     /// Appends a track to a deck's live queue without touching what is playing: Slot is the deck
