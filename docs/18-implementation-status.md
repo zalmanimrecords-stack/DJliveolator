@@ -2,7 +2,7 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-11**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-12**.
 >
 > **See `docs/27-system-review-2026-06-10.md`** (latest) — a ten-expert full-system review with a
 > verified bug map and the recommended next 10 steps; **supersedes `docs/24-system-review-2026-06-07.md`**.
@@ -10,6 +10,30 @@
 > 2026-06-10). Doc 27 closed five of doc 24's headline holes (shared-clock pitch scaling, UI-thread sync
 > pump, GL scene re-read, CI, fetch-bass FLAC parity) and verified eight new High bugs — read doc 27 §5
 > before opening the next branch.
+
+## STUDIO — basic-DAW timeline (2026-06-12, branch `feat/studio-tab`)
+
+A new top-level **STUDIO** tab: an arrangement timeline (dj.studio-inspired) that automates the
+decks — clips on per-deck lanes + automation lanes — playable live and renderable to a file. An
+earlier harmonic set-planner build was scrapped per the owner; this is the deck-automation DAW.
+
+- **Scope change:** the engine now has **4 decks** (`MixerState.DeckCount = 4`): 2 live A/B + **2
+  hidden** C/D (STUDIO only). The A/B crossfader is unchanged; `MixerMath.DeckOutputGain` gives
+  hidden decks (slots ≥ 2) a **unity crossfader factor** so their level is pure channel gain. LIVE/DJ
+  is untouched and still a 2-deck surface.
+- **Done + tested:**
+  - 4-deck engine widening (Core + `TwoDeckBassEngine`/`BassMixer`); 688 mixer/engine/app tests green.
+  - `StudioProject`/`StudioClip`/`AutomationLane` model + `JsonStudioProjectStore` (`live/studio-projects/`).
+  - `StudioArranger` (pure): per-tick automation actions + clip Start/Stop events (Origin = "studio").
+  - `StudioTransport`: host-clock ticker driving the 4-deck engine through the dispatcher.
+  - Offline render: Core `MixPlan` + Audio `OfflineMixRenderer` + `WavWriter` (mono MVP, native tempo).
+  - Timeline UI (`StudioViewModel`/`StudioView`): 4 lanes, clip placement, Play/Stop, Save/Open, Render.
+- **Deferred / follow-ups:** graphical automation-curve editing (model already supports it; it
+  round-trips); engine rename to `MultiDeckBassEngine`; sync leader-election guard for the hidden decks
+  (latent — nothing sync-engages slots ≥ 2); per-deck C/D live queues (not needed — the transport drives
+  decks via the dispatcher); tempo-match/keylock at render; stereo render; live playhead animation.
+- **Verify live:** confirm LIVE/DJ still plays/cues/crossfades normally with the engine sized to 4 decks
+  (the 2 hidden decks stay idle), then in STUDIO place clips → Play (hear decks automate) → Render to WAV.
 
 ## How to read this
 
