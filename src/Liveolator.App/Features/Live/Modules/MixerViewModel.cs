@@ -32,7 +32,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private double _levelB;
     private bool _isAutoMixActive;
     private string _autoMixBars = "16";
-    private string _autoMixStyle = "CrossFade";
     private bool _disposed;
 
     public MixerViewModel(
@@ -75,10 +74,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         AutoMixCommand = ReactiveCommand.Create(
             () => { _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.AutomixToggle)); },
             canAutoMix);
-        AutoMixStyleCommand = ReactiveCommand.Create<string>(
-            style => _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.AutomixSetStyle, Argument: style)),
-            canAutoMix);
         AutoMixTime = new ContinuousControlViewModel(
             "Time", Seed(PerformanceActionKind.AutomixSetDuration, slot: 0, DefaultAutoMixTime),
             IsAutoMixAvailable ? v => Emit(PerformanceActionKind.AutomixSetDuration, v, slot: 0) : null);
@@ -89,12 +84,9 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
             _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
             if (IsAutoMixAvailable)
             {
-                ActionFeedbackState toggle = _dispatcher.GetFeedback(PerformanceActionKind.AutomixToggle, 0);
-                _isAutoMixActive = toggle.IsActive;
+                _isAutoMixActive = _dispatcher.GetFeedback(PerformanceActionKind.AutomixToggle, 0).IsActive;
                 _autoMixBars =
                     _dispatcher.GetFeedback(PerformanceActionKind.AutomixSetDuration, 0).Argument ?? "16";
-                _autoMixStyle =
-                    _dispatcher.GetFeedback(PerformanceActionKind.AutomixSetStyle, 0).Argument ?? "CrossFade";
             }
             _dispatcher.FeedbackChanged += OnFeedback;
         }
@@ -140,11 +132,8 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     /// <summary>True when the auto-mix handler is wired (realtime engine up).</summary>
     public bool IsAutoMixAvailable { get; }
 
-    /// <summary>Engage/abort the hands-free transition (AutomixToggle).</summary>
+    /// <summary>Engage/abort the hands-free crossfade (AutomixToggle).</summary>
     public ReactiveCommand<Unit, Unit> AutoMixCommand { get; }
-
-    /// <summary>Select the transition style; parameter = CrossFade / EqMix / FxMix (AutomixSetStyle).</summary>
-    public ReactiveCommand<string, Unit> AutoMixStyleCommand { get; }
 
     /// <summary>The transition-length TIME knob (AutomixSetDuration; detents 2..64 bars).</summary>
     public ContinuousControlViewModel AutoMixTime { get; }
@@ -169,23 +158,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
 
     /// <summary>Knob caption, e.g. "16 BARS".</summary>
     public string AutoMixBarsLabel => $"{_autoMixBars} BARS";
-
-    /// <summary>The selected style name (CrossFade/EqMix/FxMix), for lighting the style keys.</summary>
-    public string AutoMixStyle
-    {
-        get => _autoMixStyle;
-        private set
-        {
-            this.RaiseAndSetIfChanged(ref _autoMixStyle, value);
-            this.RaisePropertyChanged(nameof(IsStyleCrossFade));
-            this.RaisePropertyChanged(nameof(IsStyleEqMix));
-            this.RaisePropertyChanged(nameof(IsStyleFxMix));
-        }
-    }
-
-    public bool IsStyleCrossFade => _autoMixStyle == "CrossFade";
-    public bool IsStyleEqMix => _autoMixStyle == "EqMix";
-    public bool IsStyleFxMix => _autoMixStyle == "FxMix";
 
     /// <summary>True while deck A/B is routed to the headphone cue bus (from dispatcher feedback).</summary>
     public bool IsCueA
@@ -254,10 +226,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     AutoMixTime.SetFromFeedback(e.State.Value);
                     if (e.State.Argument is { } bars)
                         AutoMixBars = bars;
-                    break;
-                case PerformanceActionKind.AutomixSetStyle:
-                    if (e.State.Argument is { } style)
-                        AutoMixStyle = style;
                     break;
             }
         });

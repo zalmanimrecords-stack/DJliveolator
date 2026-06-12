@@ -26,7 +26,6 @@ public class AutomixActionHandlerTests
             {
                 PerformanceActionKind.AutomixToggle,
                 PerformanceActionKind.AutomixSetDuration,
-                PerformanceActionKind.AutomixSetStyle,
             },
             _handler.HandledKinds);
     }
@@ -41,21 +40,6 @@ public class AutomixActionHandlerTests
         Assert.Equal(1.0, feedback.Value, precision: 9);
         Assert.Equal("64", feedback.Argument);
     }
-
-    [Fact]
-    public void SetStyle_ParsesTheArgumentCaseInsensitively()
-    {
-        _handler.Handle(new PerformanceAction(
-            PerformanceActionKind.AutomixSetStyle, Argument: "eqmix"));
-
-        Assert.Equal(AutomixStyle.EqMix, _controller.Style);
-        Assert.Equal("EqMix", _handler.GetFeedback(PerformanceActionKind.AutomixSetStyle, 0).Argument);
-    }
-
-    [Fact]
-    public void SetStyle_InvalidArgument_ThrowsInsteadOfGuessing()
-        => Assert.Throws<ArgumentException>(() => _handler.Handle(new PerformanceAction(
-            PerformanceActionKind.AutomixSetStyle, Argument: "wobble")));
 
     [Fact]
     public void Toggle_RefusedStart_SurfacesTheReasonInFeedback()

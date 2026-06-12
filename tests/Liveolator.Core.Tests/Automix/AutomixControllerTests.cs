@@ -64,9 +64,6 @@ public class AutomixControllerTests
         _controller.Toggle();
 
         Assert.Equal(AutomixPhase.Transitioning, _controller.Phase);
-        // Entry frame: the crossfader starts from where it already is (no rude jump on engage).
-        PerformanceAction crossfade = Assert.Single(Emitted(PerformanceActionKind.MixerCrossfade));
-        Assert.Equal(0.0, crossfade.Value, precision: 9);
         // Seeked to its mix-in point (the first-beat anchor as a fraction), synced, and started — NOW,
         // not on some future downbeat: the blend runs while sync converges (owner direction).
         PerformanceAction seek = Assert.Single(Emitted(PerformanceActionKind.DeckSeek));
@@ -76,16 +73,19 @@ public class AutomixControllerTests
         Assert.Equal(1, sync.Slot);
         PerformanceAction play = Assert.Single(Emitted(PerformanceActionKind.DeckPlayPause));
         Assert.Equal(1, play.Slot);
+        // The crossfader is not yanked on engage; the ramp starts from its current position.
+        Assert.Empty(Emitted(PerformanceActionKind.MixerCrossfade));
     }
 
     [Fact]
-    public void Toggle_StartsTheRampFromTheCurrentCrossfaderPosition()
+    public void Ramp_StartsFromTheCurrentCrossfaderPosition()
     {
         _decks.Mixer = MixerState.Default.WithCrossfader(0.3);
-
         _controller.Toggle();
 
-        Assert.Equal(0.3, Assert.Single(Emitted(PerformanceActionKind.MixerCrossfade)).Value, precision: 9);
+        TickAtFromPosition(8.4); // the quantized start (progress 0)
+
+        Assert.Equal(0.3, Emitted(PerformanceActionKind.MixerCrossfade)[^1].Value, precision: 9);
     }
 
     [Fact]
@@ -179,9 +179,9 @@ public class AutomixControllerTests
         // The outgoing deck is paused (position kept); the incoming deck's SYNC latch is released.
         Assert.Contains(Emitted(PerformanceActionKind.DeckPlayPause), a => a.Slot == 0);
         Assert.Contains(Emitted(PerformanceActionKind.DeckSyncToggle), a => a.Slot == 1);
-        // The outgoing channel strip is handed back exactly as the performer had it (flat defaults).
-        Assert.Equal(3, Emitted(PerformanceActionKind.MixerEqBand).Count(a => a.Slot == 0 && a.Value == 0.5));
-        Assert.Contains(Emitted(PerformanceActionKind.MixerFilter), a => a.Slot == 0 && a.Value == 0.5);
+        // A pure crossfade never touches the channel strips.
+        Assert.Empty(Emitted(PerformanceActionKind.MixerEqBand));
+        Assert.Empty(Emitted(PerformanceActionKind.MixerFilter));
     }
 
     [Fact]
@@ -228,18 +228,6 @@ public class AutomixControllerTests
         _controller.Toggle();
 
         Assert.Equal(AutomixPhase.Idle, _controller.Phase);
-    }
-
-    [Fact]
-    public void EqMixEntry_KillsTheIncomingBassBeforeAnythingIsAudible()
-    {
-        _controller.SetStyle(AutomixStyle.EqMix);
-
-        _controller.Toggle();
-
-        PerformanceAction toLow = Assert.Single(
-            Emitted(PerformanceActionKind.MixerEqBand), a => a.Slot == 1 && a.Argument == "Low");
-        Assert.Equal(0.0, toLow.Value, precision: 9);
     }
 
     [Fact]

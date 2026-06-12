@@ -19,9 +19,8 @@ public class AutomixPreflightTests
             FirstBeatSeconds: firstBeat, PositionSeconds: 0.0, LengthSeconds: length,
             SyncState: SyncLockState.Off, SyncLocked: false);
 
-    private static AutomixPlan Plan(
-        AutomixDeckSnapshot from, AutomixDeckSnapshot to, int bars = 16, AutomixStyle style = AutomixStyle.EqMix)
-        => AutomixPreflight.Plan(from, 0, to, 1, bars, style, Settings);
+    private static AutomixPlan Plan(AutomixDeckSnapshot from, AutomixDeckSnapshot to, int bars = 16)
+        => AutomixPreflight.Plan(from, 0, to, 1, bars, Settings);
 
     [Fact]
     public void HappyPath_PlansTheRequestedTransition()
@@ -32,7 +31,6 @@ public class AutomixPreflightTests
         Assert.Equal(0, plan.FromSlot);
         Assert.Equal(1, plan.ToSlot);
         Assert.Equal(16, plan.PlannedBars);
-        Assert.Equal(AutomixStyle.EqMix, plan.EffectiveStyle);
         Assert.Equal(0.2, plan.MixInSeconds, precision: 9);
     }
 
@@ -101,17 +99,10 @@ public class AutomixPreflightTests
     }
 
     [Fact]
-    public void DegradesToCrossFade_WhenAGridAnchorIsMissing()
+    public void Allows_TracksWithoutAGridAnchor_TheCrossfadeNeedsOnlyTempo()
     {
-        // No first-beat anchor on the incoming deck: a bass-swap point would be a guess — refuse to
-        // guess, blend with the grid-free style instead (advisor S3).
-        AutomixPlan plan = Plan(Playing(), Loaded(firstBeat: 0.0), style: AutomixStyle.EqMix);
-
-        Assert.True(plan.IsAllowed);
-        Assert.Equal(AutomixStyle.CrossFade, plan.EffectiveStyle);
+        // No first-beat anchor: the bar-align step will be skipped, but a tempo-synced crossfade is
+        // still safe — never refuse for a missing grid alone.
+        Assert.True(Plan(Playing(), Loaded(firstBeat: 0.0)).IsAllowed);
     }
-
-    [Fact]
-    public void KeepsTheRequestedStyle_WhenBothGridsAreKnown()
-        => Assert.Equal(AutomixStyle.FxMix, Plan(Playing(), Loaded(), style: AutomixStyle.FxMix).EffectiveStyle);
 }

@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Liveolator.Core.Automix;
 
 /// <summary>
-/// The auto-mix engine (doc 11 Auto-Mix): a one-button, beat-locked deck-to-deck transition. Ticked
-/// by the <see cref="MasterClockBridge"/> on the same 10 ms pump that runs sync correction, and
-/// paced by the OUTGOING (sync-master) deck's own beat grid — the source the shared clock itself
+/// The auto-mix engine (doc 11 Auto-Mix): a one-button, beat-locked crossfade between the decks.
+/// Ticked by the <see cref="MasterClockBridge"/> on the same 10 ms pump that runs sync correction,
+/// and paced by the OUTGOING (sync-master) deck's own beat grid — the source the shared clock itself
 /// republishes, read at the source so a clock source-switch can never jump the blend. Reads
 /// decks/mixer through <see cref="IAutomixDeckReader"/>; writes ONLY <see cref="PerformanceAction"/>s
 /// (stamped <see cref="OriginTag"/>) — automation of the same controls a human uses, through the
@@ -17,24 +17,22 @@ namespace Liveolator.Core.Automix;
 /// </summary>
 /// <remarks>
 /// Engage is IMMEDIATE (owner direction): the incoming deck is seeked to its mix-in point, SYNC is
-/// engaged (tempo match + phase snap), it starts playing, and the slow blend begins on the next
-/// pump tick — sync convergence happens under the quiet start of the curve, where the incoming deck
-/// is barely audible, not as a gate before it. Safety invariants: any human gesture on a watched
-/// control is an instant, silent handover (freeze, never snap back, never re-grab), and no failure
-/// path ever modifies the deck that is currently playing — an auto-mix failure must be inaudible.
+/// engaged (tempo match + phase snap), it starts playing, and the crossfader crawls from wherever it
+/// is to the incoming extreme over the TIME-knob bar count — sync convergence happens under the
+/// quiet start of the ramp, not as a gate before it. Safety invariants: any human gesture on a
+/// watched control is an instant, silent handover (freeze, never snap back, never re-grab), and no
+/// failure path ever modifies the deck that is currently playing — an auto-mix failure must be
+/// inaudible. Constant perceived power comes from the mixer's existing equal-power
+/// <c>CrossfaderCurve.Smooth</c>; this engine only moves the position linearly in beats.
 /// </remarks>
 public sealed class AutomixController : IMasterClockTickListener, IDisposable
 {
     /// <summary>The <see cref="PerformanceAction.Origin"/> stamp on every action this engine emits.</summary>
     public const string OriginTag = "automix";
 
-    // Hard watchdog: no phase may outlive this many pump ticks (~60 s at 10 ms) even if the clock
-    // stops advancing — beats are the normal timeout currency, but a dead clock must not wedge us.
+    // Hard watchdog: a transition may not outlive this many pump ticks (~60 s at 10 ms) with nothing
+    // advancing — a stalled outgoing playhead must not wedge the mixer controls.
     private const int MaxTicksPerPhase = 6_000;
-
-    private static readonly CrossFadeProfile CrossFade = new();
-    private static readonly EqMixProfile EqMix = new();
-    private static readonly FxMixProfile FxMix = new();
 
     private static readonly IReadOnlySet<PerformanceActionKind> WatchedMixerKinds = new HashSet<PerformanceActionKind>
     {
@@ -70,21 +68,18 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     // --- state under _gate ---
     private AutomixPhase _phase = AutomixPhase.Idle;
     private AutomixPlan? _plan;
-    private IAutomixStyleProfile? _profile;
     private AutomixTransitionShape? _shape;
     private double _knob = AutomixDurationKnob.KnobFor(AutomixDurationKnob.DefaultBars);
     private int _requestedBars = AutomixDurationKnob.DefaultBars;
-    private AutomixStyle _style = AutomixStyle.CrossFade;
     private AutomixRefusal _lastRefusal = AutomixRefusal.None;
     private double _startBeat;
     private double _maxElapsedBeats;
     private double _lastProgress;
+    private double? _lastCrossfader;
     private int _lockedTicks;
     private bool _barAlignChecked;
     private bool _startedIncoming;
     private int _ticksInPhase;
-    private Mixer.DeckChannelState? _fromRestore;
-    private AutomixFrame? _lastFrame;
 
     public AutomixController(
         IAutomixDeckReader decks,
@@ -96,7 +91,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<AutomixController>();
     }
 
-    /// <summary>Raised after any observable state change (phase, knob, style, refusal) for feedback.</summary>
+    /// <summary>Raised after any observable state change (phase, knob, refusal) for feedback.</summary>
     public event EventHandler? Changed;
 
     public AutomixPhase Phase
@@ -120,11 +115,6 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     public int RequestedBars
     {
         get { lock (_gate) return _requestedBars; }
-    }
-
-    public AutomixStyle Style
-    {
-        get { lock (_gate) return _style; }
     }
 
     /// <summary>Why the last engage attempt refused, for the UI/log; None after a successful start.</summary>
@@ -159,7 +149,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             if (_phase == AutomixPhase.Idle)
                 TryStartLocked(actions);
             else
-                AbortLocked("performer pressed AUTOMIX", actions);
+                AbortLocked("performer pressed AUTOMIX");
         }
         DispatchAll(actions);
         RaiseChanged();
@@ -176,12 +166,6 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         RaiseChanged();
     }
 
-    public void SetStyle(AutomixStyle style)
-    {
-        lock (_gate) _style = style;
-        RaiseChanged();
-    }
-
     /// <inheritdoc />
     public void OnMasterClockTick(long hostTimeTicks)
     {
@@ -189,15 +173,15 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         bool changed = false;
         lock (_gate)
         {
-            if (_phase == AutomixPhase.Idle || _plan is null || _shape is null || _profile is null)
+            if (_phase == AutomixPhase.Idle || _plan is null || _shape is null)
                 return;
 
             _ticksInPhase++;
             if (_ticksInPhase > MaxTicksPerPhase)
             {
-                // Nothing has advanced for ~a minute (dead clock AND a stalled outgoing playhead):
-                // free the controls; the floor's audio is untouched by this path.
-                AbortLocked("transition watchdog expired (nothing advancing)", actions);
+                // Nothing has advanced for ~a minute (a stalled outgoing playhead): free the
+                // controls; the floor's audio is untouched by this path.
+                AbortLocked("transition watchdog expired (nothing advancing)");
                 changed = true;
             }
             else
@@ -249,7 +233,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         AutomixDeckSnapshot from = fromSlot == 0 ? a : b;
         AutomixDeckSnapshot to = fromSlot == 0 ? b : a;
 
-        AutomixPlan plan = AutomixPreflight.Plan(from, fromSlot, to, toSlot, _requestedBars, _style, _settings);
+        AutomixPlan plan = AutomixPreflight.Plan(from, fromSlot, to, toSlot, _requestedBars, _settings);
         _lastRefusal = plan.Refusal;
         if (!plan.IsAllowed)
         {
@@ -258,15 +242,13 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         }
 
         _plan = plan;
-        _profile = ProfileFor(plan.EffectiveStyle);
         // The crossfader ramps from WHEREVER it is now to the incoming extreme — engaging must not
         // yank the fader (rude visually, and audible when both decks are up). The incoming side is
         // always an extreme so the blend completes fully.
         double toSide = toSlot == 0 ? 0.0 : 1.0;
         _shape = new AutomixTransitionShape(
             _decks.Mixer.Crossfader, toSide, plan.PlannedBars * _settings.BeatsPerBar);
-        _fromRestore = _decks.Mixer.Channel(fromSlot);
-        _lastFrame = null;
+        _lastCrossfader = null;
         _lockedTicks = 0;
         _barAlignChecked = false;
         _ticksInPhase = 0;
@@ -276,15 +258,13 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         // grid the shared clock republishes). Reading the grid at its source is immune to the
         // shared clock switching sources when the sync engage lands (a BeatCount jump there slammed
         // the fader across in one tick — the bug this replaces). Start on the leader's next beat
-        // boundary so style midpoints stay beat-quantized.
+        // boundary so the ramp stays beat-quantized.
         _startBeat = Math.Ceiling(LeaderBeatsLocked(from));
 
-        // Everything happens NOW (owner direction): pre-set the style's entry values (crossfader on
-        // the outgoing extreme; EQ MIX kills the incoming low band), seek the incoming deck to its
-        // mix-in point, engage SYNC (tempo match + phase snap), and PLAY. The slow blend starts on
-        // the next pump tick — sync convergence happens under the quiet start of the curve, where
-        // the incoming deck is barely audible, instead of as a multi-bar gate before it.
-        DiffFrameLocked(_profile.Evaluate(0.0, _shape), actions);
+        // Everything happens NOW (owner direction): seek the incoming deck to its mix-in point,
+        // engage SYNC (tempo match + phase snap), and PLAY. The crossfade starts crawling on the
+        // next pump tick — sync convergence happens under the quiet start of the ramp, where the
+        // incoming deck is barely audible, instead of as a multi-bar gate before it.
         _startedIncoming = !to.IsPlaying;
         if (_startedIncoming && to.LengthSeconds > 0.0)
             actions.Add(Deck(PerformanceActionKind.DeckSeek, toSlot,
@@ -296,8 +276,8 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
 
         _phase = AutomixPhase.Transitioning;
         _logger.LogInformation(
-            "Auto-mix started: deck {From} → deck {To}, {Bars} bars, style {Style} (requested {Requested}).",
-            fromSlot, toSlot, plan.PlannedBars, plan.EffectiveStyle, _style);
+            "Auto-mix started: deck {From} → deck {To}, {Bars} bars (requested {Requested}).",
+            fromSlot, toSlot, plan.PlannedBars, _requestedBars);
     }
 
     // ----- the transition tick -----
@@ -322,7 +302,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     private bool TickTransitioningLocked(double elapsedBeats, List<PerformanceAction> actions)
     {
         // One inaudible bar-grid correction once the lock has settled, while the incoming deck is
-        // still quiet (early in the curve). Past that window a seek would be audible — skip it and
+        // still quiet (early in the ramp). Past that window a seek would be audible — skip it and
         // let the continuous beat lock carry the blend.
         AutomixDeckSnapshot to = _decks.ReadDeck(_plan!.ToSlot);
         _lockedTicks = to.SyncState == SyncLockState.Locked ? _lockedTicks + 1 : 0;
@@ -335,7 +315,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
 
         double progress = Math.Clamp(elapsedBeats / _shape!.BeatsTotal, 0.0, 1.0);
         _lastProgress = progress;
-        DiffFrameLocked(_profile!.Evaluate(progress, _shape), actions);
+        EmitCrossfaderLocked(progress, actions);
 
         if (progress >= 1.0)
         {
@@ -343,6 +323,18 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             return true;
         }
         return false;
+    }
+
+    // The linear position ramp, epsilon-gated so the 10 ms tick does not flood the action stream;
+    // the mixer's own equal-power Smooth curve turns linear position into constant perceived power.
+    private void EmitCrossfaderLocked(double progress, List<PerformanceAction> actions)
+    {
+        double position = _shape!.FromSide + ((_shape.ToSide - _shape.FromSide) * progress);
+        if (_lastCrossfader is { } last && Math.Abs(position - last) < _settings.DispatchEpsilon)
+            return;
+        _lastCrossfader = position;
+        actions.Add(new PerformanceAction(
+            PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, position, Slot: 0, Origin: OriginTag));
     }
 
     // ----- completion / abort -----
@@ -353,21 +345,20 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         int toSlot = _plan.ToSlot;
 
         // Land the floor on the incoming deck, retire the outgoing one (paused, position kept for
-        // recovery), release the SYNC latch (the matched rate is retained by the engine's release
-        // path), and hand the outgoing channel strip back exactly as the performer had it.
+        // recovery), and release the SYNC latch (the matched rate is retained by the engine's
+        // release path).
         actions.Add(new PerformanceAction(
             PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, _shape!.ToSide, Slot: 0, Origin: OriginTag));
         if (_decks.ReadDeck(fromSlot).IsPlaying)
             actions.Add(Deck(PerformanceActionKind.DeckPlayPause, fromSlot));
         if (_decks.ReadDeck(toSlot).SyncLocked)
             actions.Add(Deck(PerformanceActionKind.DeckSyncToggle, toSlot));
-        RestoreFromChannelLocked(actions);
 
         _logger.LogInformation("Auto-mix completed: deck {From} → deck {To}.", fromSlot, toSlot);
         ResetLocked();
     }
 
-    private void AbortLocked(string reason, List<PerformanceAction> actions)
+    private void AbortLocked(string reason)
     {
         _logger.LogWarning("Auto-mix aborted at progress {Progress:F2}: {Reason}.", _lastProgress, reason);
 
@@ -377,26 +368,12 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         ResetLocked();
     }
 
-    private void RestoreFromChannelLocked(List<PerformanceAction> actions)
-    {
-        if (_fromRestore is not { } restore || _plan is null)
-            return;
-        int slot = _plan.FromSlot;
-        actions.Add(Eq(slot, Mixer.EqBand.Low, restore.Eq.Low));
-        actions.Add(Eq(slot, Mixer.EqBand.Mid, restore.Eq.Mid));
-        actions.Add(Eq(slot, Mixer.EqBand.High, restore.Eq.High));
-        actions.Add(new PerformanceAction(
-            PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, restore.Filter, slot, Origin: OriginTag));
-    }
-
     private void ResetLocked()
     {
         _phase = AutomixPhase.Idle;
         _plan = null;
-        _profile = null;
         _shape = null;
-        _fromRestore = null;
-        _lastFrame = null;
+        _lastCrossfader = null;
         _lockedTicks = 0;
         _barAlignChecked = false;
         _startedIncoming = false;
@@ -408,8 +385,8 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
     // ----- alignment / dispatch plumbing -----
 
     // One inaudible, pre-fade correction onto the leader's BAR grid (advisor S2): continuous sync
-    // holds beats, but a beat-locked deck can still sit a whole beat off within the bar — fatal for
-    // a quantized bass swap. Skipped without a grid (CrossFade degraded mode tolerates it).
+    // holds beats, but a beat-locked deck can still sit a whole beat off within the bar — audible as
+    // a bar-crossed blend even in a plain crossfade. Skipped when either grid anchor is unknown.
     private void BarAlignIncomingLocked(AutomixDeckSnapshot to, List<PerformanceAction> actions)
     {
         AutomixDeckSnapshot from = _decks.ReadDeck(_plan!.FromSlot);
@@ -430,54 +407,9 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
         _logger.LogInformation("Auto-mix bar-aligned the incoming deck by {Nudge:F3}s.", nudgeSeconds);
     }
 
-    // Emits only the parameters this frame actually changes (epsilon-gated) — at a 10 ms tick the
-    // action stream stays lean and feedback subscribers are not flooded.
-    private void DiffFrameLocked(AutomixFrame frame, List<PerformanceAction> actions)
-    {
-        int from = _plan!.FromSlot;
-        int to = _plan.ToSlot;
-        AutomixFrame? last = _lastFrame;
-
-        AddIfChanged(frame.Crossfader, last?.Crossfader, v => new PerformanceAction(
-            PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, v, Slot: 0, Origin: OriginTag), actions);
-        AddIfChanged(frame.FromLow, last?.FromLow, v => Eq(from, Mixer.EqBand.Low, v), actions);
-        AddIfChanged(frame.FromMid, last?.FromMid, v => Eq(from, Mixer.EqBand.Mid, v), actions);
-        AddIfChanged(frame.FromHigh, last?.FromHigh, v => Eq(from, Mixer.EqBand.High, v), actions);
-        AddIfChanged(frame.FromFilter, last?.FromFilter, v => new PerformanceAction(
-            PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, v, from, Origin: OriginTag), actions);
-        AddIfChanged(frame.ToLow, last?.ToLow, v => Eq(to, Mixer.EqBand.Low, v), actions);
-        AddIfChanged(frame.ToMid, last?.ToMid, v => Eq(to, Mixer.EqBand.Mid, v), actions);
-        AddIfChanged(frame.ToHigh, last?.ToHigh, v => Eq(to, Mixer.EqBand.High, v), actions);
-        AddIfChanged(frame.ToFilter, last?.ToFilter, v => new PerformanceAction(
-            PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, v, to, Origin: OriginTag), actions);
-
-        _lastFrame = frame;
-    }
-
-    private void AddIfChanged(
-        double? value, double? previous, Func<double, PerformanceAction> build, List<PerformanceAction> actions)
-    {
-        if (value is not { } v)
-            return;
-        if (previous is { } prev && Math.Abs(v - prev) < _settings.DispatchEpsilon)
-            return;
-        actions.Add(build(v));
-    }
-
-    private PerformanceAction Eq(int slot, Mixer.EqBand band, double value)
-        => new(PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, value, slot, band.ToString(),
-            Origin: OriginTag);
-
     private static PerformanceAction Deck(
         PerformanceActionKind kind, int slot, ActionInputMode mode = ActionInputMode.Momentary, double value = 0)
         => new(kind, mode, value, slot, Origin: OriginTag);
-
-    private static IAutomixStyleProfile ProfileFor(AutomixStyle style) => style switch
-    {
-        AutomixStyle.EqMix => EqMix,
-        AutomixStyle.FxMix => FxMix,
-        _ => CrossFade,
-    };
 
     private void DispatchAll(List<PerformanceAction> actions)
     {
@@ -515,7 +447,7 @@ public sealed class AutomixController : IMasterClockTickListener, IDisposable
             if (!mixerTouch && !deckTouch)
                 return;
 
-            AbortLocked($"performer touched {action.Kind}", new List<PerformanceAction>());
+            AbortLocked($"performer touched {action.Kind}");
             aborted = true;
         }
         if (aborted)

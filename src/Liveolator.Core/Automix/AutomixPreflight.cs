@@ -11,8 +11,8 @@ public static class AutomixPreflight
 {
     /// <summary>
     /// Resolve the plan for a transition from <paramref name="from"/> to <paramref name="to"/>.
-    /// Degrades (style → CrossFade on a missing grid, duration auto-shortened to fit) where the
-    /// degraded transition is still safe; refuses where it is not.
+    /// Degrades (duration auto-shortened to fit the outgoing track) where the degraded transition
+    /// is still safe; refuses where it is not.
     /// </summary>
     public static AutomixPlan Plan(
         AutomixDeckSnapshot from,
@@ -20,7 +20,6 @@ public static class AutomixPreflight
         AutomixDeckSnapshot to,
         int toSlot,
         int requestedBars,
-        AutomixStyle requestedStyle,
         AutomixSettings settings)
     {
         ArgumentNullException.ThrowIfNull(from);
@@ -58,12 +57,6 @@ public static class AutomixPreflight
         if (to.LengthSeconds - mixIn < neededSeconds)
             return AutomixPlan.Refused(AutomixRefusal.IncomingTooShort);
 
-        // A grid-quantized style needs a recorded first-beat anchor on BOTH decks; without one the
-        // engine never guesses a bass-swap point — it degrades to the grid-free crossfade (S3).
-        AutomixStyle effectiveStyle = requestedStyle != AutomixStyle.CrossFade && from.HasGrid && to.HasGrid
-            ? requestedStyle
-            : AutomixStyle.CrossFade;
-
-        return new AutomixPlan(AutomixRefusal.None, fromSlot, toSlot, plannedBars, effectiveStyle, mixIn);
+        return new AutomixPlan(AutomixRefusal.None, fromSlot, toSlot, plannedBars, mixIn);
     }
 }

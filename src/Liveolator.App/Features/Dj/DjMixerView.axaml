@@ -71,14 +71,6 @@
               <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding AutoMixBarsLabel}" />
             </StackPanel>
           </Grid>
-          <Grid ColumnDefinitions="*,6,*,6,*">
-            <Button Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsStyleCrossFade}" Content="CROSS"
-                    Command="{Binding AutoMixStyleCommand}" CommandParameter="CrossFade" />
-            <Button Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsStyleEqMix}" Content="EQ"
-                    Command="{Binding AutoMixStyleCommand}" CommandParameter="EqMix" />
-            <Button Grid.Column="4" Classes="key mixer" Classes.on="{Binding IsStyleFxMix}" Content="FX"
-                    Command="{Binding AutoMixStyleCommand}" CommandParameter="FxMix" />
-          </Grid>
         </StackPanel>
       </Border>
 

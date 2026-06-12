@@ -96,10 +96,10 @@ public enum PerformanceActionKind
     /// </summary>
     VisualLoadPreset,
 
-    // Auto-mix (doc 11) — hands-free deck-to-deck transition, beat-locked to the one shared clock.
-    // Appended at the tail to preserve the serialized numeric values of existing kinds.
+    // Auto-mix (doc 11) — a hands-free beat-locked crossfade between the decks.
+    // (Persisted bindings serialize kinds by NAME — JsonStringEnumConverter — so ordering is free.)
 
-    /// <summary>Start an automatic deck-to-deck transition, or abort the one in flight.</summary>
+    /// <summary>Start an automatic deck-to-deck crossfade, or abort the one in flight.</summary>
     AutomixToggle,
 
     /// <summary>
@@ -107,12 +107,6 @@ public enum PerformanceActionKind
     /// detent (2/4/8/16/32/64 bars) by the auto-mix engine. Applies to the NEXT transition.
     /// </summary>
     AutomixSetDuration,
-
-    /// <summary>
-    /// Select the auto-mix transition style: Argument is the <c>AutomixStyle</c> name
-    /// (CrossFade / EqMix / FxMix).
-    /// </summary>
-    AutomixSetStyle,
 
     /// <summary>
     /// Appends a track to a deck's live queue without touching what is playing: Slot is the deck

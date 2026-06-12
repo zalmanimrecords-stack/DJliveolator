@@ -157,8 +157,6 @@ public sealed class MixerViewModelTests
             new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "Idle"));
         dispatcher.SeedFeedback(PerformanceActionKind.AutomixSetDuration, 0,
             new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.6, Argument: "16"));
-        dispatcher.SeedFeedback(PerformanceActionKind.AutomixSetStyle, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "CrossFade"));
         return dispatcher;
     }
 
@@ -199,20 +197,7 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
-    public async Task AutoMixStyle_EmitsAutomixSetStyle_WithTheStyleArgument()
-    {
-        FakeDispatcher dispatcher = WithAutoMix();
-        var vm = new MixerViewModel(dispatcher);
-
-        await vm.AutoMixStyleCommand.Execute("EqMix").ToTask();
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.AutomixSetStyle, action.Kind);
-        Assert.Equal("EqMix", action.Argument);
-    }
-
-    [Fact]
-    public void AutoMix_Feedback_LatchesButtonBarsAndStyle()
+    public void AutoMix_Feedback_LatchesButtonAndBars()
     {
         FakeDispatcher dispatcher = WithAutoMix();
         var vm = new MixerViewModel(dispatcher);
@@ -221,13 +206,9 @@ public sealed class MixerViewModelTests
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0.3, Argument: "Transitioning"));
         dispatcher.RaiseFeedback(PerformanceActionKind.AutomixSetDuration, 0,
             new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 1.0, Argument: "64"));
-        dispatcher.RaiseFeedback(PerformanceActionKind.AutomixSetStyle, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "FxMix"));
 
         Assert.True(vm.IsAutoMixActive);
         Assert.Equal("64 BARS", vm.AutoMixBarsLabel);
-        Assert.True(vm.IsStyleFxMix);
-        Assert.False(vm.IsStyleCrossFade);
         Assert.Equal(1.0, vm.AutoMixTime.Value);
         Assert.Empty(dispatcher.Dispatched); // echoed feedback must not loop
     }
@@ -244,7 +225,6 @@ public sealed class MixerViewModelTests
         Assert.True(vm.IsAutoMixAvailable);
         Assert.Equal(0.2, vm.AutoMixTime.Value);
         Assert.Equal("4 BARS", vm.AutoMixBarsLabel);
-        Assert.True(vm.IsStyleCrossFade);
     }
 
     [Fact]
