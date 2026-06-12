@@ -1,11 +1,12 @@
 namespace Liveolator.Core.Mixer;
 
 /// <summary>
-/// The complete, immutable state of the two-deck software mixer (doc 11): the crossfader position,
-/// the selected crossfader curve, and one <see cref="DeckChannelState"/> per deck slot. Pure data
-/// with no behaviour — the math that derives audible gains lives in <see cref="MixerMath"/> and the
-/// action wiring in <c>MixerActionHandler</c>. Two slots only for this increment (A = 0, B = 1);
-/// kept as an indexable list so a later increment can grow without reshaping callers.
+/// The complete, immutable state of the software mixer (doc 11): the crossfader position, the
+/// selected crossfader curve, and one <see cref="DeckChannelState"/> per deck slot. Pure data with
+/// no behaviour — the math that derives audible gains lives in <see cref="MixerMath"/> and the
+/// action wiring in <c>MixerActionHandler</c>. <see cref="DeckCount"/> slots: A = 0 and B = 1 are
+/// the live/DJ decks the crossfader blends; C = 2 and D = 3 are the hidden STUDIO decks (per-deck
+/// gain only, outside the A/B crossfader). Indexable so callers stay slot-generic.
 /// </summary>
 /// <param name="Crossfader">Crossfader position 0..1: 0 = full deck A, 1 = full deck B, 0.5 = center.</param>
 /// <param name="Curve">Shape of the crossfader transition.</param>
@@ -17,20 +18,26 @@ public sealed record MixerState(
     IReadOnlyList<DeckChannelState> Channels,
     CueBusState CueBus)
 {
-    /// <summary>Number of deck slots in this increment.</summary>
-    public const int DeckCount = 2;
+    /// <summary>Number of deck slots: 2 live (A/B) + 2 hidden STUDIO decks (C/D).</summary>
+    public const int DeckCount = 4;
 
-    /// <summary>Deck slot index for deck A.</summary>
+    /// <summary>Deck slot index for deck A (live).</summary>
     public const int DeckA = 0;
 
-    /// <summary>Deck slot index for deck B.</summary>
+    /// <summary>Deck slot index for deck B (live).</summary>
     public const int DeckB = 1;
 
-    /// <summary>Crossfader centered, smooth curve, both decks at their default channel strip, cue bus default.</summary>
+    /// <summary>Deck slot index for deck C (hidden — STUDIO only).</summary>
+    public const int DeckC = 2;
+
+    /// <summary>Deck slot index for deck D (hidden — STUDIO only).</summary>
+    public const int DeckD = 3;
+
+    /// <summary>Crossfader centered, smooth curve, every deck at its default channel strip, cue bus default.</summary>
     public static MixerState Default { get; } = new(
         Crossfader: 0.5,
         Curve: CrossfaderCurve.Smooth,
-        Channels: new[] { DeckChannelState.Default, DeckChannelState.Default },
+        Channels: Enumerable.Repeat(DeckChannelState.Default, DeckCount).ToArray(),
         CueBus: CueBusState.Default);
 
     /// <summary>The channel strip for one deck slot.</summary>

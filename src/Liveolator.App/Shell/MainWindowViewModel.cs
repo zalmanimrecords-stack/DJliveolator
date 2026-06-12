@@ -6,7 +6,6 @@ using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
-using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using ReactiveUI;
 
@@ -25,7 +24,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         LibrariesViewModel libraries,
         LiveViewModel live,
         DjViewModel dj,
-        StudioViewModel studio,
         VisualLibraryViewModel visualLibrary,
         AddonsViewModel addons,
         SettingsViewModel settings,
@@ -35,7 +33,6 @@ public sealed class MainWindowViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
-        ArgumentNullException.ThrowIfNull(studio);
         ArgumentNullException.ThrowIfNull(visualLibrary);
         ArgumentNullException.ThrowIfNull(addons);
         ArgumentNullException.ThrowIfNull(settings);
@@ -51,7 +48,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             new("LIVE", live),
             new("DJ", dj),
-            new("STUDIO", studio),
+            // STUDIO is being rebuilt as a DAW-timeline (deck-automation) tab; placeholder until Phase 5.
+            new("STUDIO", new PlaceholderViewModel("Studio", "Timeline arrangement — coming soon.")),
             new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
             new("ADDONS", addons),

@@ -28,10 +28,11 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
-    public void DeckCount_IsTwo()
+    public void DeckCount_IsFour()
     {
+        // 2 live decks (A/B) + 2 hidden STUDIO decks (C/D).
         using var engine = NewEngine(out _, out _);
-        Assert.Equal(2, engine.DeckCount);
+        Assert.Equal(4, engine.DeckCount);
     }
 
     [Fact]
