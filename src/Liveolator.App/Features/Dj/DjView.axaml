@@ -6,70 +6,74 @@
              x:Class="Liveolator.App.Features.Dj.DjView"
              x:DataType="dj:DjViewModel">
 
-  <!-- Scrollable so the SET panel below the (tall) waveforms + decks/mixer is never clipped on a short
-       window — the decks/mixer have fixed min-heights, so the page can exceed the viewport. -->
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-  <Grid RowDefinitions="Auto,Auto,Auto">
+  <!-- Single-screen DJ layout (no page scroll): a thin dual-waveform strip on top, the two decks +
+       mixer filling the middle (* row), and the SET as a fixed bottom strip with its own scroll. The
+       decks are the hero — each is a jog-first DjDeckView — so the screen reads like a hardware deck. -->
+  <Grid RowDefinitions="Auto,*,Auto">
 
-    <!-- WAVEFORMS — two rows above the decks; the amber kick band shows each track's kick transients
-         so the downbeats line up by eye for sync. Click a strip to seek that deck. -->
-    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,16">
-      <StackPanel Margin="14,12" Spacing="10">
-        <!-- Shared ZOOM knob — zooms BOTH waveforms in seconds so the kicks line up vertically (drag up =
-             zoom in, fully down = whole-track overview). Pair with the deck ±0.5 s nudge to align A over B. -->
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
-          <TextBlock Classes="faint" VerticalAlignment="Center" Text="ZOOM" />
+    <!-- WAVEFORMS — two compressed rows; the amber kick band shows each track's kicks so the downbeats
+         line up by eye for sync. Click a strip to seek that deck. ZOOM knob (right) zooms BOTH strips. -->
+    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,10">
+      <Grid ColumnDefinitions="*,Auto" Margin="14,8">
+        <StackPanel Grid.Column="0" Spacing="5">
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="A" />
+            <Border Grid.Column="1" Height="44" Background="{DynamicResource S2}"
+                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                      MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
+                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
+                                      KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
+                                      Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
+                                      BeatGrid="{Binding DeckA.BeatGrid}"
+                                      KickAnchor="{Binding DeckA.KickAnchorFraction}"
+                                      SeekCommand="{Binding DeckA.SeekCommand}" />
+            </Border>
+          </Grid>
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="B" />
+            <Border Grid.Column="1" Height="44" Background="{DynamicResource S2}"
+                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                      MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
+                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
+                                      KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
+                                      Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
+                                      BeatGrid="{Binding DeckB.BeatGrid}"
+                                      KickAnchor="{Binding DeckB.KickAnchorFraction}"
+                                      SeekCommand="{Binding DeckB.SeekCommand}" />
+            </Border>
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Spacing="4" Margin="14,0,0,0"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="ZOOM" />
           <controls:Knob Width="40" Height="40" DefaultValue="0.55"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding Decks.WaveformZoom}"
                          ToolTip.Tip="Zoom both waveforms — drag up to zoom in (see the kicks), down for the whole track" />
         </StackPanel>
-        <Grid ColumnDefinitions="26,*">
-          <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
-                     VerticalAlignment="Center" Text="A" />
-          <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
-                  BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-            <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
-                                    MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
-                                    BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                    KickBrush="{DynamicResource Kick}"
-                                    MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                    Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
-                                    BeatGrid="{Binding DeckA.BeatGrid}"
-                                    SeekCommand="{Binding DeckA.SeekCommand}" />
-          </Border>
-        </Grid>
-        <Grid ColumnDefinitions="26,*">
-          <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
-                     VerticalAlignment="Center" Text="B" />
-          <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
-                  BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-            <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
-                                    MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
-                                    BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                    KickBrush="{DynamicResource Kick}"
-                                    MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                    Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
-                                    BeatGrid="{Binding DeckB.BeatGrid}"
-                                    SeekCommand="{Binding DeckB.SeekCommand}" />
-          </Border>
-        </Grid>
-      </StackPanel>
+      </Grid>
     </Border>
 
-    <!-- DECK A · MIXER · DECK B (shared performance modules) — MaxWidth caps each deck at ~400px
-         (2×400 + 200 mixer + 2×16 margins) -->
-    <Grid Grid.Row="1" ColumnDefinitions="*,200,*" Margin="0,0,0,16" MaxWidth="1032">
-      <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
-      <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
-      <ContentControl Grid.Column="2" Content="{Binding DeckB}" />
+    <!-- DECK A · MIXER · DECK B — the decks are DJ-specific (jog-first); the mixer is the shared module. -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,300,*" Margin="0,0,0,10">
+      <dj:DjDeckView Grid.Column="0" DataContext="{Binding DeckA}" Margin="0,0,16,0" />
+      <dj:DjMixerView Grid.Column="1" DataContext="{Binding Mixer}" Margin="0,0,16,0" />
+      <dj:DjDeckView Grid.Column="2" DataContext="{Binding DeckB}" />
     </Grid>
 
-    <!-- THE SET (live Now/Next/Later queue) -->
-    <Border Grid.Row="2" Classes="panel">
-      <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16">
+    <!-- THE SET (live Now/Next/Later queue) — fixed bottom strip; the list scrolls inside its bounds so
+         the page itself never scrolls. -->
+    <Border Grid.Row="2" Classes="panel" MaxHeight="220">
+      <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="16,12">
 
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,12">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
           <TextBlock Classes="section" VerticalAlignment="Center" Text="SET · NOW / NEXT / LATER" />
           <Button Grid.Column="1" Classes="spartan" Content="Load from Library"
                   Command="{Binding LoadFromLibraryCommand}" Margin="0,0,8,0" />
@@ -86,7 +90,7 @@
           <ItemsControl ItemsSource="{Binding Set}">
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="dj:SetEntryViewModel">
-                <Border BorderBrush="{DynamicResource Hair}" BorderThickness="0,0,0,1" Padding="0,7">
+                <Border BorderBrush="{DynamicResource Hair}" BorderThickness="0,0,0,1" Padding="0,6">
                   <Border.ContextFlyout>
                     <MenuFlyout>
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
@@ -124,9 +128,9 @@
 
         <!-- DECK B QUEUE — tracks loaded onto a playing deck B land here and play when its current
              track ends. Future entries are removable; the playing one is protected. -->
-        <StackPanel Grid.Row="2" Spacing="6" Margin="0,12,0,0" IsVisible="{Binding !IsDeckBQueueEmpty}">
+        <StackPanel Grid.Row="2" Spacing="6" Margin="0,10,0,0" IsVisible="{Binding !IsDeckBQueueEmpty}">
           <TextBlock Classes="faint" Text="DECK B · QUEUE" />
-          <ScrollViewer MaxHeight="140">
+          <ScrollViewer MaxHeight="96">
             <ItemsControl ItemsSource="{Binding DeckBQueue}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="dj:SetEntryViewModel">
@@ -145,9 +149,9 @@
         </StackPanel>
 
         <!-- PLAYED HISTORY (B5) — shown only once tracks have played; read-only, most-recent first -->
-        <StackPanel Grid.Row="3" Spacing="6" Margin="0,12,0,0" IsVisible="{Binding !IsPlayedEmpty}">
+        <StackPanel Grid.Row="3" Spacing="6" Margin="0,10,0,0" IsVisible="{Binding !IsPlayedEmpty}">
           <TextBlock Classes="faint" Text="PLAYED" />
-          <ScrollViewer MaxHeight="120">
+          <ScrollViewer MaxHeight="84">
             <ItemsControl ItemsSource="{Binding Played}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="dj:SetEntryViewModel">
@@ -165,5 +169,4 @@
       </Grid>
     </Border>
   </Grid>
-  </ScrollViewer>
 </UserControl>

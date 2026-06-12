@@ -1,0 +1,151 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Dj.DjDeckView"
+             x:DataType="m:DeckViewModel">
+
+  <!-- DJ-tab deck: the same DeckViewModel as the LIVE tab, but laid out jog-first (the platter is the
+       hero, hot cues flank it) so the DJ screen reads like a hardware deck and fits one screen. Pitch
+       stays hardware/MIDI-only (DeckPitch) — no on-screen pitch fader, matching the LIVE deck. -->
+  <Border Classes="panel">
+    <StackPanel Margin="14,12" Spacing="10">
+
+      <!-- header: badge · title/meta · elapsed/remaining -->
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Grid.Column="0" Width="34" Height="34" CornerRadius="3"
+                BorderBrush="{DynamicResource AccentLightColor}" BorderThickness="1"
+                VerticalAlignment="Center">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+              <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+              <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
+            </LinearGradientBrush>
+          </Border.Background>
+          <TextBlock Foreground="{DynamicResource AccentInk}" FontWeight="SemiBold" FontSize="14"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
+        </Border>
+        <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+          <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
+            <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
+          </StackPanel>
+          <StackPanel Spacing="1" IsVisible="{Binding !HasTrackMeta}">
+            <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
+          </StackPanel>
+        </Panel>
+        <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+          <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
+          <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding RemainingText}" ToolTip.Tip="Time remaining in the track" />
+        </StackPanel>
+      </Grid>
+
+      <!-- JOG row: hot cues (2×2) · platter · loop. The jog shows the playhead (progress ring + spindle)
+           and drags to seek (DeckSeek), flanking the platter the way a controller lays pads beside it. -->
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" Width="84">
+          <TextBlock Classes="section" Text="HOT CUES" />
+          <ItemsControl ItemsSource="{Binding HotCues}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Columns="2" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="m:HotCuePadViewModel">
+                <Button Classes="key" Classes.on="{Binding IsSet}" Height="34"
+                        Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,4" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <controls:Jog Grid.Column="1" Width="176" Height="176" HorizontalAlignment="Center"
+                      ArcBrush="{DynamicResource Accent}"
+                      Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
+                      IsEnabled="{Binding IsEnabled}"
+                      ToolTip.Tip="Drag the platter to seek — clockwise advances, counter-clockwise rewinds" />
+
+        <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
+          <TextBlock Classes="section" Text="LOOP" />
+          <Button Classes="key" Classes.on="{Binding IsLooping}" Content="4" Height="34"
+                  Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
+                  ToolTip.Tip="Toggle a 1-bar loop" />
+          <TextBlock Classes="section" Text="NUDGE" Margin="0,4,0,0" />
+          <Grid ColumnDefinitions="*,*">
+            <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
+                    Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                    ToolTip.Tip="Nudge the track left (fine cueing)" />
+            <Button Grid.Column="1" Classes="key" Content="►" Height="30"
+                    Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                    ToolTip.Tip="Nudge the track right (fine cueing)" />
+          </Grid>
+        </StackPanel>
+      </Grid>
+
+      <!-- transport: CUE · Play · Sync -->
+      <UniformGrid Columns="3">
+        <Button Classes="key" Content="CUE" Command="{Binding CueCommand}"
+                IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
+        <Button Classes="play" Classes.on="{Binding IsPlaying}"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
+          <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
+        </Button>
+        <Button Classes="key" Classes.on="{Binding IsSyncEnabled}" Content="SYNC"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
+      </UniformGrid>
+
+      <!-- BPM: horizontal fader (0..1 normalised) + nudge buttons for manual beat-sync -->
+      <Border Classes="hardware-well" Padding="10,8">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
+            <TextBlock Grid.Column="1" Classes="mono"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
+                       IsEnabled="{Binding IsBpmEnabled}" />
+            <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
+            <Button Grid.Column="0" Classes="key" Content="◄" Width="34" Height="26"
+                    Command="{Binding NudgeLeftCommand}"
+                    ToolTip.Tip="Nudge BPM −0.1 (manual beat-sync)" />
+            <controls:Fader Grid.Column="1" Margin="6,0" Height="26"
+                            Orientation="Horizontal"
+                            Value="{Binding BpmFaderValue}" />
+            <Button Grid.Column="2" Classes="key" Content="►" Width="34" Height="26"
+                    Command="{Binding NudgeRightCommand}"
+                    ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
+      <UniformGrid Columns="4">
+        <StackPanel Spacing="4" HorizontalAlignment="Center">
+          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
+                         Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
+        </StackPanel>
+        <StackPanel Spacing="4" HorizontalAlignment="Center">
+          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
+                         Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
+        </StackPanel>
+        <StackPanel Spacing="4" HorizontalAlignment="Center">
+          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
+                         Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
+        </StackPanel>
+        <StackPanel Spacing="4" HorizontalAlignment="Center">
+          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
+                         Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
+        </StackPanel>
+      </UniformGrid>
+    </StackPanel>
+  </Border>
+</UserControl>

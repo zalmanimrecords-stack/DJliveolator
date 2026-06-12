@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Dj.DjMixerView"
+             x:DataType="m:MixerViewModel">
+
+  <!-- DJ-tab mixer: the same MixerViewModel as the LIVE tab, but height-compact (shorter channel
+       faders, tighter wells) so the whole DJ screen fits one window without scrolling. The LIVE
+       MixerView keeps its taller, roomier layout. -->
+  <Border Classes="panel">
+    <StackPanel Margin="14,12" Spacing="10">
+
+      <Border Classes="hardware-well" Padding="10,8">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
+            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="28"
+                            Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
+            <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="hardware-well" Padding="8,10">
+        <!-- A fader | shared dB scale | B fader -->
+        <Grid ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="A" />
+          <TextBlock Grid.Row="0" Grid.Column="2" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="B" />
+
+          <controls:Fader Grid.Row="1" Grid.Column="0" Width="44" Height="150" HorizontalAlignment="Center"
+                          Value="{Binding ChannelGainA.Value}" Level="{Binding LevelA}"
+                          IsEnabled="{Binding ChannelGainA.IsEnabled}" />
+
+          <Grid Grid.Row="1" Grid.Column="1" Width="36" Height="150" RowDefinitions="*,*,*,*,*,*,*,*,*,*">
+            <TextBlock Grid.Row="0" Classes="tick" HorizontalAlignment="Center" Text="+6" />
+            <TextBlock Grid.Row="1" Classes="tick" HorizontalAlignment="Center" Text="+3" />
+            <TextBlock Grid.Row="2" Classes="tick" HorizontalAlignment="Center" Text="0" />
+            <TextBlock Grid.Row="3" Classes="tick" HorizontalAlignment="Center" Text="-3" />
+            <TextBlock Grid.Row="4" Classes="tick" HorizontalAlignment="Center" Text="-6" />
+            <TextBlock Grid.Row="5" Classes="tick" HorizontalAlignment="Center" Text="-10" />
+            <TextBlock Grid.Row="6" Classes="tick" HorizontalAlignment="Center" Text="-15" />
+            <TextBlock Grid.Row="7" Classes="tick" HorizontalAlignment="Center" Text="-20" />
+            <TextBlock Grid.Row="8" Classes="tick" HorizontalAlignment="Center" Text="-30" />
+            <TextBlock Grid.Row="9" Classes="tick" HorizontalAlignment="Center" Text="-inf" />
+          </Grid>
+
+          <controls:Fader Grid.Row="1" Grid.Column="2" Width="44" Height="150" HorizontalAlignment="Center"
+                          Value="{Binding ChannelGainB.Value}" Level="{Binding LevelB}"
+                          IsEnabled="{Binding ChannelGainB.IsEnabled}" />
+
+          <Button Grid.Row="2" Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
+                  Command="{Binding CueACommand}" Margin="0,8,0,0" />
+          <Button Grid.Row="2" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
+                  Command="{Binding CueBCommand}" Margin="0,8,0,0" />
+        </Grid>
+      </Border>
+
+      <Border Classes="hardware-well" Padding="10,8">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto">
+            <Button Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsAutoMixActive}"
+                    Content="AUTOMIX" VerticalAlignment="Center"
+                    Command="{Binding AutoMixCommand}" />
+            <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Center" Margin="12,0,0,0">
+              <TextBlock Classes="section" HorizontalAlignment="Center" Text="TIME" />
+              <controls:Knob Width="44" Height="44"
+                             Value="{Binding AutoMixTime.Value}"
+                             IsEnabled="{Binding AutoMixTime.IsEnabled}" />
+              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding AutoMixBarsLabel}" />
+            </StackPanel>
+          </Grid>
+          <Grid ColumnDefinitions="*,6,*,6,*">
+            <Button Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsStyleCrossFade}" Content="CROSS"
+                    Command="{Binding AutoMixStyleCommand}" CommandParameter="CrossFade" />
+            <Button Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsStyleEqMix}" Content="EQ"
+                    Command="{Binding AutoMixStyleCommand}" CommandParameter="EqMix" />
+            <Button Grid.Column="4" Classes="key mixer" Classes.on="{Binding IsStyleFxMix}" Content="FX"
+                    Command="{Binding AutoMixStyleCommand}" CommandParameter="FxMix" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="hardware-well" Padding="10,8">
+        <Grid ColumnDefinitions="*,14,*">
+          <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center">
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="LEVEL" />
+            <controls:Knob Width="48" Height="48"
+                           Value="{Binding CueLevel.Value}"
+                           IsEnabled="{Binding CueLevel.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MIN   MAX" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center">
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="MIX" />
+            <controls:Knob Width="48" Height="48"
+                           Value="{Binding CueMix.Value}"
+                           IsEnabled="{Binding CueMix.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUE  MASTER" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+    </StackPanel>
+  </Border>
+</UserControl>

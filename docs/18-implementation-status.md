@@ -2,7 +2,7 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-08**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-11**.
 >
 > **See `docs/27-system-review-2026-06-10.md`** (latest) — a ten-expert full-system review with a
 > verified bug map and the recommended next 10 steps; **supersedes `docs/24-system-review-2026-06-07.md`**.
@@ -957,3 +957,24 @@ realtime half) are all landed (see Realtime audio). What still remains to build 
   mixer). Still to build: the master/cue bus into the frame pipeline, loops, **phase-sync (Quantize)**
   (tempo-sync is built), and multi-channel ASIO/CoreAudio cue output.
 - **Capture sources:** system-loopback / sound-card input (doc 01 Phase 1b) and ASIO device pick.
+
+## Packaging / distribution — Windows installer BUILT (2026-06-11)
+
+**Built** — `scripts/build-installer.ps1` produces the Windows setup exe end-to-end: ensures the
+BASS natives are fetched (`scripts/fetch-bass.ps1`), publishes `Liveolator.App` self-contained for
+win-x64 (users need no .NET install), verifies the payload actually contains
+`Liveolator.App.exe` + `bass.dll` + `bassmix.dll` (refuses to package a build whose Live Mode would
+be silently disabled), then compiles `installer/windows/Liveolator.iss` with Inno Setup 6 →
+`artifacts/dist/win-x64/LiveolatorSetup-<version>.exe` (~35 MB). Version single-source: `<Version>`
+in `Liveolator.App.csproj` drives exe metadata, setup filename, and the Add/Remove Programs entry.
+The installer is per-user by default (no admin prompt; elevation dialog available), has an
+upgrade-stable `AppId`, and the uninstaller deliberately leaves `%APPDATA%\Liveolator`
+(catalog/playlists/mappings/logs) intact across reinstalls. App icon = committed
+`src/Liveolator.App/Liveolator.ico` (docs/19 navy + accent-blue mark; regenerate with
+`scripts/new-app-icon.ps1`). A `CopyBassNativeToPublish` target in the App csproj mirrors the
+build-time native copy into the publish output (publish ignores custom `OutDir` copies). Verified
+2026-06-11: silent install → installed app boots and stays up → silent uninstall clean, user data
+preserved.
+
+**Still to build:** code signing (cert + `signtool` hook in the script), an auto-update channel,
+and the macOS `.dmg`/notarization pipeline (separate track; Inno Setup is Windows-only).
