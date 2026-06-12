@@ -1,5 +1,6 @@
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Settings;
+using ManagedBass;
 using Xunit;
 
 namespace Liveolator.Audio.Tests.Playback;
@@ -76,6 +77,44 @@ public sealed class BassInitOptionsTests
 
         Assert.Equal(BassInitOptions.NoCueDevice, options.CueDeviceIndex);
         Assert.False(options.HasCueDevice);
+    }
+
+    [Fact]
+    public void From_CarriesOutputPairsFromSettings()
+    {
+        BassInitOptions options = BassInitOptions.From(
+            new AudioSettings { MasterOutputPair = 0, CueOutputPair = 1 });
+
+        Assert.Equal(0, options.MasterOutputPair);
+        Assert.Equal(1, options.CueOutputPair);
+    }
+
+    [Fact]
+    public void SpeakerFlag_FrontPair_KeepsDefaultStereoRouting()
+    {
+        // Pair 0 (outputs 1/2) must stay BASS default so the common single-output path is unchanged.
+        Assert.Equal(BassFlags.Default, BassInitOptions.SpeakerFlag(0));
+    }
+
+    [Theory]
+    [InlineData(1, BassFlags.SpeakerPair2)] // outputs 3/4 (the CMD STUDIO 2A cue)
+    [InlineData(2, BassFlags.SpeakerPair3)] // outputs 5/6
+    [InlineData(3, BassFlags.SpeakerPair4)] // outputs 7/8
+    public void SpeakerFlag_NonFrontPair_SetsBassSpeakerAssignment(int pairIndex, BassFlags expected)
+        => Assert.Equal(expected, BassInitOptions.SpeakerFlag(pairIndex));
+
+    [Fact]
+    public void SpeakerFlag_OutOfRangePair_IsClampedToTheLastPair()
+        => Assert.Equal(BassFlags.SpeakerPair4, BassInitOptions.SpeakerFlag(99));
+
+    [Fact]
+    public void CueSpeakerFlag_ReflectsTheCuePair()
+    {
+        BassInitOptions options = BassInitOptions.From(
+            new AudioSettings { OutputDeviceId = "1", CueOutputDeviceId = "1", CueOutputPair = 1 });
+
+        Assert.Equal(BassFlags.SpeakerPair2, options.CueSpeakerFlag);
+        Assert.Equal(BassFlags.Default, options.MasterSpeakerFlag);
     }
 
     [Fact]

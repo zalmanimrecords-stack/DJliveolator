@@ -14,11 +14,11 @@
       <TabItem Header="Audio">
         <ScrollViewer>
           <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
-            <TextBlock Classes="section" Text="AUDIO OUTPUT" />
+            <TextBlock Classes="section" Text="MAIN OUTPUT" />
             <Border Classes="panel">
               <StackPanel Spacing="12" Margin="14">
                 <StackPanel Spacing="4">
-                  <TextBlock Classes="faint" Text="Sound card / output device" />
+                  <TextBlock Classes="faint" Text="Sound card / output device — drives the master mix" />
                   <ComboBox ItemsSource="{Binding OutputDevices}"
                             SelectedItem="{Binding SelectedOutputDevice}"
                             HorizontalAlignment="Stretch">
@@ -31,10 +31,54 @@
                 </StackPanel>
 
                 <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Output channels — which pair on the card the master plays out of" />
+                  <ComboBox ItemsSource="{Binding MasterOutputPairs}"
+                            SelectedItem="{Binding SelectedMasterOutputPair}"
+                            HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="settings:OutputPairOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Output buffer (ms) — lower = less latency, higher = safer" />
                   <ComboBox ItemsSource="{Binding BufferOptions}"
                             SelectedItem="{Binding SelectedBufferMs}"
                             HorizontalAlignment="Stretch" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Classes="section" Text="HEADPHONES (CUE)" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Headphone output device — same card as the master, or a separate one" />
+                  <ComboBox ItemsSource="{Binding CueOutputDevices}"
+                            SelectedItem="{Binding SelectedCueOutputDevice}"
+                            HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="audio:AudioOutputDevice">
+                        <TextBlock Text="{Binding Name}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                  <TextBlock Classes="faint" Text="Headphone channels — e.g. outputs 3/4 on a CMD STUDIO 2A while the master uses 1/2" />
+                  <ComboBox ItemsSource="{Binding CueOutputPairs}"
+                            SelectedItem="{Binding SelectedCueOutputPair}"
+                            HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="settings:OutputPairOption">
+                        <TextBlock Text="{Binding Label}" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
                 </StackPanel>
               </StackPanel>
             </Border>

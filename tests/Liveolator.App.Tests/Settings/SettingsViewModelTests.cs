@@ -32,8 +32,8 @@ public sealed class SettingsViewModelTests
     {
         public List<AudioOutputDevice> Devices { get; set; } = new()
         {
-            new AudioOutputDevice("1", "Speakers", IsDefault: true),
-            new AudioOutputDevice("2", "CMD STUDIO 2A", IsDefault: false),
+            new AudioOutputDevice("1", "Speakers", IsDefault: true, OutputChannelCount: 2),
+            new AudioOutputDevice("2", "CMD STUDIO 2A", IsDefault: false, OutputChannelCount: 4),
         };
         public IReadOnlyList<AudioOutputDevice> EnumerateOutputDevices() => Devices;
     }
@@ -284,6 +284,108 @@ public sealed class SettingsViewModelTests
         Assert.Null(store.Saved.Audio.OutputDeviceId);
         Assert.Null(store.Saved.Midi.ControllerInputName);
         Assert.Null(store.Saved.Midi.FeedbackOutputName);
+    }
+
+    [Fact]
+    public void Construct_CueListLeadsWithNoneSentinel_AndDefaultsToNone()
+    {
+        var vm = NewVm();
+
+        Assert.Same(SettingsViewModel.NoCueOutput, vm.CueOutputDevices[0]);
+        Assert.Contains(vm.CueOutputDevices, d => d.Name == "CMD STUDIO 2A");
+        Assert.Same(SettingsViewModel.NoCueOutput, vm.SelectedCueOutputDevice);
+    }
+
+    [Fact]
+    public void SelectingDevice_SizesChannelPairsToItsOutputCount()
+    {
+        var vm = NewVm();
+
+        // System default (stereo) offers a single pair.
+        vm.SelectedOutputDevice = SettingsViewModel.SystemDefaultOutput;
+        Assert.Single(vm.MasterOutputPairs);
+        Assert.Equal("Outputs 1/2", vm.MasterOutputPairs[0].Label);
+
+        // The 4-channel CMD STUDIO 2A offers two pairs (1/2 and 3/4).
+        vm.SelectedOutputDevice = vm.OutputDevices.First(d => d.Id == "2");
+        Assert.Equal(2, vm.MasterOutputPairs.Count);
+        Assert.Equal("Outputs 3/4", vm.MasterOutputPairs[1].Label);
+    }
+
+    [Fact]
+    public async Task Save_PersistsCueDeviceAndOutputPairs()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.SelectedOutputDevice = vm.OutputDevices.First(d => d.Id == "2");      // 4-channel card
+        vm.SelectedMasterOutputPair = vm.MasterOutputPairs.First(p => p.Index == 0);
+        vm.SelectedCueOutputDevice = vm.CueOutputDevices.First(d => d.Id == "2");
+        vm.SelectedCueOutputPair = vm.CueOutputPairs.First(p => p.Index == 1);   // outputs 3/4
+
+        await vm.SaveAsync();
+
+        Assert.Equal("2", store.Saved.Audio.CueOutputDeviceId);
+        Assert.Equal(0, store.Saved.Audio.MasterOutputPair);
+        Assert.Equal(1, store.Saved.Audio.CueOutputPair);
+    }
+
+    [Fact]
+    public async Task Save_NoCueSelected_PersistsNullCueDevice()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.SelectedCueOutputDevice = SettingsViewModel.NoCueOutput;
+
+        await vm.SaveAsync();
+
+        Assert.Null(store.Saved.Audio.CueOutputDeviceId);
+    }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedCueDeviceAndPair()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with
+            {
+                Audio = new AudioSettings { CueOutputDeviceId = "2", CueOutputPair = 1 },
+            },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal("2", vm.SelectedCueOutputDevice!.Id);
+        Assert.Equal(1, vm.SelectedCueOutputPair!.Index);
+    }
+
+    [Fact]
+    public async Task Initialize_PersistedCueDeviceGone_FallsBackToNone()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Audio = new AudioSettings { CueOutputDeviceId = "999" } },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Same(SettingsViewModel.NoCueOutput, vm.SelectedCueOutputDevice);
+    }
+
+    [Fact]
+    public async Task Initialize_PersistedPairBeyondDeviceRange_ClampsToAvailable()
+    {
+        // The master is the system default (stereo, one pair); a saved "3/4" choice must fall back to 1/2.
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Audio = new AudioSettings { MasterOutputPair = 1 } },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(0, vm.SelectedMasterOutputPair!.Index);
     }
 
     [Fact]

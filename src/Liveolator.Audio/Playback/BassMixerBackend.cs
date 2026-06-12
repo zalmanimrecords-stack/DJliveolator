@@ -17,8 +17,10 @@ namespace Liveolator.Audio.Playback;
 /// (doc 11 checklist), mirroring <see cref="BassPlayback"/>.
 /// </summary>
 /// <remarks>
-/// Headphone cue (PFL): when the user has chosen a separate cue output device, the backend opens a
-/// second BASS device for it (the CMD STUDIO 2A's channels 3/4) and exposes <see cref="ICueOutput"/>
+/// Headphone cue (PFL): when the user has chosen a cue output, the backend routes the headphone mix to
+/// it via a second mixer stream — either a different output channel-pair on the SAME card as the master
+/// (the CMD STUDIO 2A: master on 1/2, cue on 3/4, addressed by a BASS speaker-assignment flag) or a
+/// separate BASS device — and exposes <see cref="ICueOutput"/>
 /// so <see cref="BassMixer"/> can push the Core-computed cue/master output gains. The cue output is a
 /// second mixer fed by two legs: the master leg (the post-limiter master, scaled in
 /// <see cref="OnMasterDsp"/>) and the cued-deck (PFL) leg — each deck's PRE-FADE samples, scaled by the
@@ -34,7 +36,18 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     private readonly ILogger _logger;
     private readonly IAudioEffectRackProvider? _effectRacks;
     private readonly Dictionary<int, DeckDsp> _decks = new();
-    private readonly int _cueDeviceIndex;
+
+    // Cue routing — mutable because a Settings change re-routes them at runtime (ReinitOutput): the BASS
+    // device backing the cue mixer, and the speaker-assignment flags so the master and the cue can play
+    // out of different output pairs of one multi-output card (e.g. CMD STUDIO 2A master 1/2, cue 3/4).
+    // BassFlags.Default = the card's normal stereo pair (1/2), so the common single-output path is unchanged.
+    private int _cueDeviceIndex;
+    private BassFlags _masterSpeakerFlag;
+    private BassFlags _cueSpeakerFlag;
+
+    // All BASS speaker-assignment bits (pair number 1..15 in bits 24-27 + the left/right modifier bits),
+    // so a live re-route can clear the old assignment and set the new one in one ChannelFlags call.
+    private const BassFlags SpeakerAssignmentMask = (BassFlags)0x3F000000;
 
     private int _mixer;
     private int _cueMixer;                  // 0 until a cue output device is opened
@@ -117,6 +130,8 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         _masterLimiter = new MasterLimiter(sampleRate, channels);
 
         var options = BassInitOptions.From(audioSettings);
+        _masterSpeakerFlag = options.MasterSpeakerFlag;
+        _cueSpeakerFlag = options.CueSpeakerFlag;
 
         // Pre-size the RT scratch buffers to the worst-case buffer BASS will hand us: the playback
         // buffer length (ms) of interleaved float samples, with headroom, so the DSP callbacks never
@@ -152,12 +167,14 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         }
     }
 
-    // Open the user-chosen headphone-cue output device (doc 11) so a second BASS device backs the cue
-    // mixer. A missing/stale cue device must not disable all audio — log and run without cue.
+    // Resolve the BASS device that backs the cue mixer (doc 11). The cue may be the SAME card as the
+    // master (already open — TryInitDevice returns Already) on a different output pair, or a SEPARATE
+    // card opened here as a second device. A missing/stale cue device must not disable all audio — log
+    // and run without cue (global standards #16/#26).
     private int TryInitCueDevice(BassInitOptions options)
     {
-        if (!options.HasCueDevice || options.CueDeviceIndex == options.DeviceIndex)
-            return BassInitOptions.NoCueDevice; // no separate cue output, or it is the master device
+        if (!options.HasCueDevice)
+            return BassInitOptions.NoCueDevice; // no cue output configured
 
         if (TryInitDevice(options.CueDeviceIndex))
             return options.CueDeviceIndex;
@@ -226,6 +243,17 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         }
 
         Bass.CurrentDevice = options.DeviceIndex;
+
+        // Re-route the master to its chosen output pair live. BASS allows changing speaker-assignment
+        // flags on a playing channel, so this moves the master between 1/2 and 3/4 etc. without a stop.
+        _masterSpeakerFlag = options.MasterSpeakerFlag;
+        if (_mixer != 0)
+            Bass.ChannelFlags(_mixer, _masterSpeakerFlag, SpeakerAssignmentMask);
+
+        // Re-route the headphone cue to its new device / output pair (rebuilds the cue mixer + per-deck
+        // PFL pushes). A cue rebuild failure must not fail the whole re-init — the master keeps playing.
+        RebuildCueOutput(options);
+
         // The master limiter is intentionally NOT Reset() here: the mixer keeps playing across the device
         // move, so resetting its delay line would race OnMasterDsp on the audio thread. Its ~5 ms look-ahead
         // tail across a re-route is benign (the re-route itself is a discontinuity); Reset() is reserved for
@@ -233,10 +261,50 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         return true;
     }
 
+    // Tears down and rebuilds the headphone-cue path to match a new cue device / output pair (doc 12
+    // runtime apply). BASS validates stream handles internally, so a buffer pushed to a just-freed cue
+    // handle by the audio thread mid-rebuild returns an error (logged) rather than crashing — the cue is
+    // simply silent for the brief rebuild window. A failure to rebuild leaves the cue disabled, never the
+    // master (global standards #16/#26). Native — verified manually on the CMD STUDIO 2A.
+    private void RebuildCueOutput(BassInitOptions options)
+    {
+        int masterDevice = Bass.CurrentDevice;
+
+        // 1) Stop feeding the old cue path: zero the handles the audio-thread DSP reads (so it early-
+        //    returns), then free the old streams. The cue mixer's free drops its plugged push sources.
+        foreach (DeckDsp deck in _decks.Values)
+        {
+            int push = deck.CuePush;
+            deck.CuePush = 0;
+            if (push != 0)
+                Bass.StreamFree(push);
+        }
+        _cueMasterPush = 0;
+        int oldCueMixer = _cueMixer;
+        _cueMixer = 0;
+        if (oldCueMixer != 0)
+            Bass.StreamFree(oldCueMixer);
+
+        // 2) Re-resolve the cue device + speaker pair and rebuild the cue mixer (master leg) + per-deck
+        //    PFL pushes for the decks already loaded.
+        _cueSpeakerFlag = options.CueSpeakerFlag;
+        _cueDeviceIndex = TryInitCueDevice(options);
+        CreateCueMixerIfConfigured();
+        if (_cueMixer != 0)
+            foreach (DeckDsp deck in _decks.Values)
+                deck.CuePush = CreateDeckCuePush();
+
+        // CreateCueMixerIfConfigured / CreateDeckCuePush switch the current device; restore the master's.
+        if (Bass.CurrentDevice != masterDevice)
+            Bass.CurrentDevice = masterDevice;
+    }
+
     public MasterMixInfo CreateMaster()
     {
-        // A mixer stream that does not auto-stop when all sources pause/end (decks come and go).
-        _mixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
+        // A mixer stream that does not auto-stop when all sources pause/end (decks come and go). The
+        // master speaker flag routes it to the chosen output pair (Default = the card's normal 1/2).
+        _mixer = BassMix.CreateMixerStream(
+            _sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop | _masterSpeakerFlag);
         if (_mixer == 0)
             throw new BassPlaybackException($"CreateMixerStream failed: {Bass.LastError}");
 
@@ -257,7 +325,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // the cue mixer, then restore the master device for the rest of the master setup.
         int masterDevice = Bass.CurrentDevice;
         Bass.CurrentDevice = _cueDeviceIndex;
-        _cueMixer = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop);
+        // The cue speaker flag routes the headphone mix to its output pair — on the same card as the
+        // master this is how the cue reaches outputs 3/4 while the master holds 1/2.
+        _cueMixer = BassMix.CreateMixerStream(
+            _sampleRate, _channels, BassFlags.Float | BassFlags.MixerNonStop | _cueSpeakerFlag);
         if (_cueMixer == 0)
         {
             _logger.LogWarning("Cue mixer creation failed: {Error}; cue output disabled.", Bass.LastError);

@@ -455,8 +455,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.App/Features/Settings/SettingsViewModel.cs": {
-    "mtime": 1781246866.175466,
-    "ast_hash": "8d1530a32755ec3153d5391e224fc540",
+    "mtime": 1781251659.6877918,
+    "ast_hash": "54e14cd159720b30267f82834d1cc65e",
     "semantic_hash": ""
   },
   "src/Liveolator.App/Features/Shared/ConfirmationService.cs": {
@@ -600,8 +600,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.App/Theme/BuiltInUiThemes.cs": {
-    "mtime": 1781245331.8614688,
-    "ast_hash": "f67bfda1a268e0f71f8a96a81f1c6ebc",
+    "mtime": 1781251180.196003,
+    "ast_hash": "7604464186d57ee4e9d79e2f8e52b017",
     "semantic_hash": ""
   },
   "src/Liveolator.App/Theme/IUiThemeLiveApplier.cs": {
@@ -685,8 +685,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassInitOptions.cs": {
-    "mtime": 1780756297.1401918,
-    "ast_hash": "7576564be7e69b6669e1cd8aa4594e20",
+    "mtime": 1781251440.6065483,
+    "ast_hash": "8407e4af109af19d95f9e912b71ca6f9",
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassMixer.cs": {
@@ -695,8 +695,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassMixerBackend.cs": {
-    "mtime": 1781118729.2525141,
-    "ast_hash": "3b4f42255a9d0afdae08988df532de16",
+    "mtime": 1781251948.021804,
+    "ast_hash": "3bca18adf9338ee01154849e05d3270b",
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassMixerChannel.cs": {
@@ -705,8 +705,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassOutputDeviceCatalog.cs": {
-    "mtime": 1780691028.4545083,
-    "ast_hash": "223a8b9796e2178dd625faa43e7b9bec",
+    "mtime": 1781251869.9752402,
+    "ast_hash": "d624e663bfea35c71b12f207f7c99b2b",
     "semantic_hash": ""
   },
   "src/Liveolator.Audio/Playback/BassPlayback.cs": {
@@ -970,13 +970,13 @@
     "semantic_hash": ""
   },
   "src/Liveolator.Core/Audio/AudioOutputDevice.cs": {
-    "mtime": 1780690908.5751872,
-    "ast_hash": "8d69fadd6e353763266ee993cdee918a",
+    "mtime": 1781251251.9275217,
+    "ast_hash": "13e95a7c662dab91261a003aff7f4446",
     "semantic_hash": ""
   },
   "src/Liveolator.Core/Audio/AudioReinitCoordinator.cs": {
-    "mtime": 1780756297.1735127,
-    "ast_hash": "9f8e165651c6a5a4e9659f5663e40d85",
+    "mtime": 1781251324.8947177,
+    "ast_hash": "fe560583ee1ce5dc6ea7c28aae759dc1",
     "semantic_hash": ""
   },
   "src/Liveolator.Core/Audio/AudioReinitResult.cs": {
@@ -1920,8 +1920,8 @@
     "semantic_hash": ""
   },
   "src/Liveolator.Core/Settings/AudioSettings.cs": {
-    "mtime": 1780756297.2399359,
-    "ast_hash": "b8fefd2a8e13ea931bcf279966d7b26f",
+    "mtime": 1781251270.237883,
+    "ast_hash": "76a312f7302ca63c23d065cf15de50c3",
     "semantic_hash": ""
   },
   "src/Liveolator.Core/Settings/DiagnosticsSettings.cs": {
@@ -2965,8 +2965,8 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.App.Tests/Settings/SettingsViewModelTests.cs": {
-    "mtime": 1781118729.4874368,
-    "ast_hash": "b685d85a1f7aa9aa10685901848f485d",
+    "mtime": 1781251719.6802647,
+    "ast_hash": "cc1eca5edb667f21e455039ea40a672f",
     "semantic_hash": ""
   },
   "tests/Liveolator.App.Tests/Shared/TrackContextActionsTests.cs": {
@@ -3005,23 +3005,13 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.App.Tests/Theme/BuiltInUiThemesTests.cs": {
-    "mtime": 1781245642.937854,
-    "ast_hash": "ea5b56c035daab84db9028eeabd16f29",
+    "mtime": 1781251194.9599895,
+    "ast_hash": "4a47519ab8340aee5f1fc71da7862c14",
     "semantic_hash": ""
   },
   "tests/Liveolator.App.Tests/Theme/UiThemeApplierBackgroundTests.cs": {
-    "mtime": 1781201089.5648565,
-    "ast_hash": "076d45b342326eba0c6f946efb9de12b",
-    "semantic_hash": ""
-  },
-  "tests/Liveolator.App.Tests/Ui/AnalogBackgroundBaker.cs": {
-    "mtime": 1781201292.781343,
-    "ast_hash": "fd63fbf2a6cb3e8080f81abab9a19a0f",
-    "semantic_hash": ""
-  },
-  "tests/Liveolator.App.Tests/Ui/AnalogThemeShot.cs": {
-    "mtime": 1781201337.1495144,
-    "ast_hash": "1a0e254609dfda428f7c13e4738eba5e",
+    "mtime": 1781251358.0404074,
+    "ast_hash": "59c818eb199148f60f68dcc8127043be",
     "semantic_hash": ""
   },
   "tests/Liveolator.App.Tests/Ui/ControlSkinAppliedShot.cs": {
@@ -3115,8 +3105,8 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.Audio.Tests/Playback/BassInitOptionsTests.cs": {
-    "mtime": 1780756297.2918622,
-    "ast_hash": "8fa0fec26afabd37b6ded7721336a233",
+    "mtime": 1781251463.163015,
+    "ast_hash": "e6501afe15fd057f8474323a94addad8",
     "semantic_hash": ""
   },
   "tests/Liveolator.Audio.Tests/Playback/BassMixerChannelTests.cs": {
@@ -3285,8 +3275,8 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Audio/AudioReinitCoordinatorTests.cs": {
-    "mtime": 1780756297.3270957,
-    "ast_hash": "9d38c69ce654c2f268fd68897ee234cc",
+    "mtime": 1781251333.044663,
+    "ast_hash": "374d1bb7a38630d2d207e7abf82b19bf",
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Audio/BeatLoopCalculatorTests.cs": {
@@ -3675,8 +3665,8 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Settings/AppSettingsTests.cs": {
-    "mtime": 1780756297.3441696,
-    "ast_hash": "2a925d49aa49cbcd67ec8e4c995facee",
+    "mtime": 1781251281.173004,
+    "ast_hash": "9ad1b0004ae53d2d5633698a2c8b148a",
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Settings/DiagnosticsSettingsTests.cs": {
@@ -3685,8 +3675,8 @@
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Settings/UiThemeManagerTokenTests.cs": {
-    "mtime": 1781200814.2940662,
-    "ast_hash": "2e26fe4d1135004c57d105306479fb15",
+    "mtime": 1781251365.4055636,
+    "ast_hash": "7300ca91353a0dd9d997aab2b30f5951",
     "semantic_hash": ""
   },
   "tests/Liveolator.Core.Tests/Settings/VisualsSettingsTests.cs": {
@@ -4415,8 +4405,8 @@
     "semantic_hash": ""
   },
   "docs/30-ui-skins-png-controls.md": {
-    "mtime": 1781245812.2408118,
-    "ast_hash": "c7b956134250a66c7a4c0818a7a1c4b2",
+    "mtime": 1781251453.621001,
+    "ast_hash": "2156f794178cf1db7c38ae9f9f0e1d55",
     "semantic_hash": ""
   },
   "docs/README.md": {
@@ -4499,9 +4489,19 @@
     "ast_hash": "5c14d60336be503e68271573223fe820",
     "semantic_hash": ""
   },
-  "src/Liveolator.App/Assets/Themes/analog/background.png": {
-    "mtime": 1781201227.0958898,
-    "ast_hash": "39e5e3e9883273d9e142ad45aac2d90f",
+  "src/Liveolator.App/Features/Settings/OutputPairOption.cs": {
+    "mtime": 1781251564.4382472,
+    "ast_hash": "b2a992dbff98284c230ef4b0fca9c96a",
+    "semantic_hash": ""
+  },
+  "src/Liveolator.Core/Audio/OutputChannelPair.cs": {
+    "mtime": 1781251231.988737,
+    "ast_hash": "e558189d6b6730a0105a322784d20c18",
+    "semantic_hash": ""
+  },
+  "tests/Liveolator.Core.Tests/Audio/OutputChannelPairTests.cs": {
+    "mtime": 1781251244.3627894,
+    "ast_hash": "8b8374be595c1c2dafe5cc42abd27ff9",
     "semantic_hash": ""
   }
 }

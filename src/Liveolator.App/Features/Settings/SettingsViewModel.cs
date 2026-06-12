@@ -40,6 +40,10 @@ public sealed class SettingsViewModel : ViewModelBase
     public static AudioOutputDevice SystemDefaultOutput { get; } =
         new(Id: "", Name: "System default", IsDefault: true);
 
+    /// <summary>Sentinel for "no headphone-cue output" (persists as a null cue id — headphones disabled).</summary>
+    public static AudioOutputDevice NoCueOutput { get; } =
+        new(Id: "", Name: "(none)", IsDefault: false);
+
     /// <summary>Sentinel capture entry for "no live capture source" (persists as a null id + kind).</summary>
     public static AudioCaptureDevice NoCaptureSource { get; } =
         new(Id: "", Name: "(none)", Kind: CaptureSourceKind.LineInput, IsDefault: false);
@@ -68,6 +72,9 @@ public sealed class SettingsViewModel : ViewModelBase
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
+    private AudioOutputDevice? _selectedCueOutputDevice;
+    private OutputPairOption? _selectedMasterOutputPair;
+    private OutputPairOption? _selectedCueOutputPair;
     private int _selectedBufferMs = AudioSettings.DefaultBufferMs;
     private AudioCaptureDevice? _selectedCaptureDevice;
     private string _selectedMidiInput = NoDevice;
@@ -142,6 +149,15 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>Output devices to pick from, led by the <see cref="SystemDefaultOutput"/> sentinel.</summary>
     public ObservableCollection<AudioOutputDevice> OutputDevices { get; } = new();
 
+    /// <summary>Headphone-cue output devices, led by the <see cref="NoCueOutput"/> "(none)" sentinel.</summary>
+    public ObservableCollection<AudioOutputDevice> CueOutputDevices { get; } = new();
+
+    /// <summary>Selectable output channel-pairs for the master device (rebuilt when it changes).</summary>
+    public ObservableCollection<OutputPairOption> MasterOutputPairs { get; } = new();
+
+    /// <summary>Selectable output channel-pairs for the cue device (rebuilt when it changes).</summary>
+    public ObservableCollection<OutputPairOption> CueOutputPairs { get; } = new();
+
     /// <summary>Selectable capture sources, led by the <see cref="NoCaptureSource"/> "(none)" sentinel.</summary>
     public ObservableCollection<AudioCaptureDevice> CaptureDevices { get; } = new();
 
@@ -171,7 +187,38 @@ public sealed class SettingsViewModel : ViewModelBase
     public AudioOutputDevice? SelectedOutputDevice
     {
         get => _selectedOutputDevice;
-        set => this.RaiseAndSetIfChanged(ref _selectedOutputDevice, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedOutputDevice, value);
+            // The selectable channel-pairs depend on the chosen card's output count — rebuild them so
+            // the picker only ever offers pairs this device actually has.
+            RebuildPairOptions(MasterOutputPairs, value, ref _selectedMasterOutputPair, nameof(SelectedMasterOutputPair));
+        }
+    }
+
+    /// <summary>The headphone-cue output device, or <see cref="NoCueOutput"/> when headphones are disabled.</summary>
+    public AudioOutputDevice? SelectedCueOutputDevice
+    {
+        get => _selectedCueOutputDevice;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedCueOutputDevice, value);
+            RebuildPairOptions(CueOutputPairs, value, ref _selectedCueOutputPair, nameof(SelectedCueOutputPair));
+        }
+    }
+
+    /// <summary>The master device's chosen output channel-pair (e.g. outputs 1/2). Persisted on Save.</summary>
+    public OutputPairOption? SelectedMasterOutputPair
+    {
+        get => _selectedMasterOutputPair;
+        set => this.RaiseAndSetIfChanged(ref _selectedMasterOutputPair, value);
+    }
+
+    /// <summary>The cue device's chosen output channel-pair (e.g. outputs 3/4 of the CMD STUDIO 2A). Persisted on Save.</summary>
+    public OutputPairOption? SelectedCueOutputPair
+    {
+        get => _selectedCueOutputPair;
+        set => this.RaiseAndSetIfChanged(ref _selectedCueOutputPair, value);
     }
 
     public int SelectedBufferMs
@@ -309,14 +356,23 @@ public sealed class SettingsViewModel : ViewModelBase
     public void RefreshDevices()
     {
         AudioOutputDevice? previousOutput = SelectedOutputDevice;
+        AudioOutputDevice? previousCue = SelectedCueOutputDevice;
         AudioCaptureDevice? previousCapture = SelectedCaptureDevice;
         string previousMidiIn = SelectedMidiInput;
         string previousMidiOut = SelectedMidiOutput;
 
+        // Enumerate once; the same endpoints back both the master and the cue picker.
+        IReadOnlyList<AudioOutputDevice> outputs = _outputs.EnumerateOutputDevices();
+
         OutputDevices.Clear();
         OutputDevices.Add(SystemDefaultOutput);
-        foreach (AudioOutputDevice device in _outputs.EnumerateOutputDevices())
+        foreach (AudioOutputDevice device in outputs)
             OutputDevices.Add(device);
+
+        CueOutputDevices.Clear();
+        CueOutputDevices.Add(NoCueOutput);
+        foreach (AudioOutputDevice device in outputs)
+            CueOutputDevices.Add(device);
 
         CaptureDevices.Clear();
         CaptureDevices.Add(NoCaptureSource);
@@ -326,8 +382,12 @@ public sealed class SettingsViewModel : ViewModelBase
         FillMidi(MidiInputDevices, _midi.GetInputDeviceNames());
         FillMidi(MidiOutputDevices, _midi.GetOutputDeviceNames());
 
-        // Keep the prior selection if it still exists; otherwise fall back to the safe default.
+        // Keep the prior selection if it still exists; otherwise fall back to the safe default. Setting
+        // the device rebuilds its channel-pair list (and re-selects a valid pair) via the setters.
         SelectedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == previousOutput?.Id) ?? SystemDefaultOutput;
+        SelectedCueOutputDevice = previousCue is { } cue && !string.IsNullOrEmpty(cue.Id)
+            ? CueOutputDevices.FirstOrDefault(d => d.Id == cue.Id) ?? NoCueOutput
+            : NoCueOutput;
         SelectedCaptureDevice = MatchCapture(previousCapture);
         SelectedMidiInput = MidiInputDevices.Contains(previousMidiIn) ? previousMidiIn : NoDevice;
         SelectedMidiOutput = MidiOutputDevices.Contains(previousMidiOut) ? previousMidiOut : NoDevice;
@@ -344,9 +404,13 @@ public sealed class SettingsViewModel : ViewModelBase
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
         bool captureSelected = SelectedCaptureDevice is { } cap && !string.IsNullOrEmpty(cap.Id);
+        bool cueSelected = SelectedCueOutputDevice is { } cue && !string.IsNullOrEmpty(cue.Id);
         var audio = new AudioSettings
         {
             OutputDeviceId = string.IsNullOrEmpty(SelectedOutputDevice?.Id) ? null : SelectedOutputDevice!.Id,
+            CueOutputDeviceId = cueSelected ? SelectedCueOutputDevice!.Id : null,
+            MasterOutputPair = SelectedMasterOutputPair?.Index ?? 0,
+            CueOutputPair = SelectedCueOutputPair?.Index ?? 0,
             BufferMilliseconds = SelectedBufferMs,
             CaptureDeviceId = captureSelected ? SelectedCaptureDevice!.Id : null,
             CaptureSource = captureSelected ? SelectedCaptureDevice!.Kind : null,
@@ -430,8 +494,16 @@ public sealed class SettingsViewModel : ViewModelBase
 
     private void ApplySettings(AppSettings settings)
     {
+        // Set the devices first (each rebuilds its channel-pair list), THEN select the persisted pair —
+        // otherwise the rebuild would reset the pair selection after we set it.
         SelectedOutputDevice = OutputDevices.FirstOrDefault(d => d.Id == settings.Audio.OutputDeviceId)
             ?? SystemDefaultOutput;
+        // A persisted cue device that is gone (unplugged) falls back to "(none)" — headphones disabled.
+        SelectedCueOutputDevice = string.IsNullOrEmpty(settings.Audio.CueOutputDeviceId)
+            ? NoCueOutput
+            : CueOutputDevices.FirstOrDefault(d => d.Id == settings.Audio.CueOutputDeviceId) ?? NoCueOutput;
+        SelectedMasterOutputPair = PairOptionFor(MasterOutputPairs, settings.Audio.MasterOutputPair);
+        SelectedCueOutputPair = PairOptionFor(CueOutputPairs, settings.Audio.CueOutputPair);
 
         // A persisted capture device that is gone (unplugged) falls back to "(none)" rather than erroring.
         SelectedCaptureDevice = string.IsNullOrEmpty(settings.Audio.CaptureDeviceId)
@@ -532,6 +604,31 @@ public sealed class SettingsViewModel : ViewModelBase
             return NoCaptureSource;
         return CaptureDevices.FirstOrDefault(d => d.Id == previous.Id) ?? NoCaptureSource;
     }
+
+    // Rebuilds a device's selectable channel-pairs from its output-channel count and re-selects a valid
+    // pair: the current index is kept when the new device still has it, else clamped down (so switching
+    // from a 4-channel card on "3/4" to a stereo card falls back to "1/2"). The selected backing field is
+    // updated in place and its property change raised by name, since the property differs per picker.
+    private void RebuildPairOptions(
+        ObservableCollection<OutputPairOption> target,
+        AudioOutputDevice? device,
+        ref OutputPairOption? selectedBackingField,
+        string selectedPropertyName)
+    {
+        int channelCount = device?.OutputChannelCount ?? 2;
+        int desiredIndex = OutputChannelPair.Clamp(selectedBackingField?.Index ?? 0, channelCount);
+
+        target.Clear();
+        for (int i = 0; i < OutputChannelPair.PairCount(channelCount); i++)
+            target.Add(new OutputPairOption(i, OutputChannelPair.Label(i)));
+
+        selectedBackingField = target.FirstOrDefault(o => o.Index == desiredIndex) ?? target[0];
+        this.RaisePropertyChanged(selectedPropertyName);
+    }
+
+    // Picks the pair option matching a persisted index, clamped to what the (already rebuilt) list offers.
+    private static OutputPairOption PairOptionFor(ObservableCollection<OutputPairOption> options, int index)
+        => options.FirstOrDefault(o => o.Index == index) ?? options[^1];
 
     private static void FillMidi(ObservableCollection<string> target, IReadOnlyList<string> names)
     {

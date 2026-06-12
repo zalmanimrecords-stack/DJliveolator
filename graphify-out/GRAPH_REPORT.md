@@ -1,16 +1,16 @@
 # Graph Report - Liveolator  (2026-06-12)
 
 ## Corpus Check
-- 890 files · ~491,166 words
+- 891 files · ~490,999 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 9498 nodes · 13881 edges · 836 communities (724 shown, 112 thin omitted)
+- 9524 nodes · 13951 edges · 841 communities (728 shown, 113 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 15 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7c8501b3`
+- Built from commit: `9967d1eb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -743,35 +743,39 @@
 - [[_COMMUNITY_Community 735|Community 735]]
 - [[_COMMUNITY_Community 736|Community 736]]
 - [[_COMMUNITY_Community 740|Community 740]]
+- [[_COMMUNITY_Community 836|Community 836]]
+- [[_COMMUNITY_Community 837|Community 837]]
+- [[_COMMUNITY_Community 838|Community 838]]
+- [[_COMMUNITY_Community 839|Community 839]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `TwoDeckBassEngineTests` - 67 edges
 2. `Fact` - 63 edges
 3. `DeckViewModelTests` - 52 edges
 4. `LibrariesViewModel` - 48 edges
-5. `DeckActionHandlerTests` - 46 edges
-6. `SettingsViewModel` - 45 edges
-7. `GlVisualPerformanceEngine` - 45 edges
-8. `Fact` - 45 edges
-9. `BassMixerBackend` - 44 edges
+5. `SettingsViewModel` - 48 edges
+6. `DeckActionHandlerTests` - 46 edges
+7. `BassMixerBackend` - 45 edges
+8. `GlVisualPerformanceEngine` - 45 edges
+9. `Fact` - 45 edges
 10. `FakeMultiDeckPlaybackEngine` - 38 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `FakeActionHandler` --inherits--> `PerformanceActionHandlerBase`  [EXTRACTED]
-  tests/Liveolator.Core.Tests/Actions/ActionTestDoubles.cs → src/Liveolator.Core/Actions/PerformanceActionHandlerBase.cs
-- `FakeVisualStage` --implements--> `IVisualStage`  [EXTRACTED]
-  tests/Liveolator.App.Tests/Live/LiveViewModelVisualsTests.cs → src/Liveolator.App/Features/Live/IVisualStage.cs
 - `FakeMetricsSampler` --implements--> `ISystemMetricsSampler`  [EXTRACTED]
   tests/Liveolator.App.Tests/Shell/ShellStatusViewModelTests.cs → src/Liveolator.App/Shell/ISystemMetricsSampler.cs
-- `FakeMidiStatus` --implements--> `IMidiControlStatus`  [EXTRACTED]
-  tests/Liveolator.App.Tests/Shell/MainWindowViewModelTests.cs → src/Liveolator.Core/Mapping/IMidiControlStatus.cs
+- `FakeActionHandler` --inherits--> `PerformanceActionHandlerBase`  [EXTRACTED]
+  tests/Liveolator.Core.Tests/Actions/ActionTestDoubles.cs → src/Liveolator.Core/Actions/PerformanceActionHandlerBase.cs
 - `FakeMidiStatus` --implements--> `IMidiControlStatus`  [EXTRACTED]
   tests/Liveolator.App.Tests/Shell/ShellStatusViewModelTests.cs → src/Liveolator.Core/Mapping/IMidiControlStatus.cs
+- `FakeVisualStage` --implements--> `IVisualStage`  [EXTRACTED]
+  tests/Liveolator.App.Tests/Live/LiveViewModelVisualsTests.cs → src/Liveolator.App/Features/Live/IVisualStage.cs
+- `FakeMidiStatus` --implements--> `IMidiControlStatus`  [EXTRACTED]
+  tests/Liveolator.App.Tests/Shell/MainWindowViewModelTests.cs → src/Liveolator.Core/Mapping/IMidiControlStatus.cs
 
 ## Import Cycles
 - None detected.
 
-## Communities (836 total, 112 thin omitted)
+## Communities (841 total, 113 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.06
@@ -791,7 +795,7 @@ Nodes (34): ProcessVisualShaderProbe, IVisualShaderProbe, FakeShaderProbe, Gener
 
 ### Community 4 - "Community 4"
 Cohesion: 0.06
-Nodes (33): ExtensionItemViewModel, SettingsViewModel, AppSettings, AudioCaptureDevice, AudioOutputDevice, AudioReinitCoordinator, AudioSettings, bool (+25 more)
+Nodes (34): ExtensionItemViewModel, OutputPairOption, SettingsViewModel, AppSettings, AudioCaptureDevice, AudioOutputDevice, AudioReinitCoordinator, AudioSettings (+26 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.07
@@ -806,8 +810,8 @@ Cohesion: 0.08
 Nodes (26): IExtensionCatalog, IExtensionContentReloader, IExtensionInstaller, IExtensionValidator, ITrustedPublisherStore, ExtensionPackageValidator, ExtensionSignature, ExtensionValidationIssue (+18 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.05
-Nodes (28): IMidiControlSession, IMidiControlStatus, ISystemMetricsSampler, FakeMidiStatus, ProcessSystemMetricsSampler, FakeMetricsSampler, FakeMidiStatus, FakeOutputCatalog (+20 more)
+Cohesion: 0.21
+Nodes (7): FakeMetricsSampler, FakeMidiStatus, ShellStatusViewModelTests, AppSettings, Fact, Queue, SystemMetrics
 
 ### Community 9 - "Community 9"
 Cohesion: 0.05
@@ -818,8 +822,8 @@ Cohesion: 0.08
 Nodes (22): BassCaptureBackend, CaptureAudioSourceTests, ThrowingStopBackend, FakeCaptureBackend, CaptureAudioSource, FakeCaptureBackend, ICaptureBackend, RecordProcedure (+14 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.08
-Nodes (24): AddonsViewModelTests, FakeCatalog, FakeProbe, FakeStore, AddonsViewModel, ExtensionRegistrySnapshot, ExtensionCatalog, SkiaImageDimensionsProbe (+16 more)
+Cohesion: 0.22
+Nodes (8): AddonsViewModelTests, AddonsViewModel, Fact, InstalledExtension, List, string, Task, VuMeterNeedleOrigin
 
 ### Community 12 - "Community 12"
 Cohesion: 0.04
@@ -830,8 +834,8 @@ Cohesion: 0.07
 Nodes (25): FakeFilePicker, FakePortability, FakeSession, IMappingFilePicker, IMappingProfilePortability, MappingProfilePortability, FakeFilePicker, FakePortability (+17 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.10
-Nodes (22): FakeMusicCatalogStore, IMusicCatalogStore, IProgress, CatalogReanalysisServiceTests, RecordingCatalogStore, TestProgress, CancellationToken, IEnumerable (+14 more)
+Cohesion: 0.14
+Nodes (15): IProgress, CatalogReanalysisServiceTests, RecordingCatalogStore, TestProgress, Action, CancellationToken, DateTime, Fact (+7 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.08
@@ -842,8 +846,8 @@ Cohesion: 0.08
 Nodes (26): IAcoustIdClient, IGetSongBpmClient, AcoustIdClient, GetSongBpmClient, FakeAcoustId, FakeBpm, OnlineMetadataProviderTests, CancellationToken (+18 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.09
-Nodes (21): CorePlaylist, IPlaylistStore, JsonPlaylistStore, PlaylistSnapshot, FakePlaylistStore, RecordingDispatcher, TrackMenuViewModelTests, Action (+13 more)
+Cohesion: 0.22
+Nodes (8): IPlaylistStore, FakePlaylistStore, TrackMenuViewModelTests, CancellationToken, Fact, IReadOnlyList, Playlist, Task
 
 ### Community 18 - "Community 18"
 Cohesion: 0.10
@@ -858,8 +862,8 @@ Cohesion: 0.05
 Nodes (5): FakeMultiDeckPlaybackEngine, bool, double, string, SyncLockState
 
 ### Community 21 - "Community 21"
-Cohesion: 0.12
-Nodes (19): FakeVisualCatalogStore, IVisualCatalogStore, JsonCatalogStore, Action, CancellationToken, IEnumerable, IReadOnlyList, JsonSerializerOptions (+11 more)
+Cohesion: 0.09
+Nodes (26): FakeMusicCatalogStore, FakeVisualCatalogStore, IMusicCatalogStore, IVisualCatalogStore, JsonCatalogStore, Action, CancellationToken, IEnumerable (+18 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.07
@@ -938,7 +942,7 @@ Cohesion: 0.18
 Nodes (6): LiveProfileStoreTests, AutopilotRuleSet, Fact, T, Task, VisualBank
 
 ### Community 43 - "Community 43"
-Cohesion: 0.24
+Cohesion: 0.20
 Nodes (4): SettingsViewModelTests, AudioReinitCoordinator, Fact, Task
 
 ### Community 44 - "Community 44"
@@ -947,11 +951,11 @@ Nodes (29): 18 — Implementation Status (living map), Audio-library decision �
 
 ### Community 45 - "Community 45"
 Cohesion: 0.08
-Nodes (12): ICueOutput, BassMixerBackend, Action, bool, Dictionary, DSPProcedure, float, IAudioEffectRackProvider (+4 more)
+Nodes (13): ICueOutput, BassMixerBackend, Action, BassFlags, bool, Dictionary, DSPProcedure, float (+5 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.07
-Nodes (12): IAudioSource, MasterMixPlaybackEngine, IDisposable, TempDirectory, TempFile, IMidiInput, IMidiOutput, AudioBeatClock (+4 more)
+Nodes (11): IAudioSource, MasterMixPlaybackEngine, IDisposable, TempDir, TestMedia, TempDirectory, TempFile, IMidiInput (+3 more)
 
 ### Community 47 - "Community 47"
 Cohesion: 0.12
@@ -990,15 +994,15 @@ Cohesion: 0.13
 Nodes (13): AudioEffectInstanceState, AudioEffectRackProvider, Entry, RealtimeAudioEffectRack, IAudioEffectRack, IAudioEffectRackProvider, AudioEffectRackState, IAudioEffectProcessorFactory (+5 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.19
-Nodes (8): AutomixControllerTests, FakeAutomixDeckReader, AutomixController, Fact, FakeDispatcher, IReadOnlyList, PerformanceAction, SyncLockState
+Cohesion: 0.06
+Nodes (28): AutomixActionHandlerTests, EmptyReader, NullDispatcher, AutomixControllerTests, FakeAutomixDeckReader, FakeDispatcher, EngineAutomixDeckReader, AutomixActionHandler (+20 more)
 
 ### Community 57 - "Community 57"
 Cohesion: 0.13
 Nodes (13): Knob, AvaloniaObject, bool, double, DrawingContext, IBrush, KeyEventArgs, Point (+5 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.12
+Cohesion: 0.13
 Nodes (13): DjViewModel, SetEntryViewModel, bool, Dictionary, EventArgs, Guid, ILivePlaylist, IPerformanceActionDispatcher (+5 more)
 
 ### Community 59 - "Community 59"
@@ -1007,7 +1011,7 @@ Nodes (18): LayeredQuadRenderer, LayerTexture, bool, EffectRef, float, FrameUnif
 
 ### Community 60 - "Community 60"
 Cohesion: 0.08
-Nodes (18): IAudioOutputDeviceCatalog, IUiThemeLiveApplier, FakeCaptureCatalog, FakeControlSkinApplier, FakeControlSkinCatalog, FakeMidiProvider, FakeOutputCatalog, FakeUiThemeLiveApplier (+10 more)
+Nodes (18): IAudioCaptureDeviceCatalog, IUiThemeLiveApplier, FakeCaptureCatalog, FakeControlSkinApplier, FakeControlSkinCatalog, FakeMidiProvider, FakeOutputCatalog, FakeUiThemeLiveApplier (+10 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.17
@@ -1034,8 +1038,8 @@ Cohesion: 0.11
 Nodes (14): IValueConverter, FilterLabelConverter, StatusToBrushConverter, PulseOpacityConverter, CultureInfo, Type, CultureInfo, Type (+6 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 0.12
-Nodes (10): ControlSkinToolsTests, VisualPresetToolsTests, dotnet, liveolator, ControlSkinSession, Fact, string, Fact (+2 more)
+Cohesion: 0.18
+Nodes (6): VisualPresetToolsTests, dotnet, liveolator, Fact, string, VisualPresetSession
 
 ### Community 68 - "Community 68"
 Cohesion: 0.10
@@ -1070,8 +1074,8 @@ Cohesion: 0.12
 Nodes (11): AudioEffectRackTests, FakeFactory, FakeProcessor, IAudioEffectProcessorFactory, IAudioEffectProcessor, Fact, IAudioEffectProcessor, ReadOnlySpan (+3 more)
 
 ### Community 76 - "Community 76"
-Cohesion: 0.09
-Nodes (8): FakeAudioSource, SwitchableAudioSource, IAudioSource, MasterAudioSource, bool, int, AudioSamplesAvailable, object
+Cohesion: 0.22
+Nodes (4): SwitchableAudioSource, IAudioSource, AudioSamplesAvailable, object
 
 ### Community 77 - "Community 77"
 Cohesion: 0.12
@@ -1142,7 +1146,7 @@ Cohesion: 0.22
 Nodes (13): ArgumentException, CatalogStats, CancellationToken, Description, IReadOnlyList, LibrarySession, McpServerTool, ReanalysisSummary (+5 more)
 
 ### Community 94 - "Community 94"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (10): AudioReinitCoordinatorTests, FakeReinitializer, IAudioEngineReinitializer, BassAudioEngineReinitializer, FakeReinitializer, AudioSettings, TwoDeckBassEngine, AudioSettings (+2 more)
 
 ### Community 95 - "Community 95"
@@ -1186,8 +1190,8 @@ Cohesion: 0.12
 Nodes (12): EffectProgram, EffectChainRenderer, bool, float, FrameUniforms, GL, ILogger, int (+4 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.22
-Nodes (10): FakeControlSkinCatalog, FakeSettingsStore, FakeSettingsStore, SettingsViewModelControlSkinTests, AppSettings, CancellationToken, Fact, SettingsViewModel (+2 more)
+Cohesion: 0.23
+Nodes (9): FakeControlSkinCatalog, FakeSettingsStore, SettingsViewModelControlSkinTests, AppSettings, CancellationToken, Fact, SettingsViewModel, string (+1 more)
 
 ### Community 106 - "Community 106"
 Cohesion: 0.13
@@ -1210,7 +1214,7 @@ Cohesion: 0.16
 Nodes (5): LivePlaylistTests, Fact, ImmediateBeatScheduler, int, LivePlaylist
 
 ### Community 111 - "Community 111"
-Cohesion: 0.17
+Cohesion: 0.16
 Nodes (9): FakePlaylistStore, TrackContextActionsTests, CancellationToken, Fact, InlineData, IReadOnlyList, Playlist, Task (+1 more)
 
 ### Community 112 - "Community 112"
@@ -1234,8 +1238,8 @@ Cohesion: 0.29
 Nodes (4): FrameUniformsTests, BeatClockState, Fact, VisualMacro
 
 ### Community 117 - "Community 117"
-Cohesion: 0.12
-Nodes (11): ICaptureSourceController, FakeCaptureCatalog, FakeCaptureController, FakeLogLocator, FakeMidiProvider, FakeOutputCatalog, AudioCaptureDevice, AudioOutputDevice (+3 more)
+Cohesion: 0.14
+Nodes (10): ICaptureSourceController, FakeCaptureCatalog, FakeCaptureController, FakeMidiProvider, FakeOutputCatalog, AudioCaptureDevice, AudioOutputDevice, IMidiInput (+2 more)
 
 ### Community 118 - "Community 118"
 Cohesion: 0.19
@@ -1266,8 +1270,8 @@ Cohesion: 0.21
 Nodes (13): CancellationToken, Description, IReadOnlyList, McpServerTool, Task, VisualAssetInfo, VisualPresetResult, VisualPresetSession (+5 more)
 
 ### Community 126 - "Community 126"
-Cohesion: 0.13
-Nodes (11): AutomixActionHandlerTests, EmptyReader, NullDispatcher, AutomixActionHandler, IAutomixDeckReader, ActionFeedbackState, AutomixController, AutomixDeckSnapshot (+3 more)
+Cohesion: 0.24
+Nodes (9): CorePlaylist, JsonPlaylistStore, PlaylistSnapshot, Action, CancellationToken, IReadOnlyList, JsonSerializerOptions, string (+1 more)
 
 ### Community 127 - "Community 127"
 Cohesion: 0.26
@@ -1306,8 +1310,8 @@ Cohesion: 0.19
 Nodes (12): VisualSession, bool, CancellationToken, ILogger, IReadOnlyList, JsonCatalogStore, SemaphoreSlim, SortedSet (+4 more)
 
 ### Community 136 - "Community 136"
-Cohesion: 0.16
-Nodes (9): CaptureSourceSeamTests, FakeCaptureCatalog, FakeCaptureSource, FakeCaptureSourceFactory, IAudioCaptureDeviceCatalog, AudioCaptureDevice, Fact, IAudioSource (+1 more)
+Cohesion: 0.18
+Nodes (8): CaptureSourceSeamTests, FakeCaptureCatalog, FakeCaptureSource, FakeCaptureSourceFactory, AudioCaptureDevice, Fact, IAudioSource, IReadOnlyList
 
 ### Community 137 - "Community 137"
 Cohesion: 0.20
@@ -1346,8 +1350,8 @@ Cohesion: 0.14
 Nodes (6): GeneratorPresetBinding, Quantize, TransitionStyle, VisualScene, VisualSourceRef, IVisualPerformanceEngine
 
 ### Community 146 - "Community 146"
-Cohesion: 0.18
-Nodes (7): CaptureSourceControllerTests, FakeFactory, FakeSource, IAudioCaptureSourceFactory, AudioCaptureDevice, CaptureSourceKind, Fact
+Cohesion: 0.22
+Nodes (4): FakeFactory, FakeSource, IAudioCaptureSourceFactory, AudioCaptureDevice
 
 ### Community 147 - "Community 147"
 Cohesion: 0.21
@@ -1358,8 +1362,8 @@ Cohesion: 0.24
 Nodes (5): FrktlPresetParameter, Fact, FrktlPresetFile, string, FrktlPresetFileTests
 
 ### Community 149 - "Community 149"
-Cohesion: 0.16
-Nodes (10): ISettingsStore, FakeMidiControlSession, FakeSettingsStore, ActionInputMode, AppSettings, CancellationToken, ControllerBinding, MidiSettings (+2 more)
+Cohesion: 0.15
+Nodes (11): ISettingsStore, FakeSettingsStore, FakeMidiControlSession, FakeSettingsStore, ActionInputMode, AppSettings, CancellationToken, ControllerBinding (+3 more)
 
 ### Community 150 - "Community 150"
 Cohesion: 0.29
@@ -1370,8 +1374,8 @@ Cohesion: 0.27
 Nodes (8): StubRenderer, ThumbnailRendererTests, CancellationToken, Fact, int, Task, VisualMediaKind, VisualPreviewFrame
 
 ### Community 152 - "Community 152"
-Cohesion: 0.24
-Nodes (3): VisualControlViewModelTests, Fact, Task
+Cohesion: 0.18
+Nodes (6): VisualControlViewModelTests, Fact, InlineData, PerformanceActionKind, Task, Theory
 
 ### Community 153 - "Community 153"
 Cohesion: 0.24
@@ -1470,7 +1474,7 @@ Cohesion: 0.17
 Nodes (7): DeckTrackLoaderTests, RecordingDispatcher, ActionFeedbackState, Fact, HashSet, PerformanceAction, PerformanceActionKind
 
 ### Community 177 - "Community 177"
-Cohesion: 0.20
+Cohesion: 0.18
 Nodes (5): AppSettingsTests, CaptureSourceKind, Fact, InlineData, Theory
 
 ### Community 178 - "Community 178"
@@ -1594,8 +1598,8 @@ Cohesion: 0.31
 Nodes (7): PlaylistBuilderViewModel, PlaylistBuilderViewModelTests, Fact, MusicLibrary, store, Task, vm
 
 ### Community 208 - "Community 208"
-Cohesion: 0.16
-Nodes (8): FakeCaptureCatalog, FakeMidiProvider, FakeOutputCatalog, AudioCaptureDevice, AudioOutputDevice, IMidiInput, IMidiOutput, IReadOnlyList
+Cohesion: 0.12
+Nodes (11): MainWindowViewModel, FakeCaptureCatalog, FakeMidiProvider, FakeOutputCatalog, MainWindowViewModelTests, AudioCaptureDevice, AudioOutputDevice, Fact (+3 more)
 
 ### Community 209 - "Community 209"
 Cohesion: 0.24
@@ -1622,7 +1626,7 @@ Cohesion: 0.30
 Nodes (4): TapTempoServiceTests, Fact, long, TapTempoService
 
 ### Community 215 - "Community 215"
-Cohesion: 0.15
+Cohesion: 0.18
 Nodes (9): RtMidi.Core (1.0.53), net8.0, Microsoft.NET.Sdk, net8.0, coverlet.collector (6.0.0), Microsoft.NET.Test.Sdk (17.8.0), xunit (2.5.3), xunit.runner.visualstudio (2.5.3) (+1 more)
 
 ### Community 216 - "Community 216"
@@ -1630,8 +1634,8 @@ Cohesion: 0.14
 Nodes (13): ChannelPressureMessage, MidiTimeCodeQuarterFrameMessage, NrpnMessage, PolyphonicKeyPressureMessage, ProgramChangeMessage, SongPositionPointerMessage, SongSelectMessage, SysExMessage (+5 more)
 
 ### Community 217 - "Community 217"
-Cohesion: 0.15
-Nodes (7): LogFileLocator, ILogFileLocator, ProcessStartInfo, FakeSettingsStore, FileLoggerOptions, AppSettings, SettingsViewModel
+Cohesion: 0.25
+Nodes (5): LogFileLocator, ILogFileLocator, ProcessStartInfo, FakeLogLocator, FileLoggerOptions
 
 ### Community 218 - "Community 218"
 Cohesion: 0.14
@@ -1682,8 +1686,8 @@ Cohesion: 0.25
 Nodes (7): PresetControlsViewModelTests, Effects, Fact, GeneratorPresetRegistry, Presets, string, VisualEffectRegistry
 
 ### Community 230 - "Community 230"
-Cohesion: 0.25
-Nodes (4): BassInitOptionsTests, Fact, InlineData, Theory
+Cohesion: 0.18
+Nodes (5): BassInitOptionsTests, BassFlags, Fact, InlineData, Theory
 
 ### Community 231 - "Community 231"
 Cohesion: 0.15
@@ -1818,8 +1822,8 @@ Cohesion: 0.17
 Nodes (10): MidiInputPipeline, bool, ControllerMappingProfile, IEnumerable, ILoggerFactory, IMidiInput, IMidiOutput, IPerformanceActionDispatcher (+2 more)
 
 ### Community 264 - "Community 264"
-Cohesion: 0.18
-Nodes (7): FakeMidiControlSession, ActionInputMode, CancellationToken, ControllerBinding, MidiSettings, PerformanceActionKind, Task
+Cohesion: 0.11
+Nodes (13): FakeMidiControlSession, MappingsViewModelPresetTargetTests, ActionInputMode, CancellationToken, ControllerBinding, Fact, GeneratorPresetRegistry, InlineData (+5 more)
 
 ### Community 265 - "Community 265"
 Cohesion: 0.18
@@ -1930,8 +1934,8 @@ Cohesion: 0.18
 Nodes (7): IMidiControlSession, FakeMidiControlSession, ActionInputMode, CancellationToken, ControllerBinding, MidiSettings, PerformanceActionKind
 
 ### Community 292 - "Community 292"
-Cohesion: 0.23
-Nodes (7): IPerformanceActionDispatcher, PlayingDispatcher, RecordingDispatcher, ActionFeedbackState, int, PerformanceAction, PerformanceActionKind
+Cohesion: 0.14
+Nodes (11): IPerformanceActionDispatcher, PlayingDispatcher, RecordingDispatcher, RecordingDispatcher, ActionFeedbackState, int, PerformanceAction, PerformanceActionKind (+3 more)
 
 ### Community 293 - "Community 293"
 Cohesion: 0.21
@@ -2004,6 +2008,10 @@ Nodes (6): BlendingFactor, BlendModeGlTests, BlendMode, Fact, InlineData, Theory
 ### Community 311 - "Community 311"
 Cohesion: 0.18
 Nodes (6): BassCaptureException, Exception, ImageLoadException, ShaderCompilationException, BassDecodeException, BassPlaybackException
+
+### Community 312 - "Community 312"
+Cohesion: 0.14
+Nodes (6): SpectrumAnalyzer, live, Spectrum, double, ReadOnlySpan, Waveform
 
 ### Community 313 - "Community 313"
 Cohesion: 0.25
@@ -2106,8 +2114,8 @@ Cohesion: 0.29
 Nodes (5): IMappingFilePicker, StorageProviderMappingFilePicker, FilePickerFileType, Task, Window
 
 ### Community 339 - "Community 339"
-Cohesion: 0.25
-Nodes (6): MappingsViewModelPresetTargetTests, Fact, GeneratorPresetRegistry, InlineData, string, Theory
+Cohesion: 0.14
+Nodes (9): IMidiControlSession, IMidiControlStatus, FakeMidiStatus, ActionInputMode, CancellationToken, ControllerBinding, MidiSettings, PerformanceActionKind (+1 more)
 
 ### Community 340 - "Community 340"
 Cohesion: 0.25
@@ -2246,7 +2254,7 @@ Cohesion: 0.29
 Nodes (5): FakeDispatcher, ActionFeedbackState, Dictionary, PerformanceAction, PerformanceActionKind
 
 ### Community 375 - "Community 375"
-Cohesion: 0.20
+Cohesion: 0.17
 Nodes (8): net8.0, Microsoft.NET.Sdk, net8.0, coverlet.collector (6.0.0), Microsoft.NET.Test.Sdk (17.8.0), xunit (2.5.3), xunit.runner.visualstudio (2.5.3), Microsoft.NET.Sdk
 
 ### Community 376 - "Community 376"
@@ -2278,7 +2286,7 @@ Cohesion: 0.20
 Nodes (6): MasterFxViewModel, ActionFeedbackChanged, bool, double, IPerformanceActionDispatcher, PerformanceActionKind
 
 ### Community 384 - "Community 384"
-Cohesion: 0.33
+Cohesion: 0.29
 Nodes (3): SceneGridViewModelTests, Fact, Task
 
 ### Community 385 - "Community 385"
@@ -2338,8 +2346,8 @@ Cohesion: 0.28
 Nodes (5): PerformanceActionHandlerBase, IPerformanceActionHandler, ActionFeedbackState, PerformanceAction, PerformanceActionKind
 
 ### Community 400 - "Community 400"
-Cohesion: 0.28
-Nodes (5): FakeAutomixDeckReader, FakeDispatcher, ActionFeedbackState, AutomixDeckSnapshot, PerformanceActionKind
+Cohesion: 0.16
+Nodes (8): FakeCatalog, FakeProbe, FakeStore, SkiaImageDimensionsProbe, IExtensionCatalog, IImageDimensionsProbe, AppSettings, CancellationToken
 
 ### Community 402 - "Community 402"
 Cohesion: 0.33
@@ -2494,8 +2502,8 @@ Cohesion: 0.22
 Nodes (6): FrktlPresetEntry, FrktlPresetFile, FrktlPresetWriteResult, IReadOnlyList, JsonSerializerOptions, FrktlPresetWriter
 
 ### Community 442 - "Community 442"
-Cohesion: 0.33
-Nodes (4): AvaloniaFact, DrawingContext, int, AnalogBackgroundBaker
+Cohesion: 0.24
+Nodes (8): ExtensionRegistrySnapshot, ExtensionCatalog, Action, CancellationToken, InstalledExtension, JsonSerializerOptions, string, Task
 
 ### Community 443 - "Community 443"
 Cohesion: 0.28
@@ -2674,8 +2682,8 @@ Cohesion: 0.32
 Nodes (4): GeneratorPreset, GeneratorPresetBinding, VisualEffectDescriptor, GeneratorPresetExpansion
 
 ### Community 490 - "Community 490"
-Cohesion: 0.32
-Nodes (4): Application, AvaloniaFact, IBrush, AnalogThemeShot
+Cohesion: 0.15
+Nodes (9): ISystemMetricsSampler, ProcessSystemMetricsSampler, SystemMetrics, DateTime, Func, int, Process, SystemMetrics (+1 more)
 
 ### Community 491 - "Community 491"
 Cohesion: 0.29
@@ -2710,8 +2718,8 @@ Cohesion: 0.38
 Nodes (3): TrackCueRecordTests, Fact, int
 
 ### Community 499 - "Community 499"
-Cohesion: 0.38
-Nodes (4): SpectrumAnalyzer, Spectrum, double, ReadOnlySpan
+Cohesion: 0.36
+Nodes (4): ControlSkinToolsTests, ControlSkinSession, Fact, string
 
 ### Community 500 - "Community 500"
 Cohesion: 0.38
@@ -2792,6 +2800,10 @@ Nodes (6): net8.0, coverlet.collector (6.0.0), Microsoft.NET.Test.Sdk (17.8.0), 
 ### Community 520 - "Community 520"
 Cohesion: 0.38
 Nodes (4): MusicLibraryScanEndToEndTests, Fact, int, Task
+
+### Community 521 - "Community 521"
+Cohesion: 0.50
+Nodes (3): CaptureSourceControllerTests, CaptureSourceKind, Fact
 
 ### Community 522 - "Community 522"
 Cohesion: 0.29
@@ -2922,8 +2934,8 @@ Cohesion: 0.33
 Nodes (4): AutomixPreflight, AutomixDeckSnapshot, AutomixPlan, AutomixSettings
 
 ### Community 559 - "Community 559"
-Cohesion: 0.33
-Nodes (4): EngineAutomixDeckReader, AutomixDeckSnapshot, IMultiDeckPlaybackEngine, MixerActionHandler
+Cohesion: 0.46
+Nodes (3): OutputChannelPairTests, InlineData, Theory
 
 ### Community 560 - "Community 560"
 Cohesion: 0.33
@@ -3034,8 +3046,8 @@ Cohesion: 0.33
 Nodes (4): IGetSongBpmClient, CancellationToken, OnlineTrackMetadata, Task
 
 ### Community 592 - "Community 592"
-Cohesion: 0.53
-Nodes (3): MainWindowViewModel, MainWindowViewModelTests, Fact
+Cohesion: 0.25
+Nodes (3): MasterAudioSource, bool, int
 
 ### Community 593 - "Community 593"
 Cohesion: 0.33
@@ -3058,12 +3070,12 @@ Cohesion: 0.33
 Nodes (4): PhaseLockCorrection, DeckPhase, PhaseLockSettings, PhaseLockController
 
 ### Community 599 - "Community 599"
-Cohesion: 0.47
-Nodes (5): From(), ParseCueDeviceIndex(), ParseDeviceIndex(), AudioSettings, BassInitOptions
+Cohesion: 0.32
+Nodes (7): From(), ParseCueDeviceIndex(), ParseDeviceIndex(), SpeakerFlag(), AudioSettings, BassFlags, BassInitOptions
 
 ### Community 600 - "Community 600"
-Cohesion: 0.33
-Nodes (4): BassOutputDeviceCatalog, AudioOutputDevice, ILogger, IReadOnlyList
+Cohesion: 0.18
+Nodes (8): IAudioOutputDeviceCatalog, BassOutputDeviceCatalog, FakeOutputCatalog, AudioOutputDevice, ILogger, IReadOnlyList, AudioOutputDevice, IReadOnlyList
 
 ### Community 601 - "Community 601"
 Cohesion: 0.40
@@ -3217,10 +3229,6 @@ Nodes (3): WithLevel(), WithMix(), CueBusState
 Cohesion: 0.50
 Nodes (3): With(), EqBand, EqBands
 
-### Community 679 - "Community 679"
-Cohesion: 0.50
-Nodes (3): InlineData, PerformanceActionKind, Theory
-
 ### Community 681 - "Community 681"
 Cohesion: 0.67
 Nodes (3): Normalized(), Trimmed(), ExtensionSettings
@@ -3237,22 +3245,30 @@ Nodes (3): Blank(), Normalized(), MidiSettings
 Cohesion: 0.50
 Nodes (3): Liveolator system gap-review (ten-expert panel), Notes, Steps
 
+### Community 836 - "Community 836"
+Cohesion: 0.29
+Nodes (3): FakeSettingsStore, AppSettings, SettingsViewModel
+
+### Community 838 - "Community 838"
+Cohesion: 0.33
+Nodes (3): IMidiOutput, MidiMessage, ReadOnlyMemory
+
 ## Knowledge Gaps
-- **2747 isolated node(s):** `allow`, `defaultMode`, `meta`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA` (+2742 more)
+- **2745 isolated node(s):** `allow`, `defaultMode`, `meta`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA` (+2740 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **112 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **113 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `live` connect `Community 312` to `Community 480`, `Community 450`, `Community 2`, `Community 194`, `Community 106`, `Community 204`, `Community 77`, `Community 15`, `Community 207`, `Community 208`, `Community 243`, `Community 475`, `Community 534`, `Community 505`, `Community 91`, `Community 541`?**
-  _High betweenness centrality (0.051) - this node is a cross-community bridge._
+- **Why does `live` connect `Community 312` to `Community 480`, `Community 384`, `Community 450`, `Community 2`, `Community 194`, `Community 106`, `Community 204`, `Community 77`, `Community 15`, `Community 207`, `Community 208`, `Community 243`, `Community 475`, `Community 534`, `Community 505`, `Community 91`, `Community 541`, `Community 383`?**
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._
 - **Why does `TwoDeckBassEngine` connect `Community 141` to `Community 32`, `Community 123`, `Community 276`, `Community 46`?**
-  _High betweenness centrality (0.027) - this node is a cross-community bridge._
-- **Why does `LibraryToolsTests` connect `Community 6` to `Community 46`?**
-  _High betweenness centrality (0.021) - this node is a cross-community bridge._
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `GlVisualPerformanceEngine` connect `Community 88` to `Community 288`, `Community 512`, `Community 128`, `Community 580`, `Community 46`, `Community 253`, `Community 511`?**
+  _High betweenness centrality (0.019) - this node is a cross-community bridge._
 - **What connects `allow`, `defaultMode`, `meta` to the rest of the system?**
-  _2747 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _2745 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.06358024691358025 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
