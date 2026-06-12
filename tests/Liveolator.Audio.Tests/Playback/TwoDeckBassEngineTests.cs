@@ -193,7 +193,8 @@ public class TwoDeckBassEngineTests
     public void OutOfRangeSlot_Throws()
     {
         using var engine = NewEngine(out _, out _);
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Load(2, @"C:\a.wav"));
+        // Slots 0-3 are valid (2 live + 2 hidden); 4 is past the end.
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Load(4, @"C:\a.wav"));
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.PlayPause(-1));
     }
 
