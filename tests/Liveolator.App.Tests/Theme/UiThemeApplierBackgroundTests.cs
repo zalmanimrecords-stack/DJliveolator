@@ -29,7 +29,7 @@ public sealed class UiThemeApplierBackgroundTests
     {
         Application app = Application.Current!;
 
-        UiThemeApplier.Apply(app, Theme(("BackgroundImage", "avares://Liveolator.App/Assets/Themes/analog/background.png")));
+        UiThemeApplier.Apply(app, Theme(("BackgroundImage", "avares://Liveolator.App/Assets/Skins/aurora/knob.png")));
 
         Assert.True(app.TryGetResource("AppBackground", null, out object? value));
         Assert.IsType<ImageBrush>(value);
@@ -51,7 +51,7 @@ public sealed class UiThemeApplierBackgroundTests
     {
         Application app = Application.Current!;
 
-        UiThemeApplier.Apply(app, Theme(("BackgroundImage", "avares://Liveolator.App/Assets/Themes/analog/background.png")));
+        UiThemeApplier.Apply(app, Theme(("BackgroundImage", "avares://Liveolator.App/Assets/Skins/aurora/knob.png")));
         Assert.IsType<ImageBrush>(Resource(app, "AppBackground"));
 
         UiThemeApplier.Apply(app, Theme()); // no image -> back to solid

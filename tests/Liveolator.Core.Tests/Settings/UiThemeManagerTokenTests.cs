@@ -30,7 +30,7 @@ public sealed class UiThemeManagerTokenTests
     {
         var result = new UiThemeManager().Validate(Theme(new Dictionary<string, string>
         {
-            ["BackgroundImage"] = "avares://Liveolator.App/Assets/Themes/analog/background.png",
+            ["BackgroundImage"] = "avares://Liveolator.App/Assets/Skins/aurora/knob.png",
         }));
 
         Assert.True(result.IsValid, string.Join("; ", result.Errors));
