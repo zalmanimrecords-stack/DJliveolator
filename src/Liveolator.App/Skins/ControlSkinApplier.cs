@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Liveolator.Core.Skins;
 
 namespace Liveolator.App.Skins;
@@ -40,7 +41,9 @@ public static class ControlSkinApplier
         else
             return; // No skin colour and no resolvable theme fallback — leave the existing resource untouched.
 
-        application.Resources[brushKey] = new SolidColorBrush(color);
+        // ImmutableSolidColorBrush is not an AvaloniaObject, so it is safe to construct off the UI thread
+        // (the project's established pattern for cross-thread brushes); Apply still marshals the writes.
+        application.Resources[brushKey] = new ImmutableSolidColorBrush(color);
     }
 
     private static bool TryGetThemeColor(Application application, string colorKey, out Color color)

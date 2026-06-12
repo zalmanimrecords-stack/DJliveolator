@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Threading;
 using Liveolator.Core.Skins;
 
 namespace Liveolator.App.Skins;
@@ -19,7 +20,11 @@ public sealed class ApplicationControlSkinApplier : IControlSkinApplier
 {
     public void Apply(ControlSkinFile? knob, ControlSkinFile? slider)
     {
-        if (Application.Current is { } app)
-            ControlSkinApplier.Apply(app, knob, slider);
+        if (Application.Current is not { } app)
+            return;
+
+        // SaveAsync runs on a ReactiveUI background thread; mutating Application.Resources (and the brushes it
+        // holds) is UI-thread-affine, so marshal there. Invoke runs inline when already on the UI thread.
+        Dispatcher.UIThread.Invoke(() => ControlSkinApplier.Apply(app, knob, slider));
     }
 }

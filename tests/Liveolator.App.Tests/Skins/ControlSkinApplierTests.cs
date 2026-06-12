@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -49,5 +51,25 @@ public sealed class ControlSkinApplierTests
 
         ControlSkinApplier.Apply(app, knob: null, slider: null);
         Assert.Equal(ThemeColor(app, "AccentColor"), BrushColor(app, "KnobArc")); // back to the themed accent
+    }
+
+    // Regression: SaveAsync runs on a ReactiveUI background thread, so the applier seam is invoked off the
+    // UI thread. Mutable brushes (SolidColorBrush) are AvaloniaObjects whose ctor enforces UI-thread access,
+    // which previously crashed the app ("Call from invalid thread"). The seam must marshal to the UI thread.
+    [AvaloniaFact]
+    public async Task ApplicationApplier_invoked_off_the_ui_thread_does_not_throw_and_skins_the_control()
+    {
+        Application app = Application.Current!;
+        var applier = new ApplicationControlSkinApplier();
+        var knob = new ControlSkinFile { Name = "Crimson", Kind = ControlSkinKind.Knob, Accent = "#AB12CD" };
+
+        Exception? captured = await Task.Run(() =>
+        {
+            try { applier.Apply(knob, slider: null); return (Exception?)null; }
+            catch (Exception ex) { return ex; }
+        });
+
+        Assert.Null(captured);
+        Assert.Equal(Color.Parse("#AB12CD"), BrushColor(app, "KnobArc"));
     }
 }
