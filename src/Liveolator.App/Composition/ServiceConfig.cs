@@ -172,6 +172,10 @@ public static class ServiceConfig
         services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
         services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
         services.AddSingleton<IUiThemeLiveApplier, ApplicationUiThemeLiveApplier>();
+        // Export/import a MIDI mapping by device model (doc 05): file IO in Media, file dialog in App.
+        services.AddSingleton<IMappingProfilePortability>(
+            _ => new MappingProfilePortability(w => System.Diagnostics.Trace.TraceWarning(w)));
+        services.AddSingleton<IMappingFilePicker, StorageProviderMappingFilePicker>();
 
         services.AddSingleton<ITrustedPublisherStore>(trustedPublishers);
         services.AddSingleton<IExtensionCatalog>(extensionCatalog);

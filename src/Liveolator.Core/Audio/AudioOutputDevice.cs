@@ -11,7 +11,14 @@ namespace Liveolator.Core.Audio;
 /// </param>
 /// <param name="Name">Human-readable device name for the picker.</param>
 /// <param name="IsDefault">True if this is the platform's default output endpoint.</param>
+/// <param name="OutputChannelCount">
+/// How many output channels the card exposes (e.g. 2 for stereo speakers, 4 for the CMD STUDIO 2A's
+/// 1/2 + 3/4). The Settings picker turns this into selectable stereo pairs via
+/// <see cref="OutputChannelPair"/>, so the user can route the master and the headphone-cue to
+/// different outputs of one card. Defaults to 2 (stereo) when the backend cannot probe the count.
+/// </param>
 public sealed record AudioOutputDevice(
     string Id,
     string Name,
-    bool IsDefault);
+    bool IsDefault,
+    int OutputChannelCount = 2);

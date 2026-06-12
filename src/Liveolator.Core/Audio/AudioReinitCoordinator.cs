@@ -89,10 +89,15 @@ public sealed class AudioReinitCoordinator
         }
     }
 
-    // A re-open is only needed when an init-time BASS parameter changes (device or buffer). Caller holds the gate.
+    // A re-open is only needed when an init-time BASS parameter changes: the master device/buffer, OR
+    // the headphone-cue routing (its device or either output channel-pair), since those re-shape the
+    // device + speaker assignment the backend opens. Caller holds the gate.
     private static bool RequiresReopen(AudioSettings current, AudioSettings next)
         => current.OutputDeviceId != next.OutputDeviceId
-        || current.BufferMilliseconds != next.BufferMilliseconds;
+        || current.BufferMilliseconds != next.BufferMilliseconds
+        || current.CueOutputDeviceId != next.CueOutputDeviceId
+        || current.MasterOutputPair != next.MasterOutputPair
+        || current.CueOutputPair != next.CueOutputPair;
 
     // Wrap the native seam so an unexpected fault never escapes the coordinator as an unhandled
     // exception that would leave the audio state ambiguous; an expected device error is the seam's

@@ -44,6 +44,21 @@ public sealed record AudioSettings
     public int BufferMilliseconds { get; init; } = DefaultBufferMs;
 
     /// <summary>
+    /// Which stereo output pair on the master device drives the main mix: 0 = the card's outputs 1/2,
+    /// 1 = 3/4, etc. (see <see cref="OutputChannelPair"/>). Lets a multi-output card send the master to
+    /// one pair and the headphone-cue to another. <see cref="Normalized"/> clamps it to the addressable
+    /// range so a stale config can never request a non-existent pair.
+    /// </summary>
+    public int MasterOutputPair { get; init; }
+
+    /// <summary>
+    /// Which stereo output pair on the cue device carries the headphones (PFL). On the CMD STUDIO 2A
+    /// this is pair 1 (outputs 3/4) of the same card as the master; on a separate headphone interface
+    /// it is that device's pair 0. Clamped by <see cref="Normalized"/> like <see cref="MasterOutputPair"/>.
+    /// </summary>
+    public int CueOutputPair { get; init; }
+
+    /// <summary>
     /// Backend-opaque capture device id (an <see cref="AudioCaptureDevice.Id"/>), or null when no
     /// capture source is selected. Blank ids fold to null via <see cref="Normalized"/>.
     /// </summary>
@@ -59,9 +74,10 @@ public sealed record AudioSettings
     public static AudioSettings Default { get; } = new();
 
     /// <summary>
-    /// Returns a copy with <see cref="BufferMilliseconds"/> clamped to the supported range and the
-    /// capture-source choice folded to a consistent state: a blank id, or an id without a kind, or a
-    /// kind without an id, all normalize to "no capture source".
+    /// Returns a copy with <see cref="BufferMilliseconds"/> clamped to the supported range, the master
+    /// and cue output pairs clamped to the addressable range, a blank cue device id folded to null
+    /// (else trimmed), and the capture-source choice folded to a consistent state: a blank id, or an id
+    /// without a kind, or a kind without an id, all normalize to "no capture source".
     /// </summary>
     public AudioSettings Normalized()
     {
@@ -69,6 +85,9 @@ public sealed record AudioSettings
         return this with
         {
             BufferMilliseconds = Math.Clamp(BufferMilliseconds, MinBufferMs, MaxBufferMs),
+            CueOutputDeviceId = string.IsNullOrWhiteSpace(CueOutputDeviceId) ? null : CueOutputDeviceId.Trim(),
+            MasterOutputPair = Math.Clamp(MasterOutputPair, 0, OutputChannelPair.MaxPairIndex),
+            CueOutputPair = Math.Clamp(CueOutputPair, 0, OutputChannelPair.MaxPairIndex),
             CaptureDeviceId = hasCapture ? CaptureDeviceId!.Trim() : null,
             CaptureSource = hasCapture ? CaptureSource : null,
         };

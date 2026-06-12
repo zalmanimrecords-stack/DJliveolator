@@ -104,6 +104,34 @@ public sealed class AudioReinitCoordinatorTests
     }
 
     [Fact]
+    public void Apply_CueDeviceChanged_Reopens()
+    {
+        var fake = new FakeReinitializer();
+        var coordinator = new AudioReinitCoordinator(
+            fake, startupSettings: new AudioSettings { OutputDeviceId = "1", CueOutputDeviceId = null });
+
+        AudioReinitResult result = coordinator.Apply(
+            new AudioSettings { OutputDeviceId = "1", CueOutputDeviceId = "2" });
+
+        Assert.Equal(AudioReinitResult.Reinitialized, result);
+        Assert.Equal("2", coordinator.Current.CueOutputDeviceId);
+    }
+
+    [Fact]
+    public void Apply_OutputPairChangedOnly_Reopens()
+    {
+        var fake = new FakeReinitializer();
+        var coordinator = new AudioReinitCoordinator(
+            fake, startupSettings: new AudioSettings { OutputDeviceId = "1", CueOutputPair = 0 });
+
+        AudioReinitResult result = coordinator.Apply(
+            new AudioSettings { OutputDeviceId = "1", CueOutputPair = 1 });
+
+        Assert.Equal(AudioReinitResult.Reinitialized, result);
+        Assert.Equal(1, coordinator.Current.CueOutputPair);
+    }
+
+    [Fact]
     public void Apply_NormalizesIncomingSettings_OutOfRangeBufferDoesNotForceReopen()
     {
         // Startup buffer 200 (max). An incoming 9999 normalizes to 200 -> no real change -> no-op.

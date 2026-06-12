@@ -110,6 +110,52 @@ public class AppSettingsTests
     }
 
     [Fact]
+    public void Default_HasNoCueOutputAndFrontPairs()
+    {
+        AudioSettings audio = AppSettings.Default.Audio;
+
+        Assert.Null(audio.CueOutputDeviceId);   // headphones have nowhere to play until chosen
+        Assert.Equal(0, audio.MasterOutputPair); // outputs 1/2
+        Assert.Equal(0, audio.CueOutputPair);    // outputs 1/2
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]                                  // below floor -> first pair
+    [InlineData(1, 1)]                                   // valid -> kept
+    [InlineData(99, OutputChannelPair.MaxPairIndex)]     // beyond addressable -> last pair
+    public void Normalized_ClampsOutputPairsToAddressableRange(int input, int expected)
+    {
+        var audio = new AudioSettings { MasterOutputPair = input, CueOutputPair = input };
+
+        AudioSettings result = audio.Normalized();
+
+        Assert.Equal(expected, result.MasterOutputPair);
+        Assert.Equal(expected, result.CueOutputPair);
+    }
+
+    [Theory]
+    [InlineData("", null)]      // blank -> no cue output
+    [InlineData("   ", null)]   // whitespace -> no cue output
+    [InlineData(" 2 ", "2")]    // trimmed
+    public void Normalized_FoldsBlankCueDeviceIdToNull_AndTrims(string id, string? expected)
+    {
+        var audio = new AudioSettings { CueOutputDeviceId = id };
+
+        Assert.Equal(expected, audio.Normalized().CueOutputDeviceId);
+    }
+
+    [Fact]
+    public void Normalized_PreservesCueDeviceSelection()
+    {
+        var audio = new AudioSettings { CueOutputDeviceId = "3", CueOutputPair = 1 };
+
+        AudioSettings result = audio.Normalized();
+
+        Assert.Equal("3", result.CueOutputDeviceId);
+        Assert.Equal(1, result.CueOutputPair);
+    }
+
+    [Fact]
     public void Midi_BlankSelectionIsTreatedAsNone()
     {
         // A picker that yields "" (no device chosen) must normalize to null, not an empty selection.

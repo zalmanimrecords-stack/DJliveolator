@@ -6,7 +6,6 @@ public static class BuiltInUiThemes
 {
     public const string PackageId = "liveolator.builtin.themes";
     public const string BrassworkId = "Brasswork";
-    public const string AnalogId = "Analog";
     public const string SpartanId = "Spartan";
 
     public static IReadOnlyList<UiThemeDefinition> All { get; } =
@@ -48,45 +47,6 @@ public static class BuiltInUiThemes
                 ["FaderFillColor"] = "#2F80F6",
                 ["FaderTrackColor"] = "#26303F",
                 ["FaderThumbColor"] = "#E7ECF3",
-            }),
-        // ANALOG (doc 30): a vintage-synth look — warm wood panels, an amber signal accent, and a
-        // chrome+wood texture behind the shell (BackgroundImage). The knob/fader colour tokens give the
-        // controls an ivory cap + amber arc without touching the surface/text tokens.
-        new UiThemeDefinition(
-            AnalogId,
-            "Analog",
-            new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["BgColor"] = "#1B120A",
-                ["S1Color"] = "#2A1E12",
-                ["S2Color"] = "#160F08",
-                ["S3Color"] = "#332413",
-                ["S4Color"] = "#4A3520",
-                ["HairColor"] = "#5C4632",
-                ["TextColor"] = "#EFE2C8",
-                ["DimColor"] = "#BCA985",
-                ["FaintColor"] = "#8C7A5C",
-                ["AccentColor"] = "#E0922A",
-                ["AccentLightColor"] = "#F3B85A",
-                ["AccentDarkColor"] = "#9C5E12",
-                ["AccentWellColor"] = "#2A1B0A",
-                ["AccentInkColor"] = "#1A1206",
-                ["RedColor"] = "#C24A2E",
-                ["GreenColor"] = "#8FB24D",
-                ["AmberColor"] = "#E0922A",
-                ["VioletColor"] = "#B07A4A",
-                ["MidiActiveColor"] = "#79B34D",
-                ["WaveformColor"] = "#E0A22A",
-                ["KickColor"] = "#8FB24D",
-                // Vintage knob + fader: ivory cap, dark engraved pointer, amber arc, wood-toned track.
-                ["KnobCapColor"] = "#E8DCC2",
-                ["KnobPointerColor"] = "#2A1C0E",
-                ["KnobArcColor"] = "#E0922A",
-                ["KnobTrackColor"] = "#3A2A18",
-                ["FaderFillColor"] = "#E0922A",
-                ["FaderThumbColor"] = "#E8DCC2",
-                ["FaderTrackColor"] = "#3A2A18",
-                ["BackgroundImage"] = "avares://Liveolator.App/Assets/Themes/analog/background.png",
             }),
         new UiThemeDefinition(
             BrassworkId,

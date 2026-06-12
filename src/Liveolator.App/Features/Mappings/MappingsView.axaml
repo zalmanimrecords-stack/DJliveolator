@@ -51,8 +51,12 @@
 
     <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,16,0,0">
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="{Binding Status}" />
-      <Button Grid.Column="1" Classes="spartan" Content="Remove selected"
-              Command="{Binding RemoveCommand}" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <!-- Export/import a mapping by device model so it can move between machines/installs. -->
+        <Button Classes="spartan" Content="Import" Command="{Binding ImportMappingCommand}" />
+        <Button Classes="spartan" Content="Export" Command="{Binding ExportMappingCommand}" />
+        <Button Classes="spartan" Content="Remove selected" Command="{Binding RemoveCommand}" />
+      </StackPanel>
     </Grid>
   </Grid>
 </UserControl>

@@ -83,11 +83,12 @@
               </StackPanel>
             </Border>
 
-            <!-- The MIDI mapping / learn surface, moved here from the old top-level MAPPINGS tab. -->
-            <TextBlock Classes="section" Text="MAPPING" />
-            <Border Classes="panel">
-              <mappings:MappingsView DataContext="{Binding Mappings}" Margin="14" />
-            </Border>
+            <!-- The MIDI mapping / learn surface, moved here from the old top-level MAPPINGS tab. It brings
+                 its own header + panels and uses a star-sized binding list, so it needs a bounded height
+                 inside this scrolling stack. -->
+            <mappings:MappingsView DataContext="{Binding Mappings}" Height="520" Margin="0,4,0,0" />
+            <TextBlock Classes="faint"
+                       Text="Import/Export above is per device model (.json) — share a mapping between machines; Save applies an import." />
           </StackPanel>
         </ScrollViewer>
       </TabItem>

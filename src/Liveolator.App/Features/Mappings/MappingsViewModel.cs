@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Mapping;
+using Liveolator.Core.Persistence;
 using Liveolator.Core.Visuals;
 using ReactiveUI;
 
@@ -12,18 +14,31 @@ namespace Liveolator.App.Features.Mappings;
 public sealed class MappingsViewModel : ViewModelBase, IDisposable
 {
     private readonly IMidiControlSession _session;
+    private readonly ILiveProfileStore? _profileStore;
+    private readonly IMappingProfilePortability? _portability;
+    private readonly IMappingFilePicker? _filePicker;
     private MappingTargetViewModel? _selectedTarget;
     private MappingBindingViewModel? _selectedBinding;
     private string _status = string.Empty;
 
-    public MappingsViewModel(IMidiControlSession session, IGeneratorPresetRegistry? presets = null)
+    public MappingsViewModel(
+        IMidiControlSession session,
+        IGeneratorPresetRegistry? presets = null,
+        ILiveProfileStore? profileStore = null,
+        IMappingProfilePortability? portability = null,
+        IMappingFilePicker? filePicker = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _profileStore = profileStore;
+        _portability = portability;
+        _filePicker = filePicker;
         Targets = BuildTargets(presets);
         SelectedTarget = Targets.FirstOrDefault();
         LearnCommand = ReactiveCommand.Create(BeginLearn);
         CancelLearnCommand = ReactiveCommand.Create(CancelLearn);
         RemoveCommand = ReactiveCommand.CreateFromTask(RemoveSelectedAsync);
+        ExportMappingCommand = ReactiveCommand.CreateFromTask(ExportAsync);
+        ImportMappingCommand = ReactiveCommand.CreateFromTask(ImportAsync);
         _session.MappingChanged += OnMappingChanged;
         Refresh(_session.ActiveProfile);
     }
@@ -54,6 +69,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> LearnCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelLearnCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
+    public ReactiveCommand<Unit, Unit> ExportMappingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ImportMappingCommand { get; }
 
     private void BeginLearn()
     {
@@ -89,6 +106,86 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             return;
 
         await _session.RemoveBindingAsync(SelectedBinding.Binding).ConfigureAwait(false);
+    }
+
+    // Export the connected device's current mapping to a user-chosen file, named by its model (doc 05).
+    private async Task ExportAsync()
+    {
+        if (_portability is null || _filePicker is null)
+            return;
+
+        ControllerMappingProfile? profile = _session.ActiveProfile;
+        if (profile is null)
+        {
+            Status = "No mapping to export — connect a controller in Settings first.";
+            return;
+        }
+
+        string? path = await _filePicker.PickExportPathAsync(SuggestedFileName(profile)).ConfigureAwait(false);
+        if (path is null)
+            return; // cancelled
+
+        try
+        {
+            await _portability.ExportAsync(profile, path).ConfigureAwait(false);
+            Status = $"Exported mapping to {Path.GetFileName(path)}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Export failed ({ex.Message}).";
+        }
+    }
+
+    // Import a mapping file and install it as the connected device's profile (by model). It is saved to the
+    // live store under the device name, so the next Save / reconnect in Settings loads and applies it.
+    private async Task ImportAsync()
+    {
+        if (_portability is null || _filePicker is null)
+            return;
+
+        string? path = await _filePicker.PickImportPathAsync().ConfigureAwait(false);
+        if (path is null)
+            return; // cancelled
+
+        ControllerMappingProfile? imported;
+        try
+        {
+            imported = await _portability.ImportAsync(path).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"Import failed ({ex.Message}).";
+            return;
+        }
+
+        if (imported is null)
+        {
+            Status = "That file is not a valid Liveolator MIDI map.";
+            return;
+        }
+
+        string? device = _session.InputDeviceName;
+        if (device is null || _profileStore is null)
+        {
+            Status = $"Imported '{imported.Name}'. Connect that device in Settings, then Save to apply.";
+            return;
+        }
+
+        // Re-key to the connected device so Settings -> Save (which loads the profile by device name) applies it.
+        ControllerMappingProfile installed = imported with { Name = device, DeviceHint = device };
+        await _profileStore.SaveMappingProfileAsync(installed).ConfigureAwait(false);
+        Status = $"Imported '{imported.Name}' for {device}. Press Save to apply.";
+    }
+
+    // A filesystem-safe suggested name based on the device model, e.g. "CMD-Studio-2A-midi-map.json".
+    private static string SuggestedFileName(ControllerMappingProfile profile)
+    {
+        string model = string.IsNullOrWhiteSpace(profile.DeviceHint) ? profile.Name : profile.DeviceHint;
+        var slug = new System.Text.StringBuilder(model.Length);
+        foreach (char c in model)
+            slug.Append(char.IsLetterOrDigit(c) ? c : '-');
+        string trimmed = slug.ToString().Trim('-');
+        return (trimmed.Length == 0 ? "midi" : trimmed) + "-midi-map.json";
     }
 
     private void OnMappingChanged(object? sender, ControllerMappingProfile profile)
