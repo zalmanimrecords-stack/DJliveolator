@@ -48,6 +48,19 @@ public class Jog : Control
     public static readonly StyledProperty<IBrush> MarkerBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(MarkerBrush), new SolidColorBrush(Color.FromRgb(0xE8, 0xEE, 0xF6)));
 
+    /// <summary>Beat-line positions (0..1 track fractions) — the loaded track's grid. Used to pulse the
+    /// rim glow on each beat (the kick, for 4-on-the-floor electronic music). Empty = no glow.</summary>
+    public static readonly StyledProperty<IReadOnlyList<double>?> BeatGridProperty =
+        AvaloniaProperty.Register<Jog, IReadOnlyList<double>?>(nameof(BeatGrid));
+
+    /// <summary>When true (deck playing), the rim flashes <see cref="GlowBrush"/> on each beat.</summary>
+    public static readonly StyledProperty<bool> IsBeatPulsingProperty =
+        AvaloniaProperty.Register<Jog, bool>(nameof(IsBeatPulsing));
+
+    /// <summary>The phosphorescent rim-glow colour pulsed on the beat (default neon green).</summary>
+    public static readonly StyledProperty<IBrush> GlowBrushProperty =
+        AvaloniaProperty.Register<Jog, IBrush>(nameof(GlowBrush), new SolidColorBrush(Color.FromRgb(0x39, 0xFF, 0x6A)));
+
     private bool _dragging;
     private double _lastAngleRadians;
     private double _baseFraction;
@@ -57,7 +70,8 @@ public class Jog : Control
     static Jog()
     {
         AffectsRender<Jog>(ProgressProperty, ArcBrushProperty, TrackBrushProperty,
-            PlatterBrushProperty, MarkerBrushProperty, IsEnabledProperty);
+            PlatterBrushProperty, MarkerBrushProperty, IsEnabledProperty,
+            BeatGridProperty, IsBeatPulsingProperty, GlowBrushProperty);
     }
 
     public Jog()
@@ -78,6 +92,9 @@ public class Jog : Control
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
     public IBrush PlatterBrush { get => GetValue(PlatterBrushProperty); set => SetValue(PlatterBrushProperty, value); }
     public IBrush MarkerBrush { get => GetValue(MarkerBrushProperty); set => SetValue(MarkerBrushProperty, value); }
+    public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
+    public bool IsBeatPulsing { get => GetValue(IsBeatPulsingProperty); set => SetValue(IsBeatPulsingProperty, value); }
+    public IBrush GlowBrush { get => GetValue(GlowBrushProperty); set => SetValue(GlowBrushProperty, value); }
 
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
@@ -100,7 +117,9 @@ public class Jog : Control
         bool on = IsEnabled;
         double progress = Math.Clamp(_dragging ? _scrubFraction : Progress, 0, 1);
         var centre = new Point(bounds.Width / 2, bounds.Height / 2);
-        double outer = (size / 2) - 1;
+        // Reserve an outer band for the beat (kick) rim glow so it never clips the bounds.
+        double glowBand = size * 0.05;
+        double outer = (size / 2) - 1 - glowBand;
         double ringStroke = Math.Max(3.0, size * 0.04);
         double ringRadius = outer - (ringStroke / 2);
         double platterRadius = ringRadius - ringStroke - (size * 0.02);
@@ -137,6 +156,45 @@ public class Jog : Control
         }
 
         DrawHub(context, centre, platterRadius * 0.20, size);
+
+        // Phosphorescent rim glow pulsing on each beat (the kick, in 4-on-the-floor). Drawn last so it
+        // reads as a frame around the platter; brightest exactly on the beat line, decaying before the next.
+        if (on && IsBeatPulsing)
+        {
+            double pulse = KickPulse(Math.Clamp(Progress, 0, 1), BeatGrid);
+            if (pulse > 0.001)
+                DrawKickGlow(context, centre, (size / 2) - 1 - (glowBand * 0.5), glowBand, pulse);
+        }
+    }
+
+    /// <summary>
+    /// The 0..1 rim-glow intensity for the playhead: 1 exactly on a beat line (kick) and decaying toward 0
+    /// before the next, derived from the playhead fraction and the track's beat grid. 0 outside the grid.
+    /// </summary>
+    internal static double KickPulse(double progress, IReadOnlyList<double>? beatGrid)
+    {
+        if (beatGrid is null || beatGrid.Count < 2)
+            return 0.0;
+
+        for (int i = 0; i < beatGrid.Count - 1; i++)
+        {
+            double lo = beatGrid[i];
+            double hi = beatGrid[i + 1];
+            if (hi > lo && progress >= lo && progress < hi)
+            {
+                double phase = (progress - lo) / (hi - lo);
+                return Math.Pow(1.0 - phase, 2.2);
+            }
+        }
+
+        return 0.0;
+    }
+
+    private void DrawKickGlow(DrawingContext context, Point centre, double radius, double band, double pulse)
+    {
+        // A soft wide halo + a brighter core ring, both in the glow colour and scaled by the pulse.
+        context.DrawEllipse(null, new Pen(Halo(GlowBrush, 0.30 * pulse), band * 1.8), centre, radius, radius);
+        context.DrawEllipse(null, new Pen(Halo(GlowBrush, 0.12 + (0.88 * pulse)), band * 0.7), centre, radius, radius);
     }
 
     private void DrawPlatter(DrawingContext context, Point centre, double radius, double size)
