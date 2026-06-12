@@ -117,6 +117,59 @@ public sealed class PresetControlsViewModelTests
     }
 
     [Fact]
+    public void RefreshPresets_PicksUpPresetsRegisteredAfterConstruction()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
+        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
+        Assert.Single(vm.Presets);
+
+        // A second package is registered after the VM was built (e.g. a folder reload from the UI).
+        const string secondId = "com.example.vis2/nebula";
+        presets.ReplacePackage("com.example.vis2", new[]
+        {
+            new GeneratorPreset(secondId, "Nebula", GeneratorId, "1.0.0",
+                new[] { new ControllableParameter("glow", "GLOW") }),
+        });
+
+        vm.RefreshPresets();
+
+        Assert.Equal(2, vm.Presets.Count);
+        Assert.Contains(vm.Presets, option => option.PresetId == secondId);
+    }
+
+    [Fact]
+    public void RefreshPresets_PreservesSelection_WithoutReDispatchingLoad()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
+        var dispatcher = new FakeDispatcher();
+        var vm = new PresetControlsViewModel(presets, effects, dispatcher);
+        vm.SelectedPreset = vm.Presets[0];
+        dispatcher.Dispatched.Clear();
+
+        vm.RefreshPresets();
+
+        Assert.NotNull(vm.SelectedPreset);
+        Assert.Equal(PresetId, vm.SelectedPreset!.PresetId);
+        Assert.Equal(PresetId, vm.ActivePresetId);
+        // Restoring the selection must not re-load the already-active preset onto the engine.
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
+    public void RefreshPresets_ClearsSelection_WhenItsPresetIsGone()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
+        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
+        vm.SelectedPreset = vm.Presets[0];
+
+        presets.RemovePackage(PackageId);
+        vm.RefreshPresets();
+
+        Assert.Empty(vm.Presets);
+        Assert.Null(vm.SelectedPreset);
+    }
+
+    [Fact]
     public void MacroFeedback_UpdatesMatchingKnob_WithoutRedispatch()
     {
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();

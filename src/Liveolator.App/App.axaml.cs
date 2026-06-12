@@ -35,7 +35,8 @@ public partial class App : Application
         IControlSkinCatalog skins = services.GetRequiredService<IControlSkinCatalog>();
         ControlSkinApplier.Apply(this,
             ResolveSkin(skins, settings.Extensions.ActiveKnobSkinId),
-            ResolveSkin(skins, settings.Extensions.ActiveSliderSkinId));
+            ResolveSkin(skins, settings.Extensions.ActiveSliderSkinId),
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

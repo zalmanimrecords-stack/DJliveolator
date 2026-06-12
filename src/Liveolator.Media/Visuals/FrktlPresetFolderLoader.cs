@@ -13,7 +13,7 @@ namespace Liveolator.Media.Visuals;
 /// Tolerant by design (doc 21): a missing folder yields zero presets, and a malformed or invalid file is
 /// skipped + reported via <c>onWarning</c> rather than aborting the rest (global standards #16/#26).
 /// </remarks>
-public sealed class FrktlPresetFolderLoader
+public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
 {
     /// <summary>The package id all folder presets are registered under (kept apart from built-ins).</summary>
     public const string PackageId = "liveolator.frktl.user";
@@ -74,6 +74,12 @@ public sealed class FrktlPresetFolderLoader
         _presets.ReplacePackage(PackageId, presets);
         return presets.Count;
     }
+
+    /// <summary>
+    /// Runtime re-scan (doc 29): identical to <see cref="Load"/>, exposed through <see cref="IVisualPresetReloader"/>
+    /// so the LIVE surface can refresh presets authored while the app is running without a restart.
+    /// </summary>
+    public int Reload() => Load();
 
     private void TryLoadOne(
         string path,

@@ -27,6 +27,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     private readonly IVisualPerformanceEngine? _visualEngine;
     private readonly ILivePlaylist? _playlist;
     private readonly ITrackVisualProgramStore? _trackVisualPrograms;
+    private readonly IVisualPresetReloader? _presetReloader;
     // The starter scene's VU-meter generator layer index (resolved at composition); null hides the
     // VU-meter toggle when the active scene ships no built-in meter. The toggle addresses this slot
     // via VisualToggleLayer, mirroring the generic layer buttons.
@@ -47,7 +48,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         IVisualPerformanceEngine? visualEngine = null,
         ILivePlaylist? playlist = null,
         ITrackVisualProgramStore? trackVisualPrograms = null,
-        IGeneratorPresetRegistry? presetRegistry = null)
+        IGeneratorPresetRegistry? presetRegistry = null,
+        IVisualPresetReloader? presetReloader = null)
     {
         _dispatcher = dispatcher;
         _extensions = extensions;
@@ -57,6 +59,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         _visualEngine = visualEngine;
         _playlist = playlist;
         _trackVisualPrograms = trackVisualPrograms;
+        _presetReloader = presetReloader;
         _vuMeterLayerSlot = vuMeterLayerSlot;
         _isVuMeterShown = vuMeterInitiallyShown;
 
@@ -93,6 +96,13 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
         PresetControls = new PresetControlsViewModel(presetRegistry, effectRegistry, dispatcher, targetLayer: 0);
 
+        // Re-scan the FRKTL preset folder at runtime (doc 29) so presets authored while the app is running
+        // (e.g. via the MCP server) appear in the picker without a restart. Needs the reloader + the registry
+        // the picker reads from to be wired.
+        ReloadPresetsCommand = ReactiveCommand.Create(
+            ReloadPresets,
+            Observable.Return(presetReloader is not null && presetRegistry is not null));
+
         ReloadEffects();
         ReloadAddons();
         ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath).GetAwaiter().GetResult();
@@ -110,6 +120,9 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleLayer3Command { get; }
     public ReactiveCommand<Unit, Unit> ToggleLayer4Command { get; }
     public ReactiveCommand<Unit, Unit> ToggleAddonCommand { get; }
+
+    /// <summary>Re-scans the user FRKTL preset folder and refreshes the picker (doc 29). Disabled when unwired.</summary>
+    public ReactiveCommand<Unit, Unit> ReloadPresetsCommand { get; }
 
     public ObservableCollection<string> LoadedEffects { get; } = new();
     public ObservableCollection<VisualChannelViewModel> Channels { get; }
@@ -217,6 +230,26 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             && string.Equals(addon.Version, selectedVersion, StringComparison.Ordinal))
             ?? Addons.FirstOrDefault();
         this.RaisePropertyChanged(nameof(HasAddons));
+    }
+
+    // Re-scan the preset folder, then refresh the picker from the (now-updated) registry. The reload is
+    // tolerant by contract (never throws); the guard + Status keep any unexpected IO surprise visible
+    // rather than silent (global standards #16/#26).
+    private void ReloadPresets()
+    {
+        if (_presetReloader is null)
+            return;
+
+        try
+        {
+            int count = _presetReloader.Reload();
+            PresetControls.RefreshPresets();
+            Status = $"Reloaded {count} visual preset{(count == 1 ? string.Empty : "s")}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Status = $"Preset reload failed: {ex.Message}";
+        }
     }
 
     private void ReloadEffects()

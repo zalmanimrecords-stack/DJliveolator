@@ -37,11 +37,9 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
         _dispatcher = dispatcher;
         _targetLayer = targetLayer;
 
-        Presets = new ObservableCollection<PresetOptionViewModel>(
-            (presets?.Presets ?? Array.Empty<GeneratorPreset>())
-                .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(preset => new PresetOptionViewModel(preset.PresetId, preset.Name)));
+        Presets = new ObservableCollection<PresetOptionViewModel>();
         Controls = new ObservableCollection<ContinuousControlViewModel>();
+        PopulatePresets();
 
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged += OnFeedback;
@@ -117,6 +115,32 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
 
         this.RaisePropertyChanged(nameof(HasControls));
         this.RaisePropertyChanged(nameof(ActivePresetId));
+    }
+
+    /// <summary>
+    /// Re-reads the registry into the picker so presets registered after construction (e.g. a folder reload
+    /// triggered from the UI) appear. The current selection is preserved when its preset still exists, and
+    /// is restored silently — a refresh must never re-dispatch <c>VisualLoadPreset</c> for the active preset.
+    /// </summary>
+    public void RefreshPresets() => PopulatePresets();
+
+    private void PopulatePresets()
+    {
+        string? previousId = _selectedPreset?.PresetId;
+
+        Presets.Clear();
+        foreach (PresetOptionViewModel option in (_presets?.Presets ?? Array.Empty<GeneratorPreset>())
+                     .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase)
+                     .Select(preset => new PresetOptionViewModel(preset.PresetId, preset.Name)))
+        {
+            Presets.Add(option);
+        }
+
+        PresetOptionViewModel? restored = previousId is null
+            ? null
+            : Presets.FirstOrDefault(option => string.Equals(option.PresetId, previousId, StringComparison.Ordinal));
+        // Set the backing field directly (not the property) so restoring the selection never triggers a load.
+        this.RaiseAndSetIfChanged(ref _selectedPreset, restored, nameof(SelectedPreset));
     }
 
     private void EmitMacro(string macro, double value)

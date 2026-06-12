@@ -7,6 +7,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
@@ -155,12 +156,18 @@ public static class ServiceConfig
 
         // User-authored FRKTL presets (doc 29): a folder of self-contained .frktl files (each its own
         // shader + up to five controllable knobs), loaded after the built-ins so they extend the picker.
+        ILogger frktlLog = loggerFactory.CreateLogger("Liveolator.Frktl");
         var frktlPresetLoader = new Liveolator.Media.Visuals.FrktlPresetFolderLoader(
             visualEffects, generatorPresets,
             folder: Path.Combine(persistenceRoot, "frktl-presets"),
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
-        frktlPresetLoader.Load();
+            onWarning: w => frktlLog.LogWarning("{Warning}", w));
+        int frktlCount = frktlPresetLoader.Load();
+        frktlLog.LogInformation(
+            "Loaded {Count} FRKTL folder preset(s) from {Folder}.", frktlCount, frktlPresetLoader.Folder);
         services.AddSingleton(frktlPresetLoader);
+        // The same loader, exposed as the runtime reload seam so the LIVE surface can re-scan the folder
+        // (e.g. after an MCP-authored preset) without an app restart.
+        services.AddSingleton<IVisualPresetReloader>(frktlPresetLoader);
 
         // User/agent-authored control skins (doc 30): a folder of .ctrlskin files (parametric knob/slider
         // looks). Loaded here so the chosen skin can be applied in App.OnFrameworkInitializationCompleted
@@ -169,7 +176,8 @@ public static class ServiceConfig
             folder: Path.Combine(persistenceRoot, "control-skins"),
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
-        services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
+        services.AddSingleton<IControlSkinApplier>(
+            new ApplicationControlSkinApplier(w => System.Diagnostics.Trace.TraceWarning(w)));
         services.AddSingleton<IUiThemeLiveApplier, ApplicationUiThemeLiveApplier>();
         // Export/import a MIDI mapping by device model (doc 05): file IO in Media, file dialog in App.
         services.AddSingleton<IMappingProfilePortability>(
@@ -255,6 +263,11 @@ public static class ServiceConfig
         // Named, saved playlists/sets (doc 09/13) — one JSON file per set under live/playlists/.
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // STUDIO DAW arrangements (doc: STUDIO timeline) — one versioned JSON per project under
+        // live/studio-projects/, separate from the flat playlists above.
+        services.AddSingleton<IStudioProjectStore>(
+            _ => new JsonStudioProjectStore(
                 persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
         // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
@@ -518,6 +531,18 @@ public static class ServiceConfig
             sp.GetRequiredService<IVisualThumbnailRenderer>(),
             sp.GetRequiredService<IFileRemover>(),
             sp.GetRequiredService<IConfirmationService>()));
+
+        // STUDIO tab: the DAW-timeline arrangement editor. Plays the arrangement live via the dispatcher
+        // (4-deck engine) and renders it offline to WAV; degrades to plan-only when the realtime engine
+        // or decoder is absent. A fresh SystemHostClock drives the transport tick (stateless stopwatch).
+        services.AddSingleton<StudioViewModel>(sp => new StudioViewModel(
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetRequiredService<IStudioProjectStore>(),
+            realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
+            new SystemHostClock(),
+            sp.GetService<IWaveformProvider>(),
+            sp.GetService<IAudioDecoder>(),
+            sp.GetRequiredService<TrackContextActions>()));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
@@ -917,7 +942,8 @@ public static class ServiceConfig
                 visualEngine,
                 sp.GetService<ILivePlaylist>(),
                 sp.GetService<ITrackVisualProgramStore>(),
-                sp.GetService<IGeneratorPresetRegistry>());
+                sp.GetService<IGeneratorPresetRegistry>(),
+                sp.GetService<IVisualPresetReloader>());
         });
     }
 

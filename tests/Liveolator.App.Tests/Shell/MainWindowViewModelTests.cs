@@ -9,6 +9,7 @@ using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
+using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Tests.Fakes;
@@ -18,6 +19,7 @@ using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Studio;
 using Liveolator.App.Tests.Live;
 using Liveolator.Visuals.Gl;
 using Xunit;
@@ -89,6 +91,16 @@ public sealed class MainWindowViewModelTests
         public Task SaveAsync(AppSettings settings, CancellationToken ct = default) => Task.CompletedTask;
     }
 
+    private sealed class FakeStudioProjectStore : IStudioProjectStore
+    {
+        public Task<IReadOnlyList<string>> ListAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        public Task<StudioProject?> LoadAsync(string name, CancellationToken ct = default)
+            => Task.FromResult<StudioProject?>(null);
+        public Task SaveAsync(StudioProject project, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeleteAsync(string name, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     private static MainWindowViewModel BuildShell()
     {
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
@@ -102,9 +114,11 @@ public sealed class MainWindowViewModelTests
             new FakeSettingsStore(), VuMeterAddon.FaceSpec, _ => "default-face.png");
         var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
+        var studio = new StudioViewModel(library, new FakeStudioProjectStore());
+
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
-            visualLibrary, addons, settings, midiLearn, status);
+            studio, visualLibrary, addons, settings, midiLearn, status);
     }
 
     [Fact]

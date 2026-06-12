@@ -1,5 +1,6 @@
 using System.Reactive;
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
@@ -68,6 +69,26 @@ public sealed class VisualControlViewModelTests
         public void ReplacePackage(string packageId, IEnumerable<VisualEffectDescriptor> effects)
             => throw new NotSupportedException();
         public void RemovePackage(string packageId) => throw new NotSupportedException();
+    }
+
+    private sealed class FakePresetReloader : IVisualPresetReloader
+    {
+        private readonly GeneratorPresetRegistry _registry;
+        private readonly GeneratorPreset[] _toRegister;
+        public int ReloadCount { get; private set; }
+
+        public FakePresetReloader(GeneratorPresetRegistry registry, params GeneratorPreset[] toRegister)
+        {
+            _registry = registry;
+            _toRegister = toRegister;
+        }
+
+        public int Reload()
+        {
+            ReloadCount++;
+            _registry.ReplacePackage("liveolator.frktl.user", _toRegister);
+            return _toRegister.Length;
+        }
     }
 
     private static VisualEffectDescriptor Generator(string effectId)
@@ -268,6 +289,40 @@ public sealed class VisualControlViewModelTests
         Assert.Equal(("color-pack", "1.0.0", true), installer.Toggle);
         Assert.Equal(1, reloader.ReloadCount);
         Assert.Equal(1, catalog.RefreshCount);
+    }
+
+    [Fact]
+    public async Task ReloadPresetsCommand_ReScansFolderAndRefreshesPicker()
+    {
+        var presets = new GeneratorPresetRegistry();
+        var newPreset = new GeneratorPreset(
+            "liveolator.frktl.user/color-pool", "Color Pool",
+            "liveolator.frktl.user/generator", "1.0.0",
+            new[] { new ControllableParameter("flow", "FLOW") });
+        var reloader = new FakePresetReloader(presets, newPreset);
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            presetRegistry: presets,
+            presetReloader: reloader);
+
+        Assert.Empty(vm.PresetControls.Presets);
+
+        await vm.ReloadPresetsCommand.Execute().ToTask();
+
+        Assert.Equal(1, reloader.ReloadCount);
+        PresetOptionViewModel option = Assert.Single(vm.PresetControls.Presets);
+        Assert.Equal("Color Pool", option.Name);
+        Assert.Equal("Reloaded 1 visual preset.", vm.Status);
+    }
+
+    [Fact]
+    public void ReloadPresetsCommand_DisabledWhenReloaderUnwired()
+    {
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            presetRegistry: new GeneratorPresetRegistry());
+
+        Assert.False(vm.ReloadPresetsCommand.CanExecute.FirstAsync().Wait());
     }
 
     private static InstalledExtension CreateVisualAddon(string packageId, bool enabled)

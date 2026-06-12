@@ -64,7 +64,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         IVisualPerformanceEngine? visualEngine = null,
         ILivePlaylist? playlist = null,
         ITrackVisualProgramStore? trackVisualPrograms = null,
-        IGeneratorPresetRegistry? generatorPresetRegistry = null)
+        IGeneratorPresetRegistry? generatorPresetRegistry = null,
+        IVisualPresetReloader? presetReloader = null)
     {
         _dispatcher = dispatcher;
         _clockDriver = clockDriver;
@@ -83,7 +84,8 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
             visualEngine,
             playlist,
             trackVisualPrograms,
-            generatorPresetRegistry);
+            generatorPresetRegistry,
+            presetReloader);
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
         SceneGrid = new SceneGridViewModel(dispatcher, visualBankNames);

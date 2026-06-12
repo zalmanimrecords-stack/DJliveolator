@@ -12,7 +12,12 @@
       <!-- Controllable preset (doc 28): pick a generator preset; its up-to-5 parameters appear as knobs
            that emit VisualSetMacro, the same path a learned MIDI knob uses. -->
       <StackPanel Grid.Row="1" IsVisible="{Binding PresetControls.IsEnabled}" Margin="0,12,0,4">
-        <TextBlock Classes="mono faint" FontSize="10" Text="PRESET" />
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Classes="mono faint" FontSize="10" Text="PRESET" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="mono faint" FontSize="9" Padding="8,2"
+                  Content="RELOAD" Command="{Binding ReloadPresetsCommand}"
+                  ToolTip.Tip="Re-scan the preset folder so newly-authored presets appear without restart" />
+        </Grid>
         <ComboBox ItemsSource="{Binding PresetControls.Presets}"
                   SelectedItem="{Binding PresetControls.SelectedPreset}"
                   HorizontalAlignment="Stretch" MinWidth="180" Margin="0,2,0,0">
