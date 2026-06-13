@@ -8,12 +8,22 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Studio;
 
 /// <summary>
-/// A clip on the STUDIO timeline: its source track + deck lane + timeline placement, projected to
-/// pixels for the lane canvas (X / Width via the view's pixels-per-second zoom) and carrying the
-/// lazily-loaded waveform peaks the block draws.
+/// A clip on the STUDIO timeline: its source track + deck lane + timeline placement and source trim,
+/// projected to pixels for the lane canvas (X / Width via the view's pixels-per-second zoom) and
+/// carrying the lazily-loaded waveform peaks the block draws. Mutable so timeline editing (drag-move,
+/// lane change, in/out trim) updates it in place; <see cref="ToClip"/> projects it back to the
+/// immutable Core record for save/play/render.
 /// </summary>
 public sealed class StudioClipViewModel : ViewModelBase
 {
+    // A clip with no known source length still needs a visible width; one minute reads sensibly.
+    private const double DefaultOpenLengthSeconds = 60;
+    private const double MinClipSeconds = 0.1;
+
+    private int _deckSlot;
+    private double _timelineStartSeconds;
+    private double _sourceInSeconds;
+    private double? _sourceOutSeconds;
     private double _pixelsPerSecond;
     private IReadOnlyList<float>? _peaks;
     private IReadOnlyList<float>? _kickPeaks;
@@ -22,22 +32,69 @@ public sealed class StudioClipViewModel : ViewModelBase
 
     public StudioClipViewModel(StudioClip clip, MusicTrack? track, double pixelsPerSecond)
     {
-        Clip = clip;
+        TrackPath = clip.TrackPath;
         Track = track;
+        _deckSlot = clip.DeckSlot;
+        _timelineStartSeconds = clip.TimelineStartSeconds;
+        _sourceInSeconds = clip.SourceIn.TotalSeconds;
+        _sourceOutSeconds = clip.SourceOut?.TotalSeconds;
         _pixelsPerSecond = pixelsPerSecond;
     }
 
-    public StudioClip Clip { get; }
+    public string TrackPath { get; }
     public MusicTrack? Track { get; }
+    public string Title => Track?.Title ?? Path.GetFileNameWithoutExtension(TrackPath);
 
-    public int DeckSlot => Clip.DeckSlot;
-    public string Title => Track?.Title ?? Path.GetFileNameWithoutExtension(Clip.TrackPath);
+    public int DeckSlot
+    {
+        get => _deckSlot;
+        set => this.RaiseAndSetIfChanged(ref _deckSlot, value);
+    }
 
-    /// <summary>Seconds of source the clip spans (falls back to a default block when open-ended).</summary>
-    public double DurationSeconds =>
-        Clip.SourceDuration?.TotalSeconds ?? Track?.Duration?.TotalSeconds ?? DefaultOpenLengthSeconds;
+    public double TimelineStartSeconds
+    {
+        get => _timelineStartSeconds;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _timelineStartSeconds, System.Math.Max(0, value));
+            this.RaisePropertyChanged(nameof(X));
+            this.RaisePropertyChanged(nameof(TimelineEndSeconds));
+        }
+    }
 
-    public double X => Clip.TimelineStartSeconds * _pixelsPerSecond;
+    public double SourceInSeconds
+    {
+        get => _sourceInSeconds;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sourceInSeconds, System.Math.Max(0, value));
+            RaiseSpan();
+        }
+    }
+
+    public double? SourceOutSeconds
+    {
+        get => _sourceOutSeconds;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _sourceOutSeconds, value);
+            RaiseSpan();
+        }
+    }
+
+    /// <summary>The trimmed source length the clip spans (falls back to the full track / a default).</summary>
+    public double DurationSeconds
+    {
+        get
+        {
+            double end = _sourceOutSeconds ?? Track?.Duration?.TotalSeconds ?? (_sourceInSeconds + DefaultOpenLengthSeconds);
+            return System.Math.Max(MinClipSeconds, end - _sourceInSeconds);
+        }
+    }
+
+    public double TimelineEndSeconds => TimelineStartSeconds + DurationSeconds;
+
+    public double X => TimelineStartSeconds * _pixelsPerSecond;
     public double Width => System.Math.Max(2, DurationSeconds * _pixelsPerSecond);
 
     public double PixelsPerSecond
@@ -56,6 +113,18 @@ public sealed class StudioClipViewModel : ViewModelBase
     public IReadOnlyList<float>? MidPeaks { get => _midPeaks; set => this.RaiseAndSetIfChanged(ref _midPeaks, value); }
     public IReadOnlyList<float>? HighPeaks { get => _highPeaks; set => this.RaiseAndSetIfChanged(ref _highPeaks, value); }
 
-    // A clip with no known length still needs a visible width; one minute reads sensibly on the lane.
-    private const double DefaultOpenLengthSeconds = 60;
+    /// <summary>Project back to the immutable Core record for save / playback / render.</summary>
+    public StudioClip ToClip() => new(
+        DeckSlot,
+        TrackPath,
+        TimelineStartSeconds,
+        TimeSpan.FromSeconds(SourceInSeconds),
+        SourceOutSeconds is { } o ? TimeSpan.FromSeconds(o) : null);
+
+    private void RaiseSpan()
+    {
+        this.RaisePropertyChanged(nameof(DurationSeconds));
+        this.RaisePropertyChanged(nameof(Width));
+        this.RaisePropertyChanged(nameof(TimelineEndSeconds));
+    }
 }

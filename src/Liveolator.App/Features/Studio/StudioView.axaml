@@ -40,8 +40,8 @@
     <!-- status -->
     <TextBlock DockPanel.Dock="Bottom" Classes="mono faint" Margin="0,12,0,0" Text="{Binding Status}" />
 
-    <!-- library | timeline -->
-    <Grid ColumnDefinitions="300,16,*">
+    <!-- library | timeline | clip inspector -->
+    <Grid ColumnDefinitions="300,16,*,16,260">
 
       <!-- LIBRARY -->
       <Border Grid.Column="0" Classes="panel">
@@ -79,9 +79,7 @@
         <DockPanel Margin="12">
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
             <TextBlock Classes="section" Text="TIMELINE" />
-            <Button Classes="spartan" Content="Remove clip" Command="{Binding RemoveClipCommand}" />
-            <TextBlock Classes="faint" VerticalAlignment="Center"
-                       Text="{Binding SelectedClip.Title, StringFormat='· {0}'}" />
+            <TextBlock Classes="faint" VerticalAlignment="Center" Text="· drag a clip to move it in time" />
           </StackPanel>
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Lanes}">
@@ -92,7 +90,7 @@
                       <TextBlock Classes="mono accent" HorizontalAlignment="Center" VerticalAlignment="Center"
                                  Text="{Binding Label}" />
                     </Border>
-                    <Border Grid.Column="1" Background="{DynamicResource S2}" CornerRadius="3">
+                    <Border Grid.Column="1" Background="{DynamicResource S2}" CornerRadius="3" ClipToBounds="True">
                       <ItemsControl ItemsSource="{Binding Clips}" MinWidth="2400">
                         <ItemsControl.ItemsPanel>
                           <ItemsPanelTemplate>
@@ -108,9 +106,10 @@
                         </ItemsControl.Styles>
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="studio:StudioClipViewModel">
-                            <Button Classes="clip" Height="60" Padding="0"
-                                    Command="{Binding ((studio:StudioViewModel)DataContext).SelectClipCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    CommandParameter="{Binding}">
+                            <Border Classes="clip" Height="60"
+                                    PointerPressed="OnClipPointerPressed"
+                                    PointerMoved="OnClipPointerMoved"
+                                    PointerReleased="OnClipPointerReleased">
                               <Grid RowDefinitions="Auto,*">
                                 <TextBlock Grid.Row="0" Classes="mono" FontSize="10" Margin="4,2,4,0"
                                            Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
@@ -120,7 +119,7 @@
                                                         MidPeaks="{Binding MidPeaks}"
                                                         HighPeaks="{Binding HighPeaks}" />
                               </Grid>
-                            </Button>
+                            </Border>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
@@ -133,18 +132,48 @@
         </DockPanel>
       </Border>
 
+      <!-- CLIP INSPECTOR -->
+      <Border Grid.Column="4" Classes="panel">
+        <StackPanel Margin="12" Spacing="12">
+          <TextBlock Classes="section" Text="CLIP" />
+          <TextBlock Classes="faint" TextWrapping="Wrap"
+                     Text="Select a clip on the timeline to move it between decks or trim it."
+                     IsVisible="{Binding !HasSelectedClip}" />
+          <StackPanel Spacing="12" IsVisible="{Binding HasSelectedClip}">
+            <TextBlock FontSize="14" Text="{Binding SelectedClip.Title}" TextWrapping="Wrap" />
+            <StackPanel Spacing="4">
+              <TextBlock Classes="faint" Text="DECK" />
+              <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding SelectedClipDeck}">
+                <ComboBoxItem>A</ComboBoxItem>
+                <ComboBoxItem>B</ComboBoxItem>
+                <ComboBoxItem>C</ComboBoxItem>
+                <ComboBoxItem>D</ComboBoxItem>
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <TextBlock Classes="faint" Text="START (S)" />
+              <TextBox Classes="spartan" Text="{Binding SelectedClip.TimelineStartSeconds}" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <TextBlock Classes="faint" Text="SOURCE IN (S)" />
+              <TextBox Classes="spartan" Text="{Binding SelectedClip.SourceInSeconds}" />
+            </StackPanel>
+            <Button Classes="spartan" HorizontalAlignment="Left" Content="Remove clip"
+                    Command="{Binding RemoveClipCommand}" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
     </Grid>
   </DockPanel>
 
   <UserControl.Styles>
-    <Style Selector="Button.clip">
+    <Style Selector="Border.clip">
       <Setter Property="Background" Value="{DynamicResource S3}" />
       <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="3" />
-    </Style>
-    <Style Selector="Button.clip:pointerover /template/ ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource S4}" />
+      <Setter Property="Cursor" Value="SizeWestEast" />
     </Style>
   </UserControl.Styles>
 </UserControl>

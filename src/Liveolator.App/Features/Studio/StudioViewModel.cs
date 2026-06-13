@@ -99,7 +99,6 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         OpenCommand = ReactiveCommand.CreateFromTask(OpenAsync, hasSaved);
         DeleteCommand = ReactiveCommand.CreateFromTask(DeleteAsync, hasSaved);
         RenderCommand = ReactiveCommand.CreateFromTask(RenderAsync, this.WhenAnyValue(x => x.CanRender));
-        SelectClipCommand = ReactiveCommand.Create<StudioClipViewModel>(c => SelectedClip = c);
 
         this.WhenAnyValue(x => x.LibrarySearch).Subscribe(_ => ApplyLibraryFilter());
         this.WhenAnyValue(x => x.PixelsPerSecond).Subscribe(PropagateZoom);
@@ -118,7 +117,6 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> OpenCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> RenderCommand { get; }
-    public ReactiveCommand<StudioClipViewModel, Unit> SelectClipCommand { get; }
 
     /// <summary>Live preview is available only when the realtime engine (dispatcher + clock) is wired.</summary>
     public bool CanPlay => _dispatcher is not null && _clock is not null;
@@ -132,10 +130,47 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public string? LibrarySearch { get => _librarySearch; set => this.RaiseAndSetIfChanged(ref _librarySearch, value); }
     public string? SelectedSaved { get => _selectedSaved; set => this.RaiseAndSetIfChanged(ref _selectedSaved, value); }
     public TrackRowViewModel? SelectedLibraryTrack { get => _selectedLibraryTrack; set => this.RaiseAndSetIfChanged(ref _selectedLibraryTrack, value); }
-    public StudioClipViewModel? SelectedClip { get => _selectedClip; set => this.RaiseAndSetIfChanged(ref _selectedClip, value); }
+    public StudioClipViewModel? SelectedClip
+    {
+        get => _selectedClip;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedClip, value);
+            this.RaisePropertyChanged(nameof(SelectedClipDeck));
+            this.RaisePropertyChanged(nameof(HasSelectedClip));
+        }
+    }
+
+    /// <summary>True when a clip is selected (drives the inspector's visibility).</summary>
+    public bool HasSelectedClip => _selectedClip is not null;
 
     /// <summary>The deck lane (0-3) a newly added clip lands on.</summary>
     public int TargetDeck { get => _targetDeck; set => this.RaiseAndSetIfChanged(ref _targetDeck, value); }
+
+    /// <summary>The selected clip's deck (0-3), bound to the inspector — moving it relocates the clip's lane.</summary>
+    public int SelectedClipDeck
+    {
+        get => SelectedClip?.DeckSlot ?? 0;
+        set
+        {
+            if (SelectedClip is { } clip)
+                MoveClipToDeck(clip, value);
+            this.RaisePropertyChanged();
+        }
+    }
+
+    /// <summary>Move a clip to another deck lane (relocates it between the lane collections).</summary>
+    public void MoveClipToDeck(StudioClipViewModel clip, int targetDeck)
+    {
+        targetDeck = Math.Clamp(targetDeck, 0, Lanes.Count - 1);
+        if (clip.DeckSlot == targetDeck)
+            return;
+        foreach (StudioLaneViewModel lane in Lanes)
+            if (lane.Clips.Remove(clip))
+                break;
+        clip.DeckSlot = targetDeck;
+        Lanes[targetDeck].Clips.Add(clip);
+    }
 
     public bool IsPlaying { get => _isPlaying; private set => this.RaiseAndSetIfChanged(ref _isPlaying, value); }
 
@@ -175,9 +210,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         StudioLaneViewModel lane = Lanes[Math.Clamp(TargetDeck, 0, Lanes.Count - 1)];
 
         // Drop the clip after whatever already sits on this lane, so additions don't overlap.
-        double start = lane.Clips.Count == 0
-            ? 0
-            : lane.Clips.Max(c => c.Clip.TimelineEndSeconds ?? c.Clip.TimelineStartSeconds + c.DurationSeconds);
+        double start = lane.Clips.Count == 0 ? 0 : lane.Clips.Max(c => c.TimelineEndSeconds);
         TimeSpan? outPoint = row.Track.Duration;
         var clip = new StudioClip(lane.Slot, row.Track.File.Path, start, TimeSpan.Zero, outPoint);
 
@@ -300,7 +333,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private StudioProject BuildProject()
     {
         var clips = Lanes
-            .SelectMany(lane => lane.Clips.Select(c => c.Clip))
+            .SelectMany(lane => lane.Clips.Select(c => c.ToClip()))
             .OrderBy(c => c.TimelineStartSeconds)
             .ToList();
         return new StudioProject(Name.Trim(), Bpm, clips, _automation);
@@ -335,7 +368,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         try
         {
             WaveformOverview overview = await Task.Run(
-                () => _waveforms.GetOverviewAsync(clip.Clip.TrackPath, WaveformBuckets)).ConfigureAwait(false);
+                () => _waveforms.GetOverviewAsync(clip.TrackPath, WaveformBuckets)).ConfigureAwait(false);
             RxApp.MainThreadScheduler.Schedule(() =>
             {
                 clip.Peaks = overview.IsEmpty ? null : overview.Peaks;
