@@ -66,9 +66,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly DispatcherTimer _playheadTimer;
     private string _status = string.Empty;
 
-    // The lane label gutter (40px label + 6px margin) the timeline clip canvases sit behind; the
+    // The lane label gutter (28px label + 4px margin) the timeline clip canvases sit behind; the
     // playhead overlay is offset by it so the line aligns with the clips, not the labels.
-    public const double LaneGutterPx = 46;
+    public const double LaneGutterPx = 32;
 
     public StudioViewModel(
         MusicLibrary library,
