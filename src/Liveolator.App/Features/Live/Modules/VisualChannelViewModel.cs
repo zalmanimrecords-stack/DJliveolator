@@ -77,6 +77,18 @@ public sealed class VisualChannelViewModel : ViewModelBase, IDisposable
     // emit path) — used when (re)loading the scene so the knob position matches the engine state.
     public void SyncOpacityFromScene(double opacity) => Opacity.SetFromFeedback(opacity);
 
+    /// <summary>
+    /// After a preset-folder reload, re-apply this layer's preset (when its source is a preset generator)
+    /// so the knob row + installed macros pick up the reloaded shader's parameter set — without the
+    /// operator having to reselect the source. A non-preset source is left untouched.
+    /// </summary>
+    public void ReapplyPresetIfLoaded()
+    {
+        VisualChannelSourceOption? selected = SelectedSource;
+        if (selected is not null && selected.Source.Kind == VisualSourceKind.Generator)
+            Preset.TryLoadForGeneratorSource(selected.Source.Reference);
+    }
+
     private void DispatchOpacity(double value)
         => _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.VisualSetLayerOpacity,

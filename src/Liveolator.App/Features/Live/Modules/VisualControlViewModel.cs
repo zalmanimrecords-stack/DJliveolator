@@ -243,6 +243,10 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             int count = _presetReloader.Reload();
             ReloadEffects();
             await ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath);
+            // Re-apply the reloaded preset to every layer that has one, so its knobs + the running
+            // shader pick up the new parameter set with no manual reselect (the old stale-knob trap).
+            foreach (VisualChannelViewModel channel in Channels)
+                channel.ReapplyPresetIfLoaded();
             Status = $"Reloaded {count} visual preset{(count == 1 ? string.Empty : "s")}.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
