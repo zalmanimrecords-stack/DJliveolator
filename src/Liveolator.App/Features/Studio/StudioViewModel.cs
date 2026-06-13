@@ -47,7 +47,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, MusicTrack> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
     private List<TrackRowViewModel> _allLibrary = new();
-    private IReadOnlyList<AutomationLane> _automation = Array.Empty<AutomationLane>();
+    private readonly List<AutomationLaneViewModel> _automationLanes = new();
+    private int _automationDeck;
+    private AutomationTarget _automationTarget = AutomationTarget.DeckGain;
     private StudioTransport? _transport;
 
     private string _name = "New project";
@@ -230,6 +232,46 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         _transport?.Seek(PlayheadSeconds);
     }
 
+    /// <summary>The automation targets the editor can select (bound to the target drop-down).</summary>
+    public static IReadOnlyList<AutomationTarget> AutomationTargets { get; } = Enum.GetValues<AutomationTarget>();
+
+    /// <summary>Which deck's automation the editor shows (0-3).</summary>
+    public int SelectedAutomationDeck
+    {
+        get => _automationDeck;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _automationDeck, Math.Clamp(value, 0, Lanes.Count - 1));
+            this.RaisePropertyChanged(nameof(CurrentAutomationLane));
+        }
+    }
+
+    /// <summary>Which control's automation the editor shows.</summary>
+    public AutomationTarget SelectedAutomationTarget
+    {
+        get => _automationTarget;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _automationTarget, value);
+            this.RaisePropertyChanged(nameof(CurrentAutomationLane));
+        }
+    }
+
+    /// <summary>The editable lane for the selected (deck, target) — created on first edit.</summary>
+    public AutomationLaneViewModel CurrentAutomationLane => GetOrCreateAutomationLane(_automationDeck, _automationTarget);
+
+    private AutomationLaneViewModel GetOrCreateAutomationLane(int deck, AutomationTarget target)
+    {
+        AutomationLaneViewModel? existing = _automationLanes
+            .FirstOrDefault(l => l.DeckSlot == deck && l.Target == target);
+        if (existing is not null)
+            return existing;
+
+        var lane = new AutomationLaneViewModel(target, deck);
+        _automationLanes.Add(lane);
+        return lane;
+    }
+
     /// <summary>Loads the library snapshot for the picker + the list of saved projects. Called when shown.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -250,7 +292,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         StopPlayback();
         foreach (StudioLaneViewModel lane in Lanes)
             lane.Clips.Clear();
-        _automation = Array.Empty<AutomationLane>();
+        _automationLanes.Clear();
+        this.RaisePropertyChanged(nameof(CurrentAutomationLane));
         SelectedClip = null;
         Name = "New project";
         Bpm = StudioProject.DefaultBpm;
@@ -396,7 +439,11 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             .SelectMany(lane => lane.Clips.Select(c => c.ToClip()))
             .OrderBy(c => c.TimelineStartSeconds)
             .ToList();
-        return new StudioProject(Name.Trim(), Bpm, clips, _automation);
+        var automation = _automationLanes
+            .Where(l => l.Points.Count > 0)
+            .Select(l => l.ToLane())
+            .ToList();
+        return new StudioProject(Name.Trim(), Bpm, clips, automation);
     }
 
     private void LoadProject(StudioProject project)
@@ -415,7 +462,10 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             LoadWaveform(vm);
         }
 
-        _automation = project.Automation; // preserved across edits even though the UI doesn't edit curves yet
+        _automationLanes.Clear();
+        foreach (AutomationLane lane in project.Automation)
+            _automationLanes.Add(new AutomationLaneViewModel(lane.Target, lane.DeckSlot, lane.Keyframes));
+        this.RaisePropertyChanged(nameof(CurrentAutomationLane));
         Name = project.Name;
         Bpm = project.Bpm;
         SelectedClip = null;

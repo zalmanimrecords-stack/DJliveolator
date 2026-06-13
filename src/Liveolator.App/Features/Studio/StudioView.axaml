@@ -84,6 +84,32 @@
             <TextBlock Classes="section" Text="TIMELINE" />
             <TextBlock Classes="faint" VerticalAlignment="Center" Text="· drag a clip to move it in time" />
           </StackPanel>
+
+          <!-- AUTOMATION editor: pick a deck + control, then draw a curve over the timeline -->
+          <Border DockPanel.Dock="Bottom" Background="{DynamicResource S2}" CornerRadius="3"
+                  Height="150" Margin="0,8,0,0">
+            <DockPanel Margin="8">
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+                <TextBlock Classes="section" Text="AUTOMATION" VerticalAlignment="Center" />
+                <ComboBox SelectedIndex="{Binding SelectedAutomationDeck}" MinWidth="56">
+                  <ComboBoxItem>A</ComboBoxItem>
+                  <ComboBoxItem>B</ComboBoxItem>
+                  <ComboBoxItem>C</ComboBoxItem>
+                  <ComboBoxItem>D</ComboBoxItem>
+                </ComboBox>
+                <ComboBox MinWidth="120" ItemsSource="{Binding AutomationTargets}"
+                          SelectedItem="{Binding SelectedAutomationTarget}" />
+                <TextBlock Classes="faint" VerticalAlignment="Center"
+                           Text="· click to add · drag to move · double-click to remove" />
+              </StackPanel>
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <controls:AutomationCurveEditor MinWidth="2400" Height="96"
+                                                Lane="{Binding CurrentAutomationLane}"
+                                                PixelsPerSecond="{Binding PixelsPerSecond}" />
+              </ScrollViewer>
+            </DockPanel>
+          </Border>
+
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
             <Grid>
             <ItemsControl ItemsSource="{Binding Lanes}">
