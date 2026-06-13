@@ -18,6 +18,7 @@ using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Studio;
 using Liveolator.Core.Waveform;
+using Avalonia.Threading;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Studio;
@@ -58,7 +59,13 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private StudioClipViewModel? _selectedClip;
     private int _targetDeck;
     private bool _isPlaying;
+    private double _playheadSeconds;
+    private readonly DispatcherTimer _playheadTimer;
     private string _status = string.Empty;
+
+    // The lane label gutter (40px label + 6px margin) the timeline clip canvases sit behind; the
+    // playhead overlay is offset by it so the line aligns with the clips, not the labels.
+    public const double LaneGutterPx = 46;
 
     public StudioViewModel(
         MusicLibrary library,
@@ -102,6 +109,14 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         this.WhenAnyValue(x => x.LibrarySearch).Subscribe(_ => ApplyLibraryFilter());
         this.WhenAnyValue(x => x.PixelsPerSecond).Subscribe(PropagateZoom);
+
+        // ~20 fps playhead follow while playing — reads the transport's position on the UI thread.
+        _playheadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _playheadTimer.Tick += (_, _) =>
+        {
+            if (_transport is { } transport)
+                PlayheadSeconds = transport.PositionSeconds;
+        };
     }
 
     public ObservableCollection<TrackRowViewModel> Library { get; } = new();
@@ -176,6 +191,45 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
     public string Status { get => _status; private set => this.RaiseAndSetIfChanged(ref _status, value); }
 
+    /// <summary>The playhead position in timeline seconds (follows the transport while playing).</summary>
+    public double PlayheadSeconds
+    {
+        get => _playheadSeconds;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _playheadSeconds, Math.Max(0, value));
+            this.RaisePropertyChanged(nameof(PlayheadX));
+            this.RaisePropertyChanged(nameof(PositionText));
+            this.RaisePropertyChanged(nameof(ScrubSeconds));
+        }
+    }
+
+    /// <summary>Two-way scrub binding for the transport slider: reads the playhead, and on set seeks
+    /// the playhead + the running transport. Separate from <see cref="PlayheadSeconds"/> so the timer's
+    /// updates (which only set PlayheadSeconds) still move the slider without re-seeking every tick.</summary>
+    public double ScrubSeconds
+    {
+        get => PlayheadSeconds;
+        set => SeekTo(value);
+    }
+
+    /// <summary>The playhead's x-pixel on the timeline overlay (offset past the lane label gutter).</summary>
+    public double PlayheadX => LaneGutterPx + (PlayheadSeconds * PixelsPerSecond);
+
+    /// <summary>m:ss readout of the playhead for the transport bar.</summary>
+    public string PositionText => TimeSpan.FromSeconds(PlayheadSeconds).ToString(@"m\:ss");
+
+    /// <summary>The arrangement length (latest clip end), the scrub slider's range; minimum 1s.</summary>
+    public double ProjectDurationSeconds =>
+        Math.Max(1, Lanes.SelectMany(l => l.Clips).Select(c => c.TimelineEndSeconds).DefaultIfEmpty(0).Max());
+
+    /// <summary>Move the playhead (and the running transport, if any) to <paramref name="seconds"/>.</summary>
+    public void SeekTo(double seconds)
+    {
+        PlayheadSeconds = seconds;
+        _transport?.Seek(PlayheadSeconds);
+    }
+
     /// <summary>Loads the library snapshot for the picker + the list of saved projects. Called when shown.</summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -218,6 +272,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         lane.Clips.Add(vm);
         SelectedClip = vm;
         LoadWaveform(vm);
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         Status = $"Added \"{vm.Title}\" to deck {lane.Label}.";
     }
 
@@ -229,6 +284,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             if (lane.Clips.Remove(clip))
                 break;
         SelectedClip = null;
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
     }
 
     private void TogglePlay()
@@ -243,17 +299,21 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         _transport?.Dispose();
         _transport = new StudioTransport(new StudioArranger(BuildProject()), _dispatcher, _clock);
+        _transport.Seek(PlayheadSeconds); // start from where the playhead sits
         _transport.Play();
+        _playheadTimer.Start();
         IsPlaying = true;
         Status = "Playing arrangement…";
     }
 
     private void StopPlayback()
     {
+        _playheadTimer.Stop();
         _transport?.Stop();
         _transport?.Dispose();
         _transport = null;
         IsPlaying = false;
+        PlayheadSeconds = 0; // Stop rewinds to the start (there is no separate pause)
     }
 
     private async Task SaveAsync()
@@ -359,6 +419,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         Name = project.Name;
         Bpm = project.Bpm;
         SelectedClip = null;
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
     }
 
     private async void LoadWaveform(StudioClipViewModel clip)
@@ -408,6 +469,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         foreach (StudioLaneViewModel lane in Lanes)
             foreach (StudioClipViewModel clip in lane.Clips)
                 clip.PixelsPerSecond = pps;
+        this.RaisePropertyChanged(nameof(PlayheadX));
     }
 
     private static string Sanitize(string name)

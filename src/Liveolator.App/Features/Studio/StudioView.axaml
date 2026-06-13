@@ -29,6 +29,9 @@
                 IsVisible="{Binding CanPlay}" />
         <TextBlock Classes="mono accent" VerticalAlignment="Center" Text="PLAYING"
                    IsVisible="{Binding IsPlaying}" />
+        <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
+        <Slider Width="240" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
+                Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
         <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
         <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
         <Slider Width="160" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
@@ -82,6 +85,7 @@
             <TextBlock Classes="faint" VerticalAlignment="Center" Text="· drag a clip to move it in time" />
           </StackPanel>
           <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Grid>
             <ItemsControl ItemsSource="{Binding Lanes}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="studio:StudioLaneViewModel">
@@ -128,6 +132,12 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
+              <!-- playhead overlay: a thin accent line at the current position, offset past the lane gutter -->
+              <Canvas IsHitTestVisible="False" VerticalAlignment="Top">
+                <Rectangle Canvas.Left="{Binding PlayheadX}" Canvas.Top="0"
+                           Width="2" Height="300" Fill="{DynamicResource Accent}" />
+              </Canvas>
+            </Grid>
           </ScrollViewer>
         </DockPanel>
       </Border>
