@@ -319,6 +319,27 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         Status = $"Added \"{vm.Title}\" to deck {lane.Label}.";
     }
 
+    /// <summary>
+    /// Place a library track as a clip on <paramref name="deckSlot"/> at <paramref name="startSeconds"/>
+    /// (beat-snapped) — the drop target of a library→lane drag-and-drop.
+    /// </summary>
+    public void AddClipAt(string trackPath, int deckSlot, double startSeconds)
+    {
+        if (string.IsNullOrWhiteSpace(trackPath) || deckSlot < 0 || deckSlot >= Lanes.Count)
+            return;
+
+        MusicTrack? track = _byPath.GetValueOrDefault(trackPath);
+        double start = TimelineMath.Snap(Math.Max(0, startSeconds), TimelineMath.BeatSeconds(Bpm));
+        var clip = new StudioClip(deckSlot, trackPath, start, TimeSpan.Zero, track?.Duration);
+
+        var vm = new StudioClipViewModel(clip, track, PixelsPerSecond);
+        Lanes[deckSlot].Clips.Add(vm);
+        SelectedClip = vm;
+        LoadWaveform(vm);
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        Status = $"Dropped \"{vm.Title}\" on deck {Lanes[deckSlot].Label}.";
+    }
+
     private void RemoveSelectedClip()
     {
         if (SelectedClip is not { } clip)
