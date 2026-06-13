@@ -11,9 +11,9 @@ public partial class StudioView : UserControl
     // DnD payload: the dragged library track's file path.
     private const string TrackPathFormat = "liveolator/track-path";
 
-    // One lane row's pixel height: the lane Grid (44) + its bottom margin (4). Used to map a drop's
+    // One lane row's pixel height: the lane Grid (62) + its bottom margin (4). Used to map a drop's
     // Y to a deck index. Must match StudioView.axaml's lane template.
-    private const double LaneRowHeightPx = 48;
+    private const double LaneRowHeightPx = 66;
     private const double DragThresholdPx = 5;
 
     private bool _initialized;

@@ -8,30 +8,33 @@
 
   <DockPanel LastChildFill="True">
 
-    <!-- project + transport bar (single compact row each) -->
-    <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
-      <StackPanel Orientation="Horizontal" Spacing="6">
-        <ComboBox MinWidth="150" ItemsSource="{Binding SavedProjects}"
-                  SelectedItem="{Binding SelectedSaved}" PlaceholderText="Saved projects…" />
-        <Button Classes="spartan" Content="Open" Command="{Binding OpenCommand}" />
-        <Button Classes="spartan" Content="Delete" Command="{Binding DeleteCommand}" />
-        <Button Classes="spartan" Content="New" Command="{Binding NewCommand}" />
-        <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-        <TextBox Classes="spartan" Width="180" Watermark="Project name" Text="{Binding Name}" />
-        <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
-        <Button Classes="spartan" Content="Render WAV" Command="{Binding RenderCommand}"
-                IsVisible="{Binding CanRender}" />
-        <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-        <Button Classes="accent" Content="▶ Play" Command="{Binding PlayCommand}" IsVisible="{Binding CanPlay}" />
-        <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" IsVisible="{Binding CanPlay}" />
-        <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
-        <Slider Width="180" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
-                Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
-        <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
-        <Slider Width="120" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
-        <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
-        <TextBox Classes="spartan" Width="56" Text="{Binding Bpm}" />
-      </StackPanel>
+    <!-- project + transport bar (single compact row) -->
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+      <ComboBox MinWidth="150" ItemsSource="{Binding SavedProjects}"
+                SelectedItem="{Binding SelectedSaved}" PlaceholderText="Saved projects…" />
+      <Button Classes="spartan" Content="Open" Command="{Binding OpenCommand}" />
+      <Button Classes="spartan" Content="Delete" Command="{Binding DeleteCommand}" />
+      <Button Classes="spartan" Content="New" Command="{Binding NewCommand}" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}" />
+      <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
+      <Button Classes="spartan" Content="Render WAV" Command="{Binding RenderCommand}" IsVisible="{Binding CanRender}" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <Button Classes="accent" Content="▶ Play" Command="{Binding PlayCommand}" IsVisible="{Binding CanPlay}" />
+      <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" IsVisible="{Binding CanPlay}" />
+      <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
+      <Slider Width="150" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
+              Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <ToggleButton Classes="spartan" Content="Automation" IsChecked="{Binding AutomationEditMode}"
+                    ToolTip.Tip="Edit the per-lane automation envelopes (clips lock while on)" />
+      <ToggleButton Classes="spartan" Content="✏" IsChecked="{Binding AutomationDrawMode}"
+                    ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil)" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
+      <Slider Width="110" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
+      <TextBox Classes="spartan" Width="56" Text="{Binding Bpm}" />
     </StackPanel>
 
     <!-- status -->
@@ -42,121 +45,98 @@
 
       <!-- TIMELINE -->
       <Border Grid.Row="0" Classes="panel">
-        <Grid Margin="8" RowDefinitions="Auto,Auto,Auto">
-
-          <!-- header -->
-          <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+        <DockPanel Margin="8">
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
             <TextBlock Classes="section" Text="TIMELINE" />
             <TextBlock Classes="faint" VerticalAlignment="Center"
-                       Text="· drag a track from the library onto a lane · drag a clip to move it" />
+                       Text="· drag a track from the library onto a lane · drag a clip to move it · pick a control per lane to automate" />
           </StackPanel>
 
-          <!-- lanes (fixed height = all 4 decks visible; horizontal scroll for time) -->
-          <ScrollViewer Grid.Row="1" Height="196"
-                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ScrollViewer Height="268" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <Grid>
               <ItemsControl x:Name="LanesItems" ItemsSource="{Binding Lanes}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="studio:StudioLaneViewModel">
-                    <Grid ColumnDefinitions="28,*" Height="44" Margin="0,0,0,4">
-                      <Border Grid.Column="0" Background="{DynamicResource S3}" CornerRadius="2" Margin="0,0,4,0">
-                        <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" Text="{Binding Label}" />
-                      </Border>
+                    <Grid ColumnDefinitions="84,*" Height="62" Margin="0,0,0,4">
+                      <!-- lane header: deck label + per-lane automation target picker -->
+                      <DockPanel Grid.Column="0" Margin="0,0,4,0">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource S3}" CornerRadius="2" Height="22">
+                          <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
+                                     VerticalAlignment="Center" Text="{Binding Label}" />
+                        </Border>
+                        <ComboBox Margin="0,2,0,0" FontSize="10" Padding="4,1" HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding AutomationTargets}"
+                                  SelectedItem="{Binding SelectedAutomationTarget}" />
+                      </DockPanel>
+
+                      <!-- clips + automation overlay -->
                       <Border Grid.Column="1" Background="{DynamicResource S2}" CornerRadius="2" ClipToBounds="True">
-                        <ItemsControl ItemsSource="{Binding Clips}" MinWidth="2400">
-                          <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                              <Canvas Height="44" />
-                            </ItemsPanelTemplate>
-                          </ItemsControl.ItemsPanel>
-                          <ItemsControl.Styles>
-                            <Style Selector="ContentPresenter" x:DataType="studio:StudioClipViewModel">
-                              <Setter Property="Canvas.Left" Value="{Binding X}" />
-                              <Setter Property="Canvas.Top" Value="2" />
-                              <Setter Property="Width" Value="{Binding Width}" />
-                            </Style>
-                          </ItemsControl.Styles>
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="studio:StudioClipViewModel">
-                              <Border Classes="clip" Height="40"
-                                      PointerPressed="OnClipPointerPressed"
-                                      PointerMoved="OnClipPointerMoved"
-                                      PointerReleased="OnClipPointerReleased">
-                                <Grid RowDefinitions="Auto,*">
-                                  <TextBlock Grid.Row="0" Classes="mono" FontSize="9" Margin="3,1,3,0"
-                                             Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                  <controls:WaveformStrip Grid.Row="1" Margin="2,0,2,1"
-                                                          Peaks="{Binding Peaks}"
-                                                          KickPeaks="{Binding KickPeaks}"
-                                                          MidPeaks="{Binding MidPeaks}"
-                                                          HighPeaks="{Binding HighPeaks}" />
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Grid>
+                          <ItemsControl ItemsSource="{Binding Clips}" MinWidth="2400">
+                            <ItemsControl.ItemsPanel>
+                              <ItemsPanelTemplate>
+                                <Canvas Height="58" />
+                              </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.Styles>
+                              <Style Selector="ContentPresenter" x:DataType="studio:StudioClipViewModel">
+                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                <Setter Property="Canvas.Top" Value="2" />
+                                <Setter Property="Width" Value="{Binding Width}" />
+                              </Style>
+                            </ItemsControl.Styles>
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="studio:StudioClipViewModel">
+                                <Border Classes="clip" Height="54"
+                                        PointerPressed="OnClipPointerPressed"
+                                        PointerMoved="OnClipPointerMoved"
+                                        PointerReleased="OnClipPointerReleased">
+                                  <Grid RowDefinitions="Auto,*">
+                                    <TextBlock Grid.Row="0" Classes="mono" FontSize="9" Margin="3,1,3,0"
+                                               Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                    <controls:WaveformStrip Grid.Row="1" Margin="2,0,2,1"
+                                                            Peaks="{Binding Peaks}"
+                                                            KickPeaks="{Binding KickPeaks}"
+                                                            MidPeaks="{Binding MidPeaks}"
+                                                            HighPeaks="{Binding HighPeaks}" />
+                                  </Grid>
+                                </Border>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+
+                          <!-- per-lane automation envelope (Ableton/Cubase): drawn over the clips; interactive
+                               only while Automation mode is on, so clips stay draggable otherwise -->
+                          <controls:AutomationCurveEditor MinWidth="2400"
+                              Lane="{Binding CurrentAutomation}"
+                              PixelsPerSecond="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).PixelsPerSecond}"
+                              DrawMode="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).AutomationDrawMode}"
+                              IsHitTestVisible="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).AutomationEditMode}" />
+                        </Grid>
                       </Border>
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <!-- playhead overlay: a thin accent line, offset past the lane label gutter -->
+              <!-- playhead overlay: a thin accent line, offset past the lane header gutter -->
               <Canvas IsHitTestVisible="False" VerticalAlignment="Top">
                 <Rectangle Canvas.Left="{Binding PlayheadX}" Canvas.Top="0"
-                           Width="2" Height="196" Fill="{DynamicResource Accent}" />
+                           Width="2" Height="264" Fill="{DynamicResource Accent}" />
               </Canvas>
             </Grid>
           </ScrollViewer>
-
-          <!-- AUTOMATION editor: pick a deck + control, then draw a curve over the timeline -->
-          <DockPanel Grid.Row="2" Margin="0,8,0,0">
-            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
-              <TextBlock Classes="section" Text="AUTOMATION" VerticalAlignment="Center" />
-              <ComboBox SelectedIndex="{Binding SelectedAutomationDeck}" MinWidth="52">
-                <ComboBoxItem>A</ComboBoxItem>
-                <ComboBoxItem>B</ComboBoxItem>
-                <ComboBoxItem>C</ComboBoxItem>
-                <ComboBoxItem>D</ComboBoxItem>
-              </ComboBox>
-              <ComboBox MinWidth="110" ItemsSource="{Binding AutomationTargets}"
-                        SelectedItem="{Binding SelectedAutomationTarget}" />
-              <ToggleButton Classes="spartan" Content="✏ Draw" IsChecked="{Binding AutomationDrawMode}"
-                            ToolTip.Tip="Freehand-draw the curve by dragging (Ableton-style pencil)" />
-              <TextBlock Classes="faint" VerticalAlignment="Center"
-                         Text="· draw: drag to paint · edit: click / drag / double-click" />
-            </StackPanel>
-            <Border Background="{DynamicResource S2}" CornerRadius="2">
-              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <controls:AutomationCurveEditor MinWidth="2400" Height="72"
-                                                Lane="{Binding CurrentAutomationLane}"
-                                                PixelsPerSecond="{Binding PixelsPerSecond}"
-                                                DrawMode="{Binding AutomationDrawMode}" />
-              </ScrollViewer>
-            </Border>
-          </DockPanel>
-        </Grid>
+        </DockPanel>
       </Border>
 
       <!-- bottom row: LIBRARY + CLIP inspector share the remaining space -->
       <Grid Grid.Row="2" ColumnDefinitions="*,12,300">
 
-        <!-- LIBRARY -->
+        <!-- LIBRARY (drag a track onto a lane to add it) -->
         <Border Grid.Column="0" Classes="panel">
           <DockPanel Margin="8">
             <TextBlock DockPanel.Dock="Top" Classes="section" Text="LIBRARY · drag a track onto a lane" Margin="0,0,0,6" />
             <TextBox DockPanel.Dock="Top" Classes="spartan" Margin="0,0,0,6"
                      Watermark="Search title, artist, key…" Text="{Binding LibrarySearch}" />
-            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
-              <TextBlock Classes="faint" VerticalAlignment="Center" Text="Deck" />
-              <ComboBox SelectedIndex="{Binding TargetDeck}" MinWidth="56">
-                <ComboBoxItem>A</ComboBoxItem>
-                <ComboBoxItem>B</ComboBoxItem>
-                <ComboBoxItem>C</ComboBoxItem>
-                <ComboBoxItem>D</ComboBoxItem>
-              </ComboBox>
-              <Button Classes="accent" Content="Add →" Command="{Binding AddClipCommand}" />
-            </StackPanel>
             <ListBox Classes="rows" ItemsSource="{Binding Library}"
                      SelectedItem="{Binding SelectedLibraryTrack}"
                      PointerPressed="OnLibraryPointerPressed"

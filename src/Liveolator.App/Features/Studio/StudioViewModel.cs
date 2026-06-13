@@ -47,10 +47,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, MusicTrack> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
     private List<TrackRowViewModel> _allLibrary = new();
-    private readonly List<AutomationLaneViewModel> _automationLanes = new();
-    private int _automationDeck;
-    private AutomationTarget _automationTarget = AutomationTarget.DeckGain;
     private bool _automationDrawMode;
+    private bool _automationEditMode;
     private StudioTransport? _transport;
 
     private string _name = "New project";
@@ -60,15 +58,14 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private string? _selectedSaved;
     private TrackRowViewModel? _selectedLibraryTrack;
     private StudioClipViewModel? _selectedClip;
-    private int _targetDeck;
     private bool _isPlaying;
     private double _playheadSeconds;
     private readonly DispatcherTimer _playheadTimer;
     private string _status = string.Empty;
 
-    // The lane label gutter (28px label + 4px margin) the timeline clip canvases sit behind; the
-    // playhead overlay is offset by it so the line aligns with the clips, not the labels.
-    public const double LaneGutterPx = 32;
+    // The lane header gutter (84px label+target column + 4px margin) the clip canvases sit behind; the
+    // playhead overlay is offset by it so the line aligns with the clips, not the headers.
+    public const double LaneGutterPx = 88;
 
     public StudioViewModel(
         MusicLibrary library,
@@ -97,11 +94,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         var hasName = this.WhenAnyValue(x => x.Name).Select(n => !string.IsNullOrWhiteSpace(n));
         var hasSaved = this.WhenAnyValue(x => x.SelectedSaved).Select(s => !string.IsNullOrWhiteSpace(s));
-        var hasLibrarySelection = this.WhenAnyValue(x => x.SelectedLibraryTrack).Select(t => t is not null);
         var hasClipSelection = this.WhenAnyValue(x => x.SelectedClip).Select(c => c is not null);
 
         NewCommand = ReactiveCommand.Create(NewProject);
-        AddClipCommand = ReactiveCommand.Create(AddClip, hasLibrarySelection);
         RemoveClipCommand = ReactiveCommand.Create(RemoveSelectedClip, hasClipSelection);
         PlayCommand = ReactiveCommand.Create(TogglePlay, this.WhenAnyValue(x => x.CanPlay));
         StopCommand = ReactiveCommand.Create(StopPlayback);
@@ -127,7 +122,6 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public ObservableCollection<string> SavedProjects { get; } = new();
 
     public ReactiveCommand<Unit, Unit> NewCommand { get; }
-    public ReactiveCommand<Unit, Unit> AddClipCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveClipCommand { get; }
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -161,9 +155,6 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when a clip is selected (drives the inspector's visibility).</summary>
     public bool HasSelectedClip => _selectedClip is not null;
-
-    /// <summary>The deck lane (0-3) a newly added clip lands on.</summary>
-    public int TargetDeck { get => _targetDeck; set => this.RaiseAndSetIfChanged(ref _targetDeck, value); }
 
     /// <summary>The selected clip's deck (0-3), bound to the inspector — moving it relocates the clip's lane.</summary>
     public int SelectedClipDeck
@@ -233,51 +224,19 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         _transport?.Seek(PlayheadSeconds);
     }
 
-    /// <summary>The automation targets the editor can select (bound to the target drop-down).</summary>
-    public static IReadOnlyList<AutomationTarget> AutomationTargets { get; } = Enum.GetValues<AutomationTarget>();
-
-    /// <summary>Which deck's automation the editor shows (0-3).</summary>
-    public int SelectedAutomationDeck
+    /// <summary>When on, the per-lane automation overlays become interactive (edit envelopes); off,
+    /// they are display-only and clips are draggable. Like Ableton's automation-mode toggle.</summary>
+    public bool AutomationEditMode
     {
-        get => _automationDeck;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _automationDeck, Math.Clamp(value, 0, Lanes.Count - 1));
-            this.RaisePropertyChanged(nameof(CurrentAutomationLane));
-        }
+        get => _automationEditMode;
+        set => this.RaiseAndSetIfChanged(ref _automationEditMode, value);
     }
 
-    /// <summary>Which control's automation the editor shows.</summary>
-    public AutomationTarget SelectedAutomationTarget
-    {
-        get => _automationTarget;
-        set
-        {
-            this.RaiseAndSetIfChanged(ref _automationTarget, value);
-            this.RaisePropertyChanged(nameof(CurrentAutomationLane));
-        }
-    }
-
-    /// <summary>When on, dragging over the automation editor paints the curve freehand (Ableton pencil).</summary>
+    /// <summary>Within automation edit mode, dragging paints the curve freehand (Ableton pencil).</summary>
     public bool AutomationDrawMode
     {
         get => _automationDrawMode;
         set => this.RaiseAndSetIfChanged(ref _automationDrawMode, value);
-    }
-
-    /// <summary>The editable lane for the selected (deck, target) — created on first edit.</summary>
-    public AutomationLaneViewModel CurrentAutomationLane => GetOrCreateAutomationLane(_automationDeck, _automationTarget);
-
-    private AutomationLaneViewModel GetOrCreateAutomationLane(int deck, AutomationTarget target)
-    {
-        AutomationLaneViewModel? existing = _automationLanes
-            .FirstOrDefault(l => l.DeckSlot == deck && l.Target == target);
-        if (existing is not null)
-            return existing;
-
-        var lane = new AutomationLaneViewModel(target, deck);
-        _automationLanes.Add(lane);
-        return lane;
     }
 
     /// <summary>Loads the library snapshot for the picker + the list of saved projects. Called when shown.</summary>
@@ -299,32 +258,14 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     {
         StopPlayback();
         foreach (StudioLaneViewModel lane in Lanes)
+        {
             lane.Clips.Clear();
-        _automationLanes.Clear();
-        this.RaisePropertyChanged(nameof(CurrentAutomationLane));
+            lane.ClearAutomation();
+        }
         SelectedClip = null;
         Name = "New project";
         Bpm = StudioProject.DefaultBpm;
-        Status = "New project — add clips to the deck lanes, then Play or Render.";
-    }
-
-    private void AddClip()
-    {
-        if (SelectedLibraryTrack is not { } row)
-            return;
-        StudioLaneViewModel lane = Lanes[Math.Clamp(TargetDeck, 0, Lanes.Count - 1)];
-
-        // Drop the clip after whatever already sits on this lane, so additions don't overlap.
-        double start = lane.Clips.Count == 0 ? 0 : lane.Clips.Max(c => c.TimelineEndSeconds);
-        TimeSpan? outPoint = row.Track.Duration;
-        var clip = new StudioClip(lane.Slot, row.Track.File.Path, start, TimeSpan.Zero, outPoint);
-
-        var vm = new StudioClipViewModel(clip, row.Track, PixelsPerSecond);
-        lane.Clips.Add(vm);
-        SelectedClip = vm;
-        LoadWaveform(vm);
-        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
-        Status = $"Added \"{vm.Title}\" to deck {lane.Label}.";
+        Status = "New project — drag tracks from the library onto the deck lanes, then Play or Render.";
     }
 
     /// <summary>
@@ -468,10 +409,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             .SelectMany(lane => lane.Clips.Select(c => c.ToClip()))
             .OrderBy(c => c.TimelineStartSeconds)
             .ToList();
-        var automation = _automationLanes
-            .Where(l => l.Points.Count > 0)
-            .Select(l => l.ToLane())
-            .ToList();
+        var automation = Lanes.SelectMany(l => l.NonEmptyAutomation()).ToList();
         return new StudioProject(Name.Trim(), Bpm, clips, automation);
     }
 
@@ -479,7 +417,10 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     {
         StopPlayback();
         foreach (StudioLaneViewModel lane in Lanes)
+        {
             lane.Clips.Clear();
+            lane.ClearAutomation();
+        }
 
         foreach (StudioClip clip in project.Clips)
         {
@@ -491,10 +432,10 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             LoadWaveform(vm);
         }
 
-        _automationLanes.Clear();
         foreach (AutomationLane lane in project.Automation)
-            _automationLanes.Add(new AutomationLaneViewModel(lane.Target, lane.DeckSlot, lane.Keyframes));
-        this.RaisePropertyChanged(nameof(CurrentAutomationLane));
+            if (lane.DeckSlot >= 0 && lane.DeckSlot < Lanes.Count)
+                Lanes[lane.DeckSlot].SetAutomation(lane);
+
         Name = project.Name;
         Bpm = project.Bpm;
         SelectedClip = null;

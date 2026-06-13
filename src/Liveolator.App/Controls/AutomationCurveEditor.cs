@@ -112,6 +112,10 @@ public sealed class AutomationCurveEditor : Control
         if (b.Width <= 0 || b.Height <= 0)
             return;
 
+        // A transparent fill makes the whole overlay a hit target when interactive (so click-to-add
+        // works on empty space), while staying see-through over the clips beneath.
+        context.FillRectangle(Brushes.Transparent, new Rect(0, 0, b.Width, b.Height));
+
         // 0.5 baseline (EQ/filter neutral) so a curve reads against centre.
         var baselinePen = new Pen(BaselineBrush, 1);
         double midY = b.Height * 0.5;
