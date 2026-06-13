@@ -50,6 +50,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly List<AutomationLaneViewModel> _automationLanes = new();
     private int _automationDeck;
     private AutomationTarget _automationTarget = AutomationTarget.DeckGain;
+    private bool _automationDrawMode;
     private StudioTransport? _transport;
 
     private string _name = "New project";
@@ -255,6 +256,13 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             this.RaiseAndSetIfChanged(ref _automationTarget, value);
             this.RaisePropertyChanged(nameof(CurrentAutomationLane));
         }
+    }
+
+    /// <summary>When on, dragging over the automation editor paints the curve freehand (Ableton pencil).</summary>
+    public bool AutomationDrawMode
+    {
+        get => _automationDrawMode;
+        set => this.RaiseAndSetIfChanged(ref _automationDrawMode, value);
     }
 
     /// <summary>The editable lane for the selected (deck, target) — created on first edit.</summary>

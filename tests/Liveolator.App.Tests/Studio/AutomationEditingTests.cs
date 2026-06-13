@@ -59,6 +59,20 @@ public class AutomationEditingTests
     }
 
     [Fact]
+    public void SetPointAt_ReplacesNearbyPoint_AddsDistantOne()
+    {
+        var lane = new AutomationLaneViewModel(AutomationTarget.DeckGain, 0);
+        lane.AddPoint(5.0, 0.2);
+
+        lane.SetPointAt(5.05, 0.9, mergeToleranceSeconds: 0.1); // within tolerance → overwrites
+        AutomationPointViewModel only = Assert.Single(lane.Points);
+        Assert.Equal(0.9, only.Value, Tol);
+
+        lane.SetPointAt(6.0, 0.3, mergeToleranceSeconds: 0.1);  // beyond tolerance → new point
+        Assert.Equal(2, lane.Points.Count);
+    }
+
+    [Fact]
     public void ToLane_FromKeyframes_RoundTrips()
     {
         var lane = new AutomationLaneViewModel(AutomationTarget.EqLow, 2, new[]

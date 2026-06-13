@@ -69,13 +69,16 @@
                 </ComboBox>
                 <ComboBox MinWidth="120" ItemsSource="{Binding AutomationTargets}"
                           SelectedItem="{Binding SelectedAutomationTarget}" />
+                <ToggleButton Classes="spartan" Content="✏ Draw" IsChecked="{Binding AutomationDrawMode}"
+                              ToolTip.Tip="Freehand-draw the curve by dragging (Ableton-style pencil)" />
                 <TextBlock Classes="faint" VerticalAlignment="Center"
-                           Text="· click to add · drag to move · double-click to remove" />
+                           Text="· draw: drag to paint · edit: click add / drag / double-click remove" />
               </StackPanel>
               <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                 <controls:AutomationCurveEditor MinWidth="2400" Height="96"
                                                 Lane="{Binding CurrentAutomationLane}"
-                                                PixelsPerSecond="{Binding PixelsPerSecond}" />
+                                                PixelsPerSecond="{Binding PixelsPerSecond}"
+                                                DrawMode="{Binding AutomationDrawMode}" />
               </ScrollViewer>
             </DockPanel>
           </Border>

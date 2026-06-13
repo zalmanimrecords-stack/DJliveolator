@@ -28,6 +28,11 @@ public sealed class AutomationCurveEditor : Control
     public static readonly StyledProperty<double> PixelsPerSecondProperty =
         AvaloniaProperty.Register<AutomationCurveEditor, double>(nameof(PixelsPerSecond), 8.0);
 
+    /// <summary>When true, dragging paints the curve freehand (Ableton-style pencil) instead of editing
+    /// individual breakpoints.</summary>
+    public static readonly StyledProperty<bool> DrawModeProperty =
+        AvaloniaProperty.Register<AutomationCurveEditor, bool>(nameof(DrawMode));
+
     public static readonly StyledProperty<IBrush> LineBrushProperty =
         AvaloniaProperty.Register<AutomationCurveEditor, IBrush>(
             nameof(LineBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x2F, 0x80, 0xF6)));
@@ -37,6 +42,10 @@ public sealed class AutomationCurveEditor : Control
             nameof(BaselineBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
     private AutomationPointViewModel? _drag;
+    private bool _painting;
+
+    // Freehand stroke density: paint roughly one keyframe per this many pixels of travel.
+    private const double DrawStepPx = 8;
 
     static AutomationCurveEditor()
     {
@@ -51,6 +60,7 @@ public sealed class AutomationCurveEditor : Control
 
     public AutomationLaneViewModel? Lane { get => GetValue(LaneProperty); set => SetValue(LaneProperty, value); }
     public double PixelsPerSecond { get => GetValue(PixelsPerSecondProperty); set => SetValue(PixelsPerSecondProperty, value); }
+    public bool DrawMode { get => GetValue(DrawModeProperty); set => SetValue(DrawModeProperty, value); }
     public IBrush LineBrush { get => GetValue(LineBrushProperty); set => SetValue(LineBrushProperty, value); }
     public IBrush BaselineBrush { get => GetValue(BaselineBrushProperty); set => SetValue(BaselineBrushProperty, value); }
 
@@ -139,6 +149,17 @@ public sealed class AutomationCurveEditor : Control
             return;
 
         Point pos = e.GetPosition(this);
+
+        // Freehand draw (Ableton pencil): a drag paints the curve; start the stroke here.
+        if (DrawMode)
+        {
+            _painting = true;
+            Paint(lane, pos);
+            e.Pointer.Capture(this);
+            e.Handled = true;
+            return;
+        }
+
         int hit = NearestIndex(lane, pos);
 
         if (e.ClickCount >= 2)
@@ -159,7 +180,16 @@ public sealed class AutomationCurveEditor : Control
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_drag is null || Lane is not { } lane)
+        if (Lane is not { } lane)
+            return;
+
+        if (_painting)
+        {
+            Paint(lane, e.GetPosition(this));
+            return;
+        }
+
+        if (_drag is null)
             return;
 
         Point pos = e.GetPosition(this);
@@ -176,7 +206,18 @@ public sealed class AutomationCurveEditor : Control
     {
         base.OnPointerReleased(e);
         _drag = null;
+        _painting = false;
         e.Pointer.Capture(null);
+    }
+
+    // Paint one keyframe at the pointer for a freehand stroke, replacing any within half a step so the
+    // stroke leaves ~one point per DrawStepPx of travel.
+    private void Paint(AutomationLaneViewModel lane, Point pos)
+    {
+        double time = TimelineMath.SecondsFromX(pos.X, PixelsPerSecond);
+        double value = AutomationMath.ValueFromY(pos.Y, Bounds.Height);
+        double tolerance = PixelsPerSecond > 0 ? (DrawStepPx * 0.5) / PixelsPerSecond : 0;
+        lane.SetPointAt(time, value, tolerance);
     }
 
     private int NearestIndex(AutomationLaneViewModel lane, Point pos)

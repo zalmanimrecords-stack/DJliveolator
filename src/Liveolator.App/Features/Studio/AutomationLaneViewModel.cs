@@ -39,6 +39,20 @@ public sealed class AutomationLaneViewModel : ViewModelBase
 
     public void RemovePoint(AutomationPointViewModel point) => Points.Remove(point);
 
+    /// <summary>
+    /// Set the curve value at <paramref name="timeSeconds"/>, replacing any existing keyframe within
+    /// <paramref name="mergeToleranceSeconds"/> — the per-sample primitive of the Ableton-style freehand
+    /// "draw" stroke, so dragging paints one point per grid step rather than a pile-up.
+    /// </summary>
+    public AutomationPointViewModel SetPointAt(double timeSeconds, double value, double mergeToleranceSeconds)
+    {
+        double t = System.Math.Max(0, timeSeconds);
+        for (int i = Points.Count - 1; i >= 0; i--)
+            if (System.Math.Abs(Points[i].TimeSeconds - t) <= mergeToleranceSeconds)
+                Points.RemoveAt(i);
+        return AddPoint(t, value);
+    }
+
     /// <summary>Project to the immutable Core lane (keyframes sorted by time).</summary>
     public AutomationLane ToLane() => new(
         Target,
