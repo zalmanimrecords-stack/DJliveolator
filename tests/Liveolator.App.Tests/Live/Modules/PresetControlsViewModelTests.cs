@@ -44,34 +44,40 @@ public sealed class PresetControlsViewModelTests
     }
 
     [Fact]
-    public void Presets_AreListedFromTheRegistry()
-    {
-        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
-        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
-
-        PresetOptionViewModel option = Assert.Single(vm.Presets);
-        Assert.Equal(PresetId, option.PresetId);
-        Assert.Equal("Aurora", option.Name);
-    }
-
-    [Fact]
-    public void LoadPreset_DispatchesVisualLoadPreset_AndBuildsLabelledKnobs()
+    public void TryLoadForGeneratorSource_LoadsTheWrappingPreset_AndBuildsLabelledKnobs()
     {
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
         var dispatcher = new FakeDispatcher();
         var vm = new PresetControlsViewModel(presets, effects, dispatcher, targetLayer: 2);
 
-        vm.LoadPreset(PresetId);
+        bool loaded = vm.TryLoadForGeneratorSource(GeneratorId);
 
+        Assert.True(loaded);
         PerformanceAction load = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.VisualLoadPreset, load.Kind);
         Assert.Equal(2, load.Slot);
         Assert.Equal(PresetId, load.Argument);
 
-        Assert.Equal(2, vm.Controls.Count);
         Assert.Equal(new[] { "GLOW", "WARP" }, vm.Controls.Select(c => c.Label));
         Assert.Equal(PresetId, vm.ActivePresetId);
         Assert.True(vm.HasControls);
+    }
+
+    [Fact]
+    public void TryLoadForGeneratorSource_UnknownGenerator_ClearsAndReturnsFalse()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
+        var dispatcher = new FakeDispatcher();
+        var vm = new PresetControlsViewModel(presets, effects, dispatcher);
+        vm.TryLoadForGeneratorSource(GeneratorId); // load something first
+        dispatcher.Dispatched.Clear();
+
+        bool loaded = vm.TryLoadForGeneratorSource("com.example.vis/not-a-preset");
+
+        Assert.False(loaded);
+        Assert.Empty(vm.Controls);
+        Assert.Null(vm.ActivePresetId);
+        Assert.Empty(dispatcher.Dispatched); // clearing must not dispatch
     }
 
     [Fact]
@@ -80,7 +86,7 @@ public sealed class PresetControlsViewModelTests
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
         var dispatcher = new FakeDispatcher();
         var vm = new PresetControlsViewModel(presets, effects, dispatcher);
-        vm.LoadPreset(PresetId);
+        vm.TryLoadForGeneratorSource(GeneratorId);
         dispatcher.Dispatched.Clear();
 
         vm.Controls[0].Value = 0.7;
@@ -93,80 +99,29 @@ public sealed class PresetControlsViewModelTests
     }
 
     [Fact]
-    public void SelectingAPreset_LoadsIt()
+    public void ClearControls_RemovesKnobs_AndResetsActivePreset()
     {
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
-        var dispatcher = new FakeDispatcher();
-        var vm = new PresetControlsViewModel(presets, effects, dispatcher);
+        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
+        vm.TryLoadForGeneratorSource(GeneratorId);
+        Assert.True(vm.HasControls);
 
-        vm.SelectedPreset = vm.Presets[0];
+        vm.ClearControls();
 
-        Assert.Equal(PresetId, vm.ActivePresetId);
-        Assert.Contains(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.VisualLoadPreset);
+        Assert.Empty(vm.Controls);
+        Assert.Null(vm.ActivePresetId);
+        Assert.False(vm.HasControls);
     }
 
     [Fact]
-    public void Unwired_IsDisabledAndNeverEmits()
+    public void Unwired_IsDisabledAndNeverLoads()
     {
         var vm = new PresetControlsViewModel();
 
         Assert.False(vm.IsEnabled);
-        vm.LoadPreset(PresetId);
+        Assert.False(vm.TryLoadForGeneratorSource(GeneratorId));
         Assert.Empty(vm.Controls);
         Assert.Null(vm.ActivePresetId);
-    }
-
-    [Fact]
-    public void RefreshPresets_PicksUpPresetsRegisteredAfterConstruction()
-    {
-        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
-        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
-        Assert.Single(vm.Presets);
-
-        // A second package is registered after the VM was built (e.g. a folder reload from the UI).
-        const string secondId = "com.example.vis2/nebula";
-        presets.ReplacePackage("com.example.vis2", new[]
-        {
-            new GeneratorPreset(secondId, "Nebula", GeneratorId, "1.0.0",
-                new[] { new ControllableParameter("glow", "GLOW") }),
-        });
-
-        vm.RefreshPresets();
-
-        Assert.Equal(2, vm.Presets.Count);
-        Assert.Contains(vm.Presets, option => option.PresetId == secondId);
-    }
-
-    [Fact]
-    public void RefreshPresets_PreservesSelection_WithoutReDispatchingLoad()
-    {
-        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
-        var dispatcher = new FakeDispatcher();
-        var vm = new PresetControlsViewModel(presets, effects, dispatcher);
-        vm.SelectedPreset = vm.Presets[0];
-        dispatcher.Dispatched.Clear();
-
-        vm.RefreshPresets();
-
-        Assert.NotNull(vm.SelectedPreset);
-        Assert.Equal(PresetId, vm.SelectedPreset!.PresetId);
-        Assert.Equal(PresetId, vm.ActivePresetId);
-        // Restoring the selection must not re-load the already-active preset onto the engine.
-        Assert.Empty(dispatcher.Dispatched);
-    }
-
-    [Fact]
-    public void RefreshPresets_ClearsSelection_WhenItsPresetIsGone()
-    {
-        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
-        var vm = new PresetControlsViewModel(presets, effects, new FakeDispatcher());
-        vm.SelectedPreset = vm.Presets[0];
-
-        presets.RemovePackage(PackageId);
-        vm.RefreshPresets();
-
-        Assert.Empty(vm.Presets);
-        Assert.Null(vm.SelectedPreset);
     }
 
     [Fact]
@@ -175,7 +130,7 @@ public sealed class PresetControlsViewModelTests
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = Registries();
         var dispatcher = new FakeDispatcher();
         var vm = new PresetControlsViewModel(presets, effects, dispatcher);
-        vm.LoadPreset(PresetId);
+        vm.TryLoadForGeneratorSource(GeneratorId);
         dispatcher.Dispatched.Clear();
 
         dispatcher.RaiseFeedback(

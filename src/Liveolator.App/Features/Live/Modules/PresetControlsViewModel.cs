@@ -8,13 +8,13 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Live.Modules;
 
 /// <summary>
-/// The controllable-preset surface (doc 28): a picker of the registered <see cref="GeneratorPreset"/>s
-/// plus, for the active preset, up to five labelled knobs — one per <see cref="ControllableParameter"/>.
-/// Selecting a preset dispatches <see cref="PerformanceActionKind.VisualLoadPreset"/> (the engine installs
-/// the macros + places the generator); each knob then emits <see cref="PerformanceActionKind.VisualSetMacro"/>
+/// The controllable-preset knob surface for a single compositor layer (doc 28). When that layer's source
+/// is set to a generator backed by a registered <see cref="GeneratorPreset"/>, this surface loads the
+/// preset onto the layer (<see cref="PerformanceActionKind.VisualLoadPreset"/> — the engine installs the
+/// macros and places the generator) and exposes up to five labelled knobs, one per
+/// <see cref="ControllableParameter"/>. Each knob emits <see cref="PerformanceActionKind.VisualSetMacro"/>
 /// with the preset's namespaced macro name — exactly the action a learned MIDI knob produces, so the
-/// on-screen knob and the controller stay in lockstep. With the registries/dispatcher unwired the surface
-/// is disabled and never emits.
+/// on-screen knob and the controller stay in lockstep. A non-preset source clears the knobs.
 /// </summary>
 public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
 {
@@ -23,7 +23,6 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly int _targetLayer;
     private readonly Dictionary<string, ContinuousControlViewModel> _controlsByMacro = new(StringComparer.Ordinal);
-    private PresetOptionViewModel? _selectedPreset;
     private string? _activePresetId;
 
     public PresetControlsViewModel(
@@ -37,41 +36,50 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
         _dispatcher = dispatcher;
         _targetLayer = targetLayer;
 
-        Presets = new ObservableCollection<PresetOptionViewModel>();
         Controls = new ObservableCollection<ContinuousControlViewModel>();
-        PopulatePresets();
 
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged += OnFeedback;
     }
 
-    /// <summary>True when presets + effects + dispatcher are all wired; the UI disables the surface otherwise.</summary>
+    /// <summary>True when presets + effects + dispatcher are all wired; the surface never loads otherwise.</summary>
     public bool IsEnabled => _dispatcher is not null && _presets is not null && _effects is not null;
 
-    /// <summary>The compositor layer a loaded preset occupies (doc 28: one dedicated layer).</summary>
+    /// <summary>The compositor layer a loaded preset occupies.</summary>
     public int TargetLayer => _targetLayer;
 
-    /// <summary>The registered presets, ordered by name, for the picker.</summary>
-    public ObservableCollection<PresetOptionViewModel> Presets { get; }
-
-    /// <summary>The active preset's controllable knobs (≤5), rebuilt on each load.</summary>
+    /// <summary>The active preset's controllable knobs (≤5), rebuilt on each load and cleared otherwise.</summary>
     public ObservableCollection<ContinuousControlViewModel> Controls { get; }
 
     public bool HasControls => Controls.Count > 0;
 
-    /// <summary>The preset id currently loaded, or null before any load.</summary>
+    /// <summary>The preset id currently loaded onto the layer, or null when no preset is loaded.</summary>
     public string? ActivePresetId => _activePresetId;
 
-    /// <summary>The picker selection; setting it to a preset loads that preset.</summary>
-    public PresetOptionViewModel? SelectedPreset
+    /// <summary>
+    /// Loads the controllable preset that wraps <paramref name="generatorEffectId"/> (if one is registered)
+    /// onto the target layer, building its knob row. Returns true when a preset was loaded; false (and the
+    /// knobs are cleared) when the id is null/unknown, no preset wraps it, or the surface is unwired. This is
+    /// the single entry point used when a layer's source dropdown selects a generator.
+    /// </summary>
+    public bool TryLoadForGeneratorSource(string? generatorEffectId)
     {
-        get => _selectedPreset;
-        set
+        if (!IsEnabled || string.IsNullOrWhiteSpace(generatorEffectId))
         {
-            this.RaiseAndSetIfChanged(ref _selectedPreset, value);
-            if (value is not null)
-                LoadPreset(value.PresetId);
+            ClearControls();
+            return false;
         }
+
+        GeneratorPreset? match = _presets!.Presets.FirstOrDefault(
+            preset => string.Equals(preset.GeneratorEffectId, generatorEffectId, StringComparison.Ordinal));
+        if (match is null)
+        {
+            ClearControls();
+            return false;
+        }
+
+        LoadPreset(match.PresetId);
+        return _activePresetId is not null;
     }
 
     /// <summary>
@@ -117,30 +125,16 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(ActivePresetId));
     }
 
-    /// <summary>
-    /// Re-reads the registry into the picker so presets registered after construction (e.g. a folder reload
-    /// triggered from the UI) appear. The current selection is preserved when its preset still exists, and
-    /// is restored silently — a refresh must never re-dispatch <c>VisualLoadPreset</c> for the active preset.
-    /// </summary>
-    public void RefreshPresets() => PopulatePresets();
-
-    private void PopulatePresets()
+    /// <summary>Clears the knob row (used when the layer's source is not a controllable preset).</summary>
+    public void ClearControls()
     {
-        string? previousId = _selectedPreset?.PresetId;
-
-        Presets.Clear();
-        foreach (PresetOptionViewModel option in (_presets?.Presets ?? Array.Empty<GeneratorPreset>())
-                     .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase)
-                     .Select(preset => new PresetOptionViewModel(preset.PresetId, preset.Name)))
-        {
-            Presets.Add(option);
-        }
-
-        PresetOptionViewModel? restored = previousId is null
-            ? null
-            : Presets.FirstOrDefault(option => string.Equals(option.PresetId, previousId, StringComparison.Ordinal));
-        // Set the backing field directly (not the property) so restoring the selection never triggers a load.
-        this.RaiseAndSetIfChanged(ref _selectedPreset, restored, nameof(SelectedPreset));
+        if (_activePresetId is null && Controls.Count == 0)
+            return;
+        _controlsByMacro.Clear();
+        Controls.Clear();
+        _activePresetId = null;
+        this.RaisePropertyChanged(nameof(HasControls));
+        this.RaisePropertyChanged(nameof(ActivePresetId));
     }
 
     private void EmitMacro(string macro, double value)

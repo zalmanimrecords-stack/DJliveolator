@@ -85,22 +85,23 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(vm => vm.SelectedAddon)
                 .Select(addon => addon is not null && extensionInstaller is not null));
 
+        // Each channel owns its layer's controllable-preset knobs (doc 28): selecting a preset generator in
+        // a channel's source dropdown loads it onto that layer and shows its ≤5 knobs in the same card,
+        // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
         Channels = new ObservableCollection<VisualChannelViewModel>(
             Enumerable.Range(0, 4)
                 .Select(row => new VisualChannelViewModel(
                     displayOrder: row + 1,
                     layerSlot: 3 - row,
-                    dispatcher)));
-
-        // Controllable generator presets (doc 28) load onto the base layer (slot 0); their ≤5 knobs are
-        // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
-        PresetControls = new PresetControlsViewModel(presetRegistry, effectRegistry, dispatcher, targetLayer: 0);
+                    dispatcher,
+                    presetRegistry,
+                    effectRegistry)));
 
         // Re-scan the FRKTL preset folder at runtime (doc 29) so presets authored while the app is running
-        // (e.g. via the MCP server) appear in the picker without a restart. Needs the reloader + the registry
-        // the picker reads from to be wired.
-        ReloadPresetsCommand = ReactiveCommand.Create(
-            ReloadPresets,
+        // (e.g. via the MCP server) appear in the layer source dropdowns without a restart. Needs the
+        // reloader + the registry the channels read from to be wired.
+        ReloadPresetsCommand = ReactiveCommand.CreateFromTask(
+            ReloadPresetsAsync,
             Observable.Return(presetReloader is not null && presetRegistry is not null));
 
         ReloadEffects();
@@ -126,9 +127,6 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<string> LoadedEffects { get; } = new();
     public ObservableCollection<VisualChannelViewModel> Channels { get; }
-
-    /// <summary>The controllable-preset picker + knob row (doc 28).</summary>
-    public PresetControlsViewModel PresetControls { get; }
     public ObservableCollection<VisualAddonViewModel> Addons { get; } = new();
     public bool HasAddons => Addons.Count > 0;
 
@@ -232,10 +230,10 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(HasAddons));
     }
 
-    // Re-scan the preset folder, then refresh the picker from the (now-updated) registry. The reload is
-    // tolerant by contract (never throws); the guard + Status keep any unexpected IO surprise visible
-    // rather than silent (global standards #16/#26).
-    private void ReloadPresets()
+    // Re-scan the preset folder, then refresh the layer source dropdowns so newly-registered generators
+    // appear. The reload is tolerant by contract (never throws); the guard + Status keep any unexpected IO
+    // surprise visible rather than silent (global standards #16/#26).
+    private async Task ReloadPresetsAsync()
     {
         if (_presetReloader is null)
             return;
@@ -243,7 +241,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         try
         {
             int count = _presetReloader.Reload();
-            PresetControls.RefreshPresets();
+            ReloadEffects();
+            await ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath);
             Status = $"Reloaded {count} visual preset{(count == 1 ? string.Empty : "s")}.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -264,7 +263,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        PresetControls.Dispose();
+        foreach (VisualChannelViewModel channel in Channels)
+            channel.Dispose();
         if (_playlist is not null)
             _playlist.NowChanged -= OnNowChanged;
     }

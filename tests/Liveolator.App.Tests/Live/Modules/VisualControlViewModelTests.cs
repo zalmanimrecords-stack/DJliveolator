@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
@@ -71,23 +72,25 @@ public sealed class VisualControlViewModelTests
         public void RemovePackage(string packageId) => throw new NotSupportedException();
     }
 
+    // Re-scanning the folder registers new generator effects; the layer source dropdowns are rebuilt from
+    // the effect registry, so the fake registers a generator effect the channels can then list.
     private sealed class FakePresetReloader : IVisualPresetReloader
     {
-        private readonly GeneratorPresetRegistry _registry;
-        private readonly GeneratorPreset[] _toRegister;
+        private readonly VisualEffectRegistry _effects;
         public int ReloadCount { get; private set; }
 
-        public FakePresetReloader(GeneratorPresetRegistry registry, params GeneratorPreset[] toRegister)
-        {
-            _registry = registry;
-            _toRegister = toRegister;
-        }
+        public FakePresetReloader(VisualEffectRegistry effects) => _effects = effects;
 
         public int Reload()
         {
             ReloadCount++;
-            _registry.ReplacePackage("liveolator.frktl.user", _toRegister);
-            return _toRegister.Length;
+            _effects.ReplacePackage("liveolator.frktl.user", new[]
+            {
+                new VisualEffectDescriptor(
+                    "liveolator.frktl.user/color-pool", "1.0.0", "liveolator.frktl.user", "color-pool.frag",
+                    Array.Empty<VisualEffectParameter>(), VisualEffectRole.Generator),
+            });
+            return 1;
         }
     }
 
@@ -292,26 +295,22 @@ public sealed class VisualControlViewModelTests
     }
 
     [Fact]
-    public async Task ReloadPresetsCommand_ReScansFolderAndRefreshesPicker()
+    public async Task ReloadPresetsCommand_ReScansFolder_AndRefreshesLayerSources()
     {
-        var presets = new GeneratorPresetRegistry();
-        var newPreset = new GeneratorPreset(
-            "liveolator.frktl.user/color-pool", "Color Pool",
-            "liveolator.frktl.user/generator", "1.0.0",
-            new[] { new ControllableParameter("flow", "FLOW") });
-        var reloader = new FakePresetReloader(presets, newPreset);
+        var effects = new VisualEffectRegistry();
+        var reloader = new FakePresetReloader(effects);
         var vm = new VisualControlViewModel(
             new FakeDispatcher(),
-            presetRegistry: presets,
+            effectRegistry: effects,
+            presetRegistry: new GeneratorPresetRegistry(),
             presetReloader: reloader);
 
-        Assert.Empty(vm.PresetControls.Presets);
+        Assert.DoesNotContain(vm.Channels[0].Sources, s => s.Label == "Color Pool");
 
         await vm.ReloadPresetsCommand.Execute().ToTask();
 
         Assert.Equal(1, reloader.ReloadCount);
-        PresetOptionViewModel option = Assert.Single(vm.PresetControls.Presets);
-        Assert.Equal("Color Pool", option.Name);
+        Assert.Contains(vm.Channels[0].Sources, s => s.Label == "Color Pool");
         Assert.Equal("Reloaded 1 visual preset.", vm.Status);
     }
 
@@ -323,6 +322,67 @@ public sealed class VisualControlViewModelTests
             presetRegistry: new GeneratorPresetRegistry());
 
         Assert.False(vm.ReloadPresetsCommand.CanExecute.FirstAsync().Wait());
+    }
+
+    private static (VisualEffectRegistry Effects, GeneratorPresetRegistry Presets) PresetRegistries()
+    {
+        var effects = new VisualEffectRegistry();
+        effects.ReplacePackage("pkg", new[]
+        {
+            new VisualEffectDescriptor("pkg/gen", "1.0.0", "pkg", "gen.frag",
+                new[] { new VisualEffectParameter("glow", "uGlow", 0, 1, 0.5) }, VisualEffectRole.Generator),
+        });
+        var presets = new GeneratorPresetRegistry();
+        presets.ReplacePackage("pkg", new[]
+        {
+            new GeneratorPreset("pkg/preset", "Preset", "pkg/gen", "1.0.0",
+                new[] { new ControllableParameter("glow", "GLOW") }),
+        });
+        return (effects, presets);
+    }
+
+    [Fact]
+    public void SelectingPresetGeneratorSource_LoadsPresetOntoLayer_AndShowsItsKnobs()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher, presets, effects);
+        var genOption = new VisualChannelSourceOption(
+            "Gen", "PLUGINS", new VisualSourceRef(VisualSourceKind.Generator, "pkg/gen"));
+        channel.ReplaceSources(new[] { genOption });
+        dispatcher.Dispatched.Clear();
+
+        channel.SelectedSource = null;
+        channel.SelectedSource = genOption;
+
+        // A preset-backed generator loads via the preset path (places generator + installs knobs) — NOT a
+        // bare VisualSetLayerSource.
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualLoadPreset, action.Kind);
+        Assert.Equal(3, action.Slot);
+        Assert.Equal("pkg/preset", action.Argument);
+        Assert.True(channel.Preset.HasControls);
+        Assert.Equal(new[] { "GLOW" }, channel.Preset.Controls.Select(c => c.Label));
+    }
+
+    [Fact]
+    public void SelectingNonPresetGeneratorSource_SetsLayerSource_WithNoKnobs()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher, presets, effects);
+        var plainGen = new VisualChannelSourceOption(
+            "Plain", "PLUGINS", new VisualSourceRef(VisualSourceKind.Generator, "pkg/no-preset"));
+        channel.ReplaceSources(new[] { plainGen });
+        dispatcher.Dispatched.Clear();
+
+        channel.SelectedSource = null;
+        channel.SelectedSource = plainGen;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualSetLayerSource, action.Kind);
+        Assert.Equal(3, action.Slot);
+        Assert.False(channel.Preset.HasControls);
     }
 
     private static InstalledExtension CreateVisualAddon(string packageId, bool enabled)

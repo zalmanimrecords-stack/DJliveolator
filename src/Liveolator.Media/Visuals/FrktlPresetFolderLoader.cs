@@ -106,9 +106,9 @@ public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
                 return;
             }
 
-            Directory.CreateDirectory(_cacheFolder);
             string shaderPath = Path.Combine(_cacheFolder, slug + ".frag");
-            File.WriteAllText(shaderPath, file!.Shader);
+            if (!TryRefreshShaderCache(shaderPath, file!.Shader, fileName))
+                return;
 
             FrktlPresetCompiler.Compiled compiled = FrktlPresetCompiler.Compile(file, effectId, PackageId, shaderPath);
             descriptors.Add(compiled.Descriptor);
@@ -118,6 +118,37 @@ public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
             ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
             _onWarning?.Invoke($"FRKTL preset '{fileName}' was skipped ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
+    /// Writes the preset's shader to its cache <c>.frag</c>. Tolerant of the file being locked by another
+    /// running instance (the compositor of a second Liveolator window can hold the shader open): when the
+    /// refresh fails but a prior cache exists, the preset is kept registered against that existing shader
+    /// rather than vanishing from the picker — a stale shader is far better than a disappeared preset
+    /// (global standards #26). Returns false only when there is no shader file to compile against at all.
+    /// </summary>
+    private bool TryRefreshShaderCache(string shaderPath, string shader, string fileName)
+    {
+        try
+        {
+            Directory.CreateDirectory(_cacheFolder);
+            File.WriteAllText(shaderPath, shader);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (File.Exists(shaderPath))
+            {
+                _onWarning?.Invoke(
+                    $"FRKTL preset '{fileName}': shader cache could not be refreshed ({ex.Message}); " +
+                    "using the existing cached shader.");
+                return true;
+            }
+
+            _onWarning?.Invoke(
+                $"FRKTL preset '{fileName}' was skipped: shader cache could not be written ({ex.Message}).");
+            return false;
         }
     }
 }

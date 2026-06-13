@@ -60,6 +60,29 @@ public sealed class FrktlPresetFolderLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_KeepsPresetRegistered_WhenShaderCacheCannotBeRefreshed()
+    {
+        // Regression: a second running instance holding the cache .frag open used to make the folder
+        // loader skip the preset (the WriteAllText threw and the whole file was dropped), so presets
+        // "disappeared" from the picker whenever two app windows overlapped. The loader must now fall
+        // back to the existing cached shader and keep the preset registered.
+        WriteFile("aurora-veil.frktl", ValidJson());
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        Assert.Equal(1, new FrktlPresetFolderLoader(effects, presets, _folder).Load());
+
+        string fragPath = Path.Combine(_folder, ".cache", "aurora-veil.frag");
+        // Hold the cache file so it cannot be overwritten (mirrors another instance's compositor on Windows).
+        using var hold = new FileStream(fragPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var warnings = new System.Collections.Generic.List<string>();
+        int count = new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        Assert.Equal(1, count);
+        Assert.True(presets.TryGet("liveolator.frktl.user/aurora-veil", out _));
+    }
+
+    [Fact]
     public void Load_SkipsInvalidFiles_ButKeepsValidOnes()
     {
         WriteFile("good.frktl", ValidJson("Good"));
