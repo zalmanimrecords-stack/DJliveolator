@@ -52,6 +52,21 @@
                        Text="· drag a track from the library onto a lane · drag a clip to move it · pick a control per lane to automate" />
           </StackPanel>
 
+          <!-- TEMPO lane: the project BPM curve (warped clips follow it); always editable -->
+          <Border DockPanel.Dock="Top" Background="{DynamicResource S2}" CornerRadius="2"
+                  Height="58" Margin="0,0,0,6">
+            <Grid ColumnDefinitions="84,*">
+              <TextBlock Grid.Column="0" Classes="mono accent" FontSize="10"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" Text="TEMPO" />
+              <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <controls:AutomationCurveEditor MinWidth="2400" Height="52"
+                                                Lane="{Binding TempoLane}"
+                                                PixelsPerSecond="{Binding PixelsPerSecond}"
+                                                DrawMode="{Binding AutomationDrawMode}" />
+              </ScrollViewer>
+            </Grid>
+          </Border>
+
           <ScrollViewer x:Name="LanesScroll" Height="268"
                         HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <Grid>
@@ -93,8 +108,12 @@
                                         PointerMoved="OnClipPointerMoved"
                                         PointerReleased="OnClipPointerReleased">
                                   <Grid RowDefinitions="Auto,*">
-                                    <TextBlock Grid.Row="0" Classes="mono" FontSize="9" Margin="3,1,3,0"
-                                               Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="3,1,3,0">
+                                      <TextBlock Grid.Column="0" Classes="mono" FontSize="9"
+                                                 Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                      <TextBlock Grid.Column="1" Classes="mono accent" FontSize="8"
+                                                 Text="{Binding WarpBadge}" />
+                                    </Grid>
                                     <controls:WaveformStrip Grid.Row="1" Margin="2,0,2,1"
                                                             Peaks="{Binding Peaks}"
                                                             KickPeaks="{Binding KickPeaks}"
@@ -178,6 +197,10 @@
               <StackPanel Spacing="3">
                 <TextBlock Classes="faint" Text="SOURCE IN (S)" />
                 <TextBox Classes="spartan" Text="{Binding SelectedClip.SourceInSeconds}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <CheckBox Content="Warp to project tempo (keylock)" IsChecked="{Binding SelectedClip.WarpEnabled}" />
+                <TextBlock Classes="mono accent" Text="{Binding SelectedClip.WarpBadge}" />
               </StackPanel>
               <Button Classes="spartan" HorizontalAlignment="Left" Content="Remove clip"
                       Command="{Binding RemoveClipCommand}" />

@@ -25,6 +25,8 @@ public sealed class StudioClipViewModel : ViewModelBase
     private double _sourceInSeconds;
     private double? _sourceOutSeconds;
     private double _pixelsPerSecond;
+    private bool _warpEnabled;
+    private double _warpTargetBpm;
     private IReadOnlyList<float>? _peaks;
     private IReadOnlyList<float>? _kickPeaks;
     private IReadOnlyList<float>? _midPeaks;
@@ -39,11 +41,49 @@ public sealed class StudioClipViewModel : ViewModelBase
         _sourceInSeconds = clip.SourceIn.TotalSeconds;
         _sourceOutSeconds = clip.SourceOut?.TotalSeconds;
         _pixelsPerSecond = pixelsPerSecond;
+        _warpEnabled = clip.WarpEnabled;
+        SourceBpm = clip.SourceBpm > 0 ? clip.SourceBpm : (track?.Bpm?.Bpm ?? 0);
     }
 
     public string TrackPath { get; }
     public MusicTrack? Track { get; }
     public string Title => Track?.Title ?? Path.GetFileNameWithoutExtension(TrackPath);
+
+    /// <summary>The clip track's analyzed tempo (0 = unknown). Warp targets the project tempo from here.</summary>
+    public double SourceBpm { get; }
+
+    /// <summary>Time-stretch (keylock) this clip to the project tempo.</summary>
+    public bool WarpEnabled
+    {
+        get => _warpEnabled;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _warpEnabled, value);
+            RaiseWarp();
+        }
+    }
+
+    /// <summary>The project tempo this clip warps to (set by the timeline; drives the warp factor + width).</summary>
+    public double WarpTargetBpm
+    {
+        get => _warpTargetBpm;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _warpTargetBpm, value);
+            RaiseWarp();
+        }
+    }
+
+    /// <summary>Read-rate so the clip plays at the project tempo (1.0 when not warped / unknown source BPM).</summary>
+    public double WarpFactor
+        => WarpEnabled && SourceBpm > 0 && WarpTargetBpm > 0 ? WarpTargetBpm / SourceBpm : 1.0;
+
+    /// <summary>Small badge for the clip ("♪ 120→140" when warped, else the source BPM, else blank).</summary>
+    public string WarpBadge => SourceBpm <= 0
+        ? string.Empty
+        : WarpEnabled && WarpTargetBpm > 0
+            ? $"♪ {SourceBpm:0}→{WarpTargetBpm:0}"
+            : $"{SourceBpm:0} BPM";
 
     public int DeckSlot
     {
@@ -95,7 +135,9 @@ public sealed class StudioClipViewModel : ViewModelBase
     public double TimelineEndSeconds => TimelineStartSeconds + DurationSeconds;
 
     public double X => TimelineStartSeconds * _pixelsPerSecond;
-    public double Width => System.Math.Max(2, DurationSeconds * _pixelsPerSecond);
+
+    /// <summary>Warped on-timeline width: a warped clip occupies <c>DurationSeconds / WarpFactor</c> seconds.</summary>
+    public double Width => System.Math.Max(2, (DurationSeconds / WarpFactor) * _pixelsPerSecond);
 
     public double PixelsPerSecond
     {
@@ -119,12 +161,21 @@ public sealed class StudioClipViewModel : ViewModelBase
         TrackPath,
         TimelineStartSeconds,
         TimeSpan.FromSeconds(SourceInSeconds),
-        SourceOutSeconds is { } o ? TimeSpan.FromSeconds(o) : null);
+        SourceOutSeconds is { } o ? TimeSpan.FromSeconds(o) : null,
+        SourceBpm,
+        WarpEnabled);
 
     private void RaiseSpan()
     {
         this.RaisePropertyChanged(nameof(DurationSeconds));
         this.RaisePropertyChanged(nameof(Width));
         this.RaisePropertyChanged(nameof(TimelineEndSeconds));
+    }
+
+    private void RaiseWarp()
+    {
+        this.RaisePropertyChanged(nameof(WarpFactor));
+        this.RaisePropertyChanged(nameof(Width));
+        this.RaisePropertyChanged(nameof(WarpBadge));
     }
 }

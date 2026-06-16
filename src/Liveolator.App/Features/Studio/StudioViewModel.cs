@@ -111,6 +111,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         this.WhenAnyValue(x => x.LibrarySearch).Subscribe(_ => ApplyLibraryFilter());
         this.WhenAnyValue(x => x.PixelsPerSecond).Subscribe(PropagateZoom);
+        this.WhenAnyValue(x => x.Bpm).Subscribe(_ => PropagateWarpTarget());
 
         // ~20 fps playhead follow while playing — reads the transport's position on the UI thread.
         _playheadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
@@ -124,6 +125,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public ObservableCollection<TrackRowViewModel> Library { get; } = new();
     public ObservableCollection<StudioLaneViewModel> Lanes { get; }
     public ObservableCollection<string> SavedProjects { get; } = new();
+
+    /// <summary>The project tempo curve (BPM over time) — warped clips follow it.</summary>
+    public TempoLaneViewModel TempoLane { get; } = new();
 
     public ReactiveCommand<Unit, Unit> NewCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveClipCommand { get; }
@@ -266,6 +270,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             lane.Clips.Clear();
             lane.ClearAutomation();
         }
+        TempoLane.Points.Clear();
         SelectedClip = null;
         Name = "New project";
         Bpm = StudioProject.DefaultBpm;
@@ -287,7 +292,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             deckSlot, trackPath, start, TimeSpan.Zero, track?.Duration,
             SourceBpm: track?.Bpm?.Bpm ?? 0.0);
 
-        var vm = new StudioClipViewModel(clip, track, PixelsPerSecond);
+        var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = Bpm };
         Lanes[deckSlot].Clips.Add(vm);
         SelectedClip = vm;
         LoadWaveform(vm);
@@ -416,7 +421,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             .OrderBy(c => c.TimelineStartSeconds)
             .ToList();
         var automation = Lanes.SelectMany(l => l.NonEmptyAutomation()).ToList();
-        return new StudioProject(Name.Trim(), Bpm, clips, automation);
+        return new StudioProject(Name.Trim(), Bpm, clips, automation, TempoLane.ToTempoCurve());
     }
 
     private void LoadProject(StudioProject project)
@@ -433,7 +438,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             if (clip.DeckSlot < 0 || clip.DeckSlot >= Lanes.Count)
                 continue;
             MusicTrack? track = _byPath.GetValueOrDefault(clip.TrackPath);
-            var vm = new StudioClipViewModel(clip, track, PixelsPerSecond);
+            var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = project.Bpm };
             Lanes[clip.DeckSlot].Clips.Add(vm);
             LoadWaveform(vm);
         }
@@ -442,6 +447,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             if (lane.DeckSlot >= 0 && lane.DeckSlot < Lanes.Count)
                 Lanes[lane.DeckSlot].SetAutomation(lane);
 
+        TempoLane.Load(project.EffectiveTempo);
         Name = project.Name;
         Bpm = project.Bpm;
         SelectedClip = null;
@@ -499,6 +505,14 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             foreach (StudioClipViewModel clip in lane.Clips)
                 clip.PixelsPerSecond = pps;
         this.RaisePropertyChanged(nameof(PlayheadX));
+    }
+
+    // Push the project tempo to every clip as its warp target, so warped clip widths follow the tempo.
+    private void PropagateWarpTarget()
+    {
+        foreach (StudioLaneViewModel lane in Lanes)
+            foreach (StudioClipViewModel clip in lane.Clips)
+                clip.WarpTargetBpm = Bpm;
     }
 
     private static string Sanitize(string name)
