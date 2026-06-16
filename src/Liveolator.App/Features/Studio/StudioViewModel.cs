@@ -283,7 +283,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         MusicTrack? track = _byPath.GetValueOrDefault(trackPath);
         double start = TimelineMath.Snap(Math.Max(0, startSeconds), TimelineMath.BeatSeconds(Bpm));
-        var clip = new StudioClip(deckSlot, trackPath, start, TimeSpan.Zero, track?.Duration);
+        var clip = new StudioClip(
+            deckSlot, trackPath, start, TimeSpan.Zero, track?.Duration,
+            SourceBpm: track?.Bpm?.Bpm ?? 0.0);
 
         var vm = new StudioClipViewModel(clip, track, PixelsPerSecond);
         Lanes[deckSlot].Clips.Add(vm);

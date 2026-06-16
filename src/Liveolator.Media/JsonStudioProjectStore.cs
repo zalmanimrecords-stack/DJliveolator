@@ -11,7 +11,8 @@ public sealed record StudioProjectSnapshot(
     string Name,
     double Bpm,
     IReadOnlyList<StudioClip> Clips,
-    IReadOnlyList<AutomationLane> Automation)
+    IReadOnlyList<AutomationLane> Automation,
+    TempoCurve? Tempo = null)
 {
     public const int CurrentVersion = 1;
 }
@@ -77,7 +78,7 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
             return null;
         }
 
-        return new StudioProject(snapshot.Name, snapshot.Bpm, snapshot.Clips, snapshot.Automation);
+        return new StudioProject(snapshot.Name, snapshot.Bpm, snapshot.Clips, snapshot.Automation, snapshot.Tempo);
     }
 
     public async Task SaveAsync(StudioProject project, CancellationToken cancellationToken = default)
@@ -90,7 +91,7 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
         string tempPath = path + ".tmp";
         var snapshot = new StudioProjectSnapshot(
             StudioProjectSnapshot.CurrentVersion, project.Name, project.Bpm,
-            project.Clips.ToList(), project.Automation.ToList());
+            project.Clips.ToList(), project.Automation.ToList(), project.EffectiveTempo);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

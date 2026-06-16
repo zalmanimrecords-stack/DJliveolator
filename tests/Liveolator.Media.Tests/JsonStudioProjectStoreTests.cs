@@ -49,6 +49,47 @@ public class JsonStudioProjectStoreTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsWarpFieldsAndTempoCurve()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+        var project = new StudioProject("Warped", 140, new[]
+        {
+            new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromMinutes(4), SourceBpm: 120, WarpEnabled: true),
+        }, Array.Empty<AutomationLane>(),
+            new TempoCurve(new[] { new TempoKeyframe(0, 140), new TempoKeyframe(30, 150) }));
+
+        await store.SaveAsync(project);
+        StudioProject? loaded = await store.LoadAsync("Warped");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(120, loaded!.Clips[0].SourceBpm);
+        Assert.True(loaded.Clips[0].WarpEnabled);
+        Assert.Equal(2, loaded.EffectiveTempo.Keyframes.Count);
+        Assert.Equal(150, loaded.EffectiveTempo.TempoAt(30, 140), 1e-9);
+    }
+
+    [Fact]
+    public async Task Load_OldProjectWithoutTempoOrWarp_DefaultsGracefully()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+        System.IO.Directory.CreateDirectory(store.Directory);
+        // A v1-shaped file with no Tempo and clips lacking SourceBpm/WarpEnabled.
+        await File.WriteAllTextAsync(FileFor(store, "Old"),
+            "{\"Version\":1,\"Name\":\"Old\",\"Bpm\":120,\"Clips\":[{\"DeckSlot\":0,\"TrackPath\":\"/m/a.wav\"," +
+            "\"TimelineStartSeconds\":0,\"SourceIn\":\"00:00:00\",\"SourceOut\":null}],\"Automation\":[]}");
+
+        StudioProject? loaded = await store.LoadAsync("Old");
+
+        Assert.NotNull(loaded);
+        Assert.Equal(0, loaded!.Clips[0].SourceBpm);     // defaulted
+        Assert.False(loaded.Clips[0].WarpEnabled);       // defaulted
+        Assert.Empty(loaded.EffectiveTempo.Keyframes);   // null → Empty
+        Assert.Equal(120, loaded.EffectiveTempo.TempoAt(5, loaded.Bpm), 1e-9);
+    }
+
+    [Fact]
     public async Task Enums_AreWrittenAsStrings()
     {
         using var dir = new TempDirectory();

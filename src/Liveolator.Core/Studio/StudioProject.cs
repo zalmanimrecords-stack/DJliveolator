@@ -10,10 +10,15 @@ public sealed record StudioProject(
     string Name,
     double Bpm,
     IReadOnlyList<StudioClip> Clips,
-    IReadOnlyList<AutomationLane> Automation)
+    IReadOnlyList<AutomationLane> Automation,
+    TempoCurve? Tempo = null)
 {
     /// <summary>Default project tempo when none is set (a neutral 4/4 reference).</summary>
     public const double DefaultBpm = 120.0;
+
+    /// <summary>The project tempo curve, never null (empty ⇒ the fixed <see cref="Bpm"/>). Trailing
+    /// optional ctor param keeps older saved projects (no tempo curve) loadable.</summary>
+    public TempoCurve EffectiveTempo => Tempo ?? TempoCurve.Empty;
 
     /// <summary>An empty project with the given name.</summary>
     public static StudioProject Empty(string name)
