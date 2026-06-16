@@ -24,15 +24,17 @@ public static class SceneComposition
             return Array.Empty<ResolvedLayer>();
 
         var resolved = new List<ResolvedLayer>(scene.Layers.Count);
-        foreach (VisualLayer layer in scene.Layers)
+        for (int slot = 0; slot < scene.Layers.Count; slot++)
         {
+            VisualLayer layer = scene.Layers[slot];
             resolved.Add(new ResolvedLayer(
                 layer.Name,
                 layer.Source,
                 layer.Blend,
                 layer.Opacity,
                 layer.Effects,
-                Renderable: layer.Source.Kind is VisualSourceKind.Image or VisualSourceKind.Generator));
+                Renderable: layer.Source.Kind is VisualSourceKind.Image or VisualSourceKind.Generator,
+                Slot: slot));
         }
         return resolved;
     }

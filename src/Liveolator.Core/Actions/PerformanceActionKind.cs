@@ -101,4 +101,12 @@ public enum PerformanceActionKind
     /// track plays when the current one ends (doc 09/11).
     /// </summary>
     PlaylistAppendTrack,
+
+    /// <summary>
+    /// Sets the computer's master output volume (the OS system volume, affecting every application),
+    /// not the app's own mix. Value is the absolute 0..1 level for <see cref="ActionInputMode.Absolute"/>
+    /// or a signed delta for <see cref="ActionInputMode.Relative"/>. Owned by the platform system-volume
+    /// seam (<c>ISystemVolumeController</c>); a no-op on hosts where the OS volume cannot be controlled.
+    /// </summary>
+    SystemMasterVolume,
 }

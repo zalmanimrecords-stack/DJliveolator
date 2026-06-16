@@ -40,7 +40,9 @@ using Liveolator.Media;
 using Liveolator.Media.Extensions;
 using Liveolator.Midi;
 using Liveolator.Online;
+using Liveolator.Core.Platform;
 using Liveolator.Platform;
+using Liveolator.Platform.Audio;
 using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
 using Liveolator.App.Diagnostics;
@@ -238,7 +240,8 @@ public static class ServiceConfig
         // Deck waveform overview (doc 11): decodes the loaded track to peaks for the deck strip. Uses the
         // offline decoder, so it works headless (no realtime BASS needed); failures degrade to no waveform.
         services.AddSingleton<IWaveformProvider>(sp => new DecodedWaveformProvider(
-            sp.GetRequiredService<IAudioDecoder>()));
+            sp.GetRequiredService<IAudioDecoder>(),
+            logger: loggerFactory.CreateLogger<DecodedWaveformProvider>()));
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         WireOnlineEnrichment(services);
@@ -291,6 +294,15 @@ public static class ServiceConfig
         services.AddSingleton<IMixer>(mixer);
         services.AddSingleton<IDeckLevelMeter>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
+
+        // --- Global OS volume (the computer's master output level, not the app's mix): the per-OS
+        // controller (WASAPI on Windows, osascript on macOS, no-op elsewhere) behind the Core seam, driven
+        // through the dispatcher like any other action. Always present and pure-managed at this layer, so
+        // the SystemMasterVolume kind is owned even when realtime audio is absent.
+        ISystemVolumeController systemVolume = SystemVolumeControllers.Create(
+            w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton(systemVolume);
+        var systemVolumeHandler = new SystemVolumeActionHandler(systemVolume, loggerFactory);
 
         // --- Realtime audio engine (docs 01/02/11): built BEFORE the visual engine so its beat clock,
         // when present, can drive the visuals (the audible signal is authoritative). The BASSmix backend
@@ -390,6 +402,7 @@ public static class ServiceConfig
         {
             new BeatActionHandler(sharedLiveClock, hostClock),
             mixerHandler,
+            systemVolumeHandler,
             visualHandler,
             playlistHandler,
             audioEffectHandler,
@@ -542,7 +555,8 @@ public static class ServiceConfig
             new SystemHostClock(),
             sp.GetService<IWaveformProvider>(),
             sp.GetService<IAudioDecoder>(),
-            sp.GetRequiredService<TrackContextActions>()));
+            sp.GetRequiredService<TrackContextActions>(),
+            loggerFactory: loggerFactory));
 
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
@@ -653,6 +667,10 @@ public static class ServiceConfig
         });
 
         services.AddSingleton<ShellStatusViewModel>();
+        // Global volume knob (top bar): drives the OS master volume via the dispatcher; disables itself
+        // when the host has no controllable system volume.
+        services.AddSingleton<SystemVolumeControlViewModel>(sp => new SystemVolumeControlViewModel(
+            sp.GetService<IPerformanceActionDispatcher>()));
         services.AddSingleton<MainWindowViewModel>();
 
         ServiceProvider provider = services.BuildServiceProvider();
@@ -1102,9 +1120,9 @@ public static class ServiceConfig
     }
 
     // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
-    // today; persisted/custom profiles (doc 13) extend this set later.
+    // and Pioneer DDJ-FLX4 today; persisted/custom profiles (doc 13) extend this set later.
     private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
-        => new[] { CmdStudio2AProfile.Default };
+        => new[] { CmdStudio2AProfile.Default, DdjFlx4Profile.Default };
 
     internal static MidiSettings ResolveMidiSettings(
         MidiSettings configured,
@@ -1114,11 +1132,18 @@ public static class ServiceConfig
         if (!string.IsNullOrWhiteSpace(normalized.ControllerInputName))
             return normalized;
 
-        string? detectedCmd = provider.GetInputDeviceNames().FirstOrDefault(name =>
-            name.Contains(CmdStudio2AProfile.DeviceHint, StringComparison.OrdinalIgnoreCase));
+        // No controller chosen yet: auto-detect the first connected device whose name matches any
+        // catalogued profile's hint (CMD STUDIO 2A, DDJ-FLX4, …). MidiProfileSelector then loads the
+        // matching profile downstream — so adding a profile to the catalog extends detection for free.
+        string[] inputNames = provider.GetInputDeviceNames().ToArray();
+        string? detected = AvailableMidiProfiles()
+            .Select(profile => inputNames.FirstOrDefault(name =>
+                !string.IsNullOrEmpty(profile.DeviceHint)
+                && name.Contains(profile.DeviceHint, StringComparison.OrdinalIgnoreCase)))
+            .FirstOrDefault(name => name is not null);
 
-        return detectedCmd is null
+        return detected is null
             ? normalized
-            : normalized with { ControllerInputName = detectedCmd };
+            : normalized with { ControllerInputName = detected };
     }
 }

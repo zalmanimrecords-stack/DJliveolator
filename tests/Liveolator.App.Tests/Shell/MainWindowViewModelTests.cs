@@ -118,7 +118,8 @@ public sealed class MainWindowViewModelTests
 
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
-            studio, visualLibrary, addons, settings, midiLearn, status);
+            studio, visualLibrary, addons, settings, midiLearn, status,
+            new SystemVolumeControlViewModel());
     }
 
     [Fact]

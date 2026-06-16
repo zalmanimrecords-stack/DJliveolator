@@ -126,8 +126,10 @@ public sealed class LayeredQuadRenderer : IDisposable
             uint source;
             if (layer.Generator is { IsValid: true } generator)
             {
+                // Resolve by the layer's SCENE slot, not the draw index i: a skipped "None" layer beneath
+                // compacts the draw list, so i != slot, and macros (which target the slot) would miss.
                 IReadOnlyDictionary<string, float> generatorParameters = ResolveGeneratorParameters(
-                    i, layer.GeneratorRef, resolvedMacros);
+                    layer.Slot, layer.GeneratorRef, resolvedMacros);
                 source = generator.Render(
                     Math.Max(1, viewportWidth), Math.Max(1, viewportHeight), uniforms, generatorParameters);
             }
@@ -137,7 +139,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             }
 
             IReadOnlyList<ResolvedEffectParameters> effectValues = EffectParameterResolver.Resolve(
-                i,
+                layer.Slot,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
@@ -317,7 +319,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             }
 
             IReadOnlyList<ResolvedEffectParameters> effects = EffectParameterResolver.Resolve(
-                index,
+                layer.Slot,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
@@ -328,7 +330,8 @@ public sealed class LayeredQuadRenderer : IDisposable
                 effectChainHeight,
                 effects,
                 _logger);
-            built.Add(new LayerTexture(texture, generator, generatorRef, blend, layer.Opacity, layer.Effects, effectChain));
+            built.Add(new LayerTexture(
+                texture, generator, generatorRef, blend, layer.Opacity, layer.Effects, effectChain, layer.Slot));
         }
 
         return built;
@@ -413,5 +416,6 @@ public sealed class LayeredQuadRenderer : IDisposable
         BlendModeGl Blend,
         double Opacity,
         IReadOnlyList<EffectRef> Effects,
-        EffectChainRenderer EffectChain);
+        EffectChainRenderer EffectChain,
+        int Slot);
 }

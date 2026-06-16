@@ -366,6 +366,26 @@ public sealed class VisualControlViewModelTests
     }
 
     [Fact]
+    public void ReapplyPresetIfLoaded_RebuildsKnobs_ForAPresetLayer_WithoutReselect()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        var dispatcher = new FakeDispatcher();
+        var channel = new VisualChannelViewModel(displayOrder: 1, layerSlot: 3, dispatcher, presets, effects);
+        var genOption = new VisualChannelSourceOption(
+            "Gen", "PLUGINS", new VisualSourceRef(VisualSourceKind.Generator, "pkg/gen"));
+        // ReplaceSources restores the selection silently (suppressed) -> no knobs yet, like after a reload.
+        channel.ReplaceSources(new[] { genOption }, new VisualSourceRef(VisualSourceKind.Generator, "pkg/gen"));
+        Assert.False(channel.Preset.HasControls);
+        dispatcher.Dispatched.Clear();
+
+        channel.ReapplyPresetIfLoaded();
+
+        // The preset is loaded onto the layer and its knobs rebuilt, no manual reselect required.
+        Assert.True(channel.Preset.HasControls);
+        Assert.Contains(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.VisualLoadPreset && a.Slot == 3);
+    }
+
+    [Fact]
     public void SelectingNonPresetGeneratorSource_SetsLayerSource_WithNoKnobs()
     {
         (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();

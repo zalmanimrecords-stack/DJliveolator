@@ -82,6 +82,23 @@ public sealed class SceneCompositionTests
     }
 
     [Fact]
+    public void RenderableLayers_preserve_the_scene_slot_when_none_layers_are_skipped()
+    {
+        // Regression: a "None" layer beneath a generator used to compact the draw list so the
+        // generator's draw index no longer equalled its scene slot. The renderer resolves a
+        // generator's controllable macros (its knobs) by slot, so the slot MUST survive compaction
+        // or every knob silently fails to affect the image.
+        VisualScene scene = Scene(
+            Layer("off", VisualSourceKind.None, reference: ""),          // slot 0, skipped
+            Layer("vu", VisualSourceKind.Generator, reference: "core/vu-meter")); // slot 1
+
+        ResolvedLayer generator = Assert.Single(SceneComposition.RenderableLayers(scene));
+
+        Assert.Equal("vu", generator.Name);
+        Assert.Equal(1, generator.Slot); // its scene slot, NOT its compacted position (0)
+    }
+
+    [Fact]
     public void Resolve_marks_generator_layers_renderable()
     {
         VisualScene scene = Scene(

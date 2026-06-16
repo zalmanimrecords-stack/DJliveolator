@@ -30,7 +30,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         AddonsViewModel addons,
         SettingsViewModel settings,
         GlobalMidiLearnCoordinator midiLearn,
-        ShellStatusViewModel status)
+        ShellStatusViewModel status,
+        SystemVolumeControlViewModel systemVolume)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
@@ -41,9 +42,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(midiLearn);
         ArgumentNullException.ThrowIfNull(status);
+        ArgumentNullException.ThrowIfNull(systemVolume);
 
         Status = status;
         MidiLearn = midiLearn;
+        SystemVolume = systemVolume;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -64,6 +67,9 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
     public ShellStatusViewModel Status { get; }
+
+    /// <summary>The global OS master-volume knob shown in the top bar.</summary>
+    public SystemVolumeControlViewModel SystemVolume { get; }
 
     public GlobalMidiLearnCoordinator MidiLearn { get; }
 

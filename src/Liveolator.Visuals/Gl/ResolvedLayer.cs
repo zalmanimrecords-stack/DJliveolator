@@ -25,4 +25,5 @@ public readonly record struct ResolvedLayer(
     BlendMode Blend,
     double Opacity,
     IReadOnlyList<EffectRef> Effects,
-    bool Renderable);
+    bool Renderable,
+    int Slot);
