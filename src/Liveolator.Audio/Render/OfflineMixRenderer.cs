@@ -3,26 +3,36 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Studio;
 using Liveolator.Core.Studio.Render;
+using Microsoft.Extensions.Logging;
 
 namespace Liveolator.Audio.Render;
 
 /// <summary>
-/// Renders a <see cref="StudioProject"/> arrangement to a mono WAV file offline: decodes each clip
-/// once via <see cref="IAudioDecoder"/>, then walks the output timeline applying the pure
-/// <see cref="MixPlan"/> — per-deck gain, 3-band EQ, and filter (the same <see cref="MixerMath"/>
-/// coefficients the live mixer uses, run through a stateful biquad cascade) — and sums every deck into
-/// the master. Tempo/keylock are out of MVP scope: clips play at native rate (source advances 1:1 with
-/// the timeline). Mono MVP, matching the mono decode seam.
+/// Renders a <see cref="StudioProject"/> arrangement to a mono WAV file offline: decodes each clip at
+/// its warp factor (native rate via <see cref="IAudioDecoder"/> when unwarped; pitch-preserving
+/// time-stretch via <see cref="BassFxRenderDecoder"/> when warped), then walks the output timeline
+/// applying the pure <see cref="MixPlan"/> — per-deck gain, 3-band EQ, filter (the same
+/// <see cref="MixerMath"/> coefficients the live mixer uses, through a stateful biquad cascade) — and
+/// sums every deck into the master. Warp factor is constant per clip (sampled at its start). Mono MVP.
 /// </summary>
 public sealed class OfflineMixRenderer
 {
     // Automation/coefficients are refreshed once per block (~6 ms at 44.1 kHz) — fine for envelopes.
     private const int BlockSize = 256;
+    private const double UnwarpedEpsilon = 1e-4;
 
     private readonly IAudioDecoder _decoder;
+    private readonly BassFxRenderDecoder _stretchDecoder;
 
-    public OfflineMixRenderer(IAudioDecoder decoder)
-        => _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
+    public OfflineMixRenderer(IAudioDecoder decoder, ILogger? logger = null)
+    {
+        _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
+        _stretchDecoder = new BassFxRenderDecoder(logger);
+    }
+
+    // One decoded buffer per (clip path, warp factor): unwarped clips share the native-rate decode,
+    // warped clips get a pitch-preserved, time-stretched buffer at the render rate.
+    private static string SourceKey(string path, double factor) => $"{path}|{factor:F4}";
 
     /// <summary>
     /// Render <paramref name="project"/> to a 16-bit mono WAV at <paramref name="outputPath"/>.
@@ -43,14 +53,19 @@ public sealed class OfflineMixRenderer
         var plan = new MixPlan(project);
         int totalSamples = plan.DurationSeconds > 0 ? (int)Math.Ceiling(plan.DurationSeconds * sampleRate) : 0;
 
-        // Decode every distinct clip source once into a mono buffer at the render rate.
+        // Decode every distinct (clip, warp factor) once into a mono buffer at the render rate. Unwarped
+        // clips use the managed decoder (identical to before); warped clips use BASS_FX (pitch preserved).
         var sources = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
         foreach (StudioClip clip in project.Clips)
         {
-            if (sources.ContainsKey(clip.TrackPath))
+            double factor = plan.WarpFactorFor(clip);
+            string key = SourceKey(clip.TrackPath, factor);
+            if (sources.ContainsKey(key))
                 continue;
-            sources[clip.TrackPath] = await DecodeAllAsync(clip.TrackPath, sampleRate, cancellationToken)
-                .ConfigureAwait(false);
+
+            sources[key] = Math.Abs(factor - 1.0) < UnwarpedEpsilon
+                ? await DecodeAllAsync(clip.TrackPath, sampleRate, cancellationToken).ConfigureAwait(false)
+                : _stretchDecoder.DecodeStretched(clip.TrackPath, sampleRate, (factor - 1.0) * 100.0);
         }
 
         var master = new float[totalSamples];
@@ -67,7 +82,8 @@ public sealed class OfflineMixRenderer
             for (int slot = 0; slot < decks; slot++)
             {
                 DeckMixState state = plan.EvaluateDeck(slot, tBlock);
-                if (!state.HasAudio || state.SourcePath is null || !sources.TryGetValue(state.SourcePath, out float[]? src))
+                if (!state.HasAudio || state.SourcePath is null ||
+                    !sources.TryGetValue(SourceKey(state.SourcePath, state.WarpFactor), out float[]? src))
                     continue;
 
                 low[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, state.Eq, sampleRate));
@@ -75,7 +91,10 @@ public sealed class OfflineMixRenderer
                 high[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.High, state.Eq, sampleRate));
                 filt[slot].SetCoefficients(MixerMath.FilterCoefficients(state.Filter, sampleRate));
 
-                int srcStart = (int)Math.Round(state.SourceSeconds * sampleRate);
+                // The decoded buffer is already time-stretched to the project tempo, so it advances 1:1
+                // with the timeline; the source-in trim maps into it scaled by the warp factor.
+                double bufferSeconds = (state.SourceInSeconds / state.WarpFactor) + (tBlock - state.ClipStartSeconds);
+                int srcStart = (int)Math.Round(bufferSeconds * sampleRate);
                 for (int i = 0; i < blockLen; i++)
                 {
                     int si = srcStart + i;

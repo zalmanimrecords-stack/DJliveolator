@@ -31,8 +31,9 @@ public sealed class MixPlan
     /// <summary>The number of deck lanes to mix (matches the engine's deck count).</summary>
     public int DeckCount => MixerState.DeckCount;
 
-    /// <summary>The render length: the timeline end of the last clip with a known length.</summary>
-    public double DurationSeconds => _project.DurationSeconds;
+    /// <summary>The render length: the latest (warp-adjusted) timeline end of any clip with a known length.</summary>
+    public double DurationSeconds
+        => _project.Clips.Count == 0 ? 0 : _project.Clips.Max(c => WarpedEndSeconds(c) ?? c.TimelineStartSeconds);
 
     /// <summary>
     /// The mix state for <paramref name="slot"/> at <paramref name="timeSeconds"/>: the clip sounding
@@ -50,14 +51,23 @@ public sealed class MixPlan
 
         StudioClip? clip = ActiveClip(slot, timeSeconds);
         if (clip is null)
-            return new DeckMixState(HasAudio: false, SourcePath: null, SourceSeconds: 0, Gain: gain, Eq: eq, Filter: filter);
+            return new DeckMixState(
+                HasAudio: false, SourcePath: null, SourceSeconds: 0,
+                WarpFactor: 1.0, ClipStartSeconds: 0, SourceInSeconds: 0, Gain: gain, Eq: eq, Filter: filter);
 
         double source = clip.SourceIn.TotalSeconds + (timeSeconds - clip.TimelineStartSeconds);
-        return new DeckMixState(HasAudio: true, SourcePath: clip.TrackPath, SourceSeconds: source, Gain: gain, Eq: eq, Filter: filter);
+        return new DeckMixState(
+            HasAudio: true, SourcePath: clip.TrackPath, SourceSeconds: source,
+            WarpFactor: WarpFactorFor(clip), ClipStartSeconds: clip.TimelineStartSeconds,
+            SourceInSeconds: clip.SourceIn.TotalSeconds, Gain: gain, Eq: eq, Filter: filter);
     }
 
-    // The clip sounding on a deck at t: covers [start, end) when the length is known, or [start, ∞) when
-    // open-ended. With overlapping clips on one deck (unusual), the latest-started one wins.
+    /// <summary>The constant warp factor for a clip (sampled at its start — the MVP constant-per-clip model).</summary>
+    public double WarpFactorFor(StudioClip clip)
+        => WarpMath.WarpFactorAt(clip, _project.EffectiveTempo, _project.Bpm, clip.TimelineStartSeconds);
+
+    // The clip sounding on a deck at t: covers [start, warped-end) when the length is known, or [start, ∞)
+    // when open-ended. With overlapping clips on one deck (unusual), the latest-started one wins.
     private StudioClip? ActiveClip(int slot, double timeSeconds)
     {
         StudioClip? best = null;
@@ -65,7 +75,7 @@ public sealed class MixPlan
         {
             if (clip.DeckSlot != slot || clip.TimelineStartSeconds > timeSeconds)
                 continue;
-            double end = clip.TimelineEndSeconds ?? double.PositiveInfinity;
+            double end = WarpedEndSeconds(clip) ?? double.PositiveInfinity;
             if (timeSeconds >= end)
                 continue;
             if (best is null || clip.TimelineStartSeconds > best.TimelineStartSeconds)
@@ -74,6 +84,12 @@ public sealed class MixPlan
 
         return best;
     }
+
+    // Timeline end of a clip after warp: start + sourceDuration/factor (null when the source length is open).
+    private double? WarpedEndSeconds(StudioClip clip)
+        => clip.SourceDuration is { } d
+            ? clip.TimelineStartSeconds + WarpMath.WarpedTimelineSeconds(d.TotalSeconds, WarpFactorFor(clip))
+            : null;
 
     private double LaneValue(int slot, AutomationTarget target, double timeSeconds, double fallback)
         => _lanes.TryGetValue((slot, target), out AutomationLane? lane) ? lane.ValueAt(timeSeconds) : fallback;

@@ -76,6 +76,25 @@ public class MixPlanTests
     }
 
     [Fact]
+    public void EvaluateDeck_WarpedClip_ReportsFactorAndShortenedActiveWindow()
+    {
+        // 120-BPM source, 60s long, warped to a 140-BPM project → plays 140/120 faster, ends sooner.
+        var clip = new StudioClip(0, "/m/d0.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(60),
+            SourceBpm: 120, WarpEnabled: true);
+        var plan = new MixPlan(new StudioProject("p", 140, new[] { clip }, Array.Empty<AutomationLane>()));
+
+        DeckMixState mid = plan.EvaluateDeck(0, 10);
+        Assert.True(mid.HasAudio);
+        Assert.Equal(140.0 / 120.0, mid.WarpFactor, Tol);
+        Assert.Equal(0, mid.ClipStartSeconds, Tol);
+        Assert.Equal(0, mid.SourceInSeconds, Tol);
+
+        // Warped end = 60 / (140/120) ≈ 51.43s; at 55s the clip is over.
+        Assert.False(plan.EvaluateDeck(0, 55).HasAudio);
+        Assert.Equal(60.0 / (140.0 / 120.0), plan.DurationSeconds, 1e-6);
+    }
+
+    [Fact]
     public void EvaluateDeck_OverlappingClips_LatestStartedWins()
     {
         var p = new StudioProject("p", 120, new[]

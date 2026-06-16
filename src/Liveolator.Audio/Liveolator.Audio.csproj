@@ -19,6 +19,9 @@
          the Core BiquadCoefficients (BassMixerChannel), so BASS_FX is not needed. The native bassmix
          library is fetched per-platform alongside core bass (see scripts/fetch-bass). -->
     <PackageReference Include="ManagedBass.Mix" Version="3.1.1" />
+    <!-- BASS_FX (SoundTouch): pitch-preserving time-stretch for STUDIO warp — used by the offline
+         renderer (BassFxRenderDecoder) and, later, live keylock. Native bass_fx fetched per-platform. -->
+    <PackageReference Include="ManagedBass.Fx" Version="3.1.1" />
   </ItemGroup>
 
   <ItemGroup>
