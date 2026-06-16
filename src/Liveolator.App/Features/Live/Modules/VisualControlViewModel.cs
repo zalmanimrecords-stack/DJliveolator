@@ -304,6 +304,17 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
                 .DistinctBy(option => option.Source.Reference, StringComparer.OrdinalIgnoreCase));
         }
 
+        try
+        {
+            int generatorCount = (_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
+                .Count(e => e.Role == VisualEffectRole.Generator);
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "lv-picker-diag.txt"),
+                $"picker built {options.Count} options (registry generators={generatorCount}): " +
+                string.Join(" | ", options.Select(o => o.Title)) + "\n");
+        }
+        catch { /* diagnostic only */ }
+
         VisualScene? scene = _visualEngine?.ActiveBank.Scene(0);
         foreach (VisualChannelViewModel channel in Channels)
         {
