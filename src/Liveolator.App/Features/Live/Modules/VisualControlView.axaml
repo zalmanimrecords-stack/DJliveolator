@@ -76,8 +76,52 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <Button Grid.Row="2" Classes="accent" Content="SHOW VISUAL SCREEN"
-              Command="{Binding ShowVisualsCommand}" />
+      <StackPanel Grid.Row="2" Spacing="10">
+
+        <!-- Quantized scene transitions on the shared beat clock (doc 08): NOW, on the next beat,
+             or on the next bar — the same quantum the audio uses. -->
+        <StackPanel Spacing="6">
+          <TextBlock Classes="mono faint" FontSize="9" Text="TRANSITION" />
+          <Grid ColumnDefinitions="*,*,*">
+            <Button Grid.Column="0" Classes="spartan" Content="NOW"
+                    Command="{Binding TransitionNowCommand}" Margin="0,0,6,0" />
+            <Button Grid.Column="1" Classes="spartan" Content="+BEAT"
+                    Command="{Binding TransitionBeatCommand}" Margin="0,0,6,0" />
+            <Button Grid.Column="2" Classes="spartan" Content="+BAR"
+                    Command="{Binding TransitionBarCommand}" />
+          </Grid>
+        </StackPanel>
+
+        <!-- Show/hide the built-in VU-meter layer; hidden unless the active scene ships one. -->
+        <Button Classes="key" Classes.on="{Binding IsVuMeterShown}"
+                Content="{Binding VuMeterButtonText}" Command="{Binding ToggleVuMeterCommand}"
+                IsVisible="{Binding CanToggleVuMeter}" HorizontalAlignment="Stretch" />
+
+        <!-- Installed visual add-ons: enabling/disabling changes the available visual vocabulary. -->
+        <StackPanel Spacing="6" IsVisible="{Binding HasAddons}">
+          <TextBlock Classes="mono faint" FontSize="9" Text="ADD-ONS" />
+          <Grid ColumnDefinitions="*,Auto">
+            <ComboBox Grid.Column="0" ItemsSource="{Binding Addons}"
+                      SelectedItem="{Binding SelectedAddon}" MinWidth="120">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="m:VisualAddonViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding PackageId}" />
+                    <TextBlock Classes="mono faint" Text="{Binding State}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Column="1" Classes="spartan" Content="TOGGLE" Margin="8,0,0,0"
+                    Command="{Binding ToggleAddonCommand}" />
+          </Grid>
+        </StackPanel>
+
+        <Button Classes="accent" Content="SHOW VISUAL SCREEN"
+                Command="{Binding ShowVisualsCommand}" />
+
+        <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Status}" />
+      </StackPanel>
     </Grid>
   </Border>
 </UserControl>
