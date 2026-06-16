@@ -166,12 +166,6 @@ public static class ServiceConfig
         int frktlCount = frktlPresetLoader.Load();
         frktlLog.LogInformation(
             "Loaded {Count} FRKTL folder preset(s) from {Folder}.", frktlCount, frktlPresetLoader.Folder);
-        frktlLog.LogWarning(
-            "DIAG effect-registry generators: [{Effects}] | preset-registry: [{Presets}]",
-            string.Join(", ", visualEffects.Effects
-                .Where(e => e.Role == VisualEffectRole.Generator)
-                .Select(e => e.EffectId)),
-            string.Join(", ", generatorPresets.Presets.Select(p => p.PresetId)));
         services.AddSingleton(frktlPresetLoader);
         // The same loader, exposed as the runtime reload seam so the LIVE surface can re-scan the folder
         // (e.g. after an MCP-authored preset) without an app restart.

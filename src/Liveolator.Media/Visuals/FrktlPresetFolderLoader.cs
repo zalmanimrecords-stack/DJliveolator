@@ -53,6 +53,7 @@ public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
         var descriptors = new List<VisualEffectDescriptor>();
         var presets = new List<GeneratorPreset>();
         var seenEffectIds = new HashSet<string>(StringComparer.Ordinal);
+        int filesFound = 0;
 
         try
         {
@@ -61,6 +62,7 @@ public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
                          .EnumerateFiles(Folder, "*.frktl", SearchOption.TopDirectoryOnly)
                          .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
+                filesFound++;
                 TryLoadOne(path, descriptors, presets, seenEffectIds);
             }
         }
@@ -72,6 +74,14 @@ public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
         // Replace as a unit so a reload reflects added/removed files (and clears stale registrations).
         _effects.ReplacePackage(PackageId, descriptors);
         _presets.ReplacePackage(PackageId, presets);
+
+        // Silent-empty guard (global standards #26): files exist on disk but none registered, so the LIVE
+        // picker shows only the built-ins with no clue why. Surface a summary warning (the per-file reasons,
+        // if any, were already reported) so this shows up in the log instead of needing a forensic dig.
+        if (filesFound > 0 && presets.Count == 0)
+            _onWarning?.Invoke(
+                $"FRKTL preset folder '{Folder}': found {filesFound} file(s) but registered 0 preset(s).");
+
         return presets.Count;
     }
 

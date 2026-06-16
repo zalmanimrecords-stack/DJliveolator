@@ -100,6 +100,39 @@ public sealed class FrktlPresetFolderLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_WarnsWhenFilesPresentButNoneRegister()
+    {
+        // The silent-empty case: .frktl files exist on disk but the scan registers zero presets, so the
+        // picker shows only the built-ins with no clue why. The loader must surface a summary warning
+        // (global standards #26) in addition to the per-file reasons.
+        WriteFile("bad.frktl", """{ "name": "Bad", "parameters": [], "shader": "not a shader" }""");
+        WriteFile("broken.frktl", "{ this is not json");
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        var warnings = new System.Collections.Generic.List<string>();
+
+        int count = new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        Assert.Equal(0, count);
+        Assert.Contains(warnings, w => w.Contains("registered 0 preset", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Load_DoesNotWarnEmpty_WhenAtLeastOnePresetRegisters()
+    {
+        WriteFile("good.frktl", ValidJson("Good"));
+        WriteFile("bad.frktl", """{ "name": "Bad", "parameters": [], "shader": "not a shader" }""");
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        var warnings = new System.Collections.Generic.List<string>();
+
+        new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        // Only the per-file warning for the bad file; no "registered 0" summary when something loaded.
+        Assert.DoesNotContain(warnings, w => w.Contains("registered 0 preset", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Load_MissingFolder_ReturnsZero_AndDoesNotThrow()
     {
         string missing = Path.Combine(_folder, "does-not-exist-yet");
