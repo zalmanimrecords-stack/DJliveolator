@@ -33,16 +33,24 @@ public partial class StudioView : UserControl
     protected override async void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
+        if (_initialized)
+            return;
+        _initialized = true;
 
-        // Wire the lane area as a drop target once the template is realized.
+        // Lane area = drop target for library tracks.
         DragDrop.SetAllowDrop(LanesItems, true);
         LanesItems.AddHandler(DragDrop.DragOverEvent, OnLaneDragOver);
         LanesItems.AddHandler(DragDrop.DropEvent, OnLaneDrop);
 
-        if (_initialized || DataContext is not StudioViewModel vm)
-            return;
-        _initialized = true;
-        await vm.InitializeAsync();
+        // Library = drag source. Tunnel + handledEventsToo so we still see the press/move even though the
+        // ListBox marks PointerPressed handled for its own selection (otherwise the drag never starts).
+        LibraryList.AddHandler(InputElement.PointerPressedEvent, OnLibraryPointerPressed,
+            RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        LibraryList.AddHandler(InputElement.PointerMovedEvent, OnLibraryPointerMoved,
+            RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+
+        if (DataContext is StudioViewModel vm)
+            await vm.InitializeAsync();
     }
 
     // --- clip drag (move in time) ---

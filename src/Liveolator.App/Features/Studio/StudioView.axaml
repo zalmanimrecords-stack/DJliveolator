@@ -137,10 +137,8 @@
             <TextBlock DockPanel.Dock="Top" Classes="section" Text="LIBRARY · drag a track onto a lane" Margin="0,0,0,6" />
             <TextBox DockPanel.Dock="Top" Classes="spartan" Margin="0,0,0,6"
                      Watermark="Search title, artist, key…" Text="{Binding LibrarySearch}" />
-            <ListBox Classes="rows" ItemsSource="{Binding Library}"
-                     SelectedItem="{Binding SelectedLibraryTrack}"
-                     PointerPressed="OnLibraryPointerPressed"
-                     PointerMoved="OnLibraryPointerMoved">
+            <ListBox x:Name="LibraryList" Classes="rows" ItemsSource="{Binding Library}"
+                     SelectedItem="{Binding SelectedLibraryTrack}">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="lib:TrackRowViewModel">
                   <Grid ColumnDefinitions="*,46,40" VerticalAlignment="Center">
