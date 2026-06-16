@@ -49,8 +49,37 @@ public partial class StudioView : UserControl
         LibraryList.AddHandler(InputElement.PointerMovedEvent, OnLibraryPointerMoved,
             RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
 
+        // Wheel / trackpad scroll over the timeline zooms (Tunnel so it pre-empts the ScrollViewer's pan).
+        LanesScroll.AddHandler(InputElement.PointerWheelChangedEvent, OnTimelineWheel, RoutingStrategies.Tunnel);
+
         if (DataContext is StudioViewModel vm)
             await vm.InitializeAsync();
+    }
+
+    private const double MinZoom = 2;
+    private const double MaxZoom = 40;
+
+    // Zoom the timeline around the cursor: change pixels-per-second and shift the horizontal scroll so the
+    // time under the pointer stays put (standard DAW wheel-zoom). Works with a mouse wheel or trackpad scroll.
+    private void OnTimelineWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (DataContext is not StudioViewModel vm)
+            return;
+
+        double oldPps = vm.PixelsPerSecond;
+        double factor = e.Delta.Y >= 0 ? 1.2 : 1.0 / 1.2;
+        double newPps = System.Math.Clamp(oldPps * factor, MinZoom, MaxZoom);
+        e.Handled = true;
+        if (System.Math.Abs(newPps - oldPps) < 1e-9)
+            return;
+
+        double timeAtCursor = System.Math.Max(0, e.GetPosition(LanesItems).X - StudioViewModel.LaneGutterPx) / oldPps;
+        double viewportCursorX = e.GetPosition(LanesScroll).X;
+
+        vm.PixelsPerSecond = newPps;
+
+        double newContentX = StudioViewModel.LaneGutterPx + (timeAtCursor * newPps);
+        LanesScroll.Offset = new Vector(System.Math.Max(0, newContentX - viewportCursorX), LanesScroll.Offset.Y);
     }
 
     // --- clip drag (move in time) ---

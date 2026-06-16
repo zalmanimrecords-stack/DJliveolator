@@ -19,6 +19,7 @@ using Liveolator.Core.Persistence;
 using Liveolator.Core.Studio;
 using Liveolator.Core.Waveform;
 using Avalonia.Threading;
+using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Studio;
@@ -43,6 +44,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly IWaveformProvider? _waveforms;
     private readonly IAudioDecoder? _decoder;
     private readonly TrackContextActions? _contextActions;
+    private readonly ILogger? _log;
     private readonly string _renderDirectory;
     private readonly Dictionary<string, MusicTrack> _byPath = new(StringComparer.OrdinalIgnoreCase);
 
@@ -75,7 +77,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         IWaveformProvider? waveforms = null,
         IAudioDecoder? decoder = null,
         TrackContextActions? contextActions = null,
-        string? renderDirectory = null)
+        string? renderDirectory = null,
+        ILoggerFactory? loggerFactory = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -84,6 +87,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         _waveforms = waveforms;
         _decoder = decoder;
         _contextActions = contextActions;
+        _log = loggerFactory?.CreateLogger<StudioViewModel>();
         _renderDirectory = renderDirectory
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator", "renders");
 
@@ -448,19 +452,22 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             return;
         try
         {
-            WaveformOverview overview = await Task.Run(
-                () => _waveforms.GetOverviewAsync(clip.TrackPath, WaveformBuckets)).ConfigureAwait(false);
-            RxApp.MainThreadScheduler.Schedule(() =>
-            {
-                clip.Peaks = overview.IsEmpty ? null : overview.Peaks;
-                clip.KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
-                clip.MidPeaks = overview.IsEmpty ? null : overview.MidPeaks;
-                clip.HighPeaks = overview.IsEmpty ? null : overview.HighPeaks;
-            });
+            // No ConfigureAwait(false): resume on the UI thread (like DeckViewModel) so the peak
+            // properties update the bound WaveformStrip directly.
+            WaveformOverview overview = await Task.Run(() => _waveforms.GetOverviewAsync(clip.TrackPath, WaveformBuckets));
+
+            clip.Peaks = overview.IsEmpty ? null : overview.Peaks;
+            clip.KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
+            clip.MidPeaks = overview.IsEmpty ? null : overview.MidPeaks;
+            clip.HighPeaks = overview.IsEmpty ? null : overview.HighPeaks;
+
+            if (overview.IsEmpty)
+                _log?.LogWarning("STUDIO: waveform overview empty for {Path} (undecodable / unreachable file?).", clip.TrackPath);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // A single clip failing to decode must not break the timeline.
+            // A single clip failing to decode must not break the timeline — but surface it (no silent failure).
+            _log?.LogWarning(ex, "STUDIO: waveform load failed for {Path}.", clip.TrackPath);
         }
     }
 

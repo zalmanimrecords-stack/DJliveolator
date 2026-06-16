@@ -52,7 +52,8 @@
                        Text="· drag a track from the library onto a lane · drag a clip to move it · pick a control per lane to automate" />
           </StackPanel>
 
-          <ScrollViewer Height="268" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+          <ScrollViewer x:Name="LanesScroll" Height="268"
+                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <Grid>
               <ItemsControl x:Name="LanesItems" ItemsSource="{Binding Lanes}">
                 <ItemsControl.ItemTemplate>
