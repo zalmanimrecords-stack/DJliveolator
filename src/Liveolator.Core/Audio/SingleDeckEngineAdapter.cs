@@ -92,6 +92,11 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void SetQuantize(int slot, bool enabled) => EnsureSlot(slot);
 
+    // The legacy single-deck engine has no tempo/pitch surface, so key-lock is always off and a no-op.
+    public bool IsKeyLockEnabled(int slot) { EnsureSlot(slot); return false; }
+
+    public void SetKeyLock(int slot, bool enabled) => EnsureSlot(slot);
+
     // The legacy single-deck engine has no hot-cue memory; report zero slots so any index is rejected.
     public int HotCueCount => 0;
 

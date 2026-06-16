@@ -100,6 +100,7 @@ public class DeckActionHandlerTests
         private readonly bool[] _playing;
         private readonly bool[] _sync;
         private readonly bool[] _quantize;
+        private readonly bool[] _keyLock;
         private readonly double[] _position;
         private readonly double[] _pitch;
         private readonly double[] _baseBpm;
@@ -124,6 +125,7 @@ public class DeckActionHandlerTests
             _playing = new bool[deckCount];
             _sync = new bool[deckCount];
             _quantize = new bool[deckCount];
+            _keyLock = new bool[deckCount];
             _position = new double[deckCount];
             _pitch = new double[deckCount];
             _baseBpm = new double[deckCount];
@@ -210,6 +212,9 @@ public class DeckActionHandlerTests
 
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
         public void SetQuantize(int slot, bool enabled) => _quantize[slot] = enabled;
+
+        public bool IsKeyLockEnabled(int slot) => _keyLock[slot];
+        public void SetKeyLock(int slot, bool enabled) => _keyLock[slot] = enabled;
 
         public int HotCueCount => 8;
         public List<(int Slot, int Index)> HotCues { get; } = new();
@@ -308,6 +313,7 @@ public class DeckActionHandlerTests
         Assert.Contains(PerformanceActionKind.DeckSyncOnce, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckSyncToggle, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckQuantizeToggle, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckKeyLockToggle, handler.HandledKinds);
     }
 
     [Fact]
@@ -423,6 +429,22 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
         Assert.False(engine.IsSyncLocked(1));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
+    }
+
+    [Fact]
+    public void KeyLockToggle_LatchesAndUnlatchesTheRequestedSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckKeyLockToggle, Slot: 1));
+        Assert.True(engine.IsKeyLockEnabled(1));
+        Assert.False(engine.IsKeyLockEnabled(0)); // other deck untouched
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, 1).IsActive);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckKeyLockToggle, Slot: 1));
+        Assert.False(engine.IsKeyLockEnabled(1));
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, 1).IsActive);
     }
 
     [Fact]

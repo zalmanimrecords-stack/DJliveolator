@@ -109,4 +109,11 @@ public enum PerformanceActionKind
     /// seam (<c>ISystemVolumeController</c>); a no-op on hosts where the OS volume cannot be controlled.
     /// </summary>
     SystemMasterVolume,
+
+    /// <summary>
+    /// Toggle key-lock (master tempo) for a deck (Slot = A/B). When on, tempo changes preserve the
+    /// track's musical pitch (time-stretch); when off, pitch follows tempo like a vinyl fader (the
+    /// default). Per-deck state that persists across track loads (doc 11; roadmap N4 / H1).
+    /// </summary>
+    DeckKeyLockToggle,
 }

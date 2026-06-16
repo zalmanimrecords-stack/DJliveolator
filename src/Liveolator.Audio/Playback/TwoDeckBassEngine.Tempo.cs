@@ -33,6 +33,25 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public bool IsKeyLockEnabled(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _slots[slot].KeyLocked;
+    }
+
+    public void SetKeyLock(int slot, bool enabled)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            // Phase 1: per-deck state only (persists across loads via DeckSlot). The audible tempo/pitch
+            // decoupling — wrap the deck stream in BASS_FX tempo and route the rate through the tempo
+            // attribute instead of frequency — is the native Phase 3 increment, gated on hardware
+            // verification (A1); see docs/18 and the SetDeckRate vinyl-rate note in BassMixerBackend.
+            _slots[slot].KeyLocked = enabled;
+        }
+    }
+
     public double DeckBaseBpm(int slot)
     {
         ValidateSlot(slot);

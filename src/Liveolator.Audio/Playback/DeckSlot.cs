@@ -41,6 +41,14 @@ internal sealed class DeckSlot
     /// <summary>Quantize armed for this deck. Persists across track loads.</summary>
     public bool Quantize;
 
+    /// <summary>
+    /// Key-lock (master tempo) armed for this deck: tempo changes preserve the track's musical pitch.
+    /// Persists across track loads. Phase 1 records intent only; the audible time-stretch (wrapping the
+    /// deck stream in BASS_FX and switching the rate path from frequency to the tempo attribute) is the
+    /// native Phase 3 piece, gated on hardware verification (docs/18, roadmap N4 / H1).
+    /// </summary>
+    public bool KeyLocked;
+
     /// <summary>Beat-lock indicator state (Off/Active/Locked/Drifting), driven by the correction loop.</summary>
     public SyncLockState SyncState;
 

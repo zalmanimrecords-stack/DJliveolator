@@ -428,6 +428,21 @@ public class TwoDeckBassEngineTests
         Assert.False(engine.IsQuantizeEnabled(1));
     }
 
+    [Fact]
+    public void KeyLock_IsStoredPerSlot_AndPersistsAcrossLoad()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetKeyLock(0, true);
+
+        Assert.True(engine.IsKeyLockEnabled(0));
+        Assert.False(engine.IsKeyLockEnabled(1)); // other deck untouched
+
+        engine.Load(0, @"C:\b.wav"); // key-lock is per-deck transport state, not per-track
+
+        Assert.True(engine.IsKeyLockEnabled(0));
+    }
+
     // --- Sync Lock: tempo match (beatmatch by BPM, doc 11) ---
 
     [Fact]

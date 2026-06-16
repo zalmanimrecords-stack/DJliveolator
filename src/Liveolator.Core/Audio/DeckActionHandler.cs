@@ -31,6 +31,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckSyncToggle,
         PerformanceActionKind.DeckQuantizeToggle,
+        PerformanceActionKind.DeckKeyLockToggle,
         PerformanceActionKind.DeckHotCue,
         PerformanceActionKind.DeckSetLoop,
         PerformanceActionKind.DeckSetFirstBeat,
@@ -141,6 +142,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckQuantizeToggle:
                 ToggleQuantize(slot);
                 break;
+            case PerformanceActionKind.DeckKeyLockToggle:
+                ToggleKeyLock(slot);
+                break;
             case PerformanceActionKind.DeckHotCue:
                 TriggerHotCue(slot, action);
                 break;
@@ -181,6 +185,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         bool next = !_engine.IsQuantizeEnabled(slot);
         _engine.SetQuantize(slot, next);
         RaiseFeedback(PerformanceActionKind.DeckQuantizeToggle, slot, ActiveFeedback(next));
+    }
+
+    private void ToggleKeyLock(int slot)
+    {
+        bool next = !_engine.IsKeyLockEnabled(slot);
+        _engine.SetKeyLock(slot, next);
+        RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, slot, ActiveFeedback(next));
     }
 
     private void ToggleSync(int slot)
@@ -245,6 +256,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckSyncOnce => ActiveFeedback(false),
             PerformanceActionKind.DeckSyncToggle => SyncFeedback(slot),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
+            PerformanceActionKind.DeckKeyLockToggle => ActiveFeedback(_engine.IsKeyLockEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),
             _ => ActionFeedbackState.Unavailable,
