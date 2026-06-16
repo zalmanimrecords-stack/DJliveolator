@@ -1,17 +1,15 @@
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
-using Liveolator.App.Shell;
 using Liveolator.Core.Studio;
 
 namespace Liveolator.App.Features.Studio;
 
 /// <summary>
 /// An editable automation curve for one (deck, target) pair: a time-ordered set of
-/// <see cref="AutomationPointViewModel"/>s the curve editor draws and mutates. Keeps its points
-/// sorted by time; <see cref="ToLane"/> projects to the immutable Core <see cref="AutomationLane"/>.
+/// <see cref="AutomationPointViewModel"/>s (0..1) the curve editor draws and mutates.
+/// <see cref="ToLane"/> projects to the immutable Core <see cref="AutomationLane"/>.
 /// </summary>
-public sealed class AutomationLaneViewModel : ViewModelBase
+public sealed class AutomationLaneViewModel : EditableCurveBase
 {
     public AutomationLaneViewModel(AutomationTarget target, int deckSlot, IEnumerable<AutomationKeyframe>? keyframes = null)
     {
@@ -24,34 +22,6 @@ public sealed class AutomationLaneViewModel : ViewModelBase
 
     public AutomationTarget Target { get; }
     public int DeckSlot { get; }
-    public ObservableCollection<AutomationPointViewModel> Points { get; } = new();
-
-    /// <summary>Add a keyframe, keeping the collection time-ordered, and return it.</summary>
-    public AutomationPointViewModel AddPoint(double timeSeconds, double value)
-    {
-        var point = new AutomationPointViewModel(timeSeconds, value);
-        int index = 0;
-        while (index < Points.Count && Points[index].TimeSeconds <= point.TimeSeconds)
-            index++;
-        Points.Insert(index, point);
-        return point;
-    }
-
-    public void RemovePoint(AutomationPointViewModel point) => Points.Remove(point);
-
-    /// <summary>
-    /// Set the curve value at <paramref name="timeSeconds"/>, replacing any existing keyframe within
-    /// <paramref name="mergeToleranceSeconds"/> — the per-sample primitive of the Ableton-style freehand
-    /// "draw" stroke, so dragging paints one point per grid step rather than a pile-up.
-    /// </summary>
-    public AutomationPointViewModel SetPointAt(double timeSeconds, double value, double mergeToleranceSeconds)
-    {
-        double t = System.Math.Max(0, timeSeconds);
-        for (int i = Points.Count - 1; i >= 0; i--)
-            if (System.Math.Abs(Points[i].TimeSeconds - t) <= mergeToleranceSeconds)
-                Points.RemoveAt(i);
-        return AddPoint(t, value);
-    }
 
     /// <summary>Project to the immutable Core lane (keyframes sorted by time).</summary>
     public AutomationLane ToLane() => new(

@@ -22,8 +22,8 @@ public sealed class AutomationCurveEditor : Control
     private const double HitTolerancePx = 9;
     private const double DotRadius = 4;
 
-    public static readonly StyledProperty<AutomationLaneViewModel?> LaneProperty =
-        AvaloniaProperty.Register<AutomationCurveEditor, AutomationLaneViewModel?>(nameof(Lane));
+    public static readonly StyledProperty<IEditableCurve?> LaneProperty =
+        AvaloniaProperty.Register<AutomationCurveEditor, IEditableCurve?>(nameof(Lane));
 
     public static readonly StyledProperty<double> PixelsPerSecondProperty =
         AvaloniaProperty.Register<AutomationCurveEditor, double>(nameof(PixelsPerSecond), 8.0);
@@ -58,7 +58,7 @@ public sealed class AutomationCurveEditor : Control
         Cursor = new Cursor(StandardCursorType.Cross);
     }
 
-    public AutomationLaneViewModel? Lane { get => GetValue(LaneProperty); set => SetValue(LaneProperty, value); }
+    public IEditableCurve? Lane { get => GetValue(LaneProperty); set => SetValue(LaneProperty, value); }
     public double PixelsPerSecond { get => GetValue(PixelsPerSecondProperty); set => SetValue(PixelsPerSecondProperty, value); }
     public bool DrawMode { get => GetValue(DrawModeProperty); set => SetValue(DrawModeProperty, value); }
     public IBrush LineBrush { get => GetValue(LineBrushProperty); set => SetValue(LineBrushProperty, value); }
@@ -69,13 +69,13 @@ public sealed class AutomationCurveEditor : Control
         base.OnPropertyChanged(change);
         if (change.Property == LaneProperty)
         {
-            Unsubscribe(change.GetOldValue<AutomationLaneViewModel?>());
-            Subscribe(change.GetNewValue<AutomationLaneViewModel?>());
+            Unsubscribe(change.GetOldValue<IEditableCurve?>());
+            Subscribe(change.GetNewValue<IEditableCurve?>());
             InvalidateVisual();
         }
     }
 
-    private void Subscribe(AutomationLaneViewModel? lane)
+    private void Subscribe(IEditableCurve? lane)
     {
         if (lane is null)
             return;
@@ -84,7 +84,7 @@ public sealed class AutomationCurveEditor : Control
             p.PropertyChanged += OnPointChanged;
     }
 
-    private void Unsubscribe(AutomationLaneViewModel? lane)
+    private void Unsubscribe(IEditableCurve? lane)
     {
         if (lane is null)
             return;
@@ -216,7 +216,7 @@ public sealed class AutomationCurveEditor : Control
 
     // Paint one keyframe at the pointer for a freehand stroke, replacing any within half a step so the
     // stroke leaves ~one point per DrawStepPx of travel.
-    private void Paint(AutomationLaneViewModel lane, Point pos)
+    private void Paint(IEditableCurve lane, Point pos)
     {
         double time = TimelineMath.SecondsFromX(pos.X, PixelsPerSecond);
         double value = AutomationMath.ValueFromY(pos.Y, Bounds.Height);
@@ -224,7 +224,7 @@ public sealed class AutomationCurveEditor : Control
         lane.SetPointAt(time, value, tolerance);
     }
 
-    private int NearestIndex(AutomationLaneViewModel lane, Point pos)
+    private int NearestIndex(IEditableCurve lane, Point pos)
     {
         var pts = new (double Time, double Value)[lane.Points.Count];
         for (int i = 0; i < pts.Length; i++)
