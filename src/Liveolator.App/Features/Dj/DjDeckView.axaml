@@ -52,7 +52,8 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="m:HotCuePadViewModel">
-                <Button Classes="key" Classes.on="{Binding IsSet}" Height="34"
+                <!-- The pad's 1-based Label is rendered as content so a DJ can read which cue each pad is. -->
+                <Button Classes="key" Classes.on="{Binding IsSet}" Height="34" Content="{Binding Label}"
                         Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,4" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
@@ -95,6 +96,13 @@
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
                 ToolTip.Tip="Match tempo + phase to the other deck (one-shot)" />
       </UniformGrid>
+
+      <!-- KEY LOCK (master tempo): mirrors the LIVE deck's toggle (commit b4d6872) — hold the musical key
+           constant while the tempo/pitch moves. Binds the same IsKeyLock / KeyLockCommand on DeckViewModel. -->
+      <Button Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
+              Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
 
       <!-- BPM: horizontal fader (0..1 normalised) + nudge buttons for manual beat-sync -->
       <Border Classes="hardware-well" Padding="10,8">

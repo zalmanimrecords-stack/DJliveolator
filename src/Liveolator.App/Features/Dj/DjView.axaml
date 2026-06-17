@@ -21,7 +21,7 @@
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="A" />
-            <Border Grid.Column="1" Height="44" Background="{DynamicResource S2}"
+            <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
                                       MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
@@ -37,7 +37,7 @@
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="B" />
-            <Border Grid.Column="1" Height="44" Background="{DynamicResource S2}"
+            <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
                                       MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
