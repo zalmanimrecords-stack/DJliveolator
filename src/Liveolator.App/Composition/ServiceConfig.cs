@@ -15,6 +15,7 @@ using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
+using Liveolator.Audio.Recording;
 using Liveolator.Audio.Waveform;
 using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
@@ -33,6 +34,7 @@ using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Recording;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
@@ -394,6 +396,21 @@ public static class ServiceConfig
             services.AddSingleton(syncPump);
         }
 
+        // --- Master recording (roadmap X2): capture the post-limiter master to a clean WAV via the
+        // IMasterRecorder seam, without touching playback. The recorder taps the SAME master IAudioSource
+        // the analysis tap reads, so the file matches what the house hears. When realtime audio is absent
+        // the recorder is built with a null master (IsAvailable = false), so the MasterRecordToggle kind is
+        // still owned and the REC button simply greys out (headless-safe). Files land under a timestamped
+        // recordings folder beside the app's other state.
+        var masterRecorder = new BassMasterRecorder(
+            deckEngine?.MasterSource,
+            deckEngine?.MasterChannels ?? 2,
+            deckEngine?.MasterSampleRate ?? 48_000,
+            loggerFactory);
+        services.AddSingleton<IMasterRecorder>(masterRecorder);
+        var recordingHandler = new RecordingActionHandler(
+            masterRecorder, new TimestampedRecordingPathProvider(persistenceRoot), loggerFactory);
+
         // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
         // engines through this single instance, so handler state never diverges (doc 12, one source of
         // truth). Beat + mixer + visual handlers are always present (all pure-managed); the deck
@@ -406,6 +423,7 @@ public static class ServiceConfig
             visualHandler,
             playlistHandler,
             audioEffectHandler,
+            recordingHandler,
         };
         if (realtimeUp)
         {

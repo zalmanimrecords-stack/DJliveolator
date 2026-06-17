@@ -30,6 +30,11 @@
         <Button Grid.Column="1" Classes="key" Classes.on="{Binding IsBlackout}" Content="BLACKOUT"
                 Command="{Binding BlackoutCommand}" />
       </Grid>
+
+      <!-- Master recording (X2): records the post-limiter master to a clean WAV -->
+      <Button Classes="key" Classes.on="{Binding IsRecording}" Content="REC"
+              Command="{Binding RecordCommand}" IsEnabled="{Binding IsRecordEnabled}"
+              HorizontalAlignment="Stretch" />
     </StackPanel>
   </Border>
 </UserControl>

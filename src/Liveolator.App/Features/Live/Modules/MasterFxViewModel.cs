@@ -8,10 +8,10 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Live.Modules;
 
 /// <summary>
-/// The Master / FX module (the mock's Master·FX panel): the Strobe and Blackout toggles, driven through
-/// the dispatcher to the <see cref="VisualActionHandler"/> (doc 04/08). Their on/off latch is read back
-/// from dispatcher feedback so the buttons reflect the engine's true state. The Master-gain and Swing
-/// knobs have no action kind yet (doc 18) and are surfaced as disabled controls.
+/// The Master / FX module (the mock's Master·FX panel): the Strobe and Blackout toggles plus the master
+/// REC toggle, driven through the dispatcher to the visual and recording handlers (doc 04/08, roadmap X2).
+/// Each on/off latch is read back from dispatcher feedback so the buttons reflect the engine's true state.
+/// The Master-gain and Swing knobs have no action kind yet (doc 18) and are surfaced as disabled controls.
 /// </summary>
 public sealed class MasterFxViewModel : ViewModelBase, IDisposable
 {
@@ -21,6 +21,8 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private bool _isStrobe;
     private bool _isBlackout;
+    private bool _isRecording;
+    private bool _isRecordEnabled;
     private bool _disposed;
 
     public MasterFxViewModel(IPerformanceActionDispatcher? dispatcher = null)
@@ -30,6 +32,7 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
 
         StrobeCommand = ReactiveCommand.Create(() => Emit(PerformanceActionKind.VisualToggleStrobe), canEmit);
         BlackoutCommand = ReactiveCommand.Create(() => Emit(PerformanceActionKind.VisualBlackout), canEmit);
+        RecordCommand = ReactiveCommand.Create(() => Emit(PerformanceActionKind.MasterRecordToggle), canEmit);
 
         // No MixerMasterGain / swing action kind yet — disabled (null callback).
         Master = new ContinuousControlViewModel("Master", DefaultMaster, onUserChanged: null);
@@ -39,6 +42,9 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
         {
             _isStrobe = _dispatcher.GetFeedback(PerformanceActionKind.VisualToggleStrobe).IsActive;
             _isBlackout = _dispatcher.GetFeedback(PerformanceActionKind.VisualBlackout).IsActive;
+            ActionFeedbackState record = _dispatcher.GetFeedback(PerformanceActionKind.MasterRecordToggle);
+            _isRecording = record.IsActive;
+            _isRecordEnabled = record.IsAvailable;
             _dispatcher.FeedbackChanged += OnFeedback;
         }
     }
@@ -48,6 +54,7 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
 
     public ReactiveCommand<Unit, Unit> StrobeCommand { get; }
     public ReactiveCommand<Unit, Unit> BlackoutCommand { get; }
+    public ReactiveCommand<Unit, Unit> RecordCommand { get; }
     public ContinuousControlViewModel Master { get; }
     public ContinuousControlViewModel Swing { get; }
 
@@ -63,6 +70,20 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
     {
         get => _isBlackout;
         private set => this.RaiseAndSetIfChanged(ref _isBlackout, value);
+    }
+
+    /// <summary>True while the master mix is being recorded (drives the REC button's active state).</summary>
+    public bool IsRecording
+    {
+        get => _isRecording;
+        private set => this.RaiseAndSetIfChanged(ref _isRecording, value);
+    }
+
+    /// <summary>True when a recordable master exists (realtime audio is up); the REC button greys out otherwise.</summary>
+    public bool IsRecordEnabled
+    {
+        get => _isRecordEnabled;
+        private set => this.RaiseAndSetIfChanged(ref _isRecordEnabled, value);
     }
 
     public void Dispose()
@@ -86,6 +107,10 @@ public sealed class MasterFxViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.VisualBlackout:
                     IsBlackout = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MasterRecordToggle:
+                    IsRecording = e.State.IsActive;
+                    IsRecordEnabled = e.State.IsAvailable;
                     break;
             }
         });

@@ -116,4 +116,12 @@ public enum PerformanceActionKind
     /// default). Per-deck state that persists across track loads (doc 11; roadmap N4 / H1).
     /// </summary>
     DeckKeyLockToggle,
+
+    /// <summary>
+    /// Toggle recording of the live master mix to a clean WAV file (roadmap X2). Captures the
+    /// post-limiter master (the exact signal the house hears) without affecting playback. Owned by
+    /// the <c>IMasterRecorder</c> seam; the handler holds the on/off latch and reports it back so a
+    /// REC button / LED reflects the true capture state. Unavailable when no realtime engine is up.
+    /// </summary>
+    MasterRecordToggle,
 }

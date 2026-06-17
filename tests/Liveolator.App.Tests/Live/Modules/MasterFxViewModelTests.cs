@@ -39,6 +39,52 @@ public sealed class MasterFxViewModelTests
     }
 
     [Fact]
+    public async Task RecordCommand_EmitsMasterRecordToggle()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MasterFxViewModel(dispatcher);
+
+        await vm.RecordCommand.Execute().ToTask();
+
+        Assert.Equal(PerformanceActionKind.MasterRecordToggle, Assert.Single(dispatcher.Dispatched).Kind);
+    }
+
+    [Fact]
+    public void Feedback_LatchesRecordingStateAndAvailability()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MasterFxViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MasterRecordToggle, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        Assert.True(vm.IsRecording);
+        Assert.True(vm.IsRecordEnabled);
+    }
+
+    [Fact]
+    public void RecordEnabled_SeededFromInitialFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.MasterRecordToggle, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0));
+
+        var vm = new MasterFxViewModel(dispatcher);
+
+        Assert.True(vm.IsRecordEnabled);
+        Assert.False(vm.IsRecording);
+    }
+
+    [Fact]
+    public void RecordDisabled_WhenRecorderUnavailable()
+    {
+        // FakeDispatcher returns Unavailable feedback by default (no realtime engine).
+        var vm = new MasterFxViewModel(new FakeDispatcher());
+
+        Assert.False(vm.IsRecordEnabled);
+    }
+
+    [Fact]
     public void Feedback_LatchesStrobeAndBlackoutState()
     {
         var dispatcher = new FakeDispatcher();

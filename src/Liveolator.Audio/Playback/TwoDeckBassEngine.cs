@@ -133,6 +133,8 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
 
         MasterMixInfo info = _backend.CreateMaster();
         _sampleRate = info.SampleRate;
+        MasterSampleRate = info.SampleRate;
+        MasterChannels = info.Channels;
         _master = new MasterAudioSource(info.Channels, info.SampleRate);
         // Arm the master tap immediately: the mix runs continuously and the beat clock is fed whenever
         // a deck is playing, with no extra "start the mix" step for the host to coordinate.
@@ -144,6 +146,12 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
 
     /// <summary>The post-crossfader master mix; feed this to a <see cref="MasterMixPlaybackEngine"/>.</summary>
     public IAudioSource MasterSource => _master;
+
+    /// <summary>The master mix sample rate in Hz; the format a master recording (X2) is written at.</summary>
+    public int MasterSampleRate { get; }
+
+    /// <summary>The master mix channel count (stereo); the format a master recording (X2) is written at.</summary>
+    public int MasterChannels { get; }
 
     public int DeckCount => Decks;
 
