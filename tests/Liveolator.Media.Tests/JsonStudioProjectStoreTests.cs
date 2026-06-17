@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Liveolator.Core.Studio;
 using Xunit;
 
@@ -5,8 +7,16 @@ namespace Liveolator.Media.Tests;
 
 public class JsonStudioProjectStoreTests
 {
-    private static string FileFor(JsonStudioProjectStore store, string cleanName)
-        => Path.Combine(store.Directory, cleanName + ".json");
+    // Mirror the store's collision-proof <sanitized-prefix>.<8 hex of SHA-256(name)>.json scheme so
+    // tests address the exact file the store writes (the hash suffix is what fixes the overwrite bug).
+    private static string FileFor(JsonStudioProjectStore store, string name)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
+        var suffix = new StringBuilder(8);
+        for (int i = 0; i < 4; i++)
+            suffix.Append(hash[i].ToString("x2"));
+        return Path.Combine(store.Directory, $"{name}.{suffix}.json");
+    }
 
     private static StudioProject SampleProject() => new("Live set", 126, new[]
     {
@@ -159,6 +169,88 @@ public class JsonStudioProjectStoreTests
 
         Assert.Null(await store.LoadAsync("Old"));
         Assert.NotNull(warning);
+    }
+
+    [Fact]
+    public async Task Save_CollisionProneNames_WriteDistinctFiles_AndBothLoadIntact()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+
+        // "My Set: 1" and "My Set_ 1" both sanitize to "My Set_ 1" -> a silent overwrite under the old
+        // <sanitized-name>.json layout. They must now land in two distinct files.
+        await store.SaveAsync(new StudioProject("My Set: 1", 120, Array.Empty<StudioClip>(), Array.Empty<AutomationLane>()));
+        await store.SaveAsync(new StudioProject("My Set_ 1", 130, Array.Empty<StudioClip>(), Array.Empty<AutomationLane>()));
+
+        Assert.Equal(2, System.IO.Directory.GetFiles(store.Directory, "*.json").Length);
+
+        StudioProject? first = await store.LoadAsync("My Set: 1");
+        StudioProject? second = await store.LoadAsync("My Set_ 1");
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal("My Set: 1", first!.Name);
+        Assert.Equal(120, first.Bpm);
+        Assert.Equal("My Set_ 1", second!.Name);
+        Assert.Equal(130, second.Bpm);
+
+        Assert.Equal(new[] { "My Set: 1", "My Set_ 1" }, await store.ListAsync());
+    }
+
+    [Fact]
+    public async Task Load_LegacySingleFileLayout_StillLoadsByDisplayName()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+        System.IO.Directory.CreateDirectory(store.Directory);
+
+        // A file written by the old store: <sanitized-name>.json with no hash disambiguator.
+        string legacyPath = Path.Combine(store.Directory, "Legacy Set.json");
+        await File.WriteAllTextAsync(legacyPath,
+            "{\"Version\":1,\"Name\":\"Legacy Set\",\"Bpm\":118,\"Clips\":[],\"Automation\":[]}");
+
+        StudioProject? loaded = await store.LoadAsync("Legacy Set");
+
+        Assert.NotNull(loaded);
+        Assert.Equal("Legacy Set", loaded!.Name);
+        Assert.Equal(118, loaded.Bpm);
+        Assert.Equal(new[] { "Legacy Set" }, await store.ListAsync());
+    }
+
+    [Fact]
+    public async Task Save_OverLegacyFile_UpdatesInPlace_WithoutOrphaning()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+        System.IO.Directory.CreateDirectory(store.Directory);
+        string legacyPath = Path.Combine(store.Directory, "Legacy Set.json");
+        await File.WriteAllTextAsync(legacyPath,
+            "{\"Version\":1,\"Name\":\"Legacy Set\",\"Bpm\":118,\"Clips\":[],\"Automation\":[]}");
+
+        await store.SaveAsync(new StudioProject("Legacy Set", 124, Array.Empty<StudioClip>(), Array.Empty<AutomationLane>()));
+
+        // Updated in the original legacy slot, no second/orphaned file.
+        Assert.Single(System.IO.Directory.GetFiles(store.Directory, "*.json"));
+        Assert.True(File.Exists(legacyPath));
+        StudioProject? loaded = await store.LoadAsync("Legacy Set");
+        Assert.NotNull(loaded);
+        Assert.Equal(124, loaded!.Bpm);
+    }
+
+    [Fact]
+    public async Task Delete_LegacySingleFileLayout_RemovesProject()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonStudioProjectStore(dir.Path);
+        System.IO.Directory.CreateDirectory(store.Directory);
+        string legacyPath = Path.Combine(store.Directory, "Legacy Set.json");
+        await File.WriteAllTextAsync(legacyPath,
+            "{\"Version\":1,\"Name\":\"Legacy Set\",\"Bpm\":118,\"Clips\":[],\"Automation\":[]}");
+
+        await store.DeleteAsync("Legacy Set");
+
+        Assert.Null(await store.LoadAsync("Legacy Set"));
+        Assert.Empty(await store.ListAsync());
     }
 
     [Fact]

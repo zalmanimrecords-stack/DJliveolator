@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Liveolator.Core.Persistence;
@@ -19,10 +21,14 @@ public sealed record StudioProjectSnapshot(
 
 /// <summary>
 /// Persists named STUDIO arrangements as one JSON file per project under
-/// <c>&lt;root&gt;/live/studio-projects/&lt;sanitized-name&gt;.json</c>. Mirrors
-/// <see cref="JsonPlaylistStore"/>: tolerant loads (missing / unreadable / incompatible-version →
-/// <c>null</c> + warning, never a throw) and atomic temp-then-move saves so an interrupted write
-/// never corrupts a saved project (global standards #16/#26, #20/#22).
+/// <c>&lt;root&gt;/live/studio-projects/&lt;sanitized-name&gt;.&lt;hash&gt;.json</c>. The filename is a
+/// sanitized prefix plus a short disambiguator derived from the exact display name, so two distinct
+/// names that sanitize alike (e.g. "My Set: 1" and "My Set_ 1") get distinct files and never silently
+/// overwrite each other. The exact display name lives inside the JSON, so listing/loading resolve by
+/// display name; legacy single-file <c>&lt;sanitized-name&gt;.json</c> projects still load via a
+/// stored-name scan. Mirrors <see cref="JsonPlaylistStore"/>: tolerant loads (missing / unreadable /
+/// incompatible-version -&gt; <c>null</c> + warning, never a throw) and atomic temp-then-move saves so an
+/// interrupted write never corrupts a saved project (global standards #16/#26, #20/#22).
 /// </summary>
 public sealed class JsonStudioProjectStore : IStudioProjectStore
 {
@@ -67,7 +73,11 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-        StudioProjectSnapshot? snapshot = await ReadAsync(PathFor(name), cancellationToken).ConfigureAwait(false);
+        string? path = await ResolvePathAsync(name, cancellationToken).ConfigureAwait(false);
+        if (path is null)
+            return null;
+
+        StudioProjectSnapshot? snapshot = await ReadAsync(path, cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return null;
 
@@ -87,7 +97,10 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
         ArgumentException.ThrowIfNullOrWhiteSpace(project.Name);
 
         System.IO.Directory.CreateDirectory(_directory);
-        string path = PathFor(project.Name);
+        // Save in place when the project already lives in a legacy single-file slot, so we never orphan
+        // or duplicate an existing file; otherwise use the collision-proof name-keyed path.
+        string path = await ResolvePathAsync(project.Name, cancellationToken).ConfigureAwait(false)
+            ?? PathFor(project.Name);
         string tempPath = path + ".tmp";
         var snapshot = new StudioProjectSnapshot(
             StudioProjectSnapshot.CurrentVersion, project.Name, project.Bpm,
@@ -98,25 +111,65 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
         File.Move(tempPath, path, overwrite: true);
     }
 
-    public Task DeleteAsync(string name, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(string name, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        string path = PathFor(name);
-        if (File.Exists(path))
+        string? path = await ResolvePathAsync(name, cancellationToken).ConfigureAwait(false);
+        if (path is not null && File.Exists(path))
             File.Delete(path);
-        return Task.CompletedTask;
     }
 
-    private string PathFor(string name) => Path.Combine(_directory, Sanitize(name) + ".json");
+    // The deterministic, collision-proof on-disk path for a display name.
+    private string PathFor(string name) => Path.Combine(_directory, FileNameFor(name));
 
-    // Map a display name to a safe filename; the real display name is stored inside the JSON, so two
-    // names that sanitize alike simply share a slot (last save wins).
+    // <sanitized-prefix>.<8 hex of SHA-256(exact name)>.json. The hash disambiguates distinct names
+    // that sanitize to the same prefix; the sanitized prefix keeps filenames human-recognizable.
+    private static string FileNameFor(string name) => $"{Sanitize(name)}.{ShortHash(name)}.json";
+
+    // Resolve the file backing a display name: first the deterministic name-keyed path, then a tolerant
+    // scan that matches the exact display name stored inside the JSON. The scan recovers projects saved
+    // under the legacy <sanitized-name>.json layout without renaming or orphaning them.
+    private async Task<string?> ResolvePathAsync(string name, CancellationToken cancellationToken)
+    {
+        if (!System.IO.Directory.Exists(_directory))
+            return null;
+
+        string preferred = PathFor(name);
+        if (File.Exists(preferred))
+            return preferred;
+
+        foreach (string file in System.IO.Directory.EnumerateFiles(_directory, "*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.Equals(file, preferred, StringComparison.OrdinalIgnoreCase))
+                continue;
+            StudioProjectSnapshot? snapshot = await ReadAsync(file, cancellationToken).ConfigureAwait(false);
+            if (snapshot is not null && string.Equals(snapshot.Name, name, StringComparison.Ordinal))
+                return file;
+        }
+
+        return null;
+    }
+
+    // Map a display name to a safe filename prefix. Two names that sanitize alike are still kept apart
+    // by the hash suffix in <see cref="FileNameFor"/>, so this only needs to produce a legal prefix.
     private static string Sanitize(string name)
     {
         char[] invalid = Path.GetInvalidFileNameChars();
         string cleaned = new(name.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c).ToArray());
         cleaned = cleaned.Trim().TrimEnd('.');
         return cleaned.Length == 0 ? "studio-project" : cleaned;
+    }
+
+    // First 8 hex chars of SHA-256 over the exact display name: a short, stable, case-sensitive
+    // disambiguator so distinct names never share a file.
+    private static string ShortHash(string name)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(name));
+        var builder = new StringBuilder(8);
+        for (int i = 0; i < 4; i++)
+            builder.Append(hash[i].ToString("x2"));
+        return builder.ToString();
     }
 
     private async Task<StudioProjectSnapshot?> ReadAsync(string path, CancellationToken cancellationToken)
