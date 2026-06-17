@@ -150,8 +150,7 @@ public static class VuMeterAddon
     /// </summary>
     public static string EnsureShaderCreated(string? directory = null)
     {
-        directory ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liveolator", "assets");
+        directory ??= VisualAssetPaths.Default();
         Directory.CreateDirectory(directory);
 
         string path = Path.Combine(directory, "vu-meter.frag");

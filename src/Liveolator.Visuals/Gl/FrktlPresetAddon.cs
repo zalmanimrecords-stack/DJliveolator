@@ -125,10 +125,7 @@ public static class FrktlPresetAddon
 
     public static string EnsureShaderCreated(string? directory = null)
     {
-        directory ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Liveolator",
-            "assets");
+        directory ??= VisualAssetPaths.Default();
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "frktl.frag");
         if (!File.Exists(path) || File.ReadAllText(path) != FragmentShader)

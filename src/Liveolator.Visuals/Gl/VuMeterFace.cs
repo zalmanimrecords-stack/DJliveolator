@@ -28,8 +28,7 @@ public static class VuMeterFace
     /// </summary>
     public static string EnsureCreated(VuMeterNeedleOrigin origin = VuMeterNeedleOrigin.Bottom, string? directory = null)
     {
-        directory ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liveolator", "assets");
+        directory ??= VisualAssetPaths.Default();
         Directory.CreateDirectory(directory);
 
         string path = Path.Combine(
