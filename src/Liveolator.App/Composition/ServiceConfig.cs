@@ -1120,9 +1120,12 @@ public static class ServiceConfig
     }
 
     // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
-    // and Pioneer DDJ-FLX4 today; persisted/custom profiles (doc 13) extend this set later.
+    // and Pioneer DDJ-FLX4 today; persisted/custom profiles (doc 13) extend this set later. The generic
+    // template is appended LAST and intentionally has an empty DeviceHint, so MidiProfileSelector always
+    // prefers an exact device match and the generic never wins auto-selection — it is a learn-from-scratch
+    // label any unrecognized controller falls back to.
     private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
-        => new[] { CmdStudio2AProfile.Default, DdjFlx4Profile.Default };
+        => new[] { CmdStudio2AProfile.Default, DdjFlx4Profile.Default, GenericControllerProfile.Default };
 
     internal static MidiSettings ResolveMidiSettings(
         MidiSettings configured,
@@ -1135,12 +1138,32 @@ public static class ServiceConfig
         // No controller chosen yet: auto-detect the first connected device whose name matches any
         // catalogued profile's hint (CMD STUDIO 2A, DDJ-FLX4, …). MidiProfileSelector then loads the
         // matching profile downstream — so adding a profile to the catalog extends detection for free.
-        string[] inputNames = provider.GetInputDeviceNames().ToArray();
+        // Enumeration is wrapped so a native rtmidi failure degrades to "no device" instead of crashing
+        // the composition root (global standards #16/#26) — matching the best-effort MIDI wiring below.
+        string[] inputNames;
+        try
+        {
+            inputNames = provider.GetInputDeviceNames().ToArray();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                $"Could not enumerate MIDI input devices: {ex.Message}. Running without auto-detection.");
+            return normalized;
+        }
+
         string? detected = AvailableMidiProfiles()
             .Select(profile => inputNames.FirstOrDefault(name =>
                 !string.IsNullOrEmpty(profile.DeviceHint)
                 && name.Contains(profile.DeviceHint, StringComparison.OrdinalIgnoreCase)))
             .FirstOrDefault(name => name is not null);
+
+        // No KNOWN-hint device matched: fall back to the FIRST connected input so plugging in ANY
+        // arbitrary controller makes it active and ready to learn from scratch on next start (the generic
+        // template profile loads downstream because no device hint matches). Conservative: only kicks in
+        // when the user has chosen nothing AND there is exactly something plugged in; zero inputs keeps the
+        // prior behaviour (stays null / normalized).
+        detected ??= inputNames.FirstOrDefault();
 
         return detected is null
             ? normalized

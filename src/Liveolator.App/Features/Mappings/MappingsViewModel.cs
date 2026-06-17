@@ -20,6 +20,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     private MappingTargetViewModel? _selectedTarget;
     private MappingBindingViewModel? _selectedBinding;
     private string _status = string.Empty;
+    private string _learnHint = string.Empty;
 
     public MappingsViewModel(
         IMidiControlSession session,
@@ -64,6 +65,17 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     {
         get => _status;
         private set => this.RaiseAndSetIfChanged(ref _status, value);
+    }
+
+    /// <summary>
+    /// A getting-started prompt shown when the active profile has NO bindings yet (e.g. a freshly plugged
+    /// generic controller), guiding the performer through the learn flow. Empty when bindings exist or no
+    /// device is connected, so the View can hide it.
+    /// </summary>
+    public string LearnHint
+    {
+        get => _learnHint;
+        private set => this.RaiseAndSetIfChanged(ref _learnHint, value);
     }
 
     public ReactiveCommand<Unit, Unit> LearnCommand { get; }
@@ -203,6 +215,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         if (profile is null)
         {
             Status = "Connect a MIDI controller in Settings.";
+            LearnHint = string.Empty;
             return;
         }
 
@@ -210,6 +223,13 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
                      .OrderBy(binding => binding.Action)
                      .ThenBy(binding => binding.Slot))
             Bindings.Add(new MappingBindingViewModel(binding));
+
+        // An empty profile (e.g. a freshly plugged generic controller) shows a learn prompt; once any
+        // binding exists the hint is hidden so it does not clutter a configured controller.
+        LearnHint = Bindings.Count == 0
+            ? $"No mappings yet for {DeviceName}. Click a control in Liveolator, then move a control on " +
+              "your MIDI controller to learn it."
+            : string.Empty;
 
         Status = $"{Bindings.Count} mapping(s) active.";
         this.RaisePropertyChanged(nameof(DeviceName));

@@ -7,6 +7,10 @@
     <StackPanel>
       <TextBlock Classes="section" Text="MIDI MAPPINGS" />
       <TextBlock Classes="faint" Text="{Binding DeviceName}" />
+      <!-- Getting-started prompt shown only for an unmapped (e.g. generic) controller. -->
+      <TextBlock Classes="faint" Margin="0,8,0,0" TextWrapping="Wrap"
+                 Text="{Binding LearnHint}"
+                 IsVisible="{Binding LearnHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
 
     <Border Grid.Row="1" Classes="panel" Margin="0,16,0,16">

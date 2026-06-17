@@ -42,6 +42,42 @@ public sealed class MidiInputWiringTests
     }
 
     [Fact]
+    public void NoControllerConfigured_UnknownDevice_FallsBackToFirstConnectedInput()
+    {
+        // Any arbitrary controller (no known hint) becomes active so it is ready to learn from scratch.
+        var provider = new FakeMidiDeviceProvider();
+        provider.InputNames.Add("Acme Beat Pad 9000");
+
+        MidiSettings resolved = ServiceConfig.ResolveMidiSettings(MidiSettings.Default, provider);
+
+        Assert.Equal("Acme Beat Pad 9000", resolved.ControllerInputName);
+    }
+
+    [Fact]
+    public void NoControllerConfigured_KnownHintWins_OverAnUnknownFirstDevice()
+    {
+        // The known-hint match must still be preferred even when an unknown device is enumerated first,
+        // so the device-specific profile loads rather than the generic fallback.
+        var provider = new FakeMidiDeviceProvider();
+        provider.InputNames.Add("Acme Beat Pad 9000");
+        provider.InputNames.Add("CMD Studio 2a");
+
+        MidiSettings resolved = ServiceConfig.ResolveMidiSettings(MidiSettings.Default, provider);
+
+        Assert.Equal("CMD Studio 2a", resolved.ControllerInputName);
+    }
+
+    [Fact]
+    public void NoControllerConfigured_NoConnectedInputs_StaysNull()
+    {
+        var provider = new FakeMidiDeviceProvider(); // no inputs
+
+        MidiSettings resolved = ServiceConfig.ResolveMidiSettings(MidiSettings.Default, provider);
+
+        Assert.Null(resolved.ControllerInputName);
+    }
+
+    [Fact]
     public void ConfiguredController_IsNotReplacedByAutoDetection()
     {
         var provider = new FakeMidiDeviceProvider();
