@@ -5,7 +5,7 @@
              x:Class="Liveolator.App.Features.Live.Modules.MixerView"
              x:DataType="m:MixerViewModel">
 
-  <Border Classes="panel" MinHeight="430">
+  <Border Classes="panel">
     <StackPanel Margin="20" Spacing="14">
 
       <Border Classes="hardware-well" Padding="10,10,10,12">

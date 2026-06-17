@@ -9,8 +9,8 @@
     <StackPanel Margin="16" Spacing="18">
       <TextBlock Classes="section" Text="MASTER · FX" />
 
-      <!-- Master / Swing knobs (disabled — no action kind yet) -->
-      <Grid ColumnDefinitions="*,*">
+      <!-- Master / Swing knobs hidden until wired (no action kind yet) — they reserve no space while disabled. -->
+      <Grid ColumnDefinitions="*,*" IsVisible="False">
         <StackPanel Grid.Column="0" Spacing="8" HorizontalAlignment="Center" Margin="0,0,16,0">
           <controls:Knob Width="55.7" Height="55.7" HorizontalAlignment="Center"
                          Value="{Binding Master.Value}" IsEnabled="{Binding Master.IsEnabled}" />
