@@ -42,12 +42,37 @@ function Resolve-CurrentRid {
 }
 
 function Stop-LiveolatorApp {
-    $running = @(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue)
-    if ($running.Count -eq 0) { return }
+    param([string]$UnlockPath)
 
-    Write-Host "Stopping $($running.Count) running Liveolator instance(s)..."
-    $running | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
+    $running = @(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue)
+    if ($running.Count -gt 0) {
+        Write-Host "Stopping $($running.Count) running Liveolator instance(s)..."
+        $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+
+    # Wait for every instance to FULLY exit and release its file locks before the build runs. A fixed
+    # 500ms sleep was not enough: the build copies the engine DLLs into bin, and a still-running (or
+    # just-killed-but-not-yet-released) instance keeps them locked, so the build fails with MSB3021 and
+    # run.ps1 would exit WITHOUT relaunching - leaving you staring at a stale build. Poll the process
+    # list, then confirm the output exe's handle is actually released (the surest "all locks freed" signal).
+    $deadline = (Get-Date).AddSeconds(20)
+    while (((Get-Date) -lt $deadline) -and
+           (@(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue).Count -gt 0)) {
+        Start-Sleep -Milliseconds 200
+    }
+
+    if ($UnlockPath -and (Test-Path -LiteralPath $UnlockPath)) {
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $stream = [System.IO.File]::Open($UnlockPath, 'Open', 'ReadWrite', 'None')
+                $stream.Close()
+                break
+            }
+            catch {
+                Start-Sleep -Milliseconds 200
+            }
+        }
+    }
 }
 
 function Resolve-AppExecutable {
@@ -81,11 +106,16 @@ if (-not $SkipFetch) {
     }
 }
 
-Stop-LiveolatorApp
+Stop-LiveolatorApp -UnlockPath (Resolve-AppExecutable -RepoRoot $repoRoot -Configuration $Configuration)
 
 Write-Host "Building Liveolator.App ($Configuration)..."
 dotnet build $appProject -c $Configuration
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ''
+    Write-Host "BUILD FAILED - the app was NOT relaunched, so you are still on the previous/stale build." -ForegroundColor Red
+    Write-Host "If the errors above are 'file locked by Liveolator.App', close every Liveolator window and re-run." -ForegroundColor Yellow
+    exit $LASTEXITCODE
+}
 
 if ($BuildOnly) {
     Write-Host "Build complete."
