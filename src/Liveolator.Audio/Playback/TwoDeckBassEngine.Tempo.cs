@@ -44,11 +44,21 @@ public sealed partial class TwoDeckBassEngine
         ValidateSlot(slot);
         lock (_gate)
         {
-            // Phase 1: per-deck state only (persists across loads via DeckSlot). The audible tempo/pitch
-            // decoupling — wrap the deck stream in BASS_FX tempo and route the rate through the tempo
-            // attribute instead of frequency — is the native Phase 3 increment, gated on hardware
-            // verification (A1); see docs/18 and the SetDeckRate vinyl-rate note in BassMixerBackend.
-            _slots[slot].KeyLocked = enabled;
+            DeckSlot s = _slots[slot];
+            s.KeyLocked = enabled; // per-deck transport state; persists across loads via DeckSlot
+
+            // Phase 3 (native): switch the backend's audible rate path for the loaded deck, then re-apply
+            // the current rate so the change is heard immediately — key-lock on routes the rate through the
+            // BASS_FX tempo attribute (pitch preserved), off through vinyl frequency. SetDeckKeyLock must
+            // precede SetDeckRate so the rate takes the newly chosen path. Sync, when engaged, owns the
+            // rate (mirrors SetPitch), so re-apply only when not sync-locked. With nothing loaded there is
+            // no stream to key-lock — the armed state takes effect on the next Load.
+            if (s.Deck is { } deck)
+            {
+                _backend.SetDeckKeyLock(deck.Handle, enabled);
+                if (!s.SyncLocked)
+                    _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
+            }
         }
     }
 

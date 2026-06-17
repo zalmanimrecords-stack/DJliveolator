@@ -39,6 +39,15 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Set the deck's playback rate as a multiplier of its original sample rate (1.0 = original).</summary>
     void SetDeckRate(int deckHandle, double rateMultiplier);
 
+    /// <summary>
+    /// Arm or disarm key-lock (master tempo) on a plugged deck: when enabled, a subsequent
+    /// <see cref="SetDeckRate"/> changes tempo while preserving pitch (BASS_FX time-stretch); when
+    /// disabled, the rate moves pitch with it (vinyl-style frequency scaling). The engine re-applies the
+    /// current rate after flipping this so the audible path switches immediately. A no-op for an unknown
+    /// or unplugged deck handle.
+    /// </summary>
+    void SetDeckKeyLock(int deckHandle, bool enabled);
+
     /// <summary>The deck's current playback position in seconds from the track start (0 if unknown).</summary>
     double GetDeckPositionSeconds(int deckHandle);
 

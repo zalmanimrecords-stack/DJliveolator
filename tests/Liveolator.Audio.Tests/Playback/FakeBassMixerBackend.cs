@@ -50,6 +50,16 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
     public Dictionary<int, double> PositionFraction { get; } = new();
     public Dictionary<int, double> Rate { get; } = new();
 
+    /// <summary>Per-deck key-lock state as last set via <see cref="SetDeckKeyLock"/>.</summary>
+    public Dictionary<int, bool> KeyLock { get; } = new();
+
+    /// <summary>
+    /// The audible rate path the LAST <see cref="SetDeckRate"/> took for a deck: true = pitch-preserving
+    /// tempo (key-lock on), false = vinyl frequency (key-lock off). Lets a test assert key-lock routes the
+    /// rate through the tempo path rather than just storing the toggle.
+    /// </summary>
+    public Dictionary<int, bool> RateViaTempoPath { get; } = new();
+
     /// <summary>Per-deck total length in seconds; defaults to 100 s so fraction↔seconds math is testable.</summary>
     public Dictionary<int, double> LengthSeconds { get; } = new();
 
@@ -62,7 +72,15 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
 
     public void SetDeckPositionFraction(int deckHandle, double fraction) => PositionFraction[deckHandle] = fraction;
 
-    public void SetDeckRate(int deckHandle, double rateMultiplier) => Rate[deckHandle] = rateMultiplier;
+    public void SetDeckRate(int deckHandle, double rateMultiplier)
+    {
+        Rate[deckHandle] = rateMultiplier;
+        // Mirror the real backend's branch: key-lock on routes the rate through the tempo (pitch-preserving)
+        // path, off through vinyl frequency. Recorded so tests can assert which audible path was taken.
+        RateViaTempoPath[deckHandle] = KeyLock.TryGetValue(deckHandle, out bool locked) && locked;
+    }
+
+    public void SetDeckKeyLock(int deckHandle, bool enabled) => KeyLock[deckHandle] = enabled;
 
     private double DeckLength(int deckHandle)
         => LengthSeconds.TryGetValue(deckHandle, out double len) && len > 0 ? len : 100.0;

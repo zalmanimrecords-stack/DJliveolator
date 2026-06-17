@@ -443,6 +443,53 @@ public class TwoDeckBassEngineTests
         Assert.True(engine.IsKeyLockEnabled(0));
     }
 
+    [Fact]
+    public void KeyLock_On_RoutesRateThroughTheTempoPath_Off_ThroughFrequency()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100, rate applied via vinyl frequency on load
+        Assert.False(backend.RateViaTempoPath[100]); // default deck: vinyl pitch
+
+        engine.SetKeyLock(0, true); // arms key-lock AND re-applies the current rate
+        Assert.True(backend.KeyLock[100]);
+        Assert.True(backend.RateViaTempoPath[100]); // now pitch-preserving tempo
+
+        // A subsequent tempo change while locked stays on the tempo path.
+        engine.SetPitch(0, 1.0, relative: false);
+        Assert.True(backend.RateViaTempoPath[100]);
+        Assert.Equal(1.08, backend.Rate[100], 6);
+
+        engine.SetKeyLock(0, false); // disarms AND re-applies via vinyl frequency
+        Assert.False(backend.KeyLock[100]);
+        Assert.False(backend.RateViaTempoPath[100]);
+        Assert.Equal(1.08, backend.Rate[100], 6); // same audible tempo, different path
+    }
+
+    [Fact]
+    public void KeyLock_State_PersistsAcrossLoad_AndReArmsTheBackendForTheNewDeck()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");  // handle 100
+        engine.SetKeyLock(0, true);
+
+        engine.Load(0, @"C:\b.wav");  // handle 101 — fresh stream, key-lock must re-arm
+
+        Assert.True(engine.IsKeyLockEnabled(0));
+        Assert.True(backend.KeyLock[101]);          // backend re-armed for the new deck handle
+        Assert.True(backend.RateViaTempoPath[101]); // and its rate took the tempo path
+    }
+
+    [Fact]
+    public void KeyLock_SetWithNoDeckLoaded_DoesNotTouchTheBackend()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+
+        engine.SetKeyLock(0, true); // state armed, but there is no stream to key-lock yet
+
+        Assert.True(engine.IsKeyLockEnabled(0));
+        Assert.Empty(backend.KeyLock); // nothing pushed to the backend with no deck loaded
+    }
+
     // --- Sync Lock: tempo match (beatmatch by BPM, doc 11) ---
 
     [Fact]

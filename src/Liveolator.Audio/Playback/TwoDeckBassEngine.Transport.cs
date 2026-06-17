@@ -38,6 +38,10 @@ public sealed partial class TwoDeckBassEngine
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 s.Deck = new LoadedDeck(handle, channel, Playing: false);
                 s.LoadedPath = trackPath; // the cue-store key for this slot
+                // Re-arm key-lock on the fresh stream FIRST so the rate below takes the right audible path
+                // (pitch-preserving tempo when locked, vinyl frequency otherwise). Key-lock is per-deck
+                // transport state that persists across loads, like the pitch fader.
+                _backend.SetDeckKeyLock(handle, s.KeyLocked);
                 // Re-apply the slot's tempo to the new track so swapping decks keeps the setting: the
                 // manual pitch fader normally, or the synced rate when Sync is engaged (set once the
                 // load action supplies the new track's base BPM via SetDeckBaseBpm).
