@@ -58,7 +58,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="m:HotCuePadViewModel">
-              <Button Classes="key" Classes.on="{Binding IsSet}"
+              <Button Classes="key" Classes.on="{Binding IsSet}" Content="{Binding Label}"
                       Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>

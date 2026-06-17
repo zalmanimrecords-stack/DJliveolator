@@ -63,8 +63,9 @@
         <ContentControl Grid.Column="1" Content="{Binding VisualControl}" />
       </Grid>
 
-      <!-- DECK A · MIXER · DECK B — MaxWidth caps each deck at ~400px (2×400 + 300 mixer + 2×16 margins) -->
-      <Grid ColumnDefinitions="*,300,*" MaxWidth="1132">
+      <!-- DECK A · MIXER · DECK B — spans the full 1440 stack width so the Deck A / Deck B columns line up
+           under Waveform A / Waveform B above (the stacked-waveform-to-deck visual mapping). -->
+      <Grid ColumnDefinitions="*,300,*" MaxWidth="1440">
         <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="2" Content="{Binding DeckB}" />
