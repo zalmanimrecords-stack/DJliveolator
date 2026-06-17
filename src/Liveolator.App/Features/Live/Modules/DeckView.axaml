@@ -113,16 +113,35 @@
               ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
 
       <!-- Track nudge: shift the waveform a small step (relative seek) for fine cueing / lining the track
-           up. The arrow = the direction the waveform moves: ◄ shifts it left, ► shifts it right. Step is
-           configurable in Settings (default 0.1 s). -->
-      <UniformGrid Columns="2">
-        <Button Classes="key" Content="◄" Margin="0,0,4,0"
-                Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                ToolTip.Tip="Nudge the track left (fine cueing)" />
-        <Button Classes="key" Content="►"
-                Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                ToolTip.Tip="Nudge the track right (fine cueing)" />
-      </UniformGrid>
+           up. Direction follows the waveform-move convention (NOT an inverted binding): the arrow points the
+           way the waveform slides, so ◄ slides the wave left = SeekForward, ► slides it right = SeekBack. The
+           "WAVE" caption + the visible arrow keep that self-explanatory, and the NUDGE section label plus the
+           waveform glyphs make this pair clearly distinct from the BPM ± nudge above. Step is configurable in
+           Settings (default 0.1 s). -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="NUDGE" />
+          <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+        </Grid>
+        <UniformGrid Columns="2">
+          <Button Classes="key" Margin="0,0,4,0"
+                  Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                  ToolTip.Tip="Nudge the track: slide the waveform left (fine cueing)">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Text="◄" />
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+            </StackPanel>
+          </Button>
+          <Button Classes="key"
+                  Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                  ToolTip.Tip="Nudge the track: slide the waveform right (fine cueing)">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+              <TextBlock Text="►" />
+            </StackPanel>
+          </Button>
+        </UniformGrid>
+      </StackPanel>
 
       <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
       <UniformGrid Columns="4">
