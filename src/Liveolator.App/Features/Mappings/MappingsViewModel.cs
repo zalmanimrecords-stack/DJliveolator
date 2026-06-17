@@ -21,6 +21,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     private MappingBindingViewModel? _selectedBinding;
     private string _status = string.Empty;
     private string _learnHint = string.Empty;
+    private bool _isEmpty = true;
 
     public MappingsViewModel(
         IMidiControlSession session,
@@ -76,6 +77,17 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     {
         get => _learnHint;
         private set => this.RaiseAndSetIfChanged(ref _learnHint, value);
+    }
+
+    /// <summary>
+    /// True when the bindings list is empty, so the View can show an in-list empty-state placeholder. This
+    /// is distinct from <see cref="LearnHint"/> (a top-of-screen getting-started prompt): it tracks the list
+    /// itself and is true even when no device/profile is connected.
+    /// </summary>
+    public bool IsEmpty
+    {
+        get => _isEmpty;
+        private set => this.RaiseAndSetIfChanged(ref _isEmpty, value);
     }
 
     public ReactiveCommand<Unit, Unit> LearnCommand { get; }
@@ -214,6 +226,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         Bindings.Clear();
         if (profile is null)
         {
+            IsEmpty = true;
             Status = "Connect a MIDI controller in Settings.";
             LearnHint = string.Empty;
             return;
@@ -223,6 +236,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
                      .OrderBy(binding => binding.Action)
                      .ThenBy(binding => binding.Slot))
             Bindings.Add(new MappingBindingViewModel(binding));
+
+        IsEmpty = Bindings.Count == 0;
 
         // An empty profile (e.g. a freshly plugged generic controller) shows a learn prompt; once any
         // binding exists the hint is hidden so it does not clutter a configured controller.
