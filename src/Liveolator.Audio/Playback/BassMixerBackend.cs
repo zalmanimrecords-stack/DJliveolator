@@ -114,6 +114,10 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // attribute on the tempo stream rather than vinyl-style Frequency scaling on the source.
         public bool KeyLocked { get; set; }
 
+        // Last rate multiplier requested by the engine (1.0 = natural). Stored so toggling key-lock can
+        // re-express the SAME rate through the other path (Tempo vs Frequency) without the engine re-sending.
+        public double CurrentRate { get; set; } = 1.0;
+
         // Loop state: the registered BASS_SYNC_POS handle, the callback (kept alive for BASS), and the
         // loop in-point in bytes. 0 sync handle = no active loop.
         public int LoopSync { get; set; }
@@ -494,11 +498,41 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     {
         if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck) || deck.OriginalFrequency <= 0)
             return;
-        // Vinyl-style pitch: scale the playback frequency (tempo and pitch move together, like a DJ
-        // pitch fader). Tempo-without-pitch would need BASS_FX; this increment keeps it BASS_FX-free.
-        double frequency = deck.OriginalFrequency * rateMultiplier;
-        if (!Bass.ChannelSetAttribute(deckHandle, ChannelAttribute.Frequency, (float)frequency))
-            _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+        deck.CurrentRate = rateMultiplier;
+        ApplyRate(deck);
+    }
+
+    public void SetDeckKeyLock(int deckHandle, bool enabled)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            return;
+        deck.KeyLocked = enabled;
+        // Re-express the current rate through the now-selected path (the engine does not re-send it).
+        ApplyRate(deck);
+    }
+
+    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % on the tempo
+    // stream) or vinyl-style (Frequency scaling on the raw source). The unused path is reset to neutral
+    // first so the two never stack. NATIVE — verified manually with bass_fx fetched + hardware (A1);
+    // not exercised in CI (tests drive the fake backend). See Liveolator.Audio/CLAUDE.md.
+    private void ApplyRate(DeckDsp deck)
+    {
+        if (deck.OriginalFrequency <= 0)
+            return;
+        if (deck.KeyLocked)
+        {
+            Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, deck.OriginalFrequency);
+            float tempoPercent = (float)((deck.CurrentRate - 1.0) * 100.0);
+            if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, tempoPercent))
+                _logger.LogWarning("Set key-lock tempo on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
+        }
+        else
+        {
+            Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, 0f);
+            double frequency = deck.OriginalFrequency * deck.CurrentRate;
+            if (!Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, (float)frequency))
+                _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
+        }
     }
 
     public double GetDeckPositionSeconds(int deckHandle)
