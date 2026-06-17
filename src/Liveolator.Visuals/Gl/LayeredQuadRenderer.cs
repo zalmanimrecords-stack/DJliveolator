@@ -56,6 +56,7 @@ public sealed class LayeredQuadRenderer : IDisposable
     private int _uBeatFlash;
     private int _uBlackout;
     private int _uOpacity;
+    private int _uStrobe;
     private bool _disposed;
 
     /// <param name="layers">
@@ -112,6 +113,7 @@ public sealed class LayeredQuadRenderer : IDisposable
         _gl.Uniform1(_uBrightness, uniforms.Brightness);
         _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
         _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
+        _gl.Uniform1(_uStrobe, uniforms.Strobe);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindVertexArray(_vao);
 
@@ -168,6 +170,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             _gl.Uniform1(_uBrightness, uniforms.Brightness);
             _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
             _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
+            _gl.Uniform1(_uStrobe, uniforms.Strobe);
             double opacity = useLiveOpacities ? liveOpacities![i] : layer.Opacity;
             _gl.Uniform1(_uOpacity, (float)opacity);
             _gl.BindTexture(TextureTarget.Texture2D, texture);
@@ -227,6 +230,7 @@ public sealed class LayeredQuadRenderer : IDisposable
         _uBeatFlash = _gl.GetUniformLocation(_program, "uBeatFlash");
         _uBlackout = _gl.GetUniformLocation(_program, "uBlackout");
         _uOpacity = _gl.GetUniformLocation(_program, "uOpacity");
+        _uStrobe = _gl.GetUniformLocation(_program, "uStrobe");
 
         // The sampler is fixed to unit 0; every layer binds its texture to that unit before its draw.
         _gl.UseProgram(_program);

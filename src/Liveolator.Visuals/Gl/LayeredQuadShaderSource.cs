@@ -36,6 +36,7 @@ internal static class LayeredQuadShaderSource
         uniform float uBeatFlash;
         uniform int uBlackout;
         uniform float uOpacity;
+        uniform float uStrobe;
         void main()
         {
             if (uBlackout != 0)
@@ -44,7 +45,9 @@ internal static class LayeredQuadShaderSource
                 return;
             }
             vec4 texel = texture(uTexture, vTexCoord);
-            float gain = max(0.0, uBrightness + uBeatFlash);
+            // uStrobe is the beat-locked gate (1 pass / 0 black) resolved on the CPU by StrobeGate;
+            // 1.0 when the strobe is disengaged, so the term is inert in the common case.
+            float gain = max(0.0, (uBrightness + uBeatFlash) * uStrobe);
             float a = clamp(uOpacity, 0.0, 1.0) * texel.a;
             // Output PREMULTIPLIED alpha (rgb already scaled by alpha). All blend modes in
             // BlendModeGl use premultiplied-alpha factors, so opacity is honored uniformly by

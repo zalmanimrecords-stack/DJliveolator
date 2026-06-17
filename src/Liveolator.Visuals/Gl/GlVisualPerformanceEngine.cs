@@ -56,6 +56,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
 
     private volatile bool _blackout;
 
+    // The strobe latch (doc 08): when on, FrameUniforms.Resolve drives a beat-locked on/off gate off the
+    // shared clock via StrobeGate. Written from the action thread, read on the render thread each frame.
+    private volatile bool _strobe;
+
     // The ordered banks addressable by the Scene Grid / Push bank tabs, with the currently-active index.
     // Bank selection mutates _activeBankIndex (pure, observable state — unit-tested off the GPU); the
     // render loop reads ActiveBank each frame, so a SelectBank() takes effect on the next composed frame
@@ -165,7 +169,8 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
             _flashStrength,
             _blackout,
             _audioLevel.Current,
-            _audioBands.CurrentBands);
+            _audioBands.CurrentBands,
+            _strobe);
     }
 
     /// <summary>
@@ -300,7 +305,16 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     public void LaunchClip(int layer, string clipId, Quantize when, int everyN = 1)
         => LogDeferred(nameof(LaunchClip));
 
-    public void Strobe(bool on) => LogDeferred(nameof(Strobe));
+    /// <summary>
+    /// Engages/releases the beat-locked strobe (doc 08). Pure observable state: the render loop reads it
+    /// each frame through <see cref="CurrentFrame"/>, where <see cref="StrobeGate"/> turns it into the
+    /// on/off gate off the shared clock — no GL-thread coordination and unit-testable off the GPU.
+    /// </summary>
+    public void Strobe(bool on)
+    {
+        _strobe = on;
+        _logger.LogInformation("Strobe {State}.", on ? "engaged" : "released");
+    }
 
     public void Transition(TransitionStyle style, Quantize when, int everyN = 1)
         => LogDeferred(nameof(Transition));

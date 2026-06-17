@@ -16,6 +16,11 @@ namespace Liveolator.Visuals.Gl;
 /// beats; peaks on <see cref="BeatClockState.IsBeat"/> scaled by detection confidence.
 /// </param>
 /// <param name="Blackout">When true the shader outputs black regardless of the other values.</param>
+/// <param name="Strobe">
+/// Beat-locked strobe gate, 0..1, multiplied into the final brightness: 1.0 passes the frame, 0.0
+/// blacks it out for the off-phase of the strobe cycle. 1.0 when the strobe is disengaged (the neutral
+/// pass-through). Resolved by <see cref="StrobeGate"/> off the shared beat clock.
+/// </param>
 /// <param name="Rms">Live master RMS level, 0..1 (doc 26 — the <c>uRms</c> shader uniform).</param>
 /// <param name="Peak">Live master peak level, 0..1 (the <c>uPeak</c> shader uniform).</param>
 /// <param name="Level">VU-ballistics level, 0..1 (the <c>uLevel</c> shader uniform — a meter's needle).</param>
@@ -32,13 +37,18 @@ public readonly record struct FrameUniforms(
     float Bass = 0,
     float LowMid = 0,
     float Mid = 0,
-    float High = 0)
+    float High = 0,
+    float Strobe = 1f)
 {
-    /// <summary>The neutral pass-through frame: full brightness, no flash, not blacked out.</summary>
+    /// <summary>The neutral pass-through frame: full brightness, no flash, not blacked out, no strobe.</summary>
     public static FrameUniforms Neutral { get; } = new(Brightness: 1f, BeatFlash: 0f, Blackout: false);
 
-    /// <summary>The effective output multiplier the shader applies to the sampled texture.</summary>
-    public float EffectiveBrightness => Blackout ? 0f : Brightness + BeatFlash;
+    /// <summary>
+    /// The effective output multiplier the shader applies to the sampled texture. Blackout forces
+    /// black; otherwise the brightness+flash is gated by the strobe (0 closes the gate for the
+    /// strobe's off-phase, 1 passes it through).
+    /// </summary>
+    public float EffectiveBrightness => Blackout ? 0f : (Brightness + BeatFlash) * Strobe;
 
     /// <summary>
     /// Resolves the frame uniforms from the brightness macro and the beat clock. The macro supplies
@@ -55,6 +65,11 @@ public readonly record struct FrameUniforms(
     /// The live audio level the meter/reactive shaders read (doc 26). Null → <see cref="VisualAudioLevel.Silent"/>,
     /// so headless rendering still resolves a frame with the meter at its floor.
     /// </param>
+    /// <param name="strobe">
+    /// Whether the beat-locked strobe latch is engaged. When true the strobe gate (resolved by
+    /// <see cref="StrobeGate"/> off the same beat snapshot) cycles the output black on the strobe's
+    /// off-phase; when false the gate stays open (1.0).
+    /// </param>
     public static FrameUniforms Resolve(
         VisualMacro? brightnessMacro,
         double normalizedBrightness,
@@ -62,7 +77,8 @@ public readonly record struct FrameUniforms(
         double flashStrength,
         bool blackout,
         VisualAudioLevel? level = null,
-        VisualAudioBands? bands = null)
+        VisualAudioBands? bands = null,
+        bool strobe = false)
     {
         ArgumentNullException.ThrowIfNull(beat);
         if (flashStrength < 0 || double.IsNaN(flashStrength))
@@ -73,6 +89,7 @@ public readonly record struct FrameUniforms(
             brightness = 0;
 
         double flash = ResolveFlash(beat, flashStrength);
+        double strobeGate = StrobeGate.Resolve(beat, strobe);
         VisualAudioLevel audio = level ?? VisualAudioLevel.Silent;
         VisualAudioBands spectrum = bands ?? VisualAudioBands.Silent;
 
@@ -89,7 +106,8 @@ public readonly record struct FrameUniforms(
             (float)spectrum.Bass,
             (float)spectrum.LowMid,
             (float)spectrum.Mid,
-            (float)spectrum.High);
+            (float)spectrum.High,
+            (float)strobeGate);
     }
 
     // The flash peaks on the beat frame and decays linearly across the beat via BeatPhase, gated by
