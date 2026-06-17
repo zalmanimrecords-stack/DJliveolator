@@ -65,9 +65,16 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly DispatcherTimer _playheadTimer;
     private string _status = string.Empty;
 
-    // The lane header gutter (84px label+target column + 4px margin) the clip canvases sit behind; the
-    // playhead overlay is offset by it so the line aligns with the clips, not the headers.
-    public const double LaneGutterPx = 88;
+    // The lane-header gutter: the width of the label/target column the clip canvases sit behind. This is
+    // the single source of truth shared by (a) the header ColumnDefinition width in StudioView.axaml
+    // (bound via LaneGutterWidth), (b) the playhead overlay X (PlayheadX), and (c) the code-behind
+    // wheel-zoom and drop-time math. The clip content lives in column 1 which begins exactly here, so the
+    // playhead and dropped clips align to true time-0 only while all three use this one number.
+    public const double LaneGutterPx = 84;
+
+    /// <summary>The lane-header gutter as a XAML-bindable width, so the header ColumnDefinition and the
+    /// clip/playhead math share one source of truth (see <see cref="LaneGutterPx"/>).</summary>
+    public static double LaneGutterWidth => LaneGutterPx;
 
     public StudioViewModel(
         MusicLibrary library,
@@ -225,6 +232,20 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public double ProjectDurationSeconds =>
         Math.Max(1, Lanes.SelectMany(l => l.Clips).Select(c => c.TimelineEndSeconds).DefaultIfEmpty(0).Max());
 
+    // A short trailing run of empty timeline past the last clip, so a clip at the very end is still
+    // draggable and the scroll does not stop flush against it.
+    private const double TrailingMarginSeconds = 8;
+
+    // The shortest the timeline content may be, so a near-empty project still shows a usable strip.
+    private const double MinTimelineContentPx = 600;
+
+    /// <summary>The pixel width of the timeline content (clip canvases + automation editors): the
+    /// arrangement duration plus a short trailing margin, scaled by the current zoom. Binding the
+    /// scrollable content widths to this makes the scroll extent track the actual material at every zoom
+    /// instead of a hardcoded constant.</summary>
+    public double TimelineContentWidth =>
+        Math.Max(MinTimelineContentPx, (ProjectDurationSeconds + TrailingMarginSeconds) * PixelsPerSecond);
+
     /// <summary>Move the playhead (and the running transport, if any) to <paramref name="seconds"/>.</summary>
     public void SeekTo(double seconds)
     {
@@ -274,6 +295,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         SelectedClip = null;
         Name = "New project";
         Bpm = StudioProject.DefaultBpm;
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
         Status = "New project — drag tracks from the library onto the deck lanes, then Play or Render.";
     }
 
@@ -297,6 +320,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         SelectedClip = vm;
         LoadWaveform(vm);
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
         Status = $"Dropped \"{vm.Title}\" on deck {Lanes[deckSlot].Label}.";
     }
 
@@ -309,6 +333,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
                 break;
         SelectedClip = null;
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
     }
 
     private void TogglePlay()
@@ -452,6 +477,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         Bpm = project.Bpm;
         SelectedClip = null;
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
     }
 
     private async void LoadWaveform(StudioClipViewModel clip)
@@ -505,6 +531,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             foreach (StudioClipViewModel clip in lane.Clips)
                 clip.PixelsPerSecond = pps;
         this.RaisePropertyChanged(nameof(PlayheadX));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
     }
 
     // Push the project tempo to every clip as its warp target, so warped clip widths follow the tempo.

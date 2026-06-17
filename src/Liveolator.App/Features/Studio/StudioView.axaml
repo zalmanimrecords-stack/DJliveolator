@@ -41,10 +41,12 @@
     <TextBlock DockPanel.Dock="Bottom" Classes="mono faint" Margin="0,6,0,0" Text="{Binding Status}" />
 
     <!-- TIMELINE (content-sized, full width) on top; LIBRARY + CLIP inspector fill below -->
-    <Grid RowDefinitions="Auto,8,*">
+    <!-- Timeline takes the star row so the arrangement grows with the window (DAW-style); the
+         LIBRARY + inspector row below is a fixed height. -->
+    <Grid RowDefinitions="*,8,260">
 
       <!-- TIMELINE -->
-      <Border Grid.Row="0" Classes="panel">
+      <Border Grid.Row="0" Classes="panel" MinHeight="240">
         <DockPanel Margin="8">
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
             <TextBlock Classes="section" Text="TIMELINE" />
@@ -52,28 +54,38 @@
                        Text="· drag a track from the library onto a lane · drag a clip to move it · pick a control per lane to automate" />
           </StackPanel>
 
-          <!-- TEMPO lane: the project BPM curve (warped clips follow it); always editable -->
-          <Border DockPanel.Dock="Top" Background="{DynamicResource S2}" CornerRadius="2"
-                  Height="58" Margin="0,0,0,6">
-            <Grid ColumnDefinitions="84,*">
-              <TextBlock Grid.Column="0" Classes="mono accent" FontSize="10"
-                         HorizontalAlignment="Center" VerticalAlignment="Center" Text="TEMPO" />
-              <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <controls:AutomationCurveEditor MinWidth="2400" Height="52"
-                                                Lane="{Binding TempoLane}"
-                                                PixelsPerSecond="{Binding PixelsPerSecond}"
-                                                DrawMode="{Binding AutomationDrawMode}" />
-              </ScrollViewer>
-            </Grid>
-          </Border>
+          <!-- TEMPO lane + deck lanes share ONE horizontal scroller so the playhead is continuous and
+               scroll-synced across both. Content width tracks the material (TimelineContentWidth), and the
+               whole scroller takes the star height so the arrangement grows with the window. -->
+          <ScrollViewer x:Name="LanesScroll" MinHeight="200"
+                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <Grid RowDefinitions="Auto,*" Width="{Binding TimelineContentWidth}" HorizontalAlignment="Left">
 
-          <ScrollViewer x:Name="LanesScroll" Height="268"
-                        HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <Grid>
-              <ItemsControl x:Name="LanesItems" ItemsSource="{Binding Lanes}">
+              <!-- TEMPO lane: the project BPM curve (warped clips follow it); always editable -->
+              <Border Grid.Row="0" Background="{DynamicResource S2}" CornerRadius="2"
+                      Height="58" Margin="0,0,0,6">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{Binding LaneGutterWidth}" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Classes="mono accent" FontSize="10"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" Text="TEMPO" />
+                  <controls:AutomationCurveEditor Grid.Column="1" Height="52"
+                                                  Lane="{Binding TempoLane}"
+                                                  PixelsPerSecond="{Binding PixelsPerSecond}"
+                                                  DrawMode="{Binding AutomationDrawMode}" />
+                </Grid>
+              </Border>
+
+              <ItemsControl Grid.Row="1" x:Name="LanesItems" ItemsSource="{Binding Lanes}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="studio:StudioLaneViewModel">
-                    <Grid ColumnDefinitions="84,*" Height="62" Margin="0,0,0,4">
+                    <Grid Height="62" Margin="0,0,0,4">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).LaneGutterWidth}" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
                       <!-- lane header: deck label + per-lane automation target picker -->
                       <DockPanel Grid.Column="0" Margin="0,0,4,0">
                         <Border DockPanel.Dock="Top" Background="{DynamicResource S3}" CornerRadius="2" Height="22">
@@ -88,7 +100,7 @@
                       <!-- clips + automation overlay -->
                       <Border Grid.Column="1" Background="{DynamicResource S2}" CornerRadius="2" ClipToBounds="True">
                         <Grid>
-                          <ItemsControl ItemsSource="{Binding Clips}" MinWidth="2400">
+                          <ItemsControl ItemsSource="{Binding Clips}">
                             <ItemsControl.ItemsPanel>
                               <ItemsPanelTemplate>
                                 <Canvas Height="58" />
@@ -127,7 +139,7 @@
 
                           <!-- per-lane automation envelope (Ableton/Cubase): drawn over the clips; interactive
                                only while Automation mode is on, so clips stay draggable otherwise -->
-                          <controls:AutomationCurveEditor MinWidth="2400"
+                          <controls:AutomationCurveEditor
                               Lane="{Binding CurrentAutomation}"
                               PixelsPerSecond="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).PixelsPerSecond}"
                               DrawMode="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).AutomationDrawMode}"
@@ -138,10 +150,14 @@
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
-              <!-- playhead overlay: a thin accent line, offset past the lane header gutter -->
-              <Canvas IsHitTestVisible="False" VerticalAlignment="Top">
+              <!-- playhead overlay: a thin accent line spanning the TEMPO lane + the deck lanes, offset
+                   past the lane-header gutter (PlayheadX). Spans both grid rows so the cursor is
+                   continuous; the line height tracks the canvas so it follows the lanes as they grow. -->
+              <Canvas x:Name="PlayheadCanvas" Grid.Row="0" Grid.RowSpan="2"
+                      IsHitTestVisible="False" VerticalAlignment="Stretch">
                 <Rectangle Canvas.Left="{Binding PlayheadX}" Canvas.Top="0"
-                           Width="2" Height="264" Fill="{DynamicResource Accent}" />
+                           Width="2" Height="{Binding #PlayheadCanvas.Bounds.Height}"
+                           Fill="{DynamicResource Accent}" />
               </Canvas>
             </Grid>
           </ScrollViewer>
