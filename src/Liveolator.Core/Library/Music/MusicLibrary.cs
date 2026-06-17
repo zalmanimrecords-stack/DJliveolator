@@ -60,6 +60,10 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     protected override MusicTrack? PreserveModifiedEntry(MusicTrack existing, ScannedFile file)
         => existing.AnalysisIsManual ? existing with { File = file } : null;
 
+    // Relocation re-stamps the file (path + fingerprint) while keeping all analysis intact.
+    protected override MusicTrack WithFile(MusicTrack entry, ScannedFile file)
+        => entry with { File = file };
+
     /// <summary>
     /// Designates which scan folders hold samples (the classifier override) and **reclassifies the whole
     /// catalog in place** from cached durations — no re-decode, so toggling a folder is instant. New scans

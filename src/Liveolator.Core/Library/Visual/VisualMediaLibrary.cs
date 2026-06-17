@@ -40,6 +40,10 @@ public sealed class VisualMediaLibrary : MediaLibrary<VisualAsset>
     protected override VisualAsset CreateFailedEntry(ScannedFile file, string error)
         => new(file, KindOf(file.Path), null, MediaAnalysisStatus.Failed, error);
 
+    // Relocation re-stamps the file (path + fingerprint) while keeping the probed info intact.
+    protected override VisualAsset WithFile(VisualAsset entry, ScannedFile file)
+        => entry with { File = file };
+
     /// <summary>All catalogued assets of a given kind.</summary>
     public IReadOnlyList<VisualAsset> OfKind(VisualMediaKind kind)
         => All.Where(a => a.Kind == kind).ToList();
