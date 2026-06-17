@@ -1,5 +1,6 @@
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Studio;
 using Liveolator.Core.Studio.Render;
@@ -107,8 +108,34 @@ public sealed class OfflineMixRenderer
             progress?.Report(totalSamples == 0 ? 1.0 : Math.Min(1.0, (blockStart + blockLen) / (double)totalSamples));
         }
 
-        WavWriter.WriteMono(outputPath, master, sampleRate);
+        float[] limited = ApplyMasterLimiter(master, sampleRate);
+
+        WavWriter.WriteMono(outputPath, limited, sampleRate);
         progress?.Report(1.0);
+    }
+
+    // Run the summed master through the same brick-wall limiter the realtime master bus uses
+    // (BassMixerBackend.OnMasterDsp) so a multi-deck mix that sums past full scale never clips in the
+    // exported WAV. The limiter delays its output by LatencySamples (its look-ahead), so we feed that many
+    // trailing zero frames to flush the delay line and then drop the equivalent leading latency, keeping
+    // the rendered length identical to the input and the tail un-truncated. Mono here (stereo is separate).
+    private static float[] ApplyMasterLimiter(float[] master, int sampleRate)
+    {
+        if (master.Length == 0)
+            return master;
+
+        var limiter = new MasterLimiter(sampleRate, channels: 1);
+        int latency = limiter.LatencySamples;
+
+        // Process the master plus one look-ahead window of silence; output[i] == input[i - latency], so the
+        // real audio occupies [latency, latency + master.Length).
+        var work = new float[master.Length + latency];
+        Array.Copy(master, work, master.Length);
+        limiter.Process(work);
+
+        var limited = new float[master.Length];
+        Array.Copy(work, latency, limited, 0, master.Length);
+        return limited;
     }
 
     private static StatefulBiquad[] NewBiquads(int count)
