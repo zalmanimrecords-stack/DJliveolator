@@ -50,6 +50,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
+    private bool _isKeyLock;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
@@ -124,6 +125,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             () => _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot)),
             canEmit);
+
+        // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
+        // The VM emits the toggle action and follows the DeckKeyLockToggle active-state feedback (the LED
+        // model) exactly like LOOP, so it lights up once the engine reports key-lock is engaged for this deck.
+        KeyLockCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckKeyLockToggle, Slot: slot)),
+            canEmit);
+        _isKeyLock = _dispatcher?.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, slot).IsActive ?? false;
 
         // Nudge buttons: ±0.1 BPM relative delta via DeckBpmNudge — manual beat-sync fine-tuning.
         // Emitting Relative mode lets the controller-mapping layer use the same action from a jog wheel.
@@ -483,10 +492,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _isLooping, value);
     }
 
+    /// <summary>True while key-lock (master tempo) is engaged for this deck (drives the KEY LOCK key's
+    /// active state), from <see cref="PerformanceActionKind.DeckKeyLockToggle"/> feedback.</summary>
+    public bool IsKeyLock
+    {
+        get => _isKeyLock;
+        private set => this.RaiseAndSetIfChanged(ref _isKeyLock, value);
+    }
+
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+    /// <summary>Toggles key-lock (master tempo) for this deck via <see cref="PerformanceActionKind.DeckKeyLockToggle"/>.</summary>
+    public ReactiveCommand<Unit, Unit> KeyLockCommand { get; }
     /// <summary>Nudges the deck BPM down by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
     public ReactiveCommand<Unit, Unit> NudgeLeftCommand { get; }
     /// <summary>Nudges the deck BPM up by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
@@ -576,6 +595,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.DeckSetLoop:
                     IsLooping = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckKeyLockToggle:
+                    IsKeyLock = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);

@@ -105,6 +105,13 @@
         </StackPanel>
       </Border>
 
+      <!-- KEY LOCK (master tempo): hold the musical key constant while the tempo/pitch fader moves. Toggles
+           per-deck key-lock via DeckKeyLockToggle and lights from its active-state feedback (the LED model). -->
+      <Button Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
+              Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
+
       <!-- Track nudge: shift the waveform a small step (relative seek) for fine cueing / lining the track
            up. The arrow = the direction the waveform moves: ◄ shifts it left, ► shifts it right. Step is
            configurable in Settings (default 0.1 s). -->

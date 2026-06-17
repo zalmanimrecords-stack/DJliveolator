@@ -171,6 +171,49 @@ public sealed class DeckViewModelTests
 
     [Theory]
     [InlineData(0)]
+    [InlineData(1)]
+    public async Task KeyLock_EmitsDeckKeyLockToggle_ForItsSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot, dispatcher);
+
+        await vm.KeyLockCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckKeyLockToggle, action.Kind);
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public void IsKeyLock_FollowsDeckKeyLockToggleFeedback_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.False(vm.IsKeyLock);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.False(vm.IsKeyLock); // other deck
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.True(vm.IsKeyLock);
+    }
+
+    [Fact]
+    public void IsKeyLock_SeedsFromExistingFeedback_AtConstruction()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckKeyLockToggle, slot: 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        Assert.True(vm.IsKeyLock);
+    }
+
+    [Theory]
+    [InlineData(0)]
     [InlineData(2)]
     [InlineData(3)]
     public async Task HotCuePad_EmitsDeckHotCue_WithItsIndexAndSlot(int padIndex)
