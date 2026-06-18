@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:studio="clr-namespace:Liveolator.App.Features.Studio"
              xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Studio.StudioView"
              x:DataType="studio:StudioViewModel">
@@ -17,31 +18,73 @@
 
     <!-- project + transport bar (single compact row) -->
     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
-      <ComboBox MinWidth="150" ItemsSource="{Binding SavedProjects}"
-                SelectedItem="{Binding SelectedSaved}" PlaceholderText="Saved projects…" />
-      <Button Classes="spartan" Content="Open" Command="{Binding OpenCommand}" />
-      <Button Classes="spartan" Content="Delete" Command="{Binding DeleteCommand}" />
-      <Button Classes="spartan" Content="New" Command="{Binding NewCommand}" />
-      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-      <Button Classes="spartan" Content="Undo" Command="{Binding UndoCommand}"
-              ToolTip.Tip="Undo the last timeline edit (Ctrl+Z)" />
-      <Button Classes="spartan" Content="Redo" Command="{Binding RedoCommand}"
-              ToolTip.Tip="Redo the last undone edit (Ctrl+Y)" />
-      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-      <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}" />
-      <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
-      <Button Classes="spartan" Content="Render WAV" Command="{Binding RenderCommand}" IsVisible="{Binding CanRender}" />
+      <!-- FILE / EDIT / VIEW menus: the project, edit, and view commands are folded into three dropdowns
+           (a desktop-app menu bar) so the transport bar stays uncluttered. Continuous controls that don't
+           belong in a menu (project name, transport, scrub, zoom slider, BPM) stay inline. -->
+      <Button Classes="spartan" Content="FILE  ▾" ToolTip.Tip="Project: new, open, save, delete, render">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="New project" Command="{Binding NewCommand}" />
+            <Separator />
+            <MenuItem Header="Open" ItemsSource="{Binding OpenItems}" IsEnabled="{Binding HasSavedProjects}">
+              <MenuItem.ItemContainerTheme>
+                <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                              BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Setter Property="Header" Value="{Binding Header}" />
+                  <Setter Property="Command" Value="{Binding Command}" />
+                </ControlTheme>
+              </MenuItem.ItemContainerTheme>
+            </MenuItem>
+            <MenuItem Header="Save" Command="{Binding SaveCommand}" />
+            <MenuItem Header="Delete saved" ItemsSource="{Binding DeleteItems}" IsEnabled="{Binding HasSavedProjects}">
+              <MenuItem.ItemContainerTheme>
+                <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                              BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Setter Property="Header" Value="{Binding Header}" />
+                  <Setter Property="Command" Value="{Binding Command}" />
+                </ControlTheme>
+              </MenuItem.ItemContainerTheme>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="Render to WAV…" Command="{Binding RenderCommand}" IsVisible="{Binding CanRender}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <Button Classes="spartan" Content="EDIT  ▾" ToolTip.Tip="Undo, redo, remove clip">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z" />
+            <MenuItem Header="Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Y" />
+            <Separator />
+            <MenuItem Header="Remove clip" Command="{Binding RemoveClipCommand}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <Button Classes="spartan" Content="VIEW  ▾" ToolTip.Tip="Automation mode, envelope draw, zoom">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Automation edit" ToggleType="CheckBox" IsChecked="{Binding AutomationEditMode}"
+                      ToolTip.Tip="Edit the per-lane automation envelopes (clips lock while on)" />
+            <MenuItem Header="Draw envelope (pencil)" ToggleType="CheckBox" IsChecked="{Binding AutomationDrawMode}"
+                      ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil)" />
+            <Separator />
+            <MenuItem Header="Zoom in" Command="{Binding ZoomInCommand}" />
+            <MenuItem Header="Zoom out" Command="{Binding ZoomOutCommand}" />
+            <MenuItem Header="Reset zoom" Command="{Binding ResetZoomCommand}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}"
+               ToolTip.Tip="Current project name — used when you Save" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <Button Classes="accent" Content="▶ Play" Command="{Binding PlayCommand}" IsVisible="{Binding CanPlay}" />
       <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" IsVisible="{Binding CanPlay}" />
       <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
       <Slider Width="150" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
               Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
-      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-      <ToggleButton Classes="spartan" Content="Automation" IsChecked="{Binding AutomationEditMode}"
-                    ToolTip.Tip="Edit the per-lane automation envelopes (clips lock while on)" />
-      <ToggleButton Classes="spartan" Content="✏" IsChecked="{Binding AutomationDrawMode}"
-                    ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil)" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
       <Slider Width="110" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
