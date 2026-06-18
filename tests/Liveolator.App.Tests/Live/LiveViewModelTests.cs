@@ -13,7 +13,7 @@ namespace Liveolator.App.Tests.Live;
 /// Verifies the Live tab composition root: it exposes the performance modules, owns the render-loop
 /// timer that pumps the shared <see cref="ManualBeatClock"/> (so phase/pulse advance between taps), and
 /// stays safe when no services are wired. Per-control emission is covered by the module test files
-/// (VisualControl / Deck / Mixer / SceneGrid / MasterFx / MacroEncoders).
+/// (VisualControl / Deck / Mixer / SceneGrid / MasterFx).
 /// </summary>
 public sealed class LiveViewModelTests
 {
@@ -76,7 +76,6 @@ public sealed class LiveViewModelTests
         Assert.NotNull(vm.Mixer);
         Assert.NotNull(vm.SceneGrid);
         Assert.NotNull(vm.MasterFx);
-        Assert.NotNull(vm.MacroEncoders);
     }
 
     [Fact]

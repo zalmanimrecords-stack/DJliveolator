@@ -12,8 +12,8 @@ namespace Liveolator.App.Features.Live;
 
 /// <summary>
 /// The Live performance tab — a composition root over the performance modules that mirror the mock
-/// (<c>design/mockups/live-mode-clean.html</c>): Program Out, Visual Control, Deck A / Mixer / Deck B,
-/// Visual Scene Grid, Master/FX and the Push encoder macros. Each module is its own view-model and
+/// (<c>design/mockups/live-mode-clean.html</c>): the DJ console (Deck A / Mixer / Deck B, shared with the
+/// DJ tab), Program Out, Visual Control, Visual Scene Grid and Master/FX. Each module is its own view-model and
 /// drives the engines only through the one <see cref="IPerformanceActionDispatcher"/> (doc 04 — the UI
 /// is just another action source). This parent owns the render-loop timer that pumps the shared
 /// <see cref="ManualBeatClock"/> so the beat phase/pulse advance smoothly between taps, and disposes the
@@ -90,7 +90,6 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider);
         SceneGrid = new SceneGridViewModel(dispatcher, visualBankNames);
         MasterFx = new MasterFxViewModel(dispatcher);
-        MacroEncoders = new MacroEncodersViewModel(dispatcher);
 
         if (_timer is not null && _clockDriver is not null && _hostClock is not null)
         {
@@ -112,7 +111,6 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
     public PerformanceDeckSet Decks => _decks;
     public SceneGridViewModel SceneGrid { get; }
     public MasterFxViewModel MasterFx { get; }
-    public MacroEncodersViewModel MacroEncoders { get; }
 
     /// <summary>Stops the render loop and disposes the modules — call when the tab/window closes.</summary>
     public void Dispose()
