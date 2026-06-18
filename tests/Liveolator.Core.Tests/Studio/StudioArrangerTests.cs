@@ -121,4 +121,68 @@ public class StudioArrangerTests
 
         Assert.Empty(arranger.AutomationActionsAt(0));
     }
+
+    // --- per-clip gain / fade folded into the live deck-gain action (render parity) ---
+
+    private static PerformanceAction SingleGain(IReadOnlyList<PerformanceAction> actions, int slot)
+        => Assert.Single(actions, a => a.Kind == PerformanceActionKind.MixerChannelGain && a.Slot == slot);
+
+    [Fact]
+    public void AutomationActionsAt_GainLaneTimesClipEnvelope_WhenClipActive()
+    {
+        var clip = new StudioClip(2, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100), Gain: 0.5);
+        var project = new StudioProject("p", 120, new[] { clip }, new[]
+        {
+            new AutomationLane(AutomationTarget.DeckGain, 2, new[] { new AutomationKeyframe(0, 0.8) }),
+        });
+        var arranger = new StudioArranger(project);
+
+        PerformanceAction action = SingleGain(arranger.AutomationActionsAt(10), slot: 2);
+        Assert.Equal(0.8 * 0.5, action.Value, Tol); // lane value x clip gain
+        Assert.Equal(StudioArranger.Origin, action.Origin);
+    }
+
+    [Fact]
+    public void AutomationActionsAt_ClipFadeWithNoGainLane_EmitsEnvelopeAsGainAction()
+    {
+        var clip = new StudioClip(1, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100),
+            Gain: 1.0, FadeInSeconds: 4);
+        var arranger = new StudioArranger(
+            new StudioProject("p", 120, new[] { clip }, Array.Empty<AutomationLane>()));
+
+        // No gain lane, but the fade-in must still be heard: 1.0 (default lane) x 0.5 envelope.
+        PerformanceAction action = SingleGain(arranger.AutomationActionsAt(2), slot: 1);
+        Assert.Equal(0.5, action.Value, Tol);
+    }
+
+    [Fact]
+    public void AutomationActionsAt_ClipAtUnityWithNoGainLane_EmitsNoGainAction()
+    {
+        var clip = new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100)); // unity, no fades
+        var arranger = new StudioArranger(
+            new StudioProject("p", 120, new[] { clip }, Array.Empty<AutomationLane>()));
+
+        // A full-unity clip adds nothing, so no redundant neutral gain action is emitted.
+        Assert.Empty(arranger.AutomationActionsAt(10));
+    }
+
+    [Fact]
+    public void AutomationActionsAt_LiveGainMatchesRenderGain_Parity()
+    {
+        var clip = new StudioClip(3, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(20),
+            Gain: 0.8, FadeInSeconds: 4, FadeOutSeconds: 4);
+        var project = new StudioProject("p", 120, new[] { clip }, new[]
+        {
+            new AutomationLane(AutomationTarget.DeckGain, 3, new[] { new AutomationKeyframe(0, 0.6) }),
+        });
+        var arranger = new StudioArranger(project);
+        var plan = new Liveolator.Core.Studio.Render.MixPlan(project);
+
+        foreach (double t in new[] { 1.0, 2.0, 10.0, 18.0 })
+        {
+            double live = SingleGain(arranger.AutomationActionsAt(t), slot: 3).Value;
+            double render = plan.EvaluateDeck(3, t).Gain;
+            Assert.Equal(render, live, Tol);
+        }
+    }
 }

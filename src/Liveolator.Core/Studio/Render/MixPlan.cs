@@ -55,6 +55,10 @@ public sealed class MixPlan
                 HasAudio: false, SourcePath: null, SourceSeconds: 0,
                 WarpFactor: 1.0, ClipStartSeconds: 0, SourceInSeconds: 0, Gain: gain, Eq: eq, Filter: filter);
 
+        // Fold the clip's own gain + fade envelope into the deck gain so the offline renderer (which
+        // only reads DeckMixState.Gain) honors per-clip fades with no renderer change; clamp to 0..1.
+        gain = Math.Clamp(gain * ClipGain.EffectiveGainAt(clip, timeSeconds), 0.0, 1.0);
+
         double source = clip.SourceIn.TotalSeconds + (timeSeconds - clip.TimelineStartSeconds);
         return new DeckMixState(
             HasAudio: true, SourcePath: clip.TrackPath, SourceSeconds: source,

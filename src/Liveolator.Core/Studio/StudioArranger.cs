@@ -15,6 +15,8 @@ public sealed class StudioArranger
     /// from a human gesture (the yield-to-performer rule, doc 04).</summary>
     public const string Origin = "studio";
 
+    private const double UnityGain = 1.0;
+
     private readonly StudioProject _project;
 
     public StudioArranger(StudioProject project)
@@ -45,19 +47,81 @@ public sealed class StudioArranger
     /// One absolute, idempotent <see cref="PerformanceAction"/> per non-empty automation lane,
     /// carrying the lane's interpolated value at <paramref name="timeSeconds"/>. Safe to dispatch
     /// every transport tick (each is an absolute set, not a relative nudge).
+    /// <para>The deck-gain action folds in the active clip's <see cref="ClipGain.EffectiveGainAt"/>
+    /// envelope so a live playback fade matches the offline render (the render path folds the same
+    /// envelope into <c>DeckMixState.Gain</c>): emitted gain = lane value (or 1.0 with no lane) x clip
+    /// envelope. A deck with a per-clip gain/fade but no gain lane still emits a gain action so the
+    /// fade is heard.</para>
     /// </summary>
     public IReadOnlyList<PerformanceAction> AutomationActionsAt(double timeSeconds)
     {
         var actions = new List<PerformanceAction>(_project.Automation.Count);
+        var slotsWithGainLane = new HashSet<int>();
+
         foreach (AutomationLane lane in _project.Automation)
         {
             if (lane.Keyframes.Count == 0)
                 continue; // an empty lane controls nothing
+
+            if (lane.Target == AutomationTarget.DeckGain)
+            {
+                slotsWithGainLane.Add(lane.DeckSlot);
+                double combined = lane.ValueAt(timeSeconds) * ClipEnvelopeAt(lane.DeckSlot, timeSeconds);
+                actions.Add(Absolute(PerformanceActionKind.MixerChannelGain, lane.DeckSlot, combined));
+                continue;
+            }
+
             actions.Add(ToAction(lane, lane.ValueAt(timeSeconds)));
+        }
+
+        // Decks with a per-clip gain/fade but no gain lane: emit the clip envelope (lane value defaults
+        // to 1.0) so the live fade is still heard and stays in lockstep with the render. A clip at full
+        // unity contributes nothing, so we skip it to avoid spamming redundant neutral sets.
+        foreach (StudioClip clip in _project.Clips)
+        {
+            if (slotsWithGainLane.Contains(clip.DeckSlot) || !IsSounding(clip, timeSeconds))
+                continue;
+
+            double envelope = ClipGain.EffectiveGainAt(clip, timeSeconds);
+            if (envelope < UnityGain)
+            {
+                actions.Add(Absolute(PerformanceActionKind.MixerChannelGain, clip.DeckSlot, envelope));
+                slotsWithGainLane.Add(clip.DeckSlot); // one gain action per deck even with overlapping clips
+            }
         }
 
         return actions;
     }
+
+    // The effective clip-gain envelope on a deck at t: the sounding clip's EffectiveGainAt, or unity
+    // when no clip is sounding there (so a bare gain lane keeps its own value). Overlapping clips on one
+    // deck resolve latest-started-wins, matching MixPlan.ActiveClip.
+    private double ClipEnvelopeAt(int slot, double timeSeconds)
+    {
+        StudioClip? active = ActiveClip(slot, timeSeconds);
+        return active is null ? UnityGain : ClipGain.EffectiveGainAt(active, timeSeconds);
+    }
+
+    private StudioClip? ActiveClip(int slot, double timeSeconds)
+    {
+        StudioClip? best = null;
+        foreach (StudioClip clip in _project.Clips)
+        {
+            if (clip.DeckSlot != slot || !IsSounding(clip, timeSeconds))
+                continue;
+            if (best is null || clip.TimelineStartSeconds > best.TimelineStartSeconds)
+                best = clip;
+        }
+
+        return best;
+    }
+
+    // Half-open [start, end): matches ClipEventsBetween and ClipGain's window. Open-ended clips sound
+    // from their start onward. Warp is not modeled here (the live transport drives the source rate), so
+    // the un-warped TimelineEndSeconds anchors the window, identical to the clip-event boundaries.
+    private static bool IsSounding(StudioClip clip, double timeSeconds)
+        => timeSeconds >= clip.TimelineStartSeconds
+            && (clip.TimelineEndSeconds is not { } end || timeSeconds < end);
 
     private static bool InWindow(double t, double t0, double t1) => t >= t0 && t < t1;
 

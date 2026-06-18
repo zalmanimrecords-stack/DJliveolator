@@ -6,8 +6,12 @@ namespace Liveolator.Core.Studio;
 /// (<see cref="TimelineStartSeconds"/>), and the trim into the source (<see cref="SourceIn"/> to
 /// <see cref="SourceOut"/>; null out = play to the end of the file). Pure data — paths only.
 /// <para><see cref="SourceBpm"/> is the clip track's analyzed tempo (0 = unknown); with
-/// <see cref="WarpEnabled"/> the clip is time-stretched (pitch preserved) to the project tempo.
-/// The trailing optional params keep older saved projects loadable (they default).</para>
+/// <see cref="WarpEnabled"/> the clip is time-stretched (pitch preserved) to the project tempo.</para>
+/// <para><see cref="Gain"/> is a per-clip linear amplitude multiplier (1.0 = unity), and
+/// <see cref="FadeInSeconds"/>/<see cref="FadeOutSeconds"/> are linear amplitude ramps at the clip
+/// head/tail. The effective level at any timeline instant is computed by <see cref="ClipGain"/>.</para>
+/// <para>The trailing optional params keep older saved projects loadable (they default: unity gain,
+/// no fades).</para>
 /// </summary>
 public sealed record StudioClip(
     int DeckSlot,
@@ -16,7 +20,10 @@ public sealed record StudioClip(
     TimeSpan SourceIn,
     TimeSpan? SourceOut,
     double SourceBpm = 0.0,
-    bool WarpEnabled = false)
+    bool WarpEnabled = false,
+    double Gain = 1.0,
+    double FadeInSeconds = 0.0,
+    double FadeOutSeconds = 0.0)
 {
     /// <summary>True when this clip can be warped: warp is on and the source tempo is known.</summary>
     public bool CanWarp => WarpEnabled && SourceBpm > 0.0;

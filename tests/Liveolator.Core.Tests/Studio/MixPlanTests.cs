@@ -107,4 +107,39 @@ public class MixPlanTests
         DeckMixState s = plan.EvaluateDeck(0, 25); // both cover 25; the one starting at 20 wins
         Assert.Equal(5, s.SourceSeconds, Tol);     // 25 - 20
     }
+
+    [Fact]
+    public void EvaluateDeck_FoldsClipStaticGainIntoDeckGain()
+    {
+        var clip = new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100), Gain: 0.5);
+        var plan = new MixPlan(new StudioProject("p", 120, new[] { clip }, Array.Empty<AutomationLane>()));
+
+        // No gain lane => deck default 1.0 * clip 0.5 = 0.5.
+        Assert.Equal(0.5, plan.EvaluateDeck(0, 10).Gain, Tol);
+    }
+
+    [Fact]
+    public void EvaluateDeck_FoldsClipFadeIntoDeckGain()
+    {
+        var clip = new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100),
+            Gain: 1.0, FadeInSeconds: 4);
+        var plan = new MixPlan(new StudioProject("p", 120, new[] { clip }, Array.Empty<AutomationLane>()));
+
+        Assert.Equal(0.5, plan.EvaluateDeck(0, 2).Gain, Tol); // halfway up the fade-in
+        Assert.Equal(1.0, plan.EvaluateDeck(0, 10).Gain, Tol);
+    }
+
+    [Fact]
+    public void EvaluateDeck_MultipliesClipGainWithGainAutomation_ThenClamps()
+    {
+        var clip = new StudioClip(1, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(100), Gain: 0.5);
+        var p = new StudioProject("p", 120, new[] { clip }, new[]
+        {
+            new AutomationLane(AutomationTarget.DeckGain, 1, new[] { new AutomationKeyframe(0, 0.5) }),
+        });
+        var plan = new MixPlan(p);
+
+        // lane 0.5 * clip 0.5 = 0.25.
+        Assert.Equal(0.25, plan.EvaluateDeck(1, 10).Gain, Tol);
+    }
 }
