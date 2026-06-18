@@ -30,6 +30,8 @@
 | T1 missing-file relocate (X5.2 core) | 1527677 | RelocationPlanner + IFileExistenceProbe; Core 103 green |
 | UX P2 dialogs | cc46c2b | FoldersStatus SizeToContent + Add-folder; VisualLibrary delete confirm + de-emphasis |
 | UX P2 dj-mixer-fit | f2c0616 | cluster mixer/EQ, crossfader 28->36, deck column capped |
+| UX P2 studio-transport | 86480b3 | stable transport (IsEnabled), play/key styles, Draw label, warp relabel; 57 Studio tests |
+| UX P2 settings-embed | 28ffc63 | embedded MappingsView Height 520 -> MinHeight 360/MaxHeight 560 (no nested-scroll) |
 
 > UX P2 still OPEN (deferred, branches kept): `ux-studio-transport` (`2ce96aa`) + Settings nested-scroll — both blocked on concurrent uncommitted Studio/Settings WIP (StudioView OpenItems/HasSavedProjects/DeleteItems leaves App un-buildable at HEAD). Merge after that lands. MAPPINGS-tab promotion = owner decision.
 | T5 GL strobe/transition (B2) | 0bfa8c3 | StrobeGate + quantized transition; Visuals 125 green |
