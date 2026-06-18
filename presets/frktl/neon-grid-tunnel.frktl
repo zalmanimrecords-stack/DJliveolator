@@ -1,0 +1,13 @@
+{
+  "name": "NEON GRID TUNNEL",
+  "author": "Liveolator",
+  "description": "Retro perspective tunnel with beat pulses and color cycling.",
+  "parameters": [
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "density", "uniform": "uDensity", "label": "DENSITY", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "warp", "uniform": "uWarp", "label": "WARP", "min": 0.0, "max": 1.0, "default": 0.35 },
+    { "id": "palette", "uniform": "uPalette", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 0.0 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uBeatPhase;\nuniform float uLevel;\nuniform float uBass;\nuniform float uSpeed;\nuniform float uDensity;\nuniform float uWarp;\nuniform float uPalette;\nuniform float uGlow;\nfloat gridLine(float x, float w){ float g=abs(fract(x)-0.5); return smoothstep(w,0.0,g); }\nvec3 pal(float t){ return 0.5+0.5*cos(6.28318*(t+vec3(0.0,0.33,0.67)+floor(uPalette+0.5)*0.13)); }\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.35+uSpeed*1.25);\n  float r=max(abs(p.y),0.04);\n  float z=1.0/r;\n  float x=p.x*z + sin(z*0.16+t)*uWarp*0.8;\n  float y=z + t*2.2 + uBass*0.8;\n  float dens=6.0+uDensity*12.0;\n  float line=gridLine(x*dens,0.035) + gridLine(y*dens,0.035);\n  line*=smoothstep(1.1,0.05,abs(p.y));\n  float horizon=exp(-p.y*p.y*80.0)*(0.2+uBeatFlash*0.9);\n  float pulse=0.4+uGlow*0.6+uLevel*0.7+uBeatFlash*(1.0-uBeatPhase)*0.8;\n  vec3 col=vec3(0.002,0.003,0.010);\n  col+=pal(x*0.02+y*0.01+t*0.03)*line*pulse;\n  col+=vec3(0.2,0.55,1.0)*horizon;\n  col=col/(1.0+col*0.6);\n  fragColor=vec4(col,1.0);\n}\n"
+}
