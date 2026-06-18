@@ -27,6 +27,9 @@ public sealed class StudioClipViewModel : ViewModelBase
     private double _pixelsPerSecond;
     private bool _warpEnabled;
     private double _warpTargetBpm;
+    private double _gain;
+    private double _fadeInSeconds;
+    private double _fadeOutSeconds;
     private IReadOnlyList<float>? _peaks;
     private IReadOnlyList<float>? _kickPeaks;
     private IReadOnlyList<float>? _midPeaks;
@@ -42,6 +45,9 @@ public sealed class StudioClipViewModel : ViewModelBase
         _sourceOutSeconds = clip.SourceOut?.TotalSeconds;
         _pixelsPerSecond = pixelsPerSecond;
         _warpEnabled = clip.WarpEnabled;
+        _gain = clip.Gain;
+        _fadeInSeconds = clip.FadeInSeconds;
+        _fadeOutSeconds = clip.FadeOutSeconds;
         SourceBpm = clip.SourceBpm > 0 ? clip.SourceBpm : (track?.Bpm?.Bpm ?? 0);
     }
 
@@ -157,6 +163,45 @@ public sealed class StudioClipViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Per-clip linear amplitude multiplier (1.0 = unity). Clamped non-negative; edits are undoable.</summary>
+    public double Gain
+    {
+        get => _gain;
+        set
+        {
+            double clamped = System.Math.Max(0, value);
+            if (clamped != _gain)
+                BeforeMutation?.Invoke();
+            this.RaiseAndSetIfChanged(ref _gain, clamped);
+        }
+    }
+
+    /// <summary>Linear fade-in ramp length at the clip head, in seconds. Clamped non-negative; edits are undoable.</summary>
+    public double FadeInSeconds
+    {
+        get => _fadeInSeconds;
+        set
+        {
+            double clamped = System.Math.Max(0, value);
+            if (clamped != _fadeInSeconds)
+                BeforeMutation?.Invoke();
+            this.RaiseAndSetIfChanged(ref _fadeInSeconds, clamped);
+        }
+    }
+
+    /// <summary>Linear fade-out ramp length at the clip tail, in seconds. Clamped non-negative; edits are undoable.</summary>
+    public double FadeOutSeconds
+    {
+        get => _fadeOutSeconds;
+        set
+        {
+            double clamped = System.Math.Max(0, value);
+            if (clamped != _fadeOutSeconds)
+                BeforeMutation?.Invoke();
+            this.RaiseAndSetIfChanged(ref _fadeOutSeconds, clamped);
+        }
+    }
+
     /// <summary>The trimmed source length the clip spans (falls back to the full track / a default).</summary>
     public double DurationSeconds
     {
@@ -198,7 +243,10 @@ public sealed class StudioClipViewModel : ViewModelBase
         TimeSpan.FromSeconds(SourceInSeconds),
         SourceOutSeconds is { } o ? TimeSpan.FromSeconds(o) : null,
         SourceBpm,
-        WarpEnabled);
+        WarpEnabled,
+        Gain,
+        FadeInSeconds,
+        FadeOutSeconds);
 
     private void RaiseSpan()
     {

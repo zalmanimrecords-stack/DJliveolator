@@ -62,4 +62,90 @@ public class StudioClipViewModelTests
         Assert.True(clip.DurationSeconds > 0);
         Assert.Null(clip.ToClip().SourceOut);
     }
+
+    [Fact]
+    public void Gain_AndFades_SeededFromClip()
+    {
+        StudioClipViewModel clip = new(
+            new StudioClip(1, "/m/a.wav", 0, TimeSpan.Zero, null,
+                SourceBpm: 0, WarpEnabled: false, Gain: 0.5, FadeInSeconds: 2, FadeOutSeconds: 3),
+            track: null, pixelsPerSecond: 8);
+
+        Assert.Equal(0.5, clip.Gain, Tol);
+        Assert.Equal(2, clip.FadeInSeconds, Tol);
+        Assert.Equal(3, clip.FadeOutSeconds, Tol);
+    }
+
+    [Fact]
+    public void Gain_AndFades_DefaultToUnityAndNoFade()
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        Assert.Equal(1.0, clip.Gain, Tol);
+        Assert.Equal(0, clip.FadeInSeconds, Tol);
+        Assert.Equal(0, clip.FadeOutSeconds, Tol);
+    }
+
+    [Fact]
+    public void Gain_AndFades_FlowIntoToClip()
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        clip.Gain = 0.75;
+        clip.FadeInSeconds = 1.5;
+        clip.FadeOutSeconds = 2.5;
+
+        StudioClip projected = clip.ToClip();
+
+        Assert.Equal(0.75, projected.Gain, Tol);
+        Assert.Equal(1.5, projected.FadeInSeconds, Tol);
+        Assert.Equal(2.5, projected.FadeOutSeconds, Tol);
+    }
+
+    [Theory]
+    [InlineData(-1.0, 0.0)]
+    [InlineData(0.0, 0.0)]
+    [InlineData(2.0, 2.0)]
+    public void Gain_ClampedNonNegative(double set, double expected)
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        clip.Gain = set;
+        Assert.Equal(expected, clip.Gain, Tol);
+    }
+
+    [Fact]
+    public void Fades_ClampedNonNegative()
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        clip.FadeInSeconds = -5;
+        clip.FadeOutSeconds = -5;
+        Assert.Equal(0, clip.FadeInSeconds, Tol);
+        Assert.Equal(0, clip.FadeOutSeconds, Tol);
+    }
+
+    [Fact]
+    public void Gain_AndFades_FireBeforeMutationForUndo()
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        int calls = 0;
+        clip.BeforeMutation = () => calls++;
+
+        clip.Gain = 0.5;
+        clip.FadeInSeconds = 1;
+        clip.FadeOutSeconds = 2;
+
+        Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public void Gain_AndFades_NoMutationWhenUnchanged()
+    {
+        StudioClipViewModel clip = Make(start: 0, inSec: 0, outSec: 10);
+        int calls = 0;
+        clip.BeforeMutation = () => calls++;
+
+        clip.Gain = clip.Gain;
+        clip.FadeInSeconds = clip.FadeInSeconds;
+        clip.FadeOutSeconds = clip.FadeOutSeconds;
+
+        Assert.Equal(0, calls);
+    }
 }
