@@ -9,6 +9,7 @@ using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Visuals.TrackPrograms;
+using Liveolator.Media.Visuals;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Live.Modules;
@@ -202,6 +203,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
             ReloadEffects();
             ReloadAddons();
+            await ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath);
             Status = $"{selected.PackageId} is now {(selected.IsEnabled ? "disabled" : "enabled")}.";
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException)
@@ -288,19 +290,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     private async Task ReloadChannelSourcesAsync(string? trackPath)
     {
-        // "None" leads the list so a layer can be switched off from the UI without leaving the scene.
-        var options = new List<VisualChannelSourceOption>
-        {
-            new("None", "OFF", VisualSourceRef.None),
-        };
-
-        options.AddRange((_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
-            .Where(effect => effect.Role == VisualEffectRole.Generator)
-            .OrderBy(effect => effect.EffectId, StringComparer.OrdinalIgnoreCase)
-            .Select(effect => new VisualChannelSourceOption(
-                VisualSourceLabel.Humanize(effect.EffectId),
-                "PLUGINS",
-                new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId))));
+        List<VisualChannelSourceOption> options = BuildGeneratorSourceOptions();
 
         if (!string.IsNullOrWhiteSpace(trackPath) && _trackVisualPrograms is not null)
         {
@@ -315,6 +305,9 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         }
 
         VisualScene? scene = _visualEngine?.ActiveBank.Scene(0);
+        if (scene is not null)
+            AppendMissingSceneGenerators(options, scene);
+
         foreach (VisualChannelViewModel channel in Channels)
         {
             VisualLayer? layer = scene is not null && channel.LayerSlot < scene.Layers.Count
@@ -323,6 +316,119 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             channel.ReplaceSources(options, layer?.Source);
             if (layer is not null)
                 channel.SyncOpacityFromScene(layer.Opacity);
+        }
+    }
+
+    /// <summary>
+    /// Builds the generator/preset entries for the layer source picker (doc 29). Controllable presets are
+    /// listed by their authored <see cref="GeneratorPreset.Name"/>; plain generators without a preset
+    /// wrapper follow under PLUGINS.
+    /// </summary>
+    private List<VisualChannelSourceOption> BuildGeneratorSourceOptions()
+    {
+        // "None" leads the list so a layer can be switched off from the UI without leaving the scene.
+        var options = new List<VisualChannelSourceOption>
+        {
+            new("None", "OFF", VisualSourceRef.None),
+        };
+
+        var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nameByEffectId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (GeneratorPreset preset in _presetRegistry?.Presets ?? Array.Empty<GeneratorPreset>())
+            nameByEffectId[preset.GeneratorEffectId] = preset.Name;
+
+        foreach (GeneratorPreset preset in (_presetRegistry?.Presets ?? Array.Empty<GeneratorPreset>())
+                     .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!listed.Add(preset.GeneratorEffectId))
+                continue;
+
+            bool loaded = TryResolveGenerator(preset.GeneratorEffectId, preset.GeneratorVersion, out _);
+            options.Add(new VisualChannelSourceOption(
+                loaded ? preset.Name : $"{preset.Name} (not loaded)",
+                "PRESETS",
+                new VisualSourceRef(VisualSourceKind.Generator, preset.GeneratorEffectId)));
+        }
+
+        // User-authored folder presets can register as effects even when the preset row is out of sync;
+        // always surface the liveolator.frktl.user package in PRESETS so the picker matches doc 29.
+        foreach (VisualEffectDescriptor effect in (_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
+                     .Where(effect =>
+                         effect.Role == VisualEffectRole.Generator
+                         && string.Equals(effect.PackageId, FrktlPresetFolderLoader.PackageId, StringComparison.Ordinal))
+                     .OrderBy(effect => effect.EffectId, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!listed.Add(effect.EffectId))
+                continue;
+
+            string label = nameByEffectId.TryGetValue(effect.EffectId, out string? presetName)
+                ? presetName
+                : VisualSourceLabel.Humanize(effect.EffectId);
+            options.Add(new VisualChannelSourceOption(
+                label,
+                "PRESETS",
+                new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId)));
+        }
+
+        foreach (VisualEffectDescriptor effect in (_effectRegistry?.Effects ?? Array.Empty<VisualEffectDescriptor>())
+                     .Where(effect => effect.Role == VisualEffectRole.Generator)
+                     .OrderBy(effect => effect.EffectId, StringComparer.OrdinalIgnoreCase))
+        {
+            if (listed.Contains(effect.EffectId))
+                continue;
+
+            options.Add(new VisualChannelSourceOption(
+                VisualSourceLabel.Humanize(effect.EffectId),
+                "PLUGINS",
+                new VisualSourceRef(VisualSourceKind.Generator, effect.EffectId)));
+        }
+
+        return options;
+    }
+
+    private bool TryResolveGenerator(
+        string effectId,
+        string? version,
+        out VisualEffectDescriptor descriptor)
+    {
+        descriptor = default!;
+        if (_effectRegistry is null)
+            return false;
+
+        if (_effectRegistry.TryGet(effectId, version, out descriptor) && descriptor.Role == VisualEffectRole.Generator)
+            return true;
+
+        if (_effectRegistry.TryGet(effectId, null, out descriptor) && descriptor.Role == VisualEffectRole.Generator)
+            return true;
+
+        descriptor = default!;
+        return false;
+    }
+
+    /// <summary>
+    /// Keeps scene-referenced generators visible in the picker when their preset file is missing or was
+    /// skipped at load time, so the operator sees what the saved scene expects instead of a silent fallback
+    /// to None.
+    /// </summary>
+    private static void AppendMissingSceneGenerators(List<VisualChannelSourceOption> options, VisualScene scene)
+    {
+        var known = new HashSet<string>(
+            options.Where(option => option.Source.Kind == VisualSourceKind.Generator)
+                .Select(option => option.Source.Reference),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (VisualLayer layer in scene.Layers)
+        {
+            if (layer.Source.Kind != VisualSourceKind.Generator
+                || string.IsNullOrWhiteSpace(layer.Source.Reference)
+                || known.Contains(layer.Source.Reference))
+                continue;
+
+            options.Add(new VisualChannelSourceOption(
+                $"{VisualSourceLabel.Humanize(layer.Source.Reference)} (not loaded)",
+                "MISSING",
+                layer.Source));
+            known.Add(layer.Source.Reference);
         }
     }
 }

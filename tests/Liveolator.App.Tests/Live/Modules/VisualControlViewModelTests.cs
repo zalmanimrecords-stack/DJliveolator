@@ -3,11 +3,15 @@ using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
+using System.IO;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Beat;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Visuals;
+using Liveolator.Media.Visuals;
+using Liveolator.Visuals.Gl;
 using ReactiveUI;
 using Xunit;
 
@@ -72,8 +76,6 @@ public sealed class VisualControlViewModelTests
         public void RemovePackage(string packageId) => throw new NotSupportedException();
     }
 
-    // Re-scanning the folder registers new generator effects; the layer source dropdowns are rebuilt from
-    // the effect registry, so the fake registers a generator effect the channels can then list.
     private sealed class FakePresetReloader : IVisualPresetReloader
     {
         private readonly VisualEffectRegistry _effects;
@@ -92,6 +94,29 @@ public sealed class VisualControlViewModelTests
             });
             return 1;
         }
+    }
+
+    private sealed class FakeVisualEngineWithScene : IVisualPerformanceEngine
+    {
+        public FakeVisualEngineWithScene(VisualScene scene)
+            => ActiveBank = new VisualBank("Live", new[] { scene });
+
+        public VisualBank ActiveBank { get; }
+        public IReadOnlyList<string> BankNames { get; } = new[] { "Live" };
+
+        public void SelectBank(int index) => throw new NotSupportedException();
+        public void LoadScene(VisualScene scene, Quantize when, int everyN = 1) => throw new NotSupportedException();
+        public void LoadPreset(GeneratorPresetBinding binding, int layer, Quantize when, int everyN = 1)
+            => throw new NotSupportedException();
+        public void SetMacro(string name, double value) => throw new NotSupportedException();
+        public void SetLayerSource(int layer, VisualSourceRef source, Quantize when, int everyN = 1)
+            => throw new NotSupportedException();
+        public void ToggleLayer(int layer) => throw new NotSupportedException();
+        public void SetLayerOpacity(int layer, double opacity) => throw new NotSupportedException();
+        public void LaunchClip(int layer, string clipId, Quantize when, int everyN = 1) => throw new NotSupportedException();
+        public void Blackout(bool on) => throw new NotSupportedException();
+        public void Strobe(bool on) => throw new NotSupportedException();
+        public void Transition(TransitionStyle style, Quantize when, int everyN = 1) => throw new NotSupportedException();
     }
 
     private static VisualEffectDescriptor Generator(string effectId)
@@ -214,6 +239,93 @@ public sealed class VisualControlViewModelTests
             VisualChannelSourceOption first = channel.Sources[0];
             Assert.Equal("None", first.Label);
             Assert.Equal(VisualSourceKind.None, first.Source.Kind);
+        }
+    }
+
+    [Fact]
+    public void ChannelSources_ListPresetsByAuthoredName_WhenPresetRegistryWired()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            effectRegistry: effects,
+            presetRegistry: presets);
+
+        VisualChannelSourceOption presetOption = Assert.Single(
+            vm.Channels[0].Sources,
+            source => source.Group == "PRESETS");
+        Assert.Equal("Preset", presetOption.Label);
+        Assert.Equal("pkg/gen", presetOption.Source.Reference);
+    }
+
+    [Fact]
+    public void ChannelSources_ShowMissingSceneGenerator_WhenPresetFileIsNotLoaded()
+    {
+        var effects = new VisualEffectRegistry();
+        PsyFractalVisualizerAddon.TryRegister(effects);
+        var engine = new FakeVisualEngineWithScene(new VisualScene(
+            "Live",
+            new[]
+            {
+                new VisualLayer(
+                    "Star",
+                    new VisualSourceRef(VisualSourceKind.Generator, "liveolator.frktl.user/star-of-david"),
+                    Array.Empty<EffectRef>(),
+                    BlendMode.Normal,
+                    1.0),
+            },
+            new Dictionary<string, double>(),
+            TransitionStyle.Cut,
+            BeatBehavior.None));
+
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            effectRegistry: effects,
+            visualEngine: engine);
+
+        VisualChannelSourceOption missing = Assert.Single(
+            vm.Channels[0].Sources,
+            source => source.Group == "MISSING");
+        Assert.Equal("Star Of David (not loaded)", missing.Label);
+    }
+
+    [Fact]
+    public void ChannelSources_ListUserFrktlPackageUnderPresetsGroup()
+    {
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        string folder = Path.Combine(Path.GetTempPath(), "liveolator-frktl-vm", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string shader =
+                "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform float uGlow;\nvoid main(){ fragColor = vec4(uGlow); }";
+            string json = $$"""
+                {
+                  "name": "COLOR POOL",
+                  "parameters": [
+                    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 1.0 }
+                  ],
+                  "shader": {{System.Text.Json.JsonSerializer.Serialize(shader)}}
+                }
+                """;
+            File.WriteAllText(Path.Combine(folder, "color-pool.frktl"), json);
+            new FrktlPresetFolderLoader(effects, presets, folder).Load();
+
+            var vm = new VisualControlViewModel(
+                new FakeDispatcher(),
+                effectRegistry: effects,
+                presetRegistry: presets);
+
+            VisualChannelSourceOption option = Assert.Single(
+                vm.Channels[0].Sources,
+                source => source.Label == "COLOR POOL");
+            Assert.Equal("PRESETS", option.Group);
+            Assert.Equal("liveolator.frktl.user/color-pool", option.Source.Reference);
+        }
+        finally
+        {
+            try { Directory.Delete(folder, recursive: true); } catch (IOException) { }
         }
     }
 
