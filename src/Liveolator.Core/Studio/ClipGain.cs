@@ -14,15 +14,21 @@ public static class ClipGain
     /// <c>clip.Gain * fadeIn(t) * fadeOut(t)</c>, clamped to <c>[0, +inf)</c>. The fade-in ramps
     /// 0 -&gt; 1 linearly across <see cref="StudioClip.FadeInSeconds"/> from the clip start; the
     /// fade-out ramps 1 -&gt; 0 linearly across <see cref="StudioClip.FadeOutSeconds"/> up to the clip
-    /// end. Open-ended clips (no <see cref="StudioClip.TimelineEndSeconds"/>) have no fade-out. Zero
-    /// fades collapse to just the static gain. Outside the clip's active window the gain is 0.
+    /// end. Open-ended clips have no fade-out. Zero fades collapse to just the static gain. Outside the
+    /// clip's active window the gain is 0.
+    /// <para><paramref name="effectiveEndSeconds"/> is the timeline instant the clip stops sounding,
+    /// which the silence cutoff and fade-out anchor on. Callers that warp a clip must pass its
+    /// <b>warped</b> end so the fade matches the window the renderer selects the clip over; otherwise the
+    /// warped tail goes silent early (warp-down) or the fade-out never lands (warp-up). When null it
+    /// falls back to the un-warped <see cref="StudioClip.TimelineEndSeconds"/> (correct for un-warped
+    /// clips and the warp-agnostic live path).</para>
     /// </summary>
-    public static double EffectiveGainAt(StudioClip clip, double timelineSeconds)
+    public static double EffectiveGainAt(StudioClip clip, double timelineSeconds, double? effectiveEndSeconds = null)
     {
         ArgumentNullException.ThrowIfNull(clip);
 
         double start = clip.TimelineStartSeconds;
-        double? end = clip.TimelineEndSeconds;
+        double? end = effectiveEndSeconds ?? clip.TimelineEndSeconds;
 
         // Outside the clip's sounding window contributes nothing (half-open: [start, end)).
         if (timelineSeconds < start)

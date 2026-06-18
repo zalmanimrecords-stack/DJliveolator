@@ -58,6 +58,48 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
+    public void Channels_ExposeSuppliedDecks_AsMixerStrips()
+    {
+        var dispatcher = new FakeDispatcher();
+        var deckA = new DeckViewModel(slot: 0, dispatcher);
+        var deckB = new DeckViewModel(slot: 1, dispatcher);
+
+        var vm = new MixerViewModel(dispatcher, channelA: deckA, channelB: deckB);
+
+        Assert.Same(deckA, vm.ChannelA);
+        Assert.Same(deckB, vm.ChannelB);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ChannelEq_EmitsMixerEqBand_ForItsDeckSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var deckA = new DeckViewModel(slot: 0, dispatcher);
+        var deckB = new DeckViewModel(slot: 1, dispatcher);
+        var vm = new MixerViewModel(dispatcher, channelA: deckA, channelB: deckB);
+
+        DeckViewModel channel = slot == 0 ? vm.ChannelA! : vm.ChannelB!;
+        channel.EqHigh.Value = 0.7;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerEqBand, action.Kind);
+        Assert.Equal(slot, action.Slot);
+        Assert.Equal("High", action.Argument);
+        Assert.Equal(0.7, action.Value);
+    }
+
+    [Fact]
+    public void Channels_AreNull_WhenNoDecksSupplied()
+    {
+        var vm = new MixerViewModel(new FakeDispatcher());
+
+        Assert.Null(vm.ChannelA);
+        Assert.Null(vm.ChannelB);
+    }
+
+    [Fact]
     public void Crossfader_SeedsFromFeedback()
     {
         var dispatcher = new FakeDispatcher();

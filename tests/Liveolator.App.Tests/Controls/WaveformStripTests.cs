@@ -114,4 +114,22 @@ public sealed class WaveformStripTests
     {
         Assert.Equal(expectedLevel, WaveformStrip.HotLevel(kick));
     }
+
+    [Theory]
+    [InlineData(84.0, 13.44)]   // a LIVE strip: 16% of the height, inside the readable band
+    [InlineData(200.0, 15.0)]   // a tall strip clamps to the max so the comb never balloons
+    [InlineData(40.0, 9.0)]     // a short strip clamps up to the min so the comb stays legible
+    public void CombHeight_ClampsToAReadableBand(double totalHeight, double expected)
+    {
+        Assert.Equal(expected, WaveformStrip.CombHeight(totalHeight), 3);
+    }
+
+    [Theory]
+    [InlineData(10.0, 5.0)]     // a tiny strip: never take more than half, even below the min
+    [InlineData(0.0, 0.0)]      // unmeasured strip → no comb
+    [InlineData(double.NaN, 0.0)]
+    public void CombHeight_NeverEatsTheWholeStrip(double totalHeight, double expected)
+    {
+        Assert.Equal(expected, WaveformStrip.CombHeight(totalHeight), 3);
+    }
 }

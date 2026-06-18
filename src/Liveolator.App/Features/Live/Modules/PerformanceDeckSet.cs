@@ -38,7 +38,9 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         _library = library;
         DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, waveformZoomSeconds, nudgeSeconds);
         DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, waveformZoomSeconds, nudgeSeconds);
-        Mixer = new MixerViewModel(dispatcher, levelMeter);
+        // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
+        // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
+        Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);
         _waveformZoom = ZoomKnobFromSeconds(waveformZoomSeconds); // reflect the initial zoom on the knob
     }
 

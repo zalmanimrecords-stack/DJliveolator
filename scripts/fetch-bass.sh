@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
-# fetch-bass.sh — fetch the un4seen BASS + BASSmix native libraries for the current (or a
+# fetch-bass.sh — fetch the un4seen BASS + BASSmix + BASS_FX native libraries for the current (or a
 # specified) platform into runtimes/<rid>/native/, where the App build step picks them up.
+# BASS_FX is required: the realtime two-deck engine wraps every deck in a BASS_FX tempo stream for
+# key-lock, so a missing bass_fx aborts every track load.
 #
 # BASS ships as per-platform zips from un4seen.com. This script downloads the right archives,
 # extracts only the native libraries we need, and places them under runtimes/<rid>/native/
@@ -62,10 +64,12 @@ mkdir -p "$DEST_DIR"
 
 fetch_lib() {
   local base="$1"
+  # Optional path segment under /files/ (e.g. "z/0/" for BASS_FX); root when absent.
+  local url_path="${2:-}"
   local archive="${base}${VERSION}${SUFFIX}.zip"
   local lib="${PREFIX}${base}.${EXT}"
   local dest_file="$DEST_DIR/$lib"
-  local url="https://www.un4seen.com/files/$archive"
+  local url="https://www.un4seen.com/files/${url_path}${archive}"
 
   echo "Fetching $base for $RID"
   echo "  source : $url"
@@ -111,17 +115,17 @@ fetch_lib() {
   echo "  done   : extracted $(basename "$chosen") -> $dest_file"
 }
 
-while IFS='|' read -r base requirement || [ -n "$base" ]; do
+while IFS='|' read -r base requirement url_path || [ -n "$base" ]; do
   case "$base" in
     ""|\#*) continue ;;
   esac
 
   case "$requirement" in
     required)
-      fetch_lib "$base"
+      fetch_lib "$base" "$url_path"
       ;;
     optional)
-      if ! fetch_lib "$base"; then
+      if ! fetch_lib "$base" "$url_path"; then
         echo "Optional add-on '$base' could not be fetched; continuing." >&2
       fi
       ;;

@@ -145,31 +145,8 @@
         </StackPanel>
       </Border>
 
-      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob).
-           Cap the row width + center so the 48px knobs cluster where the hands expect them instead
-           of floating across the wide deck column. -->
-      <UniformGrid Columns="4" MaxWidth="240" HorizontalAlignment="Center">
-        <StackPanel Spacing="4" HorizontalAlignment="Center">
-          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
-                         Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
-        </StackPanel>
-        <StackPanel Spacing="4" HorizontalAlignment="Center">
-          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
-                         Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
-        </StackPanel>
-        <StackPanel Spacing="4" HorizontalAlignment="Center">
-          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
-                         Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
-        </StackPanel>
-        <StackPanel Spacing="4" HorizontalAlignment="Center">
-          <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
-                         Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
-          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
-        </StackPanel>
-      </UniformGrid>
+      <!-- EQ + filter knobs live on the MIXER now (per-channel strips, DjMixerView) — the way a hardware
+           DJ mixer groups the channel EQ. Pitch stays hardware/MIDI-only via DeckPitch (no on-screen knob). -->
     </StackPanel>
   </Border>
 </UserControl>

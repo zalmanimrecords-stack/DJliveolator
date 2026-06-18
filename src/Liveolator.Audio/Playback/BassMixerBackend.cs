@@ -537,10 +537,13 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public double GetDeckPositionSeconds(int deckHandle)
     {
-        long position = BassMix.ChannelGetPosition(deckHandle);
+        // Position comes from the mixer source channel (the tempo stream), like GetDeckPositionFraction —
+        // BassMix.ChannelGetPosition on the raw source returns -1 and Jog would seek from 0 every time.
+        int mixerHandle = MixerHandleFor(deckHandle);
+        long position = BassMix.ChannelGetPosition(mixerHandle);
         if (position < 0)
             return 0.0;
-        double seconds = Bass.ChannelBytes2Seconds(deckHandle, position);
+        double seconds = Bass.ChannelBytes2Seconds(mixerHandle, position);
         return seconds > 0 ? seconds : 0.0;
     }
 
@@ -565,10 +568,14 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
             return;
         }
 
-        ClearDeckLoopSync(deckHandle, deck); // replace any prior loop on this deck
+        ClearDeckLoopSync(deck); // replace any prior loop on this deck
 
-        long startBytes = Bass.ChannelSeconds2Bytes(deckHandle, Math.Max(0.0, startSeconds));
-        long endBytes = Bass.ChannelSeconds2Bytes(deckHandle, endSeconds);
+        // Loop bytes + sync + wrap-seek all address the mixer source channel (the tempo stream), like
+        // every other BassMix.Channel* op — arming these on the raw source handle silently fails (returns
+        // 0 / no-op) and the loop never engages.
+        int mixerHandle = deck.MixerHandle;
+        long startBytes = Bass.ChannelSeconds2Bytes(mixerHandle, Math.Max(0.0, startSeconds));
+        long endBytes = Bass.ChannelSeconds2Bytes(mixerHandle, endSeconds);
         if (startBytes < 0 || endBytes <= startBytes)
         {
             _logger.LogWarning("Loop region for deck {Handle} resolved to an empty byte span; ignoring.", deckHandle);
@@ -580,11 +587,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // SyncFlags.Mixtime fires on the mixer's pull thread for sample-accurate, click-free looping.
         deck.LoopProcedure = (handle, channel, data, user) =>
         {
-            if (!BassMix.ChannelSetPosition(deckHandle, deck.LoopStartBytes))
+            if (!BassMix.ChannelSetPosition(mixerHandle, deck.LoopStartBytes))
                 _logger.LogWarning("Loop wrap seek on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
         };
         deck.LoopSync = BassMix.ChannelSetSync(
-            deckHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
+            mixerHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
         if (deck.LoopSync == 0)
         {
             deck.LoopProcedure = null;
@@ -595,14 +602,16 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     public void ClearDeckLoop(int deckHandle)
     {
         if (_decks.TryGetValue(deckHandle, out DeckDsp? deck))
-            ClearDeckLoopSync(deckHandle, deck);
+            ClearDeckLoopSync(deck);
     }
 
-    private static void ClearDeckLoopSync(int deckHandle, DeckDsp deck)
+    // The loop sync lives on the mixer source channel (the tempo stream), so it is removed from the same
+    // handle it was armed on — see SetDeckLoop.
+    private static void ClearDeckLoopSync(DeckDsp deck)
     {
         if (deck.LoopSync != 0)
         {
-            BassMix.ChannelRemoveSync(deckHandle, deck.LoopSync);
+            BassMix.ChannelRemoveSync(deck.MixerHandle, deck.LoopSync);
             deck.LoopSync = 0;
             deck.LoopProcedure = null;
             deck.LoopStartBytes = 0;
@@ -615,10 +624,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
             return;
 
+        // The end sync lives on the mixer source channel (the tempo stream), like every other BassMix
+        // op on this deck — arming it on the raw source handle silently fails, so end-of-track auto-
+        // advance would never fire.
+        int mixerHandle = deck.MixerHandle;
+
         // Replace any prior end sync on this deck so a reused handle never fires twice.
         if (deck.EndSync != 0)
         {
-            BassMix.ChannelRemoveSync(deckHandle, deck.EndSync);
+            BassMix.ChannelRemoveSync(mixerHandle, deck.EndSync);
             deck.EndSync = 0;
             deck.EndProcedure = null;
         }
@@ -627,7 +641,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // the mixer's pull thread the moment the stream runs out. The callback is kept short — the engine
         // marks the slot stopped and raises its DeckEnded event; the queue advance happens off that.
         deck.EndProcedure = (handle, channel, data, user) => onEnded();
-        deck.EndSync = BassMix.ChannelSetSync(deckHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
+        deck.EndSync = BassMix.ChannelSetSync(mixerHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
         if (deck.EndSync == 0)
         {
             deck.EndProcedure = null;
@@ -637,8 +651,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public void SetDeckPlaying(int deckHandle, bool playing)
     {
+        // The channel plugged into the master mixer is the deck's tempo stream, not the raw source — the
+        // mixer pause flag must be toggled on THAT handle (BassMix.ChannelFlags on a non-mixer-channel is
+        // a no-op, which would leave the deck stuck paused and silent on Play). Mirror every other mixer-
+        // source op here (GetDeckPositionFraction / SetDeckPositionFraction) and resolve via MixerHandleFor.
+        int mixerHandle = MixerHandleFor(deckHandle);
         BassFlags value = playing ? BassFlags.Default : BassFlags.MixerChanPause;
-        BassMix.ChannelFlags(deckHandle, value, BassFlags.MixerChanPause);
+        // BassMix.ChannelFlags returns the channel's updated flags, or all-bits-set on error.
+        if (BassMix.ChannelFlags(mixerHandle, value, BassFlags.MixerChanPause) == unchecked((BassFlags)(-1)))
+            _logger.LogWarning("Set play state on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
     }
 
     public void UnplugDeck(int deckHandle)

@@ -30,12 +30,20 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private double _levelB;
     private bool _disposed;
 
+    /// <param name="channelA">Deck A, exposed as the mixer's A channel so the channel-strip EQ/filter knobs
+    /// (which already emit per-slot <c>MixerEqBand</c>/<c>MixerFilter</c> actions) can live on the mixer where
+    /// a DJ expects them. Null leaves the channel-strip knobs unbound (e.g. the Live deck keeps its own).</param>
+    /// <param name="channelB">Deck B, exposed as the mixer's B channel (see <paramref name="channelA"/>).</param>
     public MixerViewModel(
         IPerformanceActionDispatcher? dispatcher = null,
-        IDeckLevelMeter? levelMeter = null)
+        IDeckLevelMeter? levelMeter = null,
+        DeckViewModel? channelA = null,
+        DeckViewModel? channelB = null)
     {
         _dispatcher = dispatcher;
         _levelMeter = levelMeter;
+        ChannelA = channelA;
+        ChannelB = channelB;
         bool enabled = dispatcher is not null;
 
         Crossfader = new ContinuousControlViewModel(
@@ -76,6 +84,14 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel Crossfader { get; }
     public ContinuousControlViewModel ChannelGainA { get; }
     public ContinuousControlViewModel ChannelGainB { get; }
+
+    /// <summary>Deck A as the mixer's A channel — the source of the A channel-strip EQ/filter knobs
+    /// (<see cref="DeckViewModel.EqHigh"/>/<see cref="DeckViewModel.EqMid"/>/<see cref="DeckViewModel.EqLow"/>/
+    /// <see cref="DeckViewModel.Filter"/>). Null when no deck was supplied (the knobs then render disabled).</summary>
+    public DeckViewModel? ChannelA { get; }
+
+    /// <summary>Deck B as the mixer's B channel (see <see cref="ChannelA"/>).</summary>
+    public DeckViewModel? ChannelB { get; }
 
     public double LevelA
     {

@@ -73,6 +73,14 @@ function Stop-LiveolatorApp {
     )
 
     $running = @(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue)
+    if ($IsWin) {
+        $dotnetHosts = @(Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -like '*Liveolator.App*' })
+        foreach ($hostProc in $dotnetHosts) {
+            Stop-Process -Id $hostProc.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     if ($running.Count -gt 0) {
         if (-not $Quick) { Write-Host "Stopping $($running.Count) running Liveolator instance(s)..." }
         $running | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -148,8 +156,9 @@ if (-not $SkipFetch) {
 Stop-LiveolatorApp -UnlockPath $appExe
 
 # --- 3. Build (loud failure, no silent stale launch) -----------------------------------------------
+# --no-incremental: always recompile so "Build succeeded" cannot mean "skipped, still old output".
 Write-Host "Building Liveolator.App ($Configuration)..."
-dotnet build $appProject -c $Configuration
+dotnet build $appProject -c $Configuration --no-incremental
 if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host "BUILD FAILED - the app was NOT launched, so nothing stale was started." -ForegroundColor Red
@@ -180,24 +189,42 @@ $logDir = if ($IsWin) {
     Join-Path $env:HOME '.local/share/Liveolator/logs/liveolator.log'
 }
 
-$version = (Get-Item $appExe).VersionInfo.ProductVersion
+$exeStamp = (Get-Item -LiteralPath $appExe).LastWriteTime
+$appDll = Join-Path (Split-Path -LiteralPath $appExe) 'Liveolator.App.dll'
+$dllStamp = if (Test-Path -LiteralPath $appDll) { (Get-Item -LiteralPath $appDll).LastWriteTime } else { $null }
 Write-Host ''
 Write-Host "Starting Liveolator..." -ForegroundColor Green
-Write-Host "  exe:     $appExe"
-Write-Host "  version: $version"
-Write-Host "  log:     $logDir"
+Write-Host "  exe:      $appExe"
+Write-Host "  built:    $exeStamp"
+if ($dllStamp) { Write-Host "  app dll:  $dllStamp" }
+Write-Host "  log:      $logDir"
+
+function Start-LiveolatorApp {
+    $proc = Start-Process -FilePath $appExe -PassThru
+    Show-AppWindow
+    return $proc
+}
 
 # Start non-blocking so the window can be pulled to the foreground, then wait so this terminal stays
 # attached to the app's lifetime (closing the app returns the prompt).
-$app = Start-Process -FilePath $appExe -PassThru
-Show-AppWindow
+$app = Start-LiveolatorApp
 
 Start-Sleep -Milliseconds 1500
-if ($app.HasExited -and $app.ExitCode -ne 0) {
-    # The single-instance guard sent this launch to an already-running instance (same build, since the
-    # rest were cleared above). Not an error - the running window was brought to the front.
-    Write-Host "A Liveolator instance was already running; brought it to the front." -ForegroundColor Yellow
-    exit 0
+if ($app.HasExited) {
+    # SingleInstanceGuard exits with code 0 when another copy still holds the mutex — you would then
+    # stare at a stale window from before this build. Kill everything and retry once.
+    $survivors = @(Get-Process -Name 'Liveolator.App' -ErrorAction SilentlyContinue)
+    if ($survivors.Count -gt 0 -or $app.ExitCode -eq 0) {
+        Write-Host "Launch did not stick (single-instance guard or stale process). Retrying after full stop..." -ForegroundColor Yellow
+        Stop-LiveolatorApp -UnlockPath $appExe
+        $app = Start-LiveolatorApp
+        Start-Sleep -Milliseconds 1500
+    }
+}
+
+if ($app.HasExited) {
+    Write-Host "Liveolator exited immediately (code $($app.ExitCode)). Check the log path above." -ForegroundColor Red
+    exit $(if ($null -ne $app.ExitCode) { $app.ExitCode } else { 1 })
 }
 
 $app.WaitForExit()

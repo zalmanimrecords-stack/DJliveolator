@@ -1,8 +1,10 @@
 <#
 .SYNOPSIS
-    Fetches the un4seen BASS native libraries — core BASS, the BASSmix add-on, and the BASSFLAC add-on
-    — for the current (or a specified) platform into runtimes/<rid>/native/, where the App build step
-    picks them up. BASSFLAC is optional (FLAC decode for playback + waveform); core + BASSmix are required.
+    Fetches the un4seen BASS native libraries — core BASS, the BASSmix add-on, the BASS_FX add-on, and
+    the BASSFLAC add-on — for the current (or a specified) platform into runtimes/<rid>/native/, where
+    the App build step picks them up. BASSFLAC is optional (FLAC decode for playback + waveform); core,
+    BASSmix, and BASS_FX are required (the realtime two-deck engine wraps every deck in a BASS_FX tempo
+    stream for key-lock, so a missing bass_fx aborts every track load).
 
 .DESCRIPTION
     BASS ships as per-platform zips from un4seen.com. This script downloads the right
@@ -74,22 +76,25 @@ $manifestPath = Join-Path $PSScriptRoot 'bass-libraries.manifest'
 $libs = Get-Content -LiteralPath $manifestPath |
     Where-Object { $_ -and -not $_.TrimStart().StartsWith('#') } |
     ForEach-Object {
-        $parts = $_.Split('|', 2)
-        if ($parts.Count -ne 2 -or $parts[1] -notin @('required', 'optional')) {
+        $parts = $_.Split('|', 3)
+        if ($parts.Count -lt 2 -or $parts[1] -notin @('required', 'optional')) {
             throw "Invalid BASS library manifest entry: '$_'."
         }
 
         @{
             Base = $parts[0]
             Required = $parts[1] -eq 'required'
+            # Optional path segment under /files/ (e.g. "z/0/" for BASS_FX); root when absent.
+            UrlPath = if ($parts.Count -ge 3) { $parts[2] } else { '' }
         }
     }
 
-function Get-NativeLib($base) {
+function Get-NativeLib($lib) {
+    $base = $lib.Base
     $archive = "$base$Version$($ridPlan.Suffix).zip"
     $libName = "$($ridPlan.Prefix)$base.$($ridPlan.Ext)"
     $destFile = Join-Path $destDir $libName
-    $url = "https://www.un4seen.com/files/$archive"
+    $url = "https://www.un4seen.com/files/$($lib.UrlPath)$archive"
 
     Write-Host "Fetching $base for $Rid"
     Write-Host "  source : $url"
@@ -131,11 +136,11 @@ function Get-NativeLib($base) {
 try {
     foreach ($lib in $libs) {
         if ($lib.Required) {
-            Get-NativeLib $lib.Base
+            Get-NativeLib $lib
         }
         else {
             # Optional add-on: a download/layout failure must not block the core libraries.
-            try { Get-NativeLib $lib.Base }
+            try { Get-NativeLib $lib }
             catch { Write-Warning "Optional add-on '$($lib.Base)' could not be fetched: $($_.Exception.Message)" }
         }
     }

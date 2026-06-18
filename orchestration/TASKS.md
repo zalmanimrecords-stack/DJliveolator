@@ -28,6 +28,10 @@
 | library-dedup (X5.1) | daec181 | pure DuplicateFinder |
 | T2 MIDI-learn fixes (X6) | 486bab9 | relative scaling + soft-takeover; Core 127 green |
 | T1 missing-file relocate (X5.2 core) | 1527677 | RelocationPlanner + IFileExistenceProbe; Core 103 green |
+| UX P2 dialogs | cc46c2b | FoldersStatus SizeToContent + Add-folder; VisualLibrary delete confirm + de-emphasis |
+| UX P2 dj-mixer-fit | f2c0616 | cluster mixer/EQ, crossfader 28->36, deck column capped |
+
+> UX P2 still OPEN (deferred, branches kept): `ux-studio-transport` (`2ce96aa`) + Settings nested-scroll — both blocked on concurrent uncommitted Studio/Settings WIP (StudioView OpenItems/HasSavedProjects/DeleteItems leaves App un-buildable at HEAD). Merge after that lands. MAPPINGS-tab promotion = owner decision.
 | T5 GL strobe/transition (B2) | 0bfa8c3 | StrobeGate + quantized transition; Visuals 125 green |
 | T4 key-lock native (N4 P3) | cf5063e | BASS_FX tempo path; Audio 82 green; **audible verify pending A1** |
 | T16 any-MIDI-controller | 6284394 | generic profile + auto-pick (parallel agent, via worktree script) |

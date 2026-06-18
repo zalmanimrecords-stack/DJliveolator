@@ -315,6 +315,42 @@ public sealed class VisualControlViewModelTests
     }
 
     [Fact]
+    public void Addons_ListUserFrktlPresets_FlatAlongsideExtensions_AsNonToggleableEntries()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        var catalog = new FakeCatalog { Installed = new[] { CreateVisualAddon("color-pack", enabled: true) } };
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            effectRegistry: effects,
+            extensions: catalog,
+            presetRegistry: presets);
+
+        Assert.True(vm.HasAddons);
+        // The extension package is toggleable; the FRKTL preset is listed but not.
+        Assert.Contains(vm.Addons, a => a.PackageId == "color-pack" && a.CanToggle);
+        VisualAddonViewModel presetRow = Assert.Single(vm.Addons, a => a.PackageId == "Preset");
+        Assert.Equal("FRKTL", presetRow.State);
+        Assert.False(presetRow.CanToggle);
+    }
+
+    [Fact]
+    public void ToggleAddonCommand_IsDisabled_WhenAFrktlPresetIsSelected()
+    {
+        (VisualEffectRegistry effects, GeneratorPresetRegistry presets) = PresetRegistries();
+        // The only add-on is the FRKTL preset (auto-selected); the installer is wired, but a preset is
+        // always-active and must not be toggleable from here.
+        var vm = new VisualControlViewModel(
+            new FakeDispatcher(),
+            effectRegistry: effects,
+            extensionInstaller: new FakeInstaller(),
+            presetRegistry: presets);
+
+        Assert.NotNull(vm.SelectedAddon);
+        Assert.False(vm.SelectedAddon!.CanToggle);
+        Assert.False(vm.ToggleAddonCommand.CanExecute.FirstAsync().Wait());
+    }
+
+    [Fact]
     public void ReloadPresetsCommand_DisabledWhenReloaderUnwired()
     {
         var vm = new VisualControlViewModel(

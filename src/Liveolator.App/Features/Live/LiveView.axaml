@@ -1,61 +1,23 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:live="clr-namespace:Liveolator.App.Features.Live"
-             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
              x:Class="Liveolator.App.Features.Live.LiveView"
              x:DataType="live:LiveViewModel">
 
+  <!-- LIVE = the performance screen, grouped by topic: the DJ console (identical to the DJ tab — it is the
+       SAME DjConsoleView control over the shared decks) on top, then the VISUALS group. Only approved,
+       active modules appear here; the on-screen Push macro-encoder strip was dropped (the Push encoders
+       still drive visual macros through the controller mapping, not this panel). -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <StackPanel Spacing="16" MaxWidth="1440" Margin="0,0,0,8">
 
-      <!-- WAVEFORMS — sync-critical surface, pinned to the top of the LIVE stack. The amber kick band shows
-           each track's kick transients so the downbeats can be lined up by eye for sync; click a strip to seek
-           that deck. -->
-      <Border Classes="panel">
-        <StackPanel Margin="14,12" Spacing="10">
-          <!-- Shared ZOOM knob — zooms BOTH waveforms in seconds so the kicks line up vertically (drag up =
-               zoom in, fully down = whole-track overview). -->
-          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <TextBlock Classes="faint" VerticalAlignment="Center" Text="ZOOM" />
-            <controls:Knob Width="40" Height="40" DefaultValue="0.55"
-                           ArcBrush="{DynamicResource Accent}"
-                           Value="{Binding Decks.WaveformZoom}"
-                           ToolTip.Tip="Zoom both waveforms — drag up to zoom in (see the kicks), down for the whole track" />
-          </StackPanel>
-          <Grid ColumnDefinitions="26,*">
-            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
-                       VerticalAlignment="Center" Text="A" />
-            <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
-                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-              <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
-                                      MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
-                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                      KickBrush="{DynamicResource Kick}"
-                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                      Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
-                                      BeatGrid="{Binding DeckA.BeatGrid}"
-                                      KickAnchor="{Binding DeckA.KickAnchorFraction}"
-                                      SeekCommand="{Binding DeckA.SeekCommand}" />
-            </Border>
-          </Grid>
-          <Grid ColumnDefinitions="26,*">
-            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
-                       VerticalAlignment="Center" Text="B" />
-            <Border Grid.Column="1" Height="84" Background="{DynamicResource S2}"
-                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-              <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
-                                      MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
-                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                      KickBrush="{DynamicResource Kick}"
-                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                      Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
-                                      BeatGrid="{Binding DeckB.BeatGrid}"
-                                      KickAnchor="{Binding DeckB.KickAnchorFraction}"
-                                      SeekCommand="{Binding DeckB.SeekCommand}" />
-            </Border>
-          </Grid>
-        </StackPanel>
-      </Border>
+      <!-- ── DJ ─────────────────────────────────────────────────────────────────────────────────────── -->
+      <TextBlock Classes="section accent" Margin="2,0" Text="DJ" />
+      <dj:DjConsoleView DataContext="{Binding Decks}" />
+
+      <!-- ── VISUALS ────────────────────────────────────────────────────────────────────────────────── -->
+      <TextBlock Classes="section accent" Margin="2,6,2,0" Text="VISUALS" />
 
       <!-- PROGRAM OUT + VISUAL CONTROL -->
       <Grid ColumnDefinitions="*,320">
@@ -63,22 +25,11 @@
         <ContentControl Grid.Column="1" Content="{Binding VisualControl}" />
       </Grid>
 
-      <!-- DECK A · MIXER · DECK B — spans the full 1440 stack width so the Deck A / Deck B columns line up
-           under Waveform A / Waveform B above (the stacked-waveform-to-deck visual mapping). -->
-      <Grid ColumnDefinitions="*,300,*" MaxWidth="1440">
-        <ContentControl Grid.Column="0" Content="{Binding DeckA}" Margin="0,0,16,0" />
-        <ContentControl Grid.Column="1" Content="{Binding Mixer}" Margin="0,0,16,0" />
-        <ContentControl Grid.Column="2" Content="{Binding DeckB}" />
-      </Grid>
-
       <!-- SCENES + MASTER/FX -->
       <Grid ColumnDefinitions="*,280">
         <ContentControl Grid.Column="0" Content="{Binding SceneGrid}" Margin="0,0,16,0" />
         <ContentControl Grid.Column="1" Content="{Binding MasterFx}" />
       </Grid>
-
-      <!-- PUSH ENCODERS -->
-      <ContentControl Content="{Binding MacroEncoders}" />
 
       <!-- Live Mode state cue — collapses to nothing when live; the static device chrome was decorative
            (the real MIDI/audio status lives in the top status bar) and was removed to reclaim vertical space. -->

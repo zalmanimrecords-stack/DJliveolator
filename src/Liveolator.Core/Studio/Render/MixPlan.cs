@@ -57,7 +57,9 @@ public sealed class MixPlan
 
         // Fold the clip's own gain + fade envelope into the deck gain so the offline renderer (which
         // only reads DeckMixState.Gain) honors per-clip fades with no renderer change; clamp to 0..1.
-        gain = Math.Clamp(gain * ClipGain.EffectiveGainAt(clip, timeSeconds), 0.0, 1.0);
+        // Anchor the fade on the WARPED end — the same end ActiveClip selects over — so a warped clip's
+        // tail doesn't go silent early (warp-down) or skip its fade-out (warp-up).
+        gain = Math.Clamp(gain * ClipGain.EffectiveGainAt(clip, timeSeconds, WarpedEndSeconds(clip)), 0.0, 1.0);
 
         double source = clip.SourceIn.TotalSeconds + (timeSeconds - clip.TimelineStartSeconds);
         return new DeckMixState(
