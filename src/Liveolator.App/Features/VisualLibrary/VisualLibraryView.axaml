@@ -146,7 +146,7 @@
 
             <Button Classes="spartan" Content="Delete from disk"
                     Foreground="{DynamicResource Red}"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    HorizontalAlignment="Left"
                     Command="{Binding DeleteSelectedCommand}"
                     ToolTip.Tip="Permanently delete this file from disk and remove it from the library" />
           </StackPanel>

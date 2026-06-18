@@ -3,8 +3,8 @@
         xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
         x:Class="Liveolator.App.Features.Libraries.FoldersStatusWindow"
         x:DataType="lib:LibrariesViewModel"
-        Width="520" Height="440"
-        MinWidth="420" MinHeight="280"
+        Width="520" SizeToContent="Height"
+        MinWidth="420" MaxHeight="640"
         Title="Folders — update status"
         Background="{DynamicResource Bg}">
 
@@ -20,10 +20,12 @@
     </StackPanel>
 
     <!-- footer: actions -->
-    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,0">
-      <Button Grid.Column="1" Classes="spartan" Content="Re-scan"
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
+      <Button Grid.Column="0" Classes="spartan" Content="Add folder"
+              Click="OnAddFolder" HorizontalAlignment="Left" />
+      <Button Grid.Column="2" Classes="spartan" Content="Re-scan"
               Command="{Binding ScanCommand}" Margin="0,0,8,0" />
-      <Button Grid.Column="2" Classes="spartan" Content="Close" Click="OnClose" />
+      <Button Grid.Column="3" Classes="spartan" Content="Close" Click="OnClose" />
     </Grid>
 
     <!-- folder rows -->
