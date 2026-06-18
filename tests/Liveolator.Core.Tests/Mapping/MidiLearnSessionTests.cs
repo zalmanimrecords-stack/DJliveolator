@@ -110,6 +110,53 @@ public class MidiLearnSessionTests
     }
 
     [Fact]
+    public void Observe_PreservesRelativeTickScaling_OnLearnedEncoder()
+    {
+        // A jog/encoder learned through the UI must carry its real ticks-per-revolution, not the
+        // raw default of 1.0 that makes the learned binding ~128x too sensitive (doc 27).
+        _session.Begin(
+            PerformanceActionKind.BeatNudgeForward,
+            preferredInputMode: ActionInputMode.Relative,
+            relativeTicksPerRevolution: 128.0);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 33, 1));
+
+        Assert.Equal(128.0, _learned!.RelativeTicksPerRevolution, precision: 6);
+
+        // The captured binding produces the same sane per-tick delta as a hand-built relative binding.
+        double learnedDelta = ControlValueConverter.ToActionValue(
+            new MidiMessage(MidiMessageType.ControlChange, 0, 33, 1), _learned);
+        Assert.Equal(1.0 / 128.0, learnedDelta, precision: 9);
+    }
+
+    [Fact]
+    public void Observe_RelativeWithoutExplicitTicks_DefaultsToSaneScaling()
+    {
+        // Arming relative learn without passing tick metadata must not bind the raw 1.0 default
+        // (one tick = a full revolution); it falls back to a sensible encoder resolution.
+        _session.Begin(
+            PerformanceActionKind.BeatNudgeForward,
+            preferredInputMode: ActionInputMode.Relative);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 33, 1));
+
+        Assert.True(_learned!.RelativeTicksPerRevolution > 1.0,
+            "a learned relative encoder must not scrub a whole revolution per tick");
+    }
+
+    [Fact]
+    public void Observe_AbsoluteLearn_KeepsRawTickDefault()
+    {
+        // The relative-scaling fallback must not leak into absolute learns (back-compat).
+        _session.Begin(PerformanceActionKind.MixerCrossfade);
+
+        _session.Observe(new MidiMessage(MidiMessageType.ControlChange, 0, 10, 64));
+
+        Assert.Equal(ActionInputMode.Absolute, _learned!.InputMode);
+        Assert.Equal(1.0, _learned.RelativeTicksPerRevolution, precision: 6);
+    }
+
+    [Fact]
     public void Observe_PreservesActionArgument()
     {
         _session.Begin(PerformanceActionKind.DeckHotCue, slot: 1, argument: "4");

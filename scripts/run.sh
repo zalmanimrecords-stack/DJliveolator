@@ -72,8 +72,15 @@ if pgrep -x Liveolator.App >/dev/null 2>&1; then
   sleep 0.5
 fi
 
+# dotnet run hosts also lock output assemblies.
+if pgrep -f 'dotnet.*Liveolator\.App' >/dev/null 2>&1; then
+  echo "Stopping dotnet host(s) for Liveolator.App..."
+  pkill -f 'dotnet.*Liveolator\.App' || true
+  sleep 0.5
+fi
+
 echo "Building Liveolator.App ($CONFIGURATION)..."
-dotnet build "$app_project" -c "$CONFIGURATION"
+dotnet build "$app_project" -c "$CONFIGURATION" --no-incremental
 
 if [[ "$BUILD_ONLY" -eq 1 ]]; then
   echo "Build complete."
@@ -91,7 +98,10 @@ case "$(uname -s)" in
   *) log_file="$HOME/.local/share/Liveolator/logs/liveolator.log" ;;
 esac
 
+built_at="$(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$app_exe" 2>/dev/null || stat -c '%y' "$app_exe" 2>/dev/null || echo '?')"
+
 echo "Starting Liveolator..."
-echo "  $app_exe"
-echo "  Log: $log_file"
+echo "  exe:   $app_exe"
+echo "  built: $built_at"
+echo "  log:   $log_file"
 exec "$app_exe"

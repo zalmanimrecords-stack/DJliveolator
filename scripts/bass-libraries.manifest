@@ -1,4 +1,7 @@
-# base|required
+# base|required|urlpath
+# urlpath (optional) is the path segment under un4seen.com/files/ when the archive is not
+# at the root - e.g. BASS_FX lives at /files/z/0/bass_fx24.zip, so its urlpath is "z/0/".
 bass|required
 bassmix|required
+bass_fx|required|z/0/
 bassflac|optional

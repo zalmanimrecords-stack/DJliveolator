@@ -9,14 +9,18 @@
        faders, tighter wells) so the whole DJ screen fits one window without scrolling. The LIVE
        MixerView keeps its taller, roomier layout. -->
   <Border Classes="panel">
-    <StackPanel Margin="14,12" Spacing="10">
+    <!-- Cap the control cluster so the wells/faders gather at a sensible width instead of floating
+         across the fixed 300px DJ-mixer column. Column width itself is owned by the parent layout. -->
+    <StackPanel Margin="14,12" Spacing="10" MaxWidth="270" HorizontalAlignment="Center">
 
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
           <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
-            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="28"
+            <!-- Crossfader is the primary blend control, so it carries more height (36) than the
+                 secondary BPM-nudge fader (26) to reflect its priority. -->
+            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="36"
                             Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
             <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
           </Grid>
@@ -24,16 +28,35 @@
       </Border>
 
       <Border Classes="hardware-well" Padding="8,10">
-        <!-- A fader | shared dB scale | B fader -->
-        <Grid ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="A" />
-          <TextBlock Grid.Row="0" Grid.Column="2" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="B" />
+        <!-- [A EQ/FLT] · A fader · shared dB scale · B fader · [B EQ/FLT] — the channel EQ + filter knobs
+             flank each volume fader, the way a hardware mixer stacks them on the channel strip. The knobs
+             are compact (28px) so the strip stays inside the DJ-mixer column without scrolling. -->
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+              HorizontalAlignment="Center">
+          <TextBlock Grid.Row="0" Grid.Column="1" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="A" />
+          <TextBlock Grid.Row="0" Grid.Column="3" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="B" />
 
-          <controls:Fader Grid.Row="1" Grid.Column="0" Width="44" Height="150" HorizontalAlignment="Center"
+          <!-- A channel EQ + filter (left of fader A) -->
+          <StackPanel Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,8,0">
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelA.EqHigh.Value}" IsEnabled="{Binding ChannelA.EqHigh.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelA.EqMid.Value}" IsEnabled="{Binding ChannelA.EqMid.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelA.EqLow.Value}" IsEnabled="{Binding ChannelA.EqLow.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelA.Filter.Value}" IsEnabled="{Binding ChannelA.Filter.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
+          </StackPanel>
+
+          <controls:Fader Grid.Row="1" Grid.Column="1" Width="44" Height="150" HorizontalAlignment="Center"
                           Value="{Binding ChannelGainA.Value}" Level="{Binding LevelA}"
                           IsEnabled="{Binding ChannelGainA.IsEnabled}" />
 
-          <Grid Grid.Row="1" Grid.Column="1" Width="36" Height="150" RowDefinitions="*,*,*,*,*,*,*,*,*,*">
+          <Grid Grid.Row="1" Grid.Column="2" Width="36" Height="150" RowDefinitions="*,*,*,*,*,*,*,*,*,*">
             <TextBlock Grid.Row="0" Classes="tick" HorizontalAlignment="Center" Text="+6" />
             <TextBlock Grid.Row="1" Classes="tick" HorizontalAlignment="Center" Text="+3" />
             <TextBlock Grid.Row="2" Classes="tick" HorizontalAlignment="Center" Text="0" />
@@ -46,32 +69,31 @@
             <TextBlock Grid.Row="9" Classes="tick" HorizontalAlignment="Center" Text="-inf" />
           </Grid>
 
-          <controls:Fader Grid.Row="1" Grid.Column="2" Width="44" Height="150" HorizontalAlignment="Center"
+          <controls:Fader Grid.Row="1" Grid.Column="3" Width="44" Height="150" HorizontalAlignment="Center"
                           Value="{Binding ChannelGainB.Value}" Level="{Binding LevelB}"
                           IsEnabled="{Binding ChannelGainB.IsEnabled}" />
 
-          <Button Grid.Row="2" Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
+          <!-- B channel EQ + filter (right of fader B) -->
+          <StackPanel Grid.Row="1" Grid.Column="4" VerticalAlignment="Center" Spacing="2" Margin="8,0,0,0">
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelB.EqHigh.Value}" IsEnabled="{Binding ChannelB.EqHigh.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelB.EqMid.Value}" IsEnabled="{Binding ChannelB.EqMid.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelB.EqLow.Value}" IsEnabled="{Binding ChannelB.EqLow.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
+            <controls:Knob Width="28" Height="28" HorizontalAlignment="Center"
+                           Value="{Binding ChannelB.Filter.Value}" IsEnabled="{Binding ChannelB.Filter.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
+          </StackPanel>
+
+          <Button Grid.Row="2" Grid.Column="1" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
                   Command="{Binding CueACommand}" Margin="0,8,0,0" />
-          <Button Grid.Row="2" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
+          <Button Grid.Row="2" Grid.Column="3" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                   Command="{Binding CueBCommand}" Margin="0,8,0,0" />
         </Grid>
-      </Border>
-
-      <Border Classes="hardware-well" Padding="10,8">
-        <StackPanel Spacing="8">
-          <Grid ColumnDefinitions="*,Auto">
-            <Button Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsAutoMixActive}"
-                    Content="AUTOMIX" VerticalAlignment="Center"
-                    Command="{Binding AutoMixCommand}" />
-            <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Center" Margin="12,0,0,0">
-              <TextBlock Classes="section" HorizontalAlignment="Center" Text="TIME" />
-              <controls:Knob Width="44" Height="44"
-                             Value="{Binding AutoMixTime.Value}"
-                             IsEnabled="{Binding AutoMixTime.IsEnabled}" />
-              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding AutoMixBarsLabel}" />
-            </StackPanel>
-          </Grid>
-        </StackPanel>
       </Border>
 
       <Border Classes="hardware-well" Padding="10,8">

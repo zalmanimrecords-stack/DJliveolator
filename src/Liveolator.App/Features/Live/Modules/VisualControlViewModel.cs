@@ -27,6 +27,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     private readonly IVisualPerformanceEngine? _visualEngine;
     private readonly ILivePlaylist? _playlist;
     private readonly ITrackVisualProgramStore? _trackVisualPrograms;
+    private readonly IVisualPresetReloader? _presetReloader;
+    private readonly IGeneratorPresetRegistry? _presetRegistry;
     // The starter scene's VU-meter generator layer index (resolved at composition); null hides the
     // VU-meter toggle when the active scene ships no built-in meter. The toggle addresses this slot
     // via VisualToggleLayer, mirroring the generic layer buttons.
@@ -47,7 +49,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         IVisualPerformanceEngine? visualEngine = null,
         ILivePlaylist? playlist = null,
         ITrackVisualProgramStore? trackVisualPrograms = null,
-        IGeneratorPresetRegistry? presetRegistry = null)
+        IGeneratorPresetRegistry? presetRegistry = null,
+        IVisualPresetReloader? presetReloader = null)
     {
         _dispatcher = dispatcher;
         _extensions = extensions;
@@ -57,6 +60,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         _visualEngine = visualEngine;
         _playlist = playlist;
         _trackVisualPrograms = trackVisualPrograms;
+        _presetReloader = presetReloader;
+        _presetRegistry = presetRegistry;
         _vuMeterLayerSlot = vuMeterLayerSlot;
         _isVuMeterShown = vuMeterInitiallyShown;
 
@@ -80,18 +85,26 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
         ToggleAddonCommand = ReactiveCommand.CreateFromTask(
             ToggleSelectedAddonAsync,
             this.WhenAnyValue(vm => vm.SelectedAddon)
-                .Select(addon => addon is not null && extensionInstaller is not null));
+                .Select(addon => addon is not null && addon.CanToggle && extensionInstaller is not null));
 
+        // Each channel owns its layer's controllable-preset knobs (doc 28): selecting a preset generator in
+        // a channel's source dropdown loads it onto that layer and shows its ≤5 knobs in the same card,
+        // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
         Channels = new ObservableCollection<VisualChannelViewModel>(
             Enumerable.Range(0, 4)
                 .Select(row => new VisualChannelViewModel(
                     displayOrder: row + 1,
                     layerSlot: 3 - row,
-                    dispatcher)));
+                    dispatcher,
+                    presetRegistry,
+                    effectRegistry)));
 
-        // Controllable generator presets (doc 28) load onto the base layer (slot 0); their ≤5 knobs are
-        // driven through the same VisualSetMacro path as the macro encoders and a learned MIDI knob.
-        PresetControls = new PresetControlsViewModel(presetRegistry, effectRegistry, dispatcher, targetLayer: 0);
+        // Re-scan the FRKTL preset folder at runtime (doc 29) so presets authored while the app is running
+        // (e.g. via the MCP server) appear in the layer source dropdowns without a restart. Needs the
+        // reloader + the registry the channels read from to be wired.
+        ReloadPresetsCommand = ReactiveCommand.CreateFromTask(
+            ReloadPresetsAsync,
+            Observable.Return(presetReloader is not null && presetRegistry is not null));
 
         ReloadEffects();
         ReloadAddons();
@@ -111,11 +124,11 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleLayer4Command { get; }
     public ReactiveCommand<Unit, Unit> ToggleAddonCommand { get; }
 
+    /// <summary>Re-scans the user FRKTL preset folder and refreshes the picker (doc 29). Disabled when unwired.</summary>
+    public ReactiveCommand<Unit, Unit> ReloadPresetsCommand { get; }
+
     public ObservableCollection<string> LoadedEffects { get; } = new();
     public ObservableCollection<VisualChannelViewModel> Channels { get; }
-
-    /// <summary>The controllable-preset picker + knob row (doc 28).</summary>
-    public PresetControlsViewModel PresetControls { get; }
     public ObservableCollection<VisualAddonViewModel> Addons { get; } = new();
     public bool HasAddons => Addons.Count > 0;
 
@@ -173,7 +186,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     private async Task ToggleSelectedAddonAsync()
     {
         VisualAddonViewModel? selected = SelectedAddon;
-        if (selected is null || _extensionInstaller is null)
+        if (selected is null || !selected.CanToggle || _extensionInstaller is null)
             return;
 
         try
@@ -210,13 +223,46 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             .OrderBy(extension => extension.Manifest.PackageId, StringComparer.OrdinalIgnoreCase);
 
         foreach (InstalledExtension extension in visualAddons)
-            Addons.Add(new VisualAddonViewModel(extension));
+            Addons.Add(VisualAddonViewModel.ForExtension(extension));
+
+        // User FRKTL presets (doc 29) are listed flat alongside the extension add-ons so the operator sees
+        // the whole visual vocabulary in one place. They live as .frktl files and are always active, so
+        // they appear for visibility but are not toggleable (CanToggle = false).
+        foreach (GeneratorPreset preset in (_presetRegistry?.Presets ?? Array.Empty<GeneratorPreset>())
+                     .OrderBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase))
+            Addons.Add(VisualAddonViewModel.ForFrktlPreset(preset.Name));
 
         SelectedAddon = Addons.FirstOrDefault(addon =>
             string.Equals(addon.PackageId, selectedId, StringComparison.Ordinal)
             && string.Equals(addon.Version, selectedVersion, StringComparison.Ordinal))
             ?? Addons.FirstOrDefault();
         this.RaisePropertyChanged(nameof(HasAddons));
+    }
+
+    // Re-scan the preset folder, then refresh the layer source dropdowns so newly-registered generators
+    // appear. The reload is tolerant by contract (never throws); the guard + Status keep any unexpected IO
+    // surprise visible rather than silent (global standards #16/#26).
+    private async Task ReloadPresetsAsync()
+    {
+        if (_presetReloader is null)
+            return;
+
+        try
+        {
+            int count = _presetReloader.Reload();
+            ReloadEffects();
+            ReloadAddons();
+            await ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath);
+            // Re-apply the reloaded preset to every layer that has one, so its knobs + the running
+            // shader pick up the new parameter set with no manual reselect (the old stale-knob trap).
+            foreach (VisualChannelViewModel channel in Channels)
+                channel.ReapplyPresetIfLoaded();
+            Status = $"Reloaded {count} visual preset{(count == 1 ? string.Empty : "s")}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            Status = $"Preset reload failed: {ex.Message}";
+        }
     }
 
     private void ReloadEffects()
@@ -231,7 +277,8 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        PresetControls.Dispose();
+        foreach (VisualChannelViewModel channel in Channels)
+            channel.Dispose();
         if (_playlist is not null)
             _playlist.NowChanged -= OnNowChanged;
     }

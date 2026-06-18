@@ -33,6 +33,35 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public bool IsKeyLockEnabled(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate) return _slots[slot].KeyLocked;
+    }
+
+    public void SetKeyLock(int slot, bool enabled)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            s.KeyLocked = enabled; // per-deck transport state; persists across loads via DeckSlot
+
+            // Phase 3 (native): switch the backend's audible rate path for the loaded deck, then re-apply
+            // the current rate so the change is heard immediately — key-lock on routes the rate through the
+            // BASS_FX tempo attribute (pitch preserved), off through vinyl frequency. SetDeckKeyLock must
+            // precede SetDeckRate so the rate takes the newly chosen path. Sync, when engaged, owns the
+            // rate (mirrors SetPitch), so re-apply only when not sync-locked. With nothing loaded there is
+            // no stream to key-lock — the armed state takes effect on the next Load.
+            if (s.Deck is { } deck)
+            {
+                _backend.SetDeckKeyLock(deck.Handle, enabled);
+                if (!s.SyncLocked)
+                    _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
+            }
+        }
+    }
+
     public double DeckBaseBpm(int slot)
     {
         ValidateSlot(slot);

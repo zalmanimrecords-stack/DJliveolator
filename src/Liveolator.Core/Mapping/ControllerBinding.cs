@@ -21,6 +21,12 @@ namespace Liveolator.Core.Mapping;
 /// relative step used by non-jog encoders.
 /// </param>
 /// <param name="Invert">Reverses the relative control direction.</param>
+/// <param name="SoftTakeover">
+/// When true, an <see cref="ActionInputMode.Absolute"/> control does not move the target until the
+/// incoming hardware value crosses (picks up) the current value, preventing a jump when the physical
+/// position differs from the target (doc 27). Defaults to off for backward compatibility; ignored for
+/// non-absolute modes.
+/// </param>
 public sealed record ControllerBinding(
     MidiMessageType TriggerType,
     int Channel,
@@ -32,4 +38,5 @@ public sealed record ControllerBinding(
     ValueCurve Curve = ValueCurve.Linear,
     RelativeEncoding Relative = RelativeEncoding.TwosComplement,
     double RelativeTicksPerRevolution = 1.0,
-    bool Invert = false);
+    bool Invert = false,
+    bool SoftTakeover = false);

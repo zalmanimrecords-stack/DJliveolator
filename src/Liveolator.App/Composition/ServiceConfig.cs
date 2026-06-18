@@ -7,6 +7,7 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
@@ -14,6 +15,7 @@ using Liveolator.App.Shell;
 using Liveolator.Audio;
 using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
+using Liveolator.Audio.Recording;
 using Liveolator.Audio.Waveform;
 using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
@@ -21,7 +23,6 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
-using Liveolator.Core.Automix;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
@@ -33,6 +34,7 @@ using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Recording;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
@@ -40,7 +42,9 @@ using Liveolator.Media;
 using Liveolator.Media.Extensions;
 using Liveolator.Midi;
 using Liveolator.Online;
+using Liveolator.Core.Platform;
 using Liveolator.Platform;
+using Liveolator.Platform.Audio;
 using Liveolator.Visuals;
 using Liveolator.Visuals.Gl;
 using Liveolator.App.Diagnostics;
@@ -156,12 +160,18 @@ public static class ServiceConfig
 
         // User-authored FRKTL presets (doc 29): a folder of self-contained .frktl files (each its own
         // shader + up to five controllable knobs), loaded after the built-ins so they extend the picker.
+        ILogger frktlLog = loggerFactory.CreateLogger("Liveolator.Frktl");
         var frktlPresetLoader = new Liveolator.Media.Visuals.FrktlPresetFolderLoader(
             visualEffects, generatorPresets,
             folder: Path.Combine(persistenceRoot, "frktl-presets"),
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
-        frktlPresetLoader.Load();
+            onWarning: w => frktlLog.LogWarning("{Warning}", w));
+        int frktlCount = frktlPresetLoader.Load();
+        frktlLog.LogInformation(
+            "Loaded {Count} FRKTL folder preset(s) from {Folder}.", frktlCount, frktlPresetLoader.Folder);
         services.AddSingleton(frktlPresetLoader);
+        // The same loader, exposed as the runtime reload seam so the LIVE surface can re-scan the folder
+        // (e.g. after an MCP-authored preset) without an app restart.
+        services.AddSingleton<IVisualPresetReloader>(frktlPresetLoader);
 
         // User/agent-authored control skins (doc 30): a folder of .ctrlskin files (parametric knob/slider
         // looks). Loaded here so the chosen skin can be applied in App.OnFrameworkInitializationCompleted
@@ -170,7 +180,8 @@ public static class ServiceConfig
             folder: Path.Combine(persistenceRoot, "control-skins"),
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IControlSkinCatalog>(new ControlSkinCatalog(controlSkins.Load()));
-        services.AddSingleton<IControlSkinApplier, ApplicationControlSkinApplier>();
+        services.AddSingleton<IControlSkinApplier>(
+            new ApplicationControlSkinApplier(w => System.Diagnostics.Trace.TraceWarning(w)));
         services.AddSingleton<IUiThemeLiveApplier, ApplicationUiThemeLiveApplier>();
         // Export/import a MIDI mapping by device model (doc 05): file IO in Media, file dialog in App.
         services.AddSingleton<IMappingProfilePortability>(
@@ -231,7 +242,8 @@ public static class ServiceConfig
         // Deck waveform overview (doc 11): decodes the loaded track to peaks for the deck strip. Uses the
         // offline decoder, so it works headless (no realtime BASS needed); failures degrade to no waveform.
         services.AddSingleton<IWaveformProvider>(sp => new DecodedWaveformProvider(
-            sp.GetRequiredService<IAudioDecoder>()));
+            sp.GetRequiredService<IAudioDecoder>(),
+            logger: loggerFactory.CreateLogger<DecodedWaveformProvider>()));
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         WireOnlineEnrichment(services);
@@ -257,6 +269,11 @@ public static class ServiceConfig
         services.AddSingleton<IPlaylistStore>(
             _ => new JsonPlaylistStore(
                 persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        // STUDIO DAW arrangements (doc: STUDIO timeline) — one versioned JSON per project under
+        // live/studio-projects/, separate from the flat playlists above.
+        services.AddSingleton<IStudioProjectStore>(
+            _ => new JsonStudioProjectStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         // Persistent per-track hot cues (doc 11/13, A3) — a separate JSON file so cue edits never touch
         // the analyzed catalog. Threaded into the two-deck engine below so a track's cues reload on the
         // next run and survive a deck reload (tolerant: a missing/corrupt file degrades to no cues).
@@ -279,6 +296,15 @@ public static class ServiceConfig
         services.AddSingleton<IMixer>(mixer);
         services.AddSingleton<IDeckLevelMeter>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
+
+        // --- Global OS volume (the computer's master output level, not the app's mix): the per-OS
+        // controller (WASAPI on Windows, osascript on macOS, no-op elsewhere) behind the Core seam, driven
+        // through the dispatcher like any other action. Always present and pure-managed at this layer, so
+        // the SystemMasterVolume kind is owned even when realtime audio is absent.
+        ISystemVolumeController systemVolume = SystemVolumeControllers.Create(
+            w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton(systemVolume);
+        var systemVolumeHandler = new SystemVolumeActionHandler(systemVolume, loggerFactory);
 
         // --- Realtime audio engine (docs 01/02/11): built BEFORE the visual engine so its beat clock,
         // when present, can drive the visuals (the audible signal is authoritative). The BASSmix backend
@@ -357,7 +383,6 @@ public static class ServiceConfig
         // gain/EQ/filter actually route to audio. Registering IBeatClock gives the Libraries tab its
         // live-BPM readout; it is the same master clock the visual engine binds to (LiveClockSelector).
         MasterClockPump? syncPump = null;
-        AutomixController? automixController = null;
         if (realtimeUp)
         {
             services.AddSingleton<IMultiDeckPlaybackEngine>(deckEngine!);
@@ -365,18 +390,26 @@ public static class ServiceConfig
             // them lock to the sync-master deck when one is engaged (else the audio-mix base). The bridge
             // pump drives the deck clock and flips the switch independently of UI responsiveness.
             services.AddSingleton<IBeatClock>(sharedVisualClock);
-            // Auto-mix (doc 11) rides the SAME pump tick that drives sync + the shared clock — one beat
-            // mechanism for the whole application. It reads decks/mixer through the reader seam and
-            // writes only PerformanceActions (attached to the dispatcher below, once it exists).
-            automixController = new AutomixController(
-                new EngineAutomixDeckReader(deckEngine!, mixerHandler),
-                loggerFactory: loggerFactory);
-            services.AddSingleton(automixController);
             var syncBridge = new MasterClockBridge(
-                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock, automixController);
+                deckEngine!, deckBeatClock, sharedVisualClock, visualBaseClock);
             syncPump = new MasterClockPump(syncBridge, hostClock);
             services.AddSingleton(syncPump);
         }
+
+        // --- Master recording (roadmap X2): capture the post-limiter master to a clean WAV via the
+        // IMasterRecorder seam, without touching playback. The recorder taps the SAME master IAudioSource
+        // the analysis tap reads, so the file matches what the house hears. When realtime audio is absent
+        // the recorder is built with a null master (IsAvailable = false), so the MasterRecordToggle kind is
+        // still owned and the REC button simply greys out (headless-safe). Files land under a timestamped
+        // recordings folder beside the app's other state.
+        var masterRecorder = new BassMasterRecorder(
+            deckEngine?.MasterSource,
+            deckEngine?.MasterChannels ?? 2,
+            deckEngine?.MasterSampleRate ?? 48_000,
+            loggerFactory);
+        services.AddSingleton<IMasterRecorder>(masterRecorder);
+        var recordingHandler = new RecordingActionHandler(
+            masterRecorder, new TimestampedRecordingPathProvider(persistenceRoot), loggerFactory);
 
         // --- THE one dispatcher (doc 04): every input source — UI, controller, autopilot — drives the
         // engines through this single instance, so handler state never diverges (doc 12, one source of
@@ -386,16 +419,15 @@ public static class ServiceConfig
         {
             new BeatActionHandler(sharedLiveClock, hostClock),
             mixerHandler,
+            systemVolumeHandler,
             visualHandler,
             playlistHandler,
             audioEffectHandler,
+            recordingHandler,
         };
         if (realtimeUp)
         {
             handlers.Add(new DeckActionHandler(deckEngine!));
-            var automixHandler = new AutomixActionHandler(automixController!, loggerFactory);
-            services.AddSingleton(automixHandler);
-            handlers.Add(automixHandler);
         }
 
         var dispatcher = new PerformanceActionDispatcher(
@@ -403,9 +435,6 @@ public static class ServiceConfig
             loggerFactory.CreateLogger<PerformanceActionDispatcher>(),
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton(dispatcher);
-
-        // The auto-mix engine emits through (and observes performer input on) the one dispatcher.
-        automixController?.Attach(dispatcher);
 
         // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
         // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the
@@ -534,6 +563,19 @@ public static class ServiceConfig
             sp.GetRequiredService<IFileRemover>(),
             sp.GetRequiredService<IConfirmationService>()));
 
+        // STUDIO tab: the DAW-timeline arrangement editor. Plays the arrangement live via the dispatcher
+        // (4-deck engine) and renders it offline to WAV; degrades to plan-only when the realtime engine
+        // or decoder is absent. A fresh SystemHostClock drives the transport tick (stateless stopwatch).
+        services.AddSingleton<StudioViewModel>(sp => new StudioViewModel(
+            sp.GetRequiredService<MusicLibrary>(),
+            sp.GetRequiredService<IStudioProjectStore>(),
+            realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
+            new SystemHostClock(),
+            sp.GetService<IWaveformProvider>(),
+            sp.GetService<IAudioDecoder>(),
+            sp.GetRequiredService<TrackContextActions>(),
+            loggerFactory: loggerFactory));
+
         // DJ tab: the two decks + the live set (queue). Drives playback/queue through the one
         // dispatcher; reads ILivePlaylist + the catalog for the set readout (like the beat readout).
         services.AddSingleton<DjViewModel>(sp => new DjViewModel(
@@ -643,6 +685,10 @@ public static class ServiceConfig
         });
 
         services.AddSingleton<ShellStatusViewModel>();
+        // Global volume knob (top bar): drives the OS master volume via the dispatcher; disables itself
+        // when the host has no controllable system volume.
+        services.AddSingleton<SystemVolumeControlViewModel>(sp => new SystemVolumeControlViewModel(
+            sp.GetService<IPerformanceActionDispatcher>()));
         services.AddSingleton<MainWindowViewModel>();
 
         ServiceProvider provider = services.BuildServiceProvider();
@@ -932,7 +978,8 @@ public static class ServiceConfig
                 visualEngine,
                 sp.GetService<ILivePlaylist>(),
                 sp.GetService<ITrackVisualProgramStore>(),
-                sp.GetService<IGeneratorPresetRegistry>());
+                sp.GetService<IGeneratorPresetRegistry>(),
+                sp.GetService<IVisualPresetReloader>());
         });
     }
 
@@ -1091,9 +1138,12 @@ public static class ServiceConfig
     }
 
     // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
-    // today; persisted/custom profiles (doc 13) extend this set later.
+    // and Pioneer DDJ-FLX4 today; persisted/custom profiles (doc 13) extend this set later. The generic
+    // template is appended LAST and intentionally has an empty DeviceHint, so MidiProfileSelector always
+    // prefers an exact device match and the generic never wins auto-selection — it is a learn-from-scratch
+    // label any unrecognized controller falls back to.
     private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
-        => new[] { CmdStudio2AProfile.Default };
+        => new[] { CmdStudio2AProfile.Default, DdjFlx4Profile.Default, GenericControllerProfile.Default };
 
     internal static MidiSettings ResolveMidiSettings(
         MidiSettings configured,
@@ -1103,11 +1153,38 @@ public static class ServiceConfig
         if (!string.IsNullOrWhiteSpace(normalized.ControllerInputName))
             return normalized;
 
-        string? detectedCmd = provider.GetInputDeviceNames().FirstOrDefault(name =>
-            name.Contains(CmdStudio2AProfile.DeviceHint, StringComparison.OrdinalIgnoreCase));
+        // No controller chosen yet: auto-detect the first connected device whose name matches any
+        // catalogued profile's hint (CMD STUDIO 2A, DDJ-FLX4, …). MidiProfileSelector then loads the
+        // matching profile downstream — so adding a profile to the catalog extends detection for free.
+        // Enumeration is wrapped so a native rtmidi failure degrades to "no device" instead of crashing
+        // the composition root (global standards #16/#26) — matching the best-effort MIDI wiring below.
+        string[] inputNames;
+        try
+        {
+            inputNames = provider.GetInputDeviceNames().ToArray();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning(
+                $"Could not enumerate MIDI input devices: {ex.Message}. Running without auto-detection.");
+            return normalized;
+        }
 
-        return detectedCmd is null
+        string? detected = AvailableMidiProfiles()
+            .Select(profile => inputNames.FirstOrDefault(name =>
+                !string.IsNullOrEmpty(profile.DeviceHint)
+                && name.Contains(profile.DeviceHint, StringComparison.OrdinalIgnoreCase)))
+            .FirstOrDefault(name => name is not null);
+
+        // No KNOWN-hint device matched: fall back to the FIRST connected input so plugging in ANY
+        // arbitrary controller makes it active and ready to learn from scratch on next start (the generic
+        // template profile loads downstream because no device hint matches). Conservative: only kicks in
+        // when the user has chosen nothing AND there is exactly something plugged in; zero inputs keeps the
+        // prior behaviour (stays null / normalized).
+        detected ??= inputNames.FirstOrDefault();
+
+        return detected is null
             ? normalized
-            : normalized with { ControllerInputName = detectedCmd };
+            : normalized with { ControllerInputName = detected };
     }
 }

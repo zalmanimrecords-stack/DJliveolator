@@ -12,11 +12,12 @@ namespace Liveolator.App.Tests.Ui;
 
 /// <summary>
 /// Renders the deck <see cref="WaveformStrip"/> with a synthetic 3-band pattern (kick / mid body /
-/// high caps) and saves a PNG, so the layered kick-forward look — bright amber kicks glowing in front
-/// of the steel-blue body — can be eyeballed against the design intent (the tabs in <see cref="UiShots"/>
-/// show "NO TRACK", so they can't exercise the waveform colours). It pulls the real
-/// <c>Waveform</c>/<c>WaveformAhead</c>/<c>Kick</c>/<c>WaveMid</c>/<c>WaveHigh</c> brush tokens from the
-/// booted App, so it also proves those resources resolve.
+/// high caps) plus a 4/4 beat grid, and saves a PNG, so the VirtualDJ look — red kicks glowing in front
+/// of the green body with blue/cyan caps, over the bottom CBG comb (grey beat teeth + red downbeat
+/// blocks) and a near-white playhead — can be eyeballed against the design intent (the tabs in
+/// <see cref="UiShots"/> show "NO TRACK", so they can't exercise the waveform colours). It pulls the real
+/// <c>Waveform</c>/<c>WaveformAhead</c>/<c>Kick</c>/<c>WaveMid</c>/<c>WaveHigh</c>/<c>WavePlayhead</c>/
+/// <c>BeatMark</c>/<c>DownbeatMark</c> brush tokens from the booted App, so it also proves those resolve.
 /// </summary>
 public class WaveformShot
 {
@@ -29,6 +30,9 @@ public class WaveformShot
         var kickBrush = (IBrush)app.FindResource("Kick")!;
         var midBrush = (IBrush)app.FindResource("WaveMid")!;
         var highBrush = (IBrush)app.FindResource("WaveHigh")!;
+        var playheadBrush = (IBrush)app.FindResource("WavePlayhead")!;
+        var beatBrush = (IBrush)app.FindResource("BeatMark")!;
+        var downbeatBrush = (IBrush)app.FindResource("DownbeatMark")!;
         var well = (IBrush)app.FindResource("S2")!;
 
         const int n = 256;
@@ -53,18 +57,29 @@ public class WaveformShot
             if (i + 1 < n) kick[i + 1] = 0.55f;
         }
 
+        // A 4/4 beat grid (one beat every 1/64th of the track) so the bottom CBG comb renders: short grey
+        // beat teeth with a broad red downbeat block on every 4th — aligned with the four-on-the-floor kicks.
+        const int beats = 64;
+        var grid = new double[beats + 1];
+        for (int i = 0; i <= beats; i++)
+            grid[i] = i / (double)beats;
+
         var strip = new WaveformStrip
         {
             Peaks = peaks,
             KickPeaks = kick,
             MidPeaks = mid,
             HighPeaks = high,
+            BeatGrid = grid,
             Progress = 0.45,
             BarBrush = ahead,
             PlayedBrush = body,
             KickBrush = kickBrush,
             MidBrush = midBrush,
             HighBrush = highBrush,
+            PlayheadBrush = playheadBrush,
+            BeatBrush = beatBrush,
+            DownbeatBrush = downbeatBrush,
         };
 
         var window = new Window

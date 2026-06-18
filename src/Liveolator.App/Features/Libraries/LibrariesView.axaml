@@ -216,6 +216,11 @@
                   <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Notes}"
                              TextWrapping="Wrap" />
                 </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Path" />
+                  <TextBlock Grid.Column="1" Classes="mono faint" Text="{Binding SelectedTrack.Track.File.Path}"
+                             TextWrapping="Wrap" />
+                </Grid>
               </StackPanel>
               <Button Classes="spartan" HorizontalAlignment="Left"
                       Content="Online metadata: GetSongBPM.com"

@@ -140,6 +140,18 @@ public interface IMultiDeckPlaybackEngine
     /// <summary>Enable or disable beat-quantize for the deck.</summary>
     void SetQuantize(int slot, bool enabled);
 
+    /// <summary>
+    /// True while key-lock (master tempo) is engaged: the deck preserves the track's musical pitch as
+    /// its tempo changes. When off, pitch follows tempo like a vinyl pitch fader (the default).
+    /// </summary>
+    bool IsKeyLockEnabled(int slot);
+
+    /// <summary>
+    /// Enable or disable key-lock (master tempo) for the deck. When enabled, tempo/pitch changes are
+    /// time-stretched so the musical key is preserved. Per-deck state that persists across track loads.
+    /// </summary>
+    void SetKeyLock(int slot, bool enabled);
+
     /// <summary>Number of hot-cue slots per deck (valid <see cref="HotCue"/> indices are 0..count-1).</summary>
     int HotCueCount { get; }
 

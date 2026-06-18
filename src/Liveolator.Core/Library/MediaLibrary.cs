@@ -37,6 +37,13 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     /// </summary>
     protected virtual TEntry? PreserveModifiedEntry(TEntry existing, ScannedFile file) => null;
 
+    /// <summary>
+    /// Returns <paramref name="entry"/> re-stamped to <paramref name="file"/> — same analysis, new
+    /// file fingerprint/path. Implemented by each subclass as <c>entry with { File = file }</c>; used
+    /// by <see cref="Relocate"/> to move a catalogued entry to a new path without losing its analysis.
+    /// </summary>
+    protected abstract TEntry WithFile(TEntry entry, ScannedFile file);
+
     public IReadOnlyCollection<TEntry> All { get { lock (_gate) return _byPath.Values.ToArray(); } }
     public int Count { get { lock (_gate) return _byPath.Count; } }
 
@@ -84,6 +91,33 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
 
         lock (_gate)
             return _byPath.Remove(path);
+    }
+
+    /// <summary>
+    /// Re-keys a catalogued entry from <paramref name="oldPath"/> to <paramref name="newFile"/>,
+    /// preserving all of its analysis (the X5.2 missing-file relocation flow: a track whose original
+    /// file went offline is pointed at a copy found under a new root, without re-analyzing). The entry
+    /// keeps everything except its <see cref="ScannedFile"/>, which is replaced wholesale so the new
+    /// path, size, and mtime are recorded and a following scan sees the file Unchanged. In-memory and
+    /// instant; moving/copying the file on disk is a separate platform concern. Returns <c>true</c> if
+    /// an entry at <paramref name="oldPath"/> was relocated, <c>false</c> if no entry had that path.
+    /// </summary>
+    public bool Relocate(string oldPath, ScannedFile newFile)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldPath);
+        if (string.IsNullOrWhiteSpace(newFile.Path))
+            throw new ArgumentException("Relocated file must have a path.", nameof(newFile));
+
+        lock (_gate)
+        {
+            if (!_byPath.TryGetValue(oldPath, out TEntry? existing))
+                return false;
+
+            _byPath.Remove(oldPath);
+            TEntry relocated = WithFile(existing, newFile);
+            _byPath[relocated.File.Path] = relocated;
+            return true;
+        }
     }
 
     /// <summary>

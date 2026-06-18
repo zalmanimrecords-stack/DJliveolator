@@ -16,26 +16,21 @@ public sealed class MasterClockBridge
     private readonly DeckDrivenBeatClock _deckClock;
     private readonly SwitchingBeatClock _shared;
     private readonly IBeatClock _baseClock;
-    private readonly IMasterClockTickListener? _listener;
 
     /// <param name="sync">The deck engine's correction-loop pump + master-beat source.</param>
     /// <param name="deckClock">The clock driven by the master deck's live grid.</param>
     /// <param name="shared">The subscriber-facing shared clock whose source this bridge switches.</param>
     /// <param name="baseClock">The fallback source used when no deck is the sync master (tap/audio clock).</param>
-    /// <param name="listener">Optional automation ticked after the clock work each cycle (auto-mix),
-    /// so time-driven automation rides the one shared beat mechanism instead of owning a timer.</param>
     public MasterClockBridge(
         ISyncCorrectionDriver sync,
         DeckDrivenBeatClock deckClock,
         SwitchingBeatClock shared,
-        IBeatClock baseClock,
-        IMasterClockTickListener? listener = null)
+        IBeatClock baseClock)
     {
         _sync = sync ?? throw new ArgumentNullException(nameof(sync));
         _deckClock = deckClock ?? throw new ArgumentNullException(nameof(deckClock));
         _shared = shared ?? throw new ArgumentNullException(nameof(shared));
         _baseClock = baseClock ?? throw new ArgumentNullException(nameof(baseClock));
-        _listener = listener;
     }
 
     /// <summary>Advance the correction loop and update/select the shared clock source for this tick.</summary>
@@ -53,8 +48,5 @@ public sealed class MasterClockBridge
             _deckClock.Reset();
             _shared.Select(_baseClock);
         }
-
-        // Last, so a listener fault can never starve the clock work (the pump logs and continues).
-        _listener?.OnMasterClockTick(hostTimeTicks);
     }
 }

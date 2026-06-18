@@ -48,16 +48,17 @@ public class Jog : Control
     public static readonly StyledProperty<IBrush> MarkerBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(MarkerBrush), new SolidColorBrush(Color.FromRgb(0xE8, 0xEE, 0xF6)));
 
-    /// <summary>Beat-line positions (0..1 track fractions) — the loaded track's grid. Used to pulse the
-    /// rim glow on each beat (the kick, for 4-on-the-floor electronic music). Empty = no glow.</summary>
-    public static readonly StyledProperty<IReadOnlyList<double>?> BeatGridProperty =
-        AvaloniaProperty.Register<Jog, IReadOnlyList<double>?>(nameof(BeatGrid));
+    /// <summary>The loaded track's low-frequency (kick/bass) band magnitude per bucket (0..1), aligned 1:1
+    /// with the track — the SAME analyzed audio the waveform draws as its kick layer. Sampled at the
+    /// playhead so the rim glow flashes on the actual kicks in the sound (not a metronomic grid).</summary>
+    public static readonly StyledProperty<IReadOnlyList<float>?> KickPeaksProperty =
+        AvaloniaProperty.Register<Jog, IReadOnlyList<float>?>(nameof(KickPeaks));
 
-    /// <summary>When true (deck playing), the rim flashes <see cref="GlowBrush"/> on each beat.</summary>
-    public static readonly StyledProperty<bool> IsBeatPulsingProperty =
-        AvaloniaProperty.Register<Jog, bool>(nameof(IsBeatPulsing));
+    /// <summary>When true (deck playing), the rim flashes <see cref="GlowBrush"/> on each kick.</summary>
+    public static readonly StyledProperty<bool> IsKickActiveProperty =
+        AvaloniaProperty.Register<Jog, bool>(nameof(IsKickActive));
 
-    /// <summary>The phosphorescent rim-glow colour pulsed on the beat (default neon green).</summary>
+    /// <summary>The phosphorescent rim-glow colour pulsed on the kick (default neon green).</summary>
     public static readonly StyledProperty<IBrush> GlowBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(GlowBrush), new SolidColorBrush(Color.FromRgb(0x39, 0xFF, 0x6A)));
 
@@ -71,7 +72,7 @@ public class Jog : Control
     {
         AffectsRender<Jog>(ProgressProperty, ArcBrushProperty, TrackBrushProperty,
             PlatterBrushProperty, MarkerBrushProperty, IsEnabledProperty,
-            BeatGridProperty, IsBeatPulsingProperty, GlowBrushProperty);
+            KickPeaksProperty, IsKickActiveProperty, GlowBrushProperty);
     }
 
     public Jog()
@@ -92,8 +93,8 @@ public class Jog : Control
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
     public IBrush PlatterBrush { get => GetValue(PlatterBrushProperty); set => SetValue(PlatterBrushProperty, value); }
     public IBrush MarkerBrush { get => GetValue(MarkerBrushProperty); set => SetValue(MarkerBrushProperty, value); }
-    public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
-    public bool IsBeatPulsing { get => GetValue(IsBeatPulsingProperty); set => SetValue(IsBeatPulsingProperty, value); }
+    public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
+    public bool IsKickActive { get => GetValue(IsKickActiveProperty); set => SetValue(IsKickActiveProperty, value); }
     public IBrush GlowBrush { get => GetValue(GlowBrushProperty); set => SetValue(GlowBrushProperty, value); }
 
     private static double CoerceUnit(AvaloniaObject _, double value)
@@ -157,37 +158,33 @@ public class Jog : Control
 
         DrawHub(context, centre, platterRadius * 0.20, size);
 
-        // Phosphorescent rim glow pulsing on each beat (the kick, in 4-on-the-floor). Drawn last so it
-        // reads as a frame around the platter; brightest exactly on the beat line, decaying before the next.
-        if (on && IsBeatPulsing)
+        // Phosphorescent rim glow that tracks the actual kick in the SOUND: the low-band (kick/bass)
+        // magnitude of the analyzed audio, sampled at the playhead. Drawn last so it reads as a frame
+        // around the platter; brightest where the track's kick hits, dim between.
+        if (on && IsKickActive)
         {
-            double pulse = KickPulse(Math.Clamp(Progress, 0, 1), BeatGrid);
+            double pulse = KickEnergyAt(Math.Clamp(Progress, 0, 1), KickPeaks);
             if (pulse > 0.001)
                 DrawKickGlow(context, centre, (size / 2) - 1 - (glowBand * 0.5), glowBand, pulse);
         }
     }
 
     /// <summary>
-    /// The 0..1 rim-glow intensity for the playhead: 1 exactly on a beat line (kick) and decaying toward 0
-    /// before the next, derived from the playhead fraction and the track's beat grid. 0 outside the grid.
+    /// The 0..1 rim-glow intensity at the playhead, sampled from the track's low-frequency (kick) band
+    /// (<see cref="KickPeaks"/>) — so the glow comes from the actual sound, not a metronomic grid. A gamma
+    /// emphasises strong transients so the rim flashes on the kick and stays dim otherwise. 0 with no data.
     /// </summary>
-    internal static double KickPulse(double progress, IReadOnlyList<double>? beatGrid)
+    internal static double KickEnergyAt(double progress, IReadOnlyList<float>? kickPeaks)
     {
-        if (beatGrid is null || beatGrid.Count < 2)
+        if (kickPeaks is null || kickPeaks.Count == 0)
             return 0.0;
 
-        for (int i = 0; i < beatGrid.Count - 1; i++)
-        {
-            double lo = beatGrid[i];
-            double hi = beatGrid[i + 1];
-            if (hi > lo && progress >= lo && progress < hi)
-            {
-                double phase = (progress - lo) / (hi - lo);
-                return Math.Pow(1.0 - phase, 2.2);
-            }
-        }
-
-        return 0.0;
+        double p = double.IsNaN(progress) ? 0.0 : Math.Clamp(progress, 0.0, 1.0);
+        int index = (int)Math.Round(p * (kickPeaks.Count - 1));
+        index = Math.Clamp(index, 0, kickPeaks.Count - 1);
+        double energy = Math.Clamp(kickPeaks[index], 0.0, 1.0);
+        // Gamma > 1 darkens the quiet low-end "floor" and lets the kick transients pop.
+        return energy * energy;
     }
 
     private void DrawKickGlow(DrawingContext context, Point centre, double radius, double band, double pulse)

@@ -10,6 +10,14 @@ namespace Liveolator.Core.Mapping;
 /// </summary>
 public sealed class MidiLearnSession : IMidiLearnSession
 {
+    /// <summary>
+    /// Fallback encoder resolution applied when a control is learned as relative but the caller
+    /// supplied no ticks-per-revolution. A 7-bit encoder reports deltas in the 1..63 range, so a
+    /// full sweep is ~128 ticks; binding the raw 1.0 default instead would scrub a whole revolution
+    /// per tick (~128x too sensitive — doc 27). The user can still override it afterward.
+    /// </summary>
+    private const double DefaultRelativeTicksPerRevolution = 128.0;
+
     private PerformanceActionKind _action;
     private int _slot;
     private string? _argument;
@@ -67,10 +75,18 @@ public sealed class MidiLearnSession : IMidiLearnSession
             _preferredInputMode
             ?? (isNote ? ActionInputMode.Momentary : ActionInputMode.Absolute);
 
+        // Preserve relative tick scaling so a learned encoder moves the target at a sane rate. When
+        // relative is learned without explicit ticks, fall back to a real encoder resolution rather
+        // than the raw 1.0 default (doc 27). Absolute/momentary learns keep the unused 1.0.
+        double ticksPerRevolution =
+            inputMode == ActionInputMode.Relative && _relativeTicksPerRevolution <= 1.0
+                ? DefaultRelativeTicksPerRevolution
+                : _relativeTicksPerRevolution;
+
         return new ControllerBinding(
             triggerType, message.Channel, message.Data1, _action, inputMode, _slot, _argument,
             Relative: _relativeEncoding,
-            RelativeTicksPerRevolution: _relativeTicksPerRevolution,
+            RelativeTicksPerRevolution: ticksPerRevolution,
             Invert: _invert);
     }
 }

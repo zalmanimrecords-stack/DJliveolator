@@ -58,6 +58,48 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
+    public void Channels_ExposeSuppliedDecks_AsMixerStrips()
+    {
+        var dispatcher = new FakeDispatcher();
+        var deckA = new DeckViewModel(slot: 0, dispatcher);
+        var deckB = new DeckViewModel(slot: 1, dispatcher);
+
+        var vm = new MixerViewModel(dispatcher, channelA: deckA, channelB: deckB);
+
+        Assert.Same(deckA, vm.ChannelA);
+        Assert.Same(deckB, vm.ChannelB);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void ChannelEq_EmitsMixerEqBand_ForItsDeckSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var deckA = new DeckViewModel(slot: 0, dispatcher);
+        var deckB = new DeckViewModel(slot: 1, dispatcher);
+        var vm = new MixerViewModel(dispatcher, channelA: deckA, channelB: deckB);
+
+        DeckViewModel channel = slot == 0 ? vm.ChannelA! : vm.ChannelB!;
+        channel.EqHigh.Value = 0.7;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerEqBand, action.Kind);
+        Assert.Equal(slot, action.Slot);
+        Assert.Equal("High", action.Argument);
+        Assert.Equal(0.7, action.Value);
+    }
+
+    [Fact]
+    public void Channels_AreNull_WhenNoDecksSupplied()
+    {
+        var vm = new MixerViewModel(new FakeDispatcher());
+
+        Assert.Null(vm.ChannelA);
+        Assert.Null(vm.ChannelB);
+    }
+
+    [Fact]
     public void Crossfader_SeedsFromFeedback()
     {
         var dispatcher = new FakeDispatcher();
@@ -148,83 +190,6 @@ public sealed class MixerViewModelTests
 
         Assert.Equal(0.8, vm.CueMix.Value);
         Assert.Empty(dispatcher.Dispatched);
-    }
-
-    private static FakeDispatcher WithAutoMix()
-    {
-        var dispatcher = new FakeDispatcher();
-        dispatcher.SeedFeedback(PerformanceActionKind.AutomixToggle, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: "Idle"));
-        dispatcher.SeedFeedback(PerformanceActionKind.AutomixSetDuration, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.6, Argument: "16"));
-        return dispatcher;
-    }
-
-    [Fact]
-    public async Task AutoMixButton_EmitsAutomixToggle()
-    {
-        FakeDispatcher dispatcher = WithAutoMix();
-        var vm = new MixerViewModel(dispatcher);
-
-        await vm.AutoMixCommand.Execute().ToTask();
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.AutomixToggle, action.Kind);
-    }
-
-    [Fact]
-    public void AutoMix_UnavailableWithoutItsHandler_ControlsDisabled()
-    {
-        // Headless/catalog mode: the dispatcher has no automix handler → button + knob disabled.
-        var vm = new MixerViewModel(new FakeDispatcher());
-
-        Assert.False(vm.IsAutoMixAvailable);
-        Assert.False(vm.AutoMixTime.IsEnabled);
-    }
-
-    [Fact]
-    public void AutoMixTime_EmitsAutomixSetDuration_Absolute()
-    {
-        FakeDispatcher dispatcher = WithAutoMix();
-        var vm = new MixerViewModel(dispatcher);
-
-        vm.AutoMixTime.Value = 1.0;
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.AutomixSetDuration, action.Kind);
-        Assert.Equal(ActionInputMode.Absolute, action.InputMode);
-        Assert.Equal(1.0, action.Value);
-    }
-
-    [Fact]
-    public void AutoMix_Feedback_LatchesButtonAndBars()
-    {
-        FakeDispatcher dispatcher = WithAutoMix();
-        var vm = new MixerViewModel(dispatcher);
-
-        dispatcher.RaiseFeedback(PerformanceActionKind.AutomixToggle, 0,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0.3, Argument: "Transitioning"));
-        dispatcher.RaiseFeedback(PerformanceActionKind.AutomixSetDuration, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 1.0, Argument: "64"));
-
-        Assert.True(vm.IsAutoMixActive);
-        Assert.Equal("64 BARS", vm.AutoMixBarsLabel);
-        Assert.Equal(1.0, vm.AutoMixTime.Value);
-        Assert.Empty(dispatcher.Dispatched); // echoed feedback must not loop
-    }
-
-    [Fact]
-    public void AutoMix_SeedsFromFeedbackAtConstruction()
-    {
-        FakeDispatcher dispatcher = WithAutoMix();
-        dispatcher.SeedFeedback(PerformanceActionKind.AutomixSetDuration, 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.2, Argument: "4"));
-
-        var vm = new MixerViewModel(dispatcher);
-
-        Assert.True(vm.IsAutoMixAvailable);
-        Assert.Equal(0.2, vm.AutoMixTime.Value);
-        Assert.Equal("4 BARS", vm.AutoMixBarsLabel);
     }
 
     [Fact]

@@ -5,7 +5,7 @@
              x:DataType="m:ProgramOutViewModel">
 
   <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}" BorderThickness="1"
-          CornerRadius="16" MinHeight="300">
+          CornerRadius="16" MinHeight="180">
     <Grid Margin="16" RowDefinitions="Auto,*,Auto">
       <TextBlock Classes="faint" Text="{Binding ResolutionLabel}" />
 

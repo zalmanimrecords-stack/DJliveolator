@@ -3,6 +3,7 @@ using Liveolator.Core.Dsp;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Audio.Effects;
 using ManagedBass;
+using ManagedBass.Fx;
 using ManagedBass.Mix;
 using Microsoft.Extensions.Logging;
 
@@ -85,18 +86,37 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     /// clear can remove the prior sync).</summary>
     private sealed class DeckDsp
     {
-        public DeckDsp(BassMixerChannel channel, float originalFrequency)
+        public DeckDsp(BassMixerChannel channel, int sourceHandle, int mixerHandle, float originalFrequency)
         {
             Channel = channel;
+            SourceHandle = sourceHandle;
+            MixerHandle = mixerHandle;
             OriginalFrequency = originalFrequency;
         }
 
         public BassMixerChannel Channel { get; }
 
+        // The raw decoding stream (the file). Per-deck gain/EQ/filter DSP runs here on the original samples
+        // BEFORE the tempo stretch, and the engine addresses this deck by this handle.
+        public int SourceHandle { get; }
+
+        // The BASS_FX tempo stream wrapping the source — this is what is plugged into the BASSmix master,
+        // so every mixer-source operation (position/seek/loop/end-sync/pause/remove) must target THIS
+        // handle, not the raw source. Key-lock applies the rate here via the Tempo attribute.
+        public int MixerHandle { get; }
+
         // The DSP delegate, kept alive so BASS's unmanaged pointer stays valid. Set right after the
         // deck is built (the callback closes over this DeckDsp, so it cannot be a ctor argument).
         public DSPProcedure Procedure { get; set; } = null!;
         public float OriginalFrequency { get; }
+
+        // Key-lock (master tempo) armed for this deck: the rate is applied via the pitch-preserving Tempo
+        // attribute on the tempo stream rather than vinyl-style Frequency scaling on the source.
+        public bool KeyLocked { get; set; }
+
+        // Last rate multiplier requested by the engine (1.0 = natural). Stored so toggling key-lock can
+        // re-express the SAME rate through the other path (Tempo vs Frequency) without the engine re-sending.
+        public double CurrentRate { get; set; } = 1.0;
 
         // Loop state: the registered BASS_SYNC_POS handle, the callback (kept alive for BASS), and the
         // loop in-point in bytes. 0 sync handle = no active loop.
@@ -377,23 +397,39 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
         var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot));
-        // Add paused: the engine flips play state explicitly so a freshly loaded deck is silent.
-        if (!BassMix.MixerAddChannel(_mixer, deckHandle, BassFlags.MixerChanPause))
-            throw new BassPlaybackException($"MixerAddChannel failed: {Bass.LastError}");
 
-        // Remember the deck's natural sample rate so SetDeckRate can express pitch as a multiple of it.
+        // Remember the deck's natural sample rate (read from the raw source) so SetDeckRate can express
+        // vinyl pitch as a multiple of it.
         Bass.ChannelGetAttribute(deckHandle, ChannelAttribute.Frequency, out float originalFrequency);
+
+        // Wrap the raw decoding stream in a BASS_FX tempo stream and plug THAT into the master mixer, so
+        // key-lock can change tempo while preserving pitch (ChannelAttribute.Tempo). FxFreeSource frees the
+        // underlying source when the tempo stream is freed, so UnplugDeck/Dispose free one handle. Decode
+        // flag: the mixer pulls it; it never plays to the device on its own. At 0% tempo this is a pass-
+        // through, so the default (key-lock off, vinyl frequency) path is byte-unchanged.
+        int tempoHandle = BassFx.TempoCreate(deckHandle, BassFlags.Decode | BassFlags.FxFreeSource);
+        if (tempoHandle == 0)
+            throw new BassPlaybackException($"BASS_FX TempoCreate failed: {Bass.LastError}");
+
+        // Add paused: the engine flips play state explicitly so a freshly loaded deck is silent.
+        if (!BassMix.MixerAddChannel(_mixer, tempoHandle, BassFlags.MixerChanPause))
+        {
+            Bass.StreamFree(tempoHandle); // frees the source too (FxFreeSource)
+            throw new BassPlaybackException($"MixerAddChannel failed: {Bass.LastError}");
+        }
 
         // The DeckDsp is built first so the DSP callback can read its per-deck cue-push handle (set just
         // below) without a race — the callback only fires once the deck is unpaused by the engine.
-        var deck = new DeckDsp(channel, originalFrequency);
+        var deck = new DeckDsp(channel, deckHandle, tempoHandle, originalFrequency);
 
         // Per-deck DSP applies gain/EQ/filter to the deck's samples before the mixer sums them; it also
-        // taps the PRE-FADE samples into the headphone-cue mixer when the deck is cue-enabled (A2).
+        // taps the PRE-FADE samples into the headphone-cue mixer when the deck is cue-enabled (A2). It runs
+        // on the RAW source (pre-stretch) so the filter coefficients track the track's natural rate.
         DSPProcedure procedure = (handle, chan, buffer, length, user) => ApplyChannelDsp(deck, buffer, length);
         if (Bass.ChannelSetDSP(deckHandle, procedure) == 0)
         {
-            BassMix.MixerRemoveChannel(deckHandle);
+            BassMix.MixerRemoveChannel(tempoHandle);
+            Bass.StreamFree(tempoHandle);
             throw new BassPlaybackException($"ChannelSetDSP (deck) failed: {Bass.LastError}");
         }
         deck.Procedure = procedure;
@@ -401,6 +437,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         _decks[deckHandle] = deck;
         return channel;
     }
+
+    // Resolve the BASSmix-source handle (the tempo stream plugged into the master) for a deck addressed by
+    // its raw source handle. Falls back to the passed handle for an unknown deck so callers stay safe.
+    private int MixerHandleFor(int deckHandle)
+        => _decks.TryGetValue(deckHandle, out DeckDsp? deck) ? deck.MixerHandle : deckHandle;
 
     // Create a per-deck push source plugged into the cue mixer for the deck's pre-fade (PFL) leg (A2).
     // Returns 0 when there is no cue output (the deck then never sends to the headphones) or on a setup
@@ -434,19 +475,22 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public double GetDeckPositionFraction(int deckHandle)
     {
-        // Mixer source channels report position through BassMix, in the same byte unit as the length.
-        long position = BassMix.ChannelGetPosition(deckHandle);
-        long length = Bass.ChannelGetLength(deckHandle);
+        // Mixer source channels report position through BassMix, in the same byte unit as the length. The
+        // plugged source is the tempo stream, so address it (its byte timeline tracks the source 1:1).
+        int mixerHandle = MixerHandleFor(deckHandle);
+        long position = BassMix.ChannelGetPosition(mixerHandle);
+        long length = Bass.ChannelGetLength(mixerHandle);
         return position > 0 && length > 0 ? (double)position / length : 0.0;
     }
 
     public void SetDeckPositionFraction(int deckHandle, double fraction)
     {
-        long length = Bass.ChannelGetLength(deckHandle);
+        int mixerHandle = MixerHandleFor(deckHandle);
+        long length = Bass.ChannelGetLength(mixerHandle);
         if (length <= 0)
             return;
         long target = (long)(Math.Clamp(fraction, 0.0, 1.0) * length);
-        if (!BassMix.ChannelSetPosition(deckHandle, target))
+        if (!BassMix.ChannelSetPosition(mixerHandle, target))
             _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
     }
 
@@ -454,19 +498,52 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     {
         if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck) || deck.OriginalFrequency <= 0)
             return;
-        // Vinyl-style pitch: scale the playback frequency (tempo and pitch move together, like a DJ
-        // pitch fader). Tempo-without-pitch would need BASS_FX; this increment keeps it BASS_FX-free.
-        double frequency = deck.OriginalFrequency * rateMultiplier;
-        if (!Bass.ChannelSetAttribute(deckHandle, ChannelAttribute.Frequency, (float)frequency))
-            _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+        deck.CurrentRate = rateMultiplier;
+        ApplyRate(deck);
+    }
+
+    public void SetDeckKeyLock(int deckHandle, bool enabled)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
+            return;
+        deck.KeyLocked = enabled;
+        // Re-express the current rate through the now-selected path (the engine does not re-send it).
+        ApplyRate(deck);
+    }
+
+    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % on the tempo
+    // stream) or vinyl-style (Frequency scaling on the raw source). The unused path is reset to neutral
+    // first so the two never stack. NATIVE — verified manually with bass_fx fetched + hardware (A1);
+    // not exercised in CI (tests drive the fake backend). See Liveolator.Audio/CLAUDE.md.
+    private void ApplyRate(DeckDsp deck)
+    {
+        if (deck.OriginalFrequency <= 0)
+            return;
+        if (deck.KeyLocked)
+        {
+            Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, deck.OriginalFrequency);
+            float tempoPercent = (float)((deck.CurrentRate - 1.0) * 100.0);
+            if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, tempoPercent))
+                _logger.LogWarning("Set key-lock tempo on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
+        }
+        else
+        {
+            Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, 0f);
+            double frequency = deck.OriginalFrequency * deck.CurrentRate;
+            if (!Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, (float)frequency))
+                _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
+        }
     }
 
     public double GetDeckPositionSeconds(int deckHandle)
     {
-        long position = BassMix.ChannelGetPosition(deckHandle);
+        // Position comes from the mixer source channel (the tempo stream), like GetDeckPositionFraction —
+        // BassMix.ChannelGetPosition on the raw source returns -1 and Jog would seek from 0 every time.
+        int mixerHandle = MixerHandleFor(deckHandle);
+        long position = BassMix.ChannelGetPosition(mixerHandle);
         if (position < 0)
             return 0.0;
-        double seconds = Bass.ChannelBytes2Seconds(deckHandle, position);
+        double seconds = Bass.ChannelBytes2Seconds(mixerHandle, position);
         return seconds > 0 ? seconds : 0.0;
     }
 
@@ -491,10 +568,14 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
             return;
         }
 
-        ClearDeckLoopSync(deckHandle, deck); // replace any prior loop on this deck
+        ClearDeckLoopSync(deck); // replace any prior loop on this deck
 
-        long startBytes = Bass.ChannelSeconds2Bytes(deckHandle, Math.Max(0.0, startSeconds));
-        long endBytes = Bass.ChannelSeconds2Bytes(deckHandle, endSeconds);
+        // Loop bytes + sync + wrap-seek all address the mixer source channel (the tempo stream), like
+        // every other BassMix.Channel* op — arming these on the raw source handle silently fails (returns
+        // 0 / no-op) and the loop never engages.
+        int mixerHandle = deck.MixerHandle;
+        long startBytes = Bass.ChannelSeconds2Bytes(mixerHandle, Math.Max(0.0, startSeconds));
+        long endBytes = Bass.ChannelSeconds2Bytes(mixerHandle, endSeconds);
         if (startBytes < 0 || endBytes <= startBytes)
         {
             _logger.LogWarning("Loop region for deck {Handle} resolved to an empty byte span; ignoring.", deckHandle);
@@ -506,11 +587,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // SyncFlags.Mixtime fires on the mixer's pull thread for sample-accurate, click-free looping.
         deck.LoopProcedure = (handle, channel, data, user) =>
         {
-            if (!BassMix.ChannelSetPosition(deckHandle, deck.LoopStartBytes))
+            if (!BassMix.ChannelSetPosition(mixerHandle, deck.LoopStartBytes))
                 _logger.LogWarning("Loop wrap seek on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
         };
         deck.LoopSync = BassMix.ChannelSetSync(
-            deckHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
+            mixerHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
         if (deck.LoopSync == 0)
         {
             deck.LoopProcedure = null;
@@ -521,14 +602,16 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
     public void ClearDeckLoop(int deckHandle)
     {
         if (_decks.TryGetValue(deckHandle, out DeckDsp? deck))
-            ClearDeckLoopSync(deckHandle, deck);
+            ClearDeckLoopSync(deck);
     }
 
-    private static void ClearDeckLoopSync(int deckHandle, DeckDsp deck)
+    // The loop sync lives on the mixer source channel (the tempo stream), so it is removed from the same
+    // handle it was armed on — see SetDeckLoop.
+    private static void ClearDeckLoopSync(DeckDsp deck)
     {
         if (deck.LoopSync != 0)
         {
-            BassMix.ChannelRemoveSync(deckHandle, deck.LoopSync);
+            BassMix.ChannelRemoveSync(deck.MixerHandle, deck.LoopSync);
             deck.LoopSync = 0;
             deck.LoopProcedure = null;
             deck.LoopStartBytes = 0;
@@ -541,10 +624,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck))
             return;
 
+        // The end sync lives on the mixer source channel (the tempo stream), like every other BassMix
+        // op on this deck — arming it on the raw source handle silently fails, so end-of-track auto-
+        // advance would never fire.
+        int mixerHandle = deck.MixerHandle;
+
         // Replace any prior end sync on this deck so a reused handle never fires twice.
         if (deck.EndSync != 0)
         {
-            BassMix.ChannelRemoveSync(deckHandle, deck.EndSync);
+            BassMix.ChannelRemoveSync(mixerHandle, deck.EndSync);
             deck.EndSync = 0;
             deck.EndProcedure = null;
         }
@@ -553,7 +641,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         // the mixer's pull thread the moment the stream runs out. The callback is kept short — the engine
         // marks the slot stopped and raises its DeckEnded event; the queue advance happens off that.
         deck.EndProcedure = (handle, channel, data, user) => onEnded();
-        deck.EndSync = BassMix.ChannelSetSync(deckHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
+        deck.EndSync = BassMix.ChannelSetSync(mixerHandle, SyncFlags.End | SyncFlags.Mixtime, 0, deck.EndProcedure);
         if (deck.EndSync == 0)
         {
             deck.EndProcedure = null;
@@ -563,8 +651,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
     public void SetDeckPlaying(int deckHandle, bool playing)
     {
+        // The channel plugged into the master mixer is the deck's tempo stream, not the raw source — the
+        // mixer pause flag must be toggled on THAT handle (BassMix.ChannelFlags on a non-mixer-channel is
+        // a no-op, which would leave the deck stuck paused and silent on Play). Mirror every other mixer-
+        // source op here (GetDeckPositionFraction / SetDeckPositionFraction) and resolve via MixerHandleFor.
+        int mixerHandle = MixerHandleFor(deckHandle);
         BassFlags value = playing ? BassFlags.Default : BassFlags.MixerChanPause;
-        BassMix.ChannelFlags(deckHandle, value, BassFlags.MixerChanPause);
+        // BassMix.ChannelFlags returns the channel's updated flags, or all-bits-set on error.
+        if (BassMix.ChannelFlags(mixerHandle, value, BassFlags.MixerChanPause) == unchecked((BassFlags)(-1)))
+            _logger.LogWarning("Set play state on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
     }
 
     public void UnplugDeck(int deckHandle)

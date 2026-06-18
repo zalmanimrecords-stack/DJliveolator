@@ -51,11 +51,13 @@ public class CmdStudio2AProfileTests
     [Fact]
     public void Default_MapsSyncOnce_PerDeck()
     {
-        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 0);
-        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 1);
+        // SYNC is a one-shot beatmatch (tempo + phase), not a persistent latch — so a press fires
+        // a momentary DeckSyncOnce, leaving the deck free for manual NUDGE afterwards.
+        ControllerBinding deckA = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 0);
+        ControllerBinding deckB = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 1);
 
-        Assert.Equal(ActionInputMode.Toggle, deckA.InputMode);
-        Assert.Equal(ActionInputMode.Toggle, deckB.InputMode);
+        Assert.Equal(ActionInputMode.Momentary, deckA.InputMode);
+        Assert.Equal(ActionInputMode.Momentary, deckB.InputMode);
     }
 
     [Fact]
@@ -135,18 +137,20 @@ public class CmdStudio2AProfileTests
     }
 
     [Fact]
-    public void UpgradeLegacySyncBindings_PreservesLearnedButtonAndTargetsToggle()
+    public void UpgradeLegacySyncBindings_PreservesLearnedButtonAndTargetsSyncOnce()
     {
+        // A profile saved while SYNC was a persistent toggle is healed back to the one-shot beatmatch,
+        // keeping the learned physical button (channel/note) the user mapped.
         ControllerBinding legacy = new(
             MidiMessageType.NoteOn, Channel: 3, Data1: 4,
-            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: 0);
+            PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, Slot: 0);
         var profile = new ControllerMappingProfile("saved", "CMD Studio 2A", [legacy]);
 
         ControllerBinding sync = Assert.Single(
             CmdStudio2AProfile.UpgradeLegacySyncBindings(profile).Bindings);
 
-        Assert.Equal(PerformanceActionKind.DeckSyncToggle, sync.Action);
-        Assert.Equal(ActionInputMode.Toggle, sync.InputMode);
+        Assert.Equal(PerformanceActionKind.DeckSyncOnce, sync.Action);
+        Assert.Equal(ActionInputMode.Momentary, sync.InputMode);
         Assert.Equal(3, sync.Channel);
         Assert.Equal(4, sync.Data1);
     }

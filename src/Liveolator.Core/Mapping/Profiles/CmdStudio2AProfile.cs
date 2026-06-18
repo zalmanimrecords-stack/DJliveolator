@@ -78,9 +78,11 @@ public static class CmdStudio2AProfile
             MidiMessageType.NoteOn, channel, PlayPauseNote,
             PerformanceActionKind.DeckPlayPause, ActionInputMode.Momentary, slot));
 
+        // SYNC = one-shot beatmatch (tempo + phase), momentary — a single press lines the deck up,
+        // then NUDGE is free for manual fine-tuning. Not a latch (no continuous correction loop).
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, SyncNote,
-            PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, slot));
+            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, slot));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, CueNote,
@@ -144,20 +146,26 @@ public static class CmdStudio2AProfile
         return changed ? profile with { Bindings = bindings } : profile;
     }
 
+    /// <summary>
+    /// Heals a profile saved while SYNC was a persistent toggle back to the one-shot beatmatch:
+    /// any deck-slot (0/1) <see cref="PerformanceActionKind.DeckSyncToggle"/> binding is rewritten to
+    /// a momentary <see cref="PerformanceActionKind.DeckSyncOnce"/>, keeping the learned physical
+    /// button. Other learned controls are left untouched.
+    /// </summary>
     public static ControllerMappingProfile UpgradeLegacySyncBindings(ControllerMappingProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
         bool changed = false;
         IReadOnlyList<ControllerBinding> bindings = profile.Bindings.Select(binding =>
         {
-            if (binding.Action != PerformanceActionKind.DeckSyncOnce || binding.Slot is < 0 or > 1)
+            if (binding.Action != PerformanceActionKind.DeckSyncToggle || binding.Slot is < 0 or > 1)
                 return binding;
 
             changed = true;
             return binding with
             {
-                Action = PerformanceActionKind.DeckSyncToggle,
-                InputMode = ActionInputMode.Toggle,
+                Action = PerformanceActionKind.DeckSyncOnce,
+                InputMode = ActionInputMode.Momentary,
             };
         }).ToList();
 

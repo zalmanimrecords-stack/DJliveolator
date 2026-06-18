@@ -13,7 +13,7 @@ namespace Liveolator.Media.Visuals;
 /// Tolerant by design (doc 21): a missing folder yields zero presets, and a malformed or invalid file is
 /// skipped + reported via <c>onWarning</c> rather than aborting the rest (global standards #16/#26).
 /// </remarks>
-public sealed class FrktlPresetFolderLoader
+public sealed class FrktlPresetFolderLoader : IVisualPresetReloader
 {
     /// <summary>The package id all folder presets are registered under (kept apart from built-ins).</summary>
     public const string PackageId = "liveolator.frktl.user";
@@ -53,6 +53,7 @@ public sealed class FrktlPresetFolderLoader
         var descriptors = new List<VisualEffectDescriptor>();
         var presets = new List<GeneratorPreset>();
         var seenEffectIds = new HashSet<string>(StringComparer.Ordinal);
+        int filesFound = 0;
 
         try
         {
@@ -61,6 +62,7 @@ public sealed class FrktlPresetFolderLoader
                          .EnumerateFiles(Folder, "*.frktl", SearchOption.TopDirectoryOnly)
                          .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
+                filesFound++;
                 TryLoadOne(path, descriptors, presets, seenEffectIds);
             }
         }
@@ -72,8 +74,22 @@ public sealed class FrktlPresetFolderLoader
         // Replace as a unit so a reload reflects added/removed files (and clears stale registrations).
         _effects.ReplacePackage(PackageId, descriptors);
         _presets.ReplacePackage(PackageId, presets);
+
+        // Silent-empty guard (global standards #26): files exist on disk but none registered, so the LIVE
+        // picker shows only the built-ins with no clue why. Surface a summary warning (the per-file reasons,
+        // if any, were already reported) so this shows up in the log instead of needing a forensic dig.
+        if (filesFound > 0 && presets.Count == 0)
+            _onWarning?.Invoke(
+                $"FRKTL preset folder '{Folder}': found {filesFound} file(s) but registered 0 preset(s).");
+
         return presets.Count;
     }
+
+    /// <summary>
+    /// Runtime re-scan (doc 29): identical to <see cref="Load"/>, exposed through <see cref="IVisualPresetReloader"/>
+    /// so the LIVE surface can refresh presets authored while the app is running without a restart.
+    /// </summary>
+    public int Reload() => Load();
 
     private void TryLoadOne(
         string path,
@@ -100,9 +116,9 @@ public sealed class FrktlPresetFolderLoader
                 return;
             }
 
-            Directory.CreateDirectory(_cacheFolder);
             string shaderPath = Path.Combine(_cacheFolder, slug + ".frag");
-            File.WriteAllText(shaderPath, file!.Shader);
+            if (!TryRefreshShaderCache(shaderPath, file!.Shader, fileName))
+                return;
 
             FrktlPresetCompiler.Compiled compiled = FrktlPresetCompiler.Compile(file, effectId, PackageId, shaderPath);
             descriptors.Add(compiled.Descriptor);
@@ -112,6 +128,37 @@ public sealed class FrktlPresetFolderLoader
             ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
             _onWarning?.Invoke($"FRKTL preset '{fileName}' was skipped ({ex.Message}).");
+        }
+    }
+
+    /// <summary>
+    /// Writes the preset's shader to its cache <c>.frag</c>. Tolerant of the file being locked by another
+    /// running instance (the compositor of a second Liveolator window can hold the shader open): when the
+    /// refresh fails but a prior cache exists, the preset is kept registered against that existing shader
+    /// rather than vanishing from the picker — a stale shader is far better than a disappeared preset
+    /// (global standards #26). Returns false only when there is no shader file to compile against at all.
+    /// </summary>
+    private bool TryRefreshShaderCache(string shaderPath, string shader, string fileName)
+    {
+        try
+        {
+            Directory.CreateDirectory(_cacheFolder);
+            File.WriteAllText(shaderPath, shader);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (File.Exists(shaderPath))
+            {
+                _onWarning?.Invoke(
+                    $"FRKTL preset '{fileName}': shader cache could not be refreshed ({ex.Message}); " +
+                    "using the existing cached shader.");
+                return true;
+            }
+
+            _onWarning?.Invoke(
+                $"FRKTL preset '{fileName}' was skipped: shader cache could not be written ({ex.Message}).");
+            return false;
         }
     }
 }

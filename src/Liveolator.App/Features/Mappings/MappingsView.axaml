@@ -7,6 +7,10 @@
     <StackPanel>
       <TextBlock Classes="section" Text="MIDI MAPPINGS" />
       <TextBlock Classes="faint" Text="{Binding DeviceName}" />
+      <!-- Getting-started prompt shown only for an unmapped (e.g. generic) controller. -->
+      <TextBlock Classes="faint" Margin="0,8,0,0" TextWrapping="Wrap"
+                 Text="{Binding LearnHint}"
+                 IsVisible="{Binding LearnHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
 
     <Border Grid.Row="1" Classes="panel" Margin="0,16,0,16">
@@ -28,24 +32,32 @@
 
     <Border Grid.Row="2" Classes="panel">
       <Grid Margin="14" RowDefinitions="Auto,*">
-        <Grid ColumnDefinitions="1.1*,1.4*,0.6*" Margin="8,0,8,8">
+        <Grid ColumnDefinitions="1.1*,1.4*,0.9*,0.6*" Margin="8,0,8,8">
           <TextBlock Classes="faint" Text="CONTROL" />
           <TextBlock Grid.Column="1" Classes="faint" Text="TARGET" />
-          <TextBlock Grid.Column="2" Classes="faint" Text="MODE" />
+          <TextBlock Grid.Column="2" Classes="faint" Text="MIDI" />
+          <TextBlock Grid.Column="3" Classes="faint" Text="MODE" />
         </Grid>
-        <ListBox Grid.Row="1"
-                 ItemsSource="{Binding Bindings}"
-                 SelectedItem="{Binding SelectedBinding}">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="mappings:MappingBindingViewModel">
-              <Grid ColumnDefinitions="1.1*,1.4*,0.6*" Margin="8,6">
-                <TextBlock Text="{Binding Control}" />
-                <TextBlock Grid.Column="1" Text="{Binding Target}" />
-                <TextBlock Grid.Column="2" Classes="faint" Text="{Binding Mode}" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <Grid Grid.Row="1">
+          <ListBox ItemsSource="{Binding Bindings}"
+                   SelectedItem="{Binding SelectedBinding}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="mappings:MappingBindingViewModel">
+                <Grid ColumnDefinitions="1.1*,1.4*,0.9*,0.6*" Margin="8,6">
+                  <TextBlock Text="{Binding Control}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Target}" />
+                  <TextBlock Grid.Column="2" Classes="faint" Text="{Binding MidiIdentity}" />
+                  <TextBlock Grid.Column="3" Classes="faint" Text="{Binding Mode}" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <!-- In-list empty-state, shown only when there are no bindings (distinct from the top LearnHint). -->
+          <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     TextWrapping="Wrap" TextAlignment="Center"
+                     Text="No bindings yet - pick a target and press Learn"
+                     IsVisible="{Binding IsEmpty}" />
+        </Grid>
       </Grid>
     </Border>
 

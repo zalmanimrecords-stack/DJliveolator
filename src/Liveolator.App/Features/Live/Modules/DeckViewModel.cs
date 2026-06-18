@@ -19,8 +19,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), persistent Sync
-/// (<see cref="PerformanceActionKind.DeckSyncToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
+/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -50,7 +50,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
-    private bool _isSyncEnabled;
+    private bool _isKeyLock;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
@@ -78,6 +78,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _applyingBpmFeedback;
     private string _elapsedText = NoTime;
     private string _remainingText = NoTime;
+    private string? _trackKey;
+    private readonly ObservableAsPropertyHelper<string> _pitchPercentText;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -119,11 +121,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
-        // Persistent Sync is shared by the UI and MIDI controller through one toggle action.
+        // One-shot Sync: a single press beatmatches tempo + phase to the other deck, then leaves the
+        // deck free for manual NUDGE. Momentary (no latch) — the UI and MIDI controller share it.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: slot)),
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot)),
             canEmit);
-        _isSyncEnabled = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot).IsActive ?? false;
+
+        // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
+        // The VM emits the toggle action and follows the DeckKeyLockToggle active-state feedback (the LED
+        // model) exactly like LOOP, so it lights up once the engine reports key-lock is engaged for this deck.
+        KeyLockCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckKeyLockToggle, Slot: slot)),
+            canEmit);
+        _isKeyLock = _dispatcher?.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, slot).IsActive ?? false;
 
         // Nudge buttons: ±0.1 BPM relative delta via DeckBpmNudge — manual beat-sync fine-tuning.
         // Emitting Relative mode lets the controller-mapping layer use the same action from a jog wheel.
@@ -177,6 +188,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             "Pitch", Seed(PerformanceActionKind.DeckPitch, PitchCentre),
             enabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
 
+        // Signed pitch-percent readout: the normalized fader (0..1, centre 0.5) maps to the engine's real
+        // tempo range of +-PitchRangePercent, so the displayed percent = (Value - 0.5) * 2 * 100 * range.
+        // Tracks the same Pitch.Value the fader/feedback drive, so a controller move updates the readout too.
+        _pitchPercentText = this
+            .WhenAnyValue(deck => deck.Pitch.Value)
+            .Select(FormatPitchPercent)
+            .ToProperty(this, nameof(PitchPercentText), FormatPitchPercent(Pitch.Value));
+
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckBpm, slot) is { } bpmFeedback)
             ApplyBpmFeedback(bpmFeedback);
 
@@ -198,6 +217,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double EqBands_Unity = 0.5;
     private const double FilterCentre = 0.5;
     private const double PitchCentre = 0.5;
+
+    /// <summary>The +-fraction of the real tempo the pitch fader spans at its extremes (0.5 +- this).
+    /// Mirrors <c>TwoDeckBassEngine.PitchRangePercent</c> (0.08 = +-8%); the engine owns the audible rate,
+    /// this is only for the on-screen readout. Keep the two in sync if the engine range changes.</summary>
+    private const double PitchRangePercent = 0.08;
 
     /// <summary>Default loop length emitted by the LOOP button, in beats (a 1-bar loop in 4/4).</summary>
     private const double DefaultLoopBeats = 4.0;
@@ -223,6 +247,34 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public bool HasTrackMeta => _meta != NoMeta;
 
     private const string NoMeta = "—";
+
+    /// <summary>The loaded track's musical key (e.g. "8A"), from the catalog facts; null when no track is
+    /// loaded or the catalog has no key for it. Surfaced as its own labelled readout on both decks.</summary>
+    public string? TrackKey
+    {
+        get => _trackKey;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _trackKey, value);
+            this.RaisePropertyChanged(nameof(HasTrackKey));
+        }
+    }
+
+    /// <summary>True when a musical key is known for the loaded track (drives the key readout's visibility).</summary>
+    public bool HasTrackKey => !string.IsNullOrWhiteSpace(_trackKey);
+
+    /// <summary>The current pitch offset as a signed percentage of the real tempo range (e.g. "+2.4%"),
+    /// derived from <see cref="Pitch"/>.Value and <see cref="PitchRangePercent"/>. Display only.</summary>
+    public string PitchPercentText => _pitchPercentText.Value;
+
+    // Map the 0..1 fader (centre 0.5) to a signed percentage of the engine's +-PitchRangePercent range.
+    // Centre -> "0.0%", full up -> "+8.0%", full down -> "-8.0%" (with the default +-8% range). The value
+    // is kept as a fraction (0.08 at full up) so the "%" format specifier scales it by 100 for display.
+    private static string FormatPitchPercent(double normalized)
+    {
+        double fraction = (normalized - PitchCentre) * 2.0 * PitchRangePercent;
+        return fraction.ToString("+0.0%;-0.0%;0.0%", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>The loaded track's waveform peaks (0..1), or null when none is decoded (placeholder).</summary>
     public IReadOnlyList<float>? Waveform
@@ -483,16 +535,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _isLooping, value);
     }
 
-    public bool IsSyncEnabled
+    /// <summary>True while key-lock (master tempo) is engaged for this deck (drives the KEY LOCK key's
+    /// active state), from <see cref="PerformanceActionKind.DeckKeyLockToggle"/> feedback.</summary>
+    public bool IsKeyLock
     {
-        get => _isSyncEnabled;
-        private set => this.RaiseAndSetIfChanged(ref _isSyncEnabled, value);
+        get => _isKeyLock;
+        private set => this.RaiseAndSetIfChanged(ref _isKeyLock, value);
     }
 
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+    /// <summary>Toggles key-lock (master tempo) for this deck via <see cref="PerformanceActionKind.DeckKeyLockToggle"/>.</summary>
+    public ReactiveCommand<Unit, Unit> KeyLockCommand { get; }
     /// <summary>Nudges the deck BPM down by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
     public ReactiveCommand<Unit, Unit> NudgeLeftCommand { get; }
     /// <summary>Nudges the deck BPM up by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
@@ -530,6 +586,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
+        _pitchPercentText.Dispose();
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged -= OnFeedback;
     }
@@ -583,8 +640,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckSetLoop:
                     IsLooping = e.State.IsActive;
                     break;
-                case PerformanceActionKind.DeckSyncToggle:
-                    IsSyncEnabled = e.State.IsActive;
+                case PerformanceActionKind.DeckKeyLockToggle:
+                    IsKeyLock = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);
@@ -688,6 +745,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             ? $"{i.Key} · {i.Bpm} BPM · {i.Duration}"
             : bpm > 0 ? $"{bpm:0.0} BPM" : NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
+        // Key comes only from the catalog facts (the load action carries no key); clear it when the track
+        // isn't in the catalog so the dedicated readout never shows a stale key from a previous load.
+        TrackKey = string.IsNullOrWhiteSpace(info?.Key) ? null : info!.Key;
         Progress = 0;
         Waveform = null;          // empty state while the new overview decodes (no fake waveform)
         KickPeaks = null;

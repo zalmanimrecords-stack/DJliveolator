@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -71,5 +72,28 @@ public sealed class ControlSkinApplierTests
 
         Assert.Null(captured);
         Assert.Equal(Color.Parse("#AB12CD"), BrushColor(app, "KnobArc"));
+    }
+
+    // Regression: a control skin can reach the applier with a malformed colour (the ControlSkinFile record
+    // does not validate, and the MCP authoring session applies one directly). Color.Parse threw a
+    // FormatException that escaped into the ReactiveUI default exception handler and was logged as a startup
+    // crash even though the app kept running. A bad colour must degrade to the themed fallback and be
+    // reported, never thrown.
+    [AvaloniaFact]
+    public void Apply_malformed_colour_falls_back_to_theme_and_reports_instead_of_throwing()
+    {
+        Application app = Application.Current!;
+        // Reset to a known state so the assertion reads the themed fallback, not a prior skin's colour.
+        ControlSkinApplier.Apply(app, knob: null, slider: null);
+
+        var warnings = new List<string>();
+        var knob = new ControlSkinFile { Name = "Broken", Kind = ControlSkinKind.Knob, Accent = "not-a-colour" };
+
+        Exception? captured = Record.Exception(
+            () => ControlSkinApplier.Apply(app, knob, slider: null, onWarning: warnings.Add));
+
+        Assert.Null(captured);
+        Assert.Equal(ThemeColor(app, "AccentColor"), BrushColor(app, "KnobArc")); // bad accent → themed fallback
+        Assert.Contains(warnings, w => w.Contains("not-a-colour") && w.Contains("KnobArc"));
     }
 }

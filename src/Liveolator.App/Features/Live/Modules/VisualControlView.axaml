@@ -6,80 +6,122 @@
              x:DataType="m:VisualControlViewModel">
 
   <Border Classes="panel">
-    <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
-      <TextBlock Classes="section" Text="VISUAL CONTROL" />
+    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="section" Text="VISUAL CONTROL" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="mono faint" FontSize="9" Padding="8,2"
+                Content="RELOAD PRESETS" Command="{Binding ReloadPresetsCommand}"
+                ToolTip.Tip="Re-scan the preset folder so newly-authored presets appear in the layer sources without restart" />
+      </Grid>
 
-      <!-- Controllable preset (doc 28): pick a generator preset; its up-to-5 parameters appear as knobs
-           that emit VisualSetMacro, the same path a learned MIDI knob uses. -->
-      <StackPanel Grid.Row="1" IsVisible="{Binding PresetControls.IsEnabled}" Margin="0,12,0,4">
-        <TextBlock Classes="mono faint" FontSize="10" Text="PRESET" />
-        <ComboBox ItemsSource="{Binding PresetControls.Presets}"
-                  SelectedItem="{Binding PresetControls.SelectedPreset}"
-                  HorizontalAlignment="Stretch" MinWidth="180" Margin="0,2,0,0">
-          <ComboBox.ItemTemplate>
-            <DataTemplate x:DataType="m:PresetOptionViewModel">
-              <TextBlock Text="{Binding Name}" />
-            </DataTemplate>
-          </ComboBox.ItemTemplate>
-        </ComboBox>
-        <ItemsControl ItemsSource="{Binding PresetControls.Controls}" Margin="0,8,0,0">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <StackPanel Orientation="Horizontal" Spacing="12" />
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="m:ContinuousControlViewModel">
-              <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
-                               Value="{Binding Value}" IsEnabled="{Binding IsEnabled}" />
-                <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
-                           Text="{Binding Value, StringFormat='0.00'}" />
-                <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="{Binding Label}" />
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </StackPanel>
-
-      <ItemsControl Grid.Row="2" ItemsSource="{Binding Channels}" Margin="0,12">
+      <!-- One card per layer. The source dropdown selects the layer's generator/image; when the chosen
+           generator is a controllable preset (doc 28) its up-to-5 knobs appear in the same card and emit
+           VisualSetMacro, the same path a learned MIDI knob uses. -->
+      <ItemsControl Grid.Row="1" ItemsSource="{Binding Channels}" Margin="0,12">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="m:VisualChannelViewModel">
             <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}"
                     BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
-              <Grid ColumnDefinitions="70,*,Auto">
-                <StackPanel VerticalAlignment="Center">
-                  <TextBlock Classes="mono accent" FontWeight="SemiBold" Text="{Binding LayerLabel}" />
-                  <TextBlock Classes="mono faint" FontSize="10" Text="{Binding DepthLabel}" />
-                </StackPanel>
-                <ComboBox Grid.Column="1" ItemsSource="{Binding Sources}"
-                          SelectedItem="{Binding SelectedSource}" MinWidth="150">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="m:VisualChannelSourceOption">
-                      <StackPanel>
-                        <TextBlock Text="{Binding Label}" />
-                        <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Group}" />
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="70,*,Auto">
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="mono accent" FontWeight="SemiBold" Text="{Binding LayerLabel}" />
+                    <TextBlock Classes="mono faint" FontSize="10" Text="{Binding DepthLabel}" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" ItemsSource="{Binding Sources}"
+                            SelectedItem="{Binding SelectedSource}" MinWidth="150">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="m:VisualChannelSourceOption">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Label}" />
+                          <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Group}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <StackPanel Grid.Column="2" Margin="12,0,0,0" Spacing="2"
+                              VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
+                                   DefaultValue="1"
+                                   Value="{Binding Opacity.Value}" IsEnabled="{Binding Opacity.IsEnabled}" />
+                    <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                               Text="{Binding Opacity.Value, StringFormat='0.00'}" />
+                    <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="OPACITY" />
+                  </StackPanel>
+                </Grid>
+
+                <!-- Controllable preset knobs for this layer (shown only when the source is a preset). -->
+                <ItemsControl ItemsSource="{Binding Preset.Controls}"
+                              IsVisible="{Binding Preset.HasControls}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="m:ContinuousControlViewModel">
+                      <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <controls:Knob Width="40" Height="40" HorizontalAlignment="Center"
+                                       Value="{Binding Value}" IsEnabled="{Binding IsEnabled}" />
+                        <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                                   Text="{Binding Value, StringFormat='0.00'}" />
+                        <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="{Binding Label}" />
                       </StackPanel>
                     </DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <StackPanel Grid.Column="2" Margin="12,0,0,0" Spacing="2"
-                            VerticalAlignment="Center" HorizontalAlignment="Center">
-                  <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
-                                 DefaultValue="1"
-                                 Value="{Binding Opacity.Value}" IsEnabled="{Binding Opacity.IsEnabled}" />
-                  <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
-                             Text="{Binding Opacity.Value, StringFormat='0.00'}" />
-                  <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="OPACITY" />
-                </StackPanel>
-              </Grid>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
             </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
-      <Button Grid.Row="3" Classes="accent" Content="SHOW VISUAL SCREEN"
-              Command="{Binding ShowVisualsCommand}" />
+      <StackPanel Grid.Row="2" Spacing="10">
+
+        <!-- Quantized scene transitions on the shared beat clock (doc 08): NOW, on the next beat,
+             or on the next bar — the same quantum the audio uses. -->
+        <StackPanel Spacing="6">
+          <TextBlock Classes="mono faint" FontSize="9" Text="TRANSITION" />
+          <Grid ColumnDefinitions="*,*,*">
+            <Button Grid.Column="0" Classes="spartan" Content="NOW"
+                    Command="{Binding TransitionNowCommand}" Margin="0,0,6,0" />
+            <Button Grid.Column="1" Classes="spartan" Content="+BEAT"
+                    Command="{Binding TransitionBeatCommand}" Margin="0,0,6,0" />
+            <Button Grid.Column="2" Classes="spartan" Content="+BAR"
+                    Command="{Binding TransitionBarCommand}" />
+          </Grid>
+        </StackPanel>
+
+        <!-- Show/hide the built-in VU-meter layer; hidden unless the active scene ships one. -->
+        <Button Classes="key" Classes.on="{Binding IsVuMeterShown}"
+                Content="{Binding VuMeterButtonText}" Command="{Binding ToggleVuMeterCommand}"
+                IsVisible="{Binding CanToggleVuMeter}" HorizontalAlignment="Stretch" />
+
+        <!-- Installed visual add-ons: enabling/disabling changes the available visual vocabulary. -->
+        <StackPanel Spacing="6" IsVisible="{Binding HasAddons}">
+          <TextBlock Classes="mono faint" FontSize="9" Text="ADD-ONS" />
+          <Grid ColumnDefinitions="*,Auto">
+            <ComboBox Grid.Column="0" ItemsSource="{Binding Addons}"
+                      SelectedItem="{Binding SelectedAddon}" MinWidth="120">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="m:VisualAddonViewModel">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding PackageId}" />
+                    <TextBlock Classes="mono faint" Text="{Binding State}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Column="1" Classes="spartan" Content="TOGGLE" Margin="8,0,0,0"
+                    Command="{Binding ToggleAddonCommand}" />
+          </Grid>
+        </StackPanel>
+
+        <Button Classes="accent" Content="SHOW VISUAL SCREEN"
+                Command="{Binding ShowVisualsCommand}" />
+
+        <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Status}" />
+      </StackPanel>
     </Grid>
   </Border>
 </UserControl>

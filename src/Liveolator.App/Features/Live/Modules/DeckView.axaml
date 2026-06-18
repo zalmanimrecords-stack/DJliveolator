@@ -34,12 +34,19 @@
             <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
           </StackPanel>
         </Panel>
-        <!-- time readout: elapsed over remaining, advancing with the playhead -->
+        <!-- time readout: elapsed over remaining (advancing with the playhead), plus the musical key of
+             the loaded track (from the catalog) sitting with the time block. -->
         <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
           <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
                      Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
           <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right"
                      Text="{Binding RemainingText}" ToolTip.Tip="Time remaining in the track" />
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasTrackKey}">
+            <TextBlock Classes="tick" VerticalAlignment="Center" Text="KEY" />
+            <TextBlock Classes="mono accent" FontSize="13" VerticalAlignment="Center"
+                       Text="{Binding TrackKey}" ToolTip.Tip="Musical key of the loaded track" />
+          </StackPanel>
         </StackPanel>
       </Grid>
 
@@ -58,7 +65,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="m:HotCuePadViewModel">
-              <Button Classes="key" Classes.on="{Binding IsSet}"
+              <Button Classes="key" Classes.on="{Binding IsSet}" Content="{Binding Label}"
                       Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -73,21 +80,25 @@
                 Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
         </Button>
-        <Button Classes="key" Classes.on="{Binding IsSyncEnabled}" Content="SYNC"
-                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}" />
+        <Button Classes="key" Content="SYNC"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Match tempo + phase to the other deck (one-shot)" />
       </UniformGrid>
 
       <!-- BPM: horizontal fader (0..1 normalised via BpmFaderValue) + nudge buttons for manual beat-sync -->
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
-          <!-- row 1: label · current value · range hint -->
-          <Grid ColumnDefinitions="Auto,*,Auto">
+          <!-- row 1: label · current value · pitch% · range hint -->
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
             <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
             <TextBlock Grid.Column="1" Classes="mono"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
                        IsEnabled="{Binding IsBpmEnabled}" />
-            <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
+            <TextBlock Grid.Column="2" Classes="mono" Margin="0,0,8,0" VerticalAlignment="Center"
+                       Text="{Binding PitchPercentText}"
+                       ToolTip.Tip="Pitch offset (percent of the real tempo)" />
+            <TextBlock Grid.Column="3" Classes="tick" VerticalAlignment="Center" Text="±8%" />
           </Grid>
           <!-- row 2: nudge left · slider · nudge right -->
           <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
@@ -104,17 +115,43 @@
         </StackPanel>
       </Border>
 
+      <!-- KEY LOCK (master tempo): hold the musical key constant while the tempo/pitch fader moves. Toggles
+           per-deck key-lock via DeckKeyLockToggle and lights from its active-state feedback (the LED model). -->
+      <Button Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
+              Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
+
       <!-- Track nudge: shift the waveform a small step (relative seek) for fine cueing / lining the track
-           up. The arrow = the direction the waveform moves: ◄ shifts it left, ► shifts it right. Step is
-           configurable in Settings (default 0.1 s). -->
-      <UniformGrid Columns="2">
-        <Button Classes="key" Content="◄" Margin="0,0,4,0"
-                Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                ToolTip.Tip="Nudge the track left (fine cueing)" />
-        <Button Classes="key" Content="►"
-                Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                ToolTip.Tip="Nudge the track right (fine cueing)" />
-      </UniformGrid>
+           up. Direction follows the waveform-move convention (NOT an inverted binding): the arrow points the
+           way the waveform slides, so ◄ slides the wave left = SeekForward, ► slides it right = SeekBack. The
+           "WAVE" caption + the visible arrow keep that self-explanatory, and the NUDGE section label plus the
+           waveform glyphs make this pair clearly distinct from the BPM ± nudge above. Step is configurable in
+           Settings (default 0.1 s). -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="NUDGE" />
+          <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+        </Grid>
+        <UniformGrid Columns="2">
+          <Button Classes="key" Margin="0,0,4,0"
+                  Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                  ToolTip.Tip="Nudge the track: slide the waveform left (fine cueing)">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Text="◄" />
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+            </StackPanel>
+          </Button>
+          <Button Classes="key"
+                  Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
+                  ToolTip.Tip="Nudge the track: slide the waveform right (fine cueing)">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+              <TextBlock Text="►" />
+            </StackPanel>
+          </Button>
+        </UniformGrid>
+      </StackPanel>
 
       <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
       <UniformGrid Columns="4">

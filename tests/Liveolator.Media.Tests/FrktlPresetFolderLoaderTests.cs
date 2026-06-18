@@ -60,6 +60,29 @@ public sealed class FrktlPresetFolderLoaderTests : IDisposable
     }
 
     [Fact]
+    public void Load_KeepsPresetRegistered_WhenShaderCacheCannotBeRefreshed()
+    {
+        // Regression: a second running instance holding the cache .frag open used to make the folder
+        // loader skip the preset (the WriteAllText threw and the whole file was dropped), so presets
+        // "disappeared" from the picker whenever two app windows overlapped. The loader must now fall
+        // back to the existing cached shader and keep the preset registered.
+        WriteFile("aurora-veil.frktl", ValidJson());
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        Assert.Equal(1, new FrktlPresetFolderLoader(effects, presets, _folder).Load());
+
+        string fragPath = Path.Combine(_folder, ".cache", "aurora-veil.frag");
+        // Hold the cache file so it cannot be overwritten (mirrors another instance's compositor on Windows).
+        using var hold = new FileStream(fragPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var warnings = new System.Collections.Generic.List<string>();
+        int count = new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        Assert.Equal(1, count);
+        Assert.True(presets.TryGet("liveolator.frktl.user/aurora-veil", out _));
+    }
+
+    [Fact]
     public void Load_SkipsInvalidFiles_ButKeepsValidOnes()
     {
         WriteFile("good.frktl", ValidJson("Good"));
@@ -74,6 +97,39 @@ public sealed class FrktlPresetFolderLoaderTests : IDisposable
         Assert.Equal(1, count);
         Assert.True(presets.TryGet("liveolator.frktl.user/good", out _));
         Assert.Equal(2, warnings.Count); // bad + broken were reported
+    }
+
+    [Fact]
+    public void Load_WarnsWhenFilesPresentButNoneRegister()
+    {
+        // The silent-empty case: .frktl files exist on disk but the scan registers zero presets, so the
+        // picker shows only the built-ins with no clue why. The loader must surface a summary warning
+        // (global standards #26) in addition to the per-file reasons.
+        WriteFile("bad.frktl", """{ "name": "Bad", "parameters": [], "shader": "not a shader" }""");
+        WriteFile("broken.frktl", "{ this is not json");
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        var warnings = new System.Collections.Generic.List<string>();
+
+        int count = new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        Assert.Equal(0, count);
+        Assert.Contains(warnings, w => w.Contains("registered 0 preset", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Load_DoesNotWarnEmpty_WhenAtLeastOnePresetRegisters()
+    {
+        WriteFile("good.frktl", ValidJson("Good"));
+        WriteFile("bad.frktl", """{ "name": "Bad", "parameters": [], "shader": "not a shader" }""");
+        var effects = new VisualEffectRegistry();
+        var presets = new GeneratorPresetRegistry();
+        var warnings = new System.Collections.Generic.List<string>();
+
+        new FrktlPresetFolderLoader(effects, presets, _folder, warnings.Add).Load();
+
+        // Only the per-file warning for the bad file; no "registered 0" summary when something loaded.
+        Assert.DoesNotContain(warnings, w => w.Contains("registered 0 preset", StringComparison.Ordinal));
     }
 
     [Fact]

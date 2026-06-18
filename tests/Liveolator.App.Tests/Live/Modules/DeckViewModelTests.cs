@@ -171,6 +171,49 @@ public sealed class DeckViewModelTests
 
     [Theory]
     [InlineData(0)]
+    [InlineData(1)]
+    public async Task KeyLock_EmitsDeckKeyLockToggle_ForItsSlot(int slot)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot, dispatcher);
+
+        await vm.KeyLockCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckKeyLockToggle, action.Kind);
+        Assert.Equal(slot, action.Slot);
+    }
+
+    [Fact]
+    public void IsKeyLock_FollowsDeckKeyLockToggleFeedback_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.False(vm.IsKeyLock);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.False(vm.IsKeyLock); // other deck
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.True(vm.IsKeyLock);
+    }
+
+    [Fact]
+    public void IsKeyLock_SeedsFromExistingFeedback_AtConstruction()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckKeyLockToggle, slot: 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        Assert.True(vm.IsKeyLock);
+    }
+
+    [Theory]
+    [InlineData(0)]
     [InlineData(2)]
     [InlineData(3)]
     public async Task HotCuePad_EmitsDeckHotCue_WithItsIndexAndSlot(int padIndex)
@@ -352,7 +395,7 @@ public sealed class DeckViewModelTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task Sync_EmitsDeckSyncToggle_ForItsSlot(int slot)
+    public async Task Sync_EmitsDeckSyncOnce_ForItsSlot(int slot)
     {
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
@@ -361,21 +404,24 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSyncToggle, action.Kind);
+        Assert.Equal(PerformanceActionKind.DeckSyncOnce, action.Kind);
+        Assert.Equal(ActionInputMode.Momentary, action.InputMode);
         Assert.Equal(slot, action.Slot);
     }
 
     [Fact]
-    public void IsSyncEnabled_FollowsSyncFeedbackForItsSlot()
+    public async Task Sync_IsOneShot_EachPressEmitsAFreshDeckSyncOnce()
     {
+        // SYNC is a momentary beatmatch, not a latch: pressing it twice fires two independent
+        // DeckSyncOnce actions (a toggle would have alternated engage/release state instead).
         var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 1, dispatcher);
+        var vm = new DeckViewModel(slot: 0, dispatcher);
 
-        dispatcher.RaiseFeedback(
-            PerformanceActionKind.DeckSyncToggle, 1,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 1));
+        await vm.SyncCommand.Execute().ToTask();
+        await vm.SyncCommand.Execute().ToTask();
 
-        Assert.True(vm.IsSyncEnabled);
+        Assert.Equal(2, dispatcher.Dispatched.Count);
+        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncOnce, a.Kind));
     }
 
     [Fact]
@@ -606,6 +652,119 @@ public sealed class DeckViewModelTests
         Assert.Equal(132, vm.Bpm);
         Assert.Contains("132.0 BPM", vm.Meta);
         Assert.DoesNotContain("120.0 BPM", vm.Meta);
+    }
+
+    // --- Musical key readout ---
+
+    [Fact]
+    public void TrackLoad_SurfacesMusicalKey_FromResolver()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo(Title: "Midnight City", Bpm: "128.0", Key: "8A", Duration: "6:48"));
+
+        Assert.Null(vm.TrackKey);
+        Assert.False(vm.HasTrackKey);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128, Argument: @"C:\music\track.mp3"));
+
+        Assert.Equal("8A", vm.TrackKey);
+        Assert.True(vm.HasTrackKey);
+    }
+
+    [Fact]
+    public void TrackLoad_WithoutCatalogKey_LeavesKeyCleared()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no catalog resolver → no key
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 126, Argument: @"C:\music\track.mp3"));
+
+        Assert.Null(vm.TrackKey);
+        Assert.False(vm.HasTrackKey);
+    }
+
+    [Fact]
+    public void TrackLoad_WithoutKeyAfterAKnownKey_ClearsThePreviousKey()
+    {
+        var dispatcher = new FakeDispatcher();
+        // First load carries a key; the second (a track missing from the catalog) must clear it.
+        bool firstLoad = true;
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ =>
+            {
+                if (!firstLoad) return null;
+                firstLoad = false;
+                return new DeckTrackInfo(Title: "T", Bpm: "128.0", Key: "8A", Duration: "6:48");
+            });
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128, Argument: @"C:\music\a.mp3"));
+        Assert.Equal("8A", vm.TrackKey);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 126, Argument: @"C:\music\b.mp3"));
+
+        Assert.Null(vm.TrackKey); // no stale key from the previous track
+        Assert.False(vm.HasTrackKey);
+    }
+
+    // --- Signed pitch-percent readout ---
+
+    [Fact]
+    public void PitchPercentText_IsZeroAtCentre()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        // The pitch fader seeds at centre (0.5) → no offset.
+        Assert.Equal(0.5, vm.Pitch.Value, precision: 6);
+        Assert.Equal("0.0%", vm.PitchPercentText);
+    }
+
+    [Theory]
+    [InlineData(1.0, "+8.0%")]   // full up = the engine's +8% range maximum
+    [InlineData(0.0, "-8.0%")]   // full down = -8%
+    [InlineData(0.65, "+2.4%")]  // (0.65-0.5)*2*8% = +2.4%
+    [InlineData(0.25, "-4.0%")]  // (0.25-0.5)*2*8% = -4.0%
+    public void PitchPercentText_FormatsSignedPercent_AcrossTheRange(double pitchValue, string expected)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        vm.Pitch.Value = pitchValue;
+
+        Assert.Equal(expected, vm.PitchPercentText);
+    }
+
+    [Fact]
+    public void PitchPercentText_TracksPitchValueChanges()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.Equal("0.0%", vm.PitchPercentText);
+
+        // A controller/feedback move pushes the value in without re-emitting; the readout still follows.
+        vm.Pitch.SetFromFeedback(0.75);
+        Assert.Equal("+4.0%", vm.PitchPercentText);
+
+        vm.Pitch.SetFromFeedback(0.5);
+        Assert.Equal("0.0%", vm.PitchPercentText);
+    }
+
+    [Fact]
+    public void PitchPercentText_RaisesPropertyChanged_WhenPitchMoves()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        var raised = false;
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(vm.PitchPercentText)) raised = true; };
+
+        vm.Pitch.Value = 0.6;
+
+        Assert.True(raised);
     }
 
     [Fact]

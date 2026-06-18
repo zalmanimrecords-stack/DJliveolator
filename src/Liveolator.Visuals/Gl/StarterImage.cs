@@ -15,8 +15,7 @@ public static class StarterImage
     /// </summary>
     public static string EnsureCreated(string? directory = null)
     {
-        directory ??= Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liveolator", "assets");
+        directory ??= VisualAssetPaths.Default();
         Directory.CreateDirectory(directory);
 
         string path = Path.Combine(directory, "starter.png");

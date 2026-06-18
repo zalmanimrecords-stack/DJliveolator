@@ -69,8 +69,6 @@ public enum PerformanceActionKind
     AudioFxSetParameter,
     AudioFxLoadPreset,
 
-    // Auto-mix (doc 11) — hands-free assist
-
     // Playlist
     PlaylistInsertTrackNext,
     PlaylistMoveTrack,
@@ -96,18 +94,6 @@ public enum PerformanceActionKind
     /// </summary>
     VisualLoadPreset,
 
-    // Auto-mix (doc 11) — a hands-free beat-locked crossfade between the decks.
-    // (Persisted bindings serialize kinds by NAME — JsonStringEnumConverter — so ordering is free.)
-
-    /// <summary>Start an automatic deck-to-deck crossfade, or abort the one in flight.</summary>
-    AutomixToggle,
-
-    /// <summary>
-    /// Set the auto-mix transition length: Value is the 0..1 knob position, resolved to a bar-count
-    /// detent (2/4/8/16/32/64 bars) by the auto-mix engine. Applies to the NEXT transition.
-    /// </summary>
-    AutomixSetDuration,
-
     /// <summary>
     /// Appends a track to a deck's live queue without touching what is playing: Slot is the deck
     /// (A = 0, B = 1), Argument is the track path. Emitted instead of <see cref="DeckLoadTrack"/>
@@ -115,4 +101,27 @@ public enum PerformanceActionKind
     /// track plays when the current one ends (doc 09/11).
     /// </summary>
     PlaylistAppendTrack,
+
+    /// <summary>
+    /// Sets the computer's master output volume (the OS system volume, affecting every application),
+    /// not the app's own mix. Value is the absolute 0..1 level for <see cref="ActionInputMode.Absolute"/>
+    /// or a signed delta for <see cref="ActionInputMode.Relative"/>. Owned by the platform system-volume
+    /// seam (<c>ISystemVolumeController</c>); a no-op on hosts where the OS volume cannot be controlled.
+    /// </summary>
+    SystemMasterVolume,
+
+    /// <summary>
+    /// Toggle key-lock (master tempo) for a deck (Slot = A/B). When on, tempo changes preserve the
+    /// track's musical pitch (time-stretch); when off, pitch follows tempo like a vinyl fader (the
+    /// default). Per-deck state that persists across track loads (doc 11; roadmap N4 / H1).
+    /// </summary>
+    DeckKeyLockToggle,
+
+    /// <summary>
+    /// Toggle recording of the live master mix to a clean WAV file (roadmap X2). Captures the
+    /// post-limiter master (the exact signal the house hears) without affecting playback. Owned by
+    /// the <c>IMasterRecorder</c> seam; the handler holds the on/off latch and reports it back so a
+    /// REC button / LED reflects the true capture state. Unavailable when no realtime engine is up.
+    /// </summary>
+    MasterRecordToggle,
 }

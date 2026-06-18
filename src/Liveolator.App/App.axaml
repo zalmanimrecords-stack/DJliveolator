@@ -34,16 +34,19 @@
     <!-- Deliberate exception to the single-blue line: a true green reserved for live MIDI activity
          (the top-bar signal LED), so an incoming controller signal reads at a glance. -->
     <Color x:Key="MidiActiveColor">#29C467</Color>
-    <!-- Deck waveform — the layered 3-band stack (rekordbox-style z-stack, inverted so the KICK is the
-         front layer): pale high-band caps in back, a steel-blue mid body, and the kick (low, ≤200 Hz)
-         band drawn LAST in bright amber with a glow — the one deliberate data-colour exception to the
-         single-blue line, so kick transients pop in front for beat-align by eye. WaveformColor is the
-         broadband fallback body + playhead/bar accent (stays on the blue line); WaveHighColor carries
-         its translucency in the alpha so theme overrides keep it. -->
+    <!-- Deck waveform — the VirtualDJ 3-band scheme (deliberate exception to the single-blue line, by owner
+         request): the low/kick band is RED (drawn LAST in front, with a glow, so kick transients pop for
+         beat-align by eye), the mid body is GREEN, and the high caps are BLUE/CYAN. The beat marking lives
+         in a bottom CBG comb — short grey BeatMark teeth + broad red DownbeatMark blocks every 4th beat —
+         and the playhead is near-white. WaveformColor is only the broadband fallback body (no band data);
+         WaveHighColor carries its translucency in the alpha so theme overrides keep it. -->
     <Color x:Key="WaveformColor">#2F80F6</Color>
-    <Color x:Key="KickColor">#F2A83B</Color>
-    <Color x:Key="WaveMidColor">#3D5C8F</Color>
-    <Color x:Key="WaveHighColor">#8CDCE6F4</Color>
+    <Color x:Key="KickColor">#E23B2E</Color>
+    <Color x:Key="WaveMidColor">#39C24A</Color>
+    <Color x:Key="WaveHighColor">#A036A6E8</Color>
+    <Color x:Key="WavePlayheadColor">#F2F6FF</Color>
+    <Color x:Key="BeatMarkColor">#8E9AA8</Color>
+    <Color x:Key="DownbeatMarkColor">#E5403A</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
     <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage
@@ -70,6 +73,11 @@
     <SolidColorBrush x:Key="WaveformAhead" Color="{DynamicResource WaveformColor}" Opacity="0.5" />
     <SolidColorBrush x:Key="WaveMid" Color="{DynamicResource WaveMidColor}" />
     <SolidColorBrush x:Key="WaveHigh" Color="{DynamicResource WaveHighColor}" />
+    <!-- VirtualDJ beat marking: a near-white playhead over a bottom CBG comb of grey beat teeth and broad
+         red downbeat blocks. -->
+    <SolidColorBrush x:Key="WavePlayhead" Color="{DynamicResource WavePlayheadColor}" />
+    <SolidColorBrush x:Key="BeatMark" Color="{DynamicResource BeatMarkColor}" />
+    <SolidColorBrush x:Key="DownbeatMark" Color="{DynamicResource DownbeatMarkColor}" />
 
     <!-- Control-skin brushes (doc 30): the Knob/Fader styles bind to THESE (not the raw tokens) so a
          parametric control skin can override just the controls. They default to the theme tokens, so the

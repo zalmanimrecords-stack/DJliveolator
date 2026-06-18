@@ -10,6 +10,9 @@ internal sealed class RecordingDispatcher : IPerformanceActionDispatcher
 
     public bool ThrowOnDispatch { get; set; }
 
+    /// <summary>Current value reported by <see cref="GetFeedback"/> (the soft-takeover target).</summary>
+    public double FeedbackValue { get; set; }
+
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
     public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
@@ -22,7 +25,7 @@ internal sealed class RecordingDispatcher : IPerformanceActionDispatcher
     }
 
     public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
-        => ActionFeedbackState.Unavailable;
+        => new(IsActive: false, IsAvailable: true, Value: FeedbackValue);
 
     public void RaiseFeedback(ActionFeedbackChanged change) => FeedbackChanged?.Invoke(this, change);
 }

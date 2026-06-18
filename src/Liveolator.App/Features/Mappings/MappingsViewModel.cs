@@ -20,6 +20,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     private MappingTargetViewModel? _selectedTarget;
     private MappingBindingViewModel? _selectedBinding;
     private string _status = string.Empty;
+    private string _learnHint = string.Empty;
+    private bool _isEmpty = true;
 
     public MappingsViewModel(
         IMidiControlSession session,
@@ -64,6 +66,28 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     {
         get => _status;
         private set => this.RaiseAndSetIfChanged(ref _status, value);
+    }
+
+    /// <summary>
+    /// A getting-started prompt shown when the active profile has NO bindings yet (e.g. a freshly plugged
+    /// generic controller), guiding the performer through the learn flow. Empty when bindings exist or no
+    /// device is connected, so the View can hide it.
+    /// </summary>
+    public string LearnHint
+    {
+        get => _learnHint;
+        private set => this.RaiseAndSetIfChanged(ref _learnHint, value);
+    }
+
+    /// <summary>
+    /// True when the bindings list is empty, so the View can show an in-list empty-state placeholder. This
+    /// is distinct from <see cref="LearnHint"/> (a top-of-screen getting-started prompt): it tracks the list
+    /// itself and is true even when no device/profile is connected.
+    /// </summary>
+    public bool IsEmpty
+    {
+        get => _isEmpty;
+        private set => this.RaiseAndSetIfChanged(ref _isEmpty, value);
     }
 
     public ReactiveCommand<Unit, Unit> LearnCommand { get; }
@@ -202,7 +226,9 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         Bindings.Clear();
         if (profile is null)
         {
+            IsEmpty = true;
             Status = "Connect a MIDI controller in Settings.";
+            LearnHint = string.Empty;
             return;
         }
 
@@ -210,6 +236,15 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
                      .OrderBy(binding => binding.Action)
                      .ThenBy(binding => binding.Slot))
             Bindings.Add(new MappingBindingViewModel(binding));
+
+        IsEmpty = Bindings.Count == 0;
+
+        // An empty profile (e.g. a freshly plugged generic controller) shows a learn prompt; once any
+        // binding exists the hint is hidden so it does not clutter a configured controller.
+        LearnHint = Bindings.Count == 0
+            ? $"No mappings yet for {DeviceName}. Click a control in Liveolator, then move a control on " +
+              "your MIDI controller to learn it."
+            : string.Empty;
 
         Status = $"{Bindings.Count} mapping(s) active.";
         this.RaisePropertyChanged(nameof(DeviceName));
@@ -221,7 +256,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         [
             new("Deck A: Play / Pause", PerformanceActionKind.DeckPlayPause, 0),
             new("Deck A: Cue", PerformanceActionKind.DeckCue, 0),
-            new("Deck A: Sync", PerformanceActionKind.DeckSyncToggle, 0, ActionInputMode.Toggle),
+            new("Deck A: Sync", PerformanceActionKind.DeckSyncOnce, 0, ActionInputMode.Momentary),
             new("Deck A: Jog / track position", PerformanceActionKind.DeckJog, 0,
                 ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck A: Channel fader", PerformanceActionKind.MixerChannelGain, 0),
@@ -232,7 +267,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Deck A: Headphone cue", PerformanceActionKind.MixerCueToggle, 0),
             new("Deck B: Play / Pause", PerformanceActionKind.DeckPlayPause, 1),
             new("Deck B: Cue", PerformanceActionKind.DeckCue, 1),
-            new("Deck B: Sync", PerformanceActionKind.DeckSyncToggle, 1, ActionInputMode.Toggle),
+            new("Deck B: Sync", PerformanceActionKind.DeckSyncOnce, 1, ActionInputMode.Momentary),
             new("Deck B: Jog / track position", PerformanceActionKind.DeckJog, 1,
                 ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
             new("Deck B: Channel fader", PerformanceActionKind.MixerChannelGain, 1),

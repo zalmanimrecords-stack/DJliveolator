@@ -11,12 +11,13 @@ using Avalonia.Media.Immutable;
 namespace Liveolator.App.Controls;
 
 /// <summary>
-/// The deck waveform strip — a layered, kick-forward 3-band view (the best-of blend of the rekordbox
-/// 3Band stack and the Mixxx filter split, inverted so the KICK is the front layer): pale high-band
-/// caps in back, the mid band as the body, and the low/kick band drawn LAST in a bright glow — the
-/// transient anchor a DJ beat-aligns by eye. With only broadband <see cref="Peaks"/> (no band data) it
+/// The deck waveform strip — a VirtualDJ-style view: a layered, kick-forward 3-band waveform in the top
+/// region (blue/cyan high-band caps in back, the green mid band as the body, and the red low/kick band
+/// drawn LAST in a bright glow — the transient anchor a DJ beat-aligns by eye), over a dedicated CBG
+/// "comb" strip pinned to the bottom that carries the beat marking (short grey beat teeth + broad red
+/// downbeat blocks every fourth beat). With only broadband <see cref="Peaks"/> (no band data) the wave
 /// falls back to the single-body render; with no peaks it draws the "no track loaded" placeholder.
-/// Also overlays a <see cref="Progress"/> playhead, a played/unplayed split, and an optional
+/// Also overlays a near-white <see cref="Progress"/> playhead and (in the comb) an optional
 /// <see cref="BeatGrid"/>. Clicking the strip computes the clicked 0..1 track fraction and invokes
 /// <see cref="SeekCommand"/> with it (the deck VM turns that into a DeckSeek action). Purely
 /// presentational — the peak/grid data and the seek behaviour come from the view-model.
@@ -39,22 +40,40 @@ public sealed class WaveformStrip : Control
             nameof(GridBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
     /// <summary>Brush for the low-frequency (kick/bass) band — the FRONT layer, drawn last as a bright
-    /// amber halo+core glow over the body so the kick transients pop, letting a DJ align downbeats by
-    /// eye for sync.</summary>
+    /// RED halo+core glow over the body (VirtualDJ's bass-is-red scheme), so the kick transients pop and
+    /// a DJ can align downbeats by eye for sync.</summary>
     public static readonly StyledProperty<IBrush> KickBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF2, 0xA8, 0x3B)));
+            nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE2, 0x3B, 0x2E)));
 
-    /// <summary>Brush for the mid band — the waveform body, behind the kick layer.</summary>
+    /// <summary>Brush for the mid band — the waveform body (VirtualDJ green), behind the kick layer.</summary>
     public static readonly StyledProperty<IBrush> MidBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(MidBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x3D, 0x5C, 0x8F)));
+            nameof(MidBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x39, 0xC2, 0x4A)));
 
-    /// <summary>Brush for the high band — thin pale caps in the back layer ("air"/hat texture). The
-    /// translucency rides in the colour's alpha so theme overrides keep it.</summary>
+    /// <summary>Brush for the high band — thin blue/cyan caps in the back layer ("air"/hat texture, the
+    /// VirtualDJ treble colour). The translucency rides in the colour's alpha so theme overrides keep it.</summary>
     public static readonly StyledProperty<IBrush> HighBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
-            nameof(HighBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x8C, 0xDC, 0xE6, 0xF4)));
+            nameof(HighBrush), new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x36, 0xA6, 0xE8)));
+
+    /// <summary>Brush for the playhead — a crisp near-white vertical line (VirtualDJ-style), drawn over
+    /// the wave and the beat comb.</summary>
+    public static readonly StyledProperty<IBrush> PlayheadBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(PlayheadBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF2, 0xF6, 0xFF)));
+
+    /// <summary>Brush for the regular (non-downbeat) beat blocks in the bottom CBG comb — a desaturated
+    /// grey tooth, kept faint so the red downbeats dominate.</summary>
+    public static readonly StyledProperty<IBrush> BeatBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(BeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x8E, 0x9A, 0xA8)));
+
+    /// <summary>Brush for the downbeat (bar-start) blocks in the bottom CBG comb — a broad red tooth
+    /// every fourth beat (VirtualDJ's "beginning of a measure" marker).</summary>
+    public static readonly StyledProperty<IBrush> DownbeatBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(DownbeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE5, 0x40, 0x3A)));
 
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
@@ -103,6 +122,7 @@ public sealed class WaveformStrip : Control
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
             MidBrushProperty, HighBrushProperty,
+            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
             BeatGridProperty, KickAnchorProperty,
             ProgressProperty, ZoomWindowProperty);
@@ -120,6 +140,9 @@ public sealed class WaveformStrip : Control
     public IBrush KickBrush { get => GetValue(KickBrushProperty); set => SetValue(KickBrushProperty, value); }
     public IBrush MidBrush { get => GetValue(MidBrushProperty); set => SetValue(MidBrushProperty, value); }
     public IBrush HighBrush { get => GetValue(HighBrushProperty); set => SetValue(HighBrushProperty, value); }
+    public IBrush PlayheadBrush { get => GetValue(PlayheadBrushProperty); set => SetValue(PlayheadBrushProperty, value); }
+    public IBrush BeatBrush { get => GetValue(BeatBrushProperty); set => SetValue(BeatBrushProperty, value); }
+    public IBrush DownbeatBrush { get => GetValue(DownbeatBrushProperty); set => SetValue(DownbeatBrushProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<float>? MidPeaks { get => GetValue(MidPeaksProperty); set => SetValue(MidPeaksProperty, value); }
@@ -183,59 +206,86 @@ public sealed class WaveformStrip : Control
         // that scrolls as Progress advances (follow). All overlays use the same window so they stay aligned.
         (double start, double span) = VisibleWindow(Progress, ZoomWindow);
 
-        RenderBeatGrid(context, b, start, span);
-        RenderKickAnchor(context, b, start, span);
+        // VirtualDJ layout: the waveform body sits clean in the top region, and the beat marking lives in
+        // a dedicated CBG comb strip pinned to the bottom (so no full-height grid lines run through the wave).
+        double combH = CombHeight(b.Height);
+        Rect waveRect = b.WithHeight(b.Height - combH);
 
-        // Layer order back→front (the kick-forward stack): pale highs give air/hat texture, the mid
-        // band is the body, and the kick band draws LAST so its transients sit in front of everything.
+        RenderKickAnchor(context, waveRect, start, span);
+
+        // Layer order back→front (the kick-forward stack): blue/cyan highs give air/hat texture, the green
+        // mid band is the body, and the red kick band draws LAST so its transients sit in front of everything.
         // Without band data (older/fake overviews) the broadband body renders instead — never nothing.
         IReadOnlyList<float>? mid = MidPeaks;
         IReadOnlyList<float>? high = HighPeaks;
         if (mid is { Count: > 0 } && high is { Count: > 0 })
         {
-            RenderBand(context, b, high, HighBrush, start, span);
-            RenderBand(context, b, mid, MidBrush, start, span);
+            RenderBand(context, waveRect, high, HighBrush, start, span);
+            RenderBand(context, waveRect, mid, MidBrush, start, span);
         }
         else
         {
-            RenderWaveform(context, b, peaks, start, span);
+            RenderWaveform(context, waveRect, peaks, start, span);
         }
 
         IReadOnlyList<float>? kick = KickPeaks;
         if (kick is { Count: > 0 })
-            RenderKickBand(context, b, kick, start, span);
+            RenderKickBand(context, waveRect, kick, start, span);
 
-        // Playhead above every layer, so the current position is never buried under a kick bar.
+        // The CBG comb (beat marking) in the bottom strip, then the playhead over everything so the
+        // current position is never buried under a kick bar or a comb tooth.
+        RenderBeatComb(context, b, b.Height - combH, combH, start, span);
         RenderPlayhead(context, b, start, span);
     }
 
+    private const double CombHeightFraction = 0.16;
+    private const double CombMinHeight = 9.0;
+    private const double CombMaxHeight = 15.0;
+
+    /// <summary>
+    /// Height of the bottom CBG comb strip for a strip of total <paramref name="totalHeight"/>: a fixed
+    /// fraction clamped to a readable band (so the comb stays legible on a tall LIVE strip and never eats
+    /// the whole wave on a short one). Pure and public so the layout split unit-tests without a render.
+    /// </summary>
+    public static double CombHeight(double totalHeight)
+    {
+        if (double.IsNaN(totalHeight) || totalHeight <= 0)
+            return 0;
+        double h = Math.Clamp(totalHeight * CombHeightFraction, CombMinHeight, CombMaxHeight);
+        double half = totalHeight * 0.5; // never take more than half the strip on a very short control
+        return h > half ? half : h;
+    }
+
+    // The detected first-beat (downbeat anchor): a faint, neutral full-height hint in the wave area used to
+    // line decks A/B up by eye. Kept subtle because the red downbeat teeth in the comb already mark the bars.
     private void RenderKickAnchor(DrawingContext context, Rect b, double start, double span)
     {
         if (KickAnchor is not { } anchor || MarkerX(anchor, start, span, b.Width) is not { } x)
             return;
 
-        Color kick = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xF2, 0xA8, 0x3B);
-        var halo = new Pen(new ImmutableSolidColorBrush(kick, 0.35), 5);
-        var core = new Pen(new ImmutableSolidColorBrush(Lighten(kick, 0.35)), 2);
-        context.DrawLine(halo, new Point(x, 0), new Point(x, b.Height));
-        context.DrawLine(core, new Point(x, 0), new Point(x, b.Height));
+        Color head = (PlayheadBrush as ISolidColorBrush)?.Color ?? Colors.White;
+        var pen = new Pen(new ImmutableSolidColorBrush(head, 0.22), 1);
+        context.DrawLine(pen, new Point(x, 0), new Point(x, b.Height));
     }
 
     // Maps a visible-window column x to its 0..1 track fraction.
     private static double TrackFraction(double x, double width, double start, double span)
         => start + (width <= 0 ? 0 : x / width) * span;
 
-    /// <summary>Beats per bar (4/4): every fourth grid line (index 0, 4, 8 …) is a bar downbeat, drawn
-    /// brighter so the grid reads as bars. The grid list is anchored on the first beat, so index 0 is a bar.</summary>
+    /// <summary>Beats per bar (4/4): every fourth comb tooth (index 0, 4, 8 …) is a bar downbeat, drawn
+    /// as a broad red block. The grid list is anchored on the first beat, so index 0 is a downbeat.</summary>
     private const int BeatsPerBar = 4;
 
-    // Beat/bar grid within the visible window: bar lines (every 4th, from the first-beat anchor) are drawn
-    // bright; beat lines faint. Adaptive — lines that would be too dense to read are skipped, so the grid
-    // is hidden in the whole-track overview and resolves into bars, then beats, as the strip zooms in.
-    private void RenderBeatGrid(DrawingContext context, Rect b, double start, double span)
+    // The CBG comb (VirtualDJ-style beat marking): a row of bottom-anchored teeth in the comb strip.
+    // Regular beats are short faint grey blocks; every 4th (a bar downbeat) is a broad red block running
+    // the full comb height, with a soft halo. Adaptive — teeth too dense to read are skipped, so the comb
+    // is empty in the whole-track overview and resolves into downbeats, then every beat, as the strip
+    // zooms in. Lining the red downbeats up across decks A/B is the "on the grid" read used to beat-match.
+    private void RenderBeatComb(
+        DrawingContext context, Rect b, double combTop, double combH, double start, double span)
     {
         IReadOnlyList<double>? grid = BeatGrid;
-        if (grid is not { Count: >= 2 } || span <= 0)
+        if (grid is not { Count: >= 2 } || span <= 0 || combH <= 0)
             return;
 
         double stepFraction = grid[1] - grid[0]; // even spacing → one beat
@@ -245,17 +295,15 @@ public sealed class WaveformStrip : Control
         bool drawBeats = beatPx >= 7.0;
         bool drawBars = beatPx * BeatsPerBar >= 7.0;
         if (!drawBars)
-            return; // too zoomed-out to read even bar lines → draw no grid (keeps the overview clean)
+            return; // too zoomed-out to read even downbeats → draw no comb (keeps the overview clean)
 
-        Color g = (GridBrush as ISolidColorBrush)?.Color ?? Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6);
-        // Downbeat (bar) lines are the alignment markers: a crisp, opaque BLUE line (the single accent),
-        // with a faint blue halo so it stays visible behind the amber kick. The amber kick column sitting
-        // centred on a blue downbeat line is the "kick is on the grid" read used to stack A over B. Beat
-        // (non-downbeat) lines stay a faint hairline so the bars dominate.
-        Color accent = (PlayedBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x2F, 0x80, 0xF6);
-        var beatPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0x55, g.R, g.G, g.B)), 1);
-        var barHaloPen = new Pen(new ImmutableSolidColorBrush(accent, 0.28), 3);
-        var barPen = new Pen(new ImmutableSolidColorBrush(accent), 1.4);
+        Color beat = (BeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x8E, 0x9A, 0xA8);
+        Color down = (DownbeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x40, 0x3A);
+        double combBottom = combTop + combH;
+        double beatTop = combTop + combH * 0.45; // beats are short blocks anchored to the comb bottom
+        var beatPen = new Pen(new ImmutableSolidColorBrush(beat, 0.60), 1.5);
+        var downHaloPen = new Pen(new ImmutableSolidColorBrush(down, 0.35), 4.0);
+        var downPen = new Pen(new ImmutableSolidColorBrush(down), 2.5);
 
         double end = start + span;
         for (int i = 0; i < grid.Count; i++)
@@ -263,18 +311,18 @@ public sealed class WaveformStrip : Control
             double fraction = grid[i];
             if (fraction < start || fraction > end)
                 continue;
-            bool isBar = i % BeatsPerBar == 0;
-            if (!isBar && !drawBeats)
+            bool isDownbeat = i % BeatsPerBar == 0;
+            if (!isDownbeat && !drawBeats)
                 continue;
             double x = (fraction - start) / span * b.Width;
-            if (isBar)
+            if (isDownbeat)
             {
-                context.DrawLine(barHaloPen, new Point(x, 0), new Point(x, b.Height));
-                context.DrawLine(barPen, new Point(x, 0), new Point(x, b.Height));
+                context.DrawLine(downHaloPen, new Point(x, combTop), new Point(x, combBottom));
+                context.DrawLine(downPen, new Point(x, combTop), new Point(x, combBottom));
             }
             else
             {
-                context.DrawLine(beatPen, new Point(x, 0), new Point(x, b.Height));
+                context.DrawLine(beatPen, new Point(x, beatTop), new Point(x, combBottom));
             }
         }
     }
@@ -403,7 +451,7 @@ public sealed class WaveformStrip : Control
         double playheadX = (Math.Clamp(Progress, 0.0, 1.0) - start) / span * b.Width;
         if (playheadX <= 0 || playheadX >= b.Width)
             return;
-        var headPen = new Pen(PlayedBrush, 1.5);
+        var headPen = new Pen(PlayheadBrush, 1.5);
         context.DrawLine(headPen, new Point(playheadX, 0), new Point(playheadX, b.Height));
     }
 

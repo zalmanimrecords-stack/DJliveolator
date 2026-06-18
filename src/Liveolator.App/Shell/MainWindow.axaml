@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+        xmlns:controls="clr-namespace:Liveolator.App.Controls"
         xmlns:shell="clr-namespace:Liveolator.App.Shell"
         x:Class="Liveolator.App.Shell.MainWindow"
         x:DataType="shell:MainWindowViewModel"
@@ -49,8 +50,21 @@
           <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MemoryText}" />
         </StackPanel>
 
-        <!-- MIDI connectivity + activity -->
+        <!-- MIDI connectivity + activity, preceded by the global OS-volume knob -->
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <!-- Global computer master volume: drives the OS system volume (affects every app). Hidden on
+               hosts where the OS volume cannot be controlled. -->
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+                      IsVisible="{Binding SystemVolume.IsAvailable}">
+            <TextBlock Classes="mono faint" VerticalAlignment="Center" Text="VOL" />
+            <controls:Knob Width="26" Height="26" VerticalAlignment="Center"
+                           Value="{Binding SystemVolume.Volume.Value}"
+                           IsEnabled="{Binding SystemVolume.Volume.IsEnabled}"
+                           ArcBrush="{DynamicResource Accent}"
+                           ToolTip.Tip="Computer master volume (affects every app)" />
+          </StackPanel>
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
+                  IsVisible="{Binding SystemVolume.IsAvailable}" />
           <TextBlock Classes="mono faint" Text="MIDI" />
           <Ellipse Width="8" Height="8" VerticalAlignment="Center"
                    Classes="led"

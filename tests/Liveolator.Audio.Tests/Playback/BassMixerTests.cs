@@ -76,10 +76,13 @@ public class BassMixerTests
     public void DrivenByTheCoreHandler_EndToEnd()
     {
         // The Core action handler computes the math; the BASS mixer routes it. Prove the seam joins.
-        var mixer = new BassMixer(deckCount: 2);
+        // A crossfade recomputes every deck's gain, so the mixer must address all deck slots.
+        var mixer = new BassMixer(deckCount: 4);
         var deckA = new FakeChannel();
         mixer.SetChannel(0, deckA);
         mixer.SetChannel(1, new FakeChannel());
+        mixer.SetChannel(2, new FakeChannel());
+        mixer.SetChannel(3, new FakeChannel());
 
         var handler = new MixerActionHandler(mixer);
         handler.Handle(new Core.Actions.PerformanceAction(

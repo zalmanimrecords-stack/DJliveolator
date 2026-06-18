@@ -5,7 +5,7 @@
              x:Class="Liveolator.App.Features.Live.Modules.MixerView"
              x:DataType="m:MixerViewModel">
 
-  <Border Classes="panel" MinHeight="430">
+  <Border Classes="panel">
     <StackPanel Margin="20" Spacing="14">
 
       <Border Classes="hardware-well" Padding="10,10,10,12">
@@ -52,25 +52,6 @@
         <Button Grid.Row="2" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                 Command="{Binding CueBCommand}" Margin="0,10,0,0" />
       </Grid>
-      </Border>
-
-      <Border Classes="hardware-well" Padding="10,10,10,12">
-        <StackPanel Spacing="8">
-          <TextBlock Classes="section" HorizontalAlignment="Center" Text="AUTOMIX" />
-          <Grid ColumnDefinitions="*,Auto">
-            <Button Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsAutoMixActive}"
-                    Content="AUTOMIX" VerticalAlignment="Center"
-                    Command="{Binding AutoMixCommand}" />
-            <StackPanel Grid.Column="1" Spacing="4" HorizontalAlignment="Center" Margin="12,0,0,0">
-              <TextBlock Classes="section" HorizontalAlignment="Center" Text="TIME" />
-              <controls:Knob x:Name="AutoMixTimeControl"
-                             Width="50" Height="50"
-                             Value="{Binding AutoMixTime.Value}"
-                             IsEnabled="{Binding AutoMixTime.IsEnabled}" />
-              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding AutoMixBarsLabel}" />
-            </StackPanel>
-          </Grid>
-        </StackPanel>
       </Border>
 
       <Border Classes="hardware-well" Padding="12,10">

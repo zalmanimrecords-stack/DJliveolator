@@ -89,9 +89,9 @@ public static class PhaseAlignmentCalculator
     /// <summary>
     /// The signed BAR-phase error between two decks, in bars wrapped to (-0.5, 0.5]. Beat-phase
     /// alignment can lock the follower's beat 3 onto the leader's downbeat — audibly in sync but
-    /// musically a bar off, which an automated EQ/bass-swap transition cannot tolerate (doc 11
-    /// Auto-Mix; doc 27 known gap). Folding on the bar grid instead picks the shortest correction
-    /// onto the nearest leader DOWNBEAT. Returns 0 when either tempo is non-positive or
+    /// musically a bar off, which a bar-accurate transition cannot tolerate (doc 27 known gap).
+    /// Folding on the bar grid instead picks the shortest correction onto the nearest leader
+    /// DOWNBEAT. Returns 0 when either tempo is non-positive or
     /// <paramref name="beatsPerBar"/> is not positive.
     /// </summary>
     /// <remarks>
@@ -113,7 +113,7 @@ public static class PhaseAlignmentCalculator
     /// <summary>
     /// Seconds to nudge the <paramref name="follower"/> playhead so its BAR phase aligns with the
     /// <paramref name="leader"/>'s — the shortest correction onto the nearest leader downbeat.
-    /// Used by auto-mix arming as a one-shot, inaudible (pre-fade) seek; the continuous
+    /// Intended as a one-shot, inaudible (pre-fade) seek; the continuous
     /// <c>PhaseLockController</c> stays beat-based, which preserves bar alignment once established.
     /// Returns 0 when either tempo or <paramref name="beatsPerBar"/> is not positive.
     /// </summary>

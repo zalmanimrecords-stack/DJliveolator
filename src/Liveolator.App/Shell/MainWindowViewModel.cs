@@ -6,6 +6,7 @@ using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
 using ReactiveUI;
 
@@ -24,23 +25,28 @@ public sealed class MainWindowViewModel : ViewModelBase
         LibrariesViewModel libraries,
         LiveViewModel live,
         DjViewModel dj,
+        StudioViewModel studio,
         VisualLibraryViewModel visualLibrary,
         AddonsViewModel addons,
         SettingsViewModel settings,
         GlobalMidiLearnCoordinator midiLearn,
-        ShellStatusViewModel status)
+        ShellStatusViewModel status,
+        SystemVolumeControlViewModel systemVolume)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
+        ArgumentNullException.ThrowIfNull(studio);
         ArgumentNullException.ThrowIfNull(visualLibrary);
         ArgumentNullException.ThrowIfNull(addons);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(midiLearn);
         ArgumentNullException.ThrowIfNull(status);
+        ArgumentNullException.ThrowIfNull(systemVolume);
 
         Status = status;
         MidiLearn = midiLearn;
+        SystemVolume = systemVolume;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -48,6 +54,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             new("LIVE", live),
             new("DJ", dj),
+            new("STUDIO", studio),
             new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
             new("ADDONS", addons),
@@ -60,6 +67,9 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
     public ShellStatusViewModel Status { get; }
+
+    /// <summary>The global OS master-volume knob shown in the top bar.</summary>
+    public SystemVolumeControlViewModel SystemVolume { get; }
 
     public GlobalMidiLearnCoordinator MidiLearn { get; }
 

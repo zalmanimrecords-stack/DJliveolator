@@ -2,7 +2,7 @@
 
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
-> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-11**.
+> tracks reality. Update this file whenever a module lands. Last updated: **2026-06-12**.
 >
 > **See `docs/27-system-review-2026-06-10.md`** (latest) — a ten-expert full-system review with a
 > verified bug map and the recommended next 10 steps; **supersedes `docs/24-system-review-2026-06-07.md`**.
@@ -10,6 +10,30 @@
 > 2026-06-10). Doc 27 closed five of doc 24's headline holes (shared-clock pitch scaling, UI-thread sync
 > pump, GL scene re-read, CI, fetch-bass FLAC parity) and verified eight new High bugs — read doc 27 §5
 > before opening the next branch.
+
+## STUDIO — basic-DAW timeline (2026-06-12, branch `feat/studio-tab`)
+
+A new top-level **STUDIO** tab: an arrangement timeline (dj.studio-inspired) that automates the
+decks — clips on per-deck lanes + automation lanes — playable live and renderable to a file. An
+earlier harmonic set-planner build was scrapped per the owner; this is the deck-automation DAW.
+
+- **Scope change:** the engine now has **4 decks** (`MixerState.DeckCount = 4`): 2 live A/B + **2
+  hidden** C/D (STUDIO only). The A/B crossfader is unchanged; `MixerMath.DeckOutputGain` gives
+  hidden decks (slots ≥ 2) a **unity crossfader factor** so their level is pure channel gain. LIVE/DJ
+  is untouched and still a 2-deck surface.
+- **Done + tested:**
+  - 4-deck engine widening (Core + `TwoDeckBassEngine`/`BassMixer`); 688 mixer/engine/app tests green.
+  - `StudioProject`/`StudioClip`/`AutomationLane` model + `JsonStudioProjectStore` (`live/studio-projects/`).
+  - `StudioArranger` (pure): per-tick automation actions + clip Start/Stop events (Origin = "studio").
+  - `StudioTransport`: host-clock ticker driving the 4-deck engine through the dispatcher.
+  - Offline render: Core `MixPlan` + Audio `OfflineMixRenderer` + `WavWriter` (mono MVP, native tempo).
+  - Timeline UI (`StudioViewModel`/`StudioView`): 4 lanes, clip placement, Play/Stop, Save/Open, Render.
+- **Deferred / follow-ups:** graphical automation-curve editing (model already supports it; it
+  round-trips); engine rename to `MultiDeckBassEngine`; sync leader-election guard for the hidden decks
+  (latent — nothing sync-engages slots ≥ 2); per-deck C/D live queues (not needed — the transport drives
+  decks via the dispatcher); tempo-match/keylock at render; stereo render; live playhead animation.
+- **Verify live:** confirm LIVE/DJ still plays/cues/crossfades normally with the engine sized to 4 decks
+  (the 2 hidden decks stay idle), then in STUDIO place clips → Play (hear decks automate) → Render to WAV.
 
 ## How to read this
 
@@ -173,12 +197,15 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   while playing. The engine clamps at track boundaries and immediately publishes `DeckSeek`
   feedback so the on-screen playhead/waveform follows the hardware. Existing saved CMD profiles
   using the former beat-clock jog mapping are upgraded in place.
-- **SYNC UI/controller state is shared:** deck SYNC uses the persistent `DeckSyncToggle` action.
-  Pressing either the on-screen button or its learned MIDI button toggles the same engine sync lock;
-  feedback lights the UI button and sends the matching MIDI note velocity for the controller LED.
-  Existing learned `DeckSyncOnce` buttons are upgraded in place without changing their note/channel.
-  If no feedback output is selected, the session automatically tries an output matching the connected
-  input device name, which covers class-compliant bidirectional DJ controllers such as the CMD.
+- **SYNC is a one-shot beatmatch:** deck SYNC uses the momentary `DeckSyncOnce` action. A single
+  press of the on-screen button or its learned MIDI button beatmatches tempo **and** beat-phase to
+  the other deck once (`engine.SyncOnce`), then leaves the deck free for manual NUDGE — no latch and
+  no continuous correction loop. Existing learned/saved `DeckSyncToggle` deck buttons are healed in
+  place back to `DeckSyncOnce` without changing their note/channel. The persistent-lock machinery
+  (`SetSyncLock`/`UpdateSync`, which also feeds the shared audio↔visual master clock) remains in the
+  engine but is no longer engaged by the SYNC button. If no feedback output is selected, the session
+  automatically tries an output matching the connected input device name, which covers
+  class-compliant bidirectional DJ controllers such as the CMD.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
@@ -307,60 +334,20 @@ the next increment.
   headphones independently of the crossfader/master. The per-deck cue-send routing is native (manual-verify
   on the CMD STUDIO 2A); the gain math is unit-tested.
 
-### ✅ Auto-mix — one-button beat-locked transitions — `Liveolator.Core/Automix/` (doc 11, 2026-06-11)
+### ❌ Auto-mix — REMOVED (2026-06-12, owner direction)
 
-The hands-free deck-to-deck transition engine, riding the ONE shared beat clock (no second timer):
-`AutomixController` is ticked by `MasterClockBridge` on the same 10 ms `MasterClockPump` cadence that
-drives sync correction, reads decks/mixer through the `IAutomixDeckReader` seam
-(`EngineAutomixDeckReader` over the engine + `MixerActionHandler`), and writes ONLY
-`PerformanceAction`s stamped `Origin: "automix"`.
+The one-button beat-locked transition engine (built 2026-06-11 under `Liveolator.Core/Automix/`)
+was **removed** because it did not behave well in practice. The whole `Automix/` module, the
+`AutomixToggle`/`AutomixSetDuration` action kinds, the `IMasterClockTickListener` pump-tick seam
+(and its `MasterClockBridge(listener:)` parameter), and the AUTOMIX button + TIME knob in
+`MixerView`/`DjMixerView` + `MixerViewModel` were all deleted. The full implementation is
+recoverable from git history (the 2026-06-11 commits and the prior revision of this section).
 
-| Built | File |
-|-------|------|
-| State machine (Idle→Transitioning; engage is IMMEDIATE; abort = silent freeze) | `AutomixController` (Core) |
-| Action kinds + handler (`AutomixToggle`/`AutomixSetDuration`) | `AutomixActionHandler` (Core) |
-| Go/no-go gates (typed refusals; degrade, never guess) | `AutomixPreflight`, `AutomixRefusal`, `AutomixPlan` (Core) |
-| Read-ahead placement v1 (mix-in = first beat; duration auto-shortens to fit) | `AutomixPlacement` (Core) |
-| TIME knob detents (2/4/8/16/32/64 bars, default 16) | `AutomixDurationKnob` (Core) |
-| Bar-phase alignment (beat lock can be a beat off within the bar) | `PhaseAlignmentCalculator.BarPhaseError`/`BarPhaseNudgeSeconds` (Core) |
-| Pump-tick seam | `IMasterClockTickListener` + `MasterClockBridge(listener:)` (Core) |
-| Mixer UI: AUTOMIX button + TIME knob | `MixerView`/`DjMixerView` + `MixerViewModel` (App) |
-
-> **2026-06-11 simplification (owner direction):** auto-mix is a **crossfade only** — the EQ-MIX /
-> FX-MIX style profiles and the style selector were removed (`AutomixStyle`, the three profile
-> classes, `AutomixSetStyle`, and the CROSS/EQ/FX keys; recoverable from git history). The
-> controller moves the crossfader position linearly in beats; equal-power loudness comes from the
-> mixer's existing `CrossfaderCurve.Smooth`. The blend is paced by the OUTGOING deck's own playhead
-> (not the shared clock's `BeatCount`, which jumps when the clock switches source on sync engage —
-> that jump slammed the fader across in one tick), monotonic-latched, with the ramp starting from
-> the crossfader's current position.
-
-- **Engage is IMMEDIATE (owner direction, 2026-06-11 rev):** pressing AUTOMIX seeks the incoming deck
-  to its mix-in point, engages SYNC (tempo match + phase snap), starts it, and the slow blend begins
-  on the next pump tick — sync convergence happens under the QUIET start of the curve (the incoming
-  deck is barely audible there), not as a multi-bar gate before it. The blend anchor is beat-quantized
-  from the shared clock; if the clock is momentarily idle, progress paces from the outgoing deck's own
-  playhead (the same grid). The confirmed-lock check now gates only the one-shot bar-grid correction
-  (run while progress ≤ 0.25, where a seek is inaudible). Preflight still refuses on: nothing playing,
-  incoming empty, unknown BPM, folded tempo gap > ±8 % (no keylock yet), outgoing track too near its
-  end (duration auto-shortens first), incoming track too short. A missing first-beat anchor only
-  skips the bar-align step — a tempo-synced crossfade is still safe.
-- **Performer takeover:** `PerformanceAction` gained an optional `Origin` tag and the dispatcher an
-  `ActionDispatched` observation event; any human gesture on the mixer or the involved decks freezes
-  the automation instantly (no snap-back, no re-grab; the incoming deck stays sync-locked — the
-  safest hand-over). Completion: crossfader lands on the incoming side, the outgoing deck is paused
-  (position kept), SYNC is released (matched rate retained), and the outgoing channel strip is
-  restored to the performer's pre-transition values.
-- The engine seam gained `LengthSeconds(slot)` (read-ahead needs real time remaining).
-- **Tests:** Core `Automix/*` (controller state machine with fake reader/dispatcher — playhead
-  pacing, monotonic latch, takeover, completion — plus preflight, placement, knob detents),
-  bar-phase tests in `PhaseAlignmentCalculatorTests`, dispatcher observation tests, App
-  `MixerViewModelTests` (emit/feedback/disabled-when-headless).
-- **Deferred:** EQ-MIX / FX-MIX style profiles (removed per owner direction — recover from git if
-  revisited); hot-cue-1 / silence-`IntroStart` as mix-in priorities (need cue positions readable
-  through the deck seam); auto-trigger whole-playlist mode (doc 11 Mixxx Auto-DJ model); energy/
-  phrase outro detection (doc 16 v2; changes the analyzer version). Native runtime behaviour
-  (audible blend on real BASS decks) is a MANUAL checklist item.
+Auto-mix therefore reverts to **unbuilt / planned** — see doc 11 for the design and docs 20/21
+gap analysis (item 7.8). The supporting infrastructure that auto-mix used and that **remains**
+(still useful for autopilot and future automation): `PerformanceAction.Origin` + the dispatcher's
+`ActionDispatched` observation event (performer-takeover seam), `PhaseAlignmentCalculator`
+bar-phase math, and the engine seam's `LengthSeconds(slot)`.
 
 ### ✅ Two-deck DJ engine + master mix → clock — `Liveolator.Audio/Playback/` (doc 11, increment 2)
 

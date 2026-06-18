@@ -7,13 +7,18 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Live.Modules;
 
 /// <summary>One top-to-bottom visual channel row. UI order is the inverse of compositor order.</summary>
-public sealed class VisualChannelViewModel : ViewModelBase
+public sealed class VisualChannelViewModel : ViewModelBase, IDisposable
 {
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private VisualChannelSourceOption? _selectedSource;
     private bool _suppressDispatch;
 
-    public VisualChannelViewModel(int displayOrder, int layerSlot, IPerformanceActionDispatcher? dispatcher)
+    public VisualChannelViewModel(
+        int displayOrder,
+        int layerSlot,
+        IPerformanceActionDispatcher? dispatcher,
+        IGeneratorPresetRegistry? presets = null,
+        IVisualEffectRegistry? effects = null)
     {
         DisplayOrder = displayOrder;
         LayerSlot = layerSlot;
@@ -24,6 +29,9 @@ public sealed class VisualChannelViewModel : ViewModelBase
             "OPACITY",
             initial: 1.0,
             dispatcher is not null ? DispatchOpacity : null);
+        // The preset knob surface for THIS layer (doc 28): when the source dropdown selects a generator
+        // backed by a controllable preset, the preset loads onto this slot and its knobs appear here.
+        Preset = new PresetControlsViewModel(presets, effects, dispatcher, targetLayer: layerSlot);
     }
 
     public int DisplayOrder { get; }
@@ -33,6 +41,9 @@ public sealed class VisualChannelViewModel : ViewModelBase
 
     /// <summary>This layer's opacity control (0..1), driving <c>VisualSetLayerOpacity</c> for its slot.</summary>
     public ContinuousControlViewModel Opacity { get; }
+
+    /// <summary>This layer's controllable-preset knobs, shown when the selected source is a preset generator.</summary>
+    public PresetControlsViewModel Preset { get; }
 
     public ObservableCollection<VisualChannelSourceOption> Sources { get; } = new();
 
@@ -47,6 +58,14 @@ public sealed class VisualChannelViewModel : ViewModelBase
             if (value is null || _suppressDispatch)
                 return;
 
+            // A generator backed by a controllable preset loads via the preset path, which both places the
+            // generator on this layer AND installs its knobs (doc 28); anything else (image / None / a
+            // generator with no preset) just sets the layer source and clears the knob row.
+            if (value.Source.Kind == VisualSourceKind.Generator
+                && Preset.TryLoadForGeneratorSource(value.Source.Reference))
+                return;
+
+            Preset.ClearControls();
             _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.VisualSetLayerSource,
                 Slot: LayerSlot,
@@ -57,6 +76,18 @@ public sealed class VisualChannelViewModel : ViewModelBase
     // Reflects a layer's current opacity in the knob WITHOUT re-dispatching (SetFromFeedback bypasses the
     // emit path) — used when (re)loading the scene so the knob position matches the engine state.
     public void SyncOpacityFromScene(double opacity) => Opacity.SetFromFeedback(opacity);
+
+    /// <summary>
+    /// After a preset-folder reload, re-apply this layer's preset (when its source is a preset generator)
+    /// so the knob row + installed macros pick up the reloaded shader's parameter set — without the
+    /// operator having to reselect the source. A non-preset source is left untouched.
+    /// </summary>
+    public void ReapplyPresetIfLoaded()
+    {
+        VisualChannelSourceOption? selected = SelectedSource;
+        if (selected is not null && selected.Source.Kind == VisualSourceKind.Generator)
+            Preset.TryLoadForGeneratorSource(selected.Source.Reference);
+    }
 
     private void DispatchOpacity(double value)
         => _dispatcher?.Dispatch(new PerformanceAction(
@@ -93,4 +124,6 @@ public sealed class VisualChannelViewModel : ViewModelBase
         => Sources.FirstOrDefault(option =>
             string.Equals(option.Source.Kind.ToString(), kind, StringComparison.Ordinal)
             && string.Equals(option.Source.Reference, reference, StringComparison.OrdinalIgnoreCase));
+
+    public void Dispose() => Preset.Dispose();
 }

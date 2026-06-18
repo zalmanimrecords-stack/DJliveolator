@@ -88,6 +88,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public SyncLockState SyncState(int slot) => SyncLockState.Off;
     public bool IsQuantizeEnabled(int slot) => false;
     public void SetQuantize(int slot, bool enabled) { }
+    public bool IsKeyLockEnabled(int slot) => false;
+    public void SetKeyLock(int slot, bool enabled) { }
     public int HotCueCount => 8;
     public bool IsHotCueSet(int slot, int cueIndex) => false;
     public void HotCue(int slot, int cueIndex) { }

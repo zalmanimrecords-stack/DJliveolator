@@ -56,6 +56,7 @@ public sealed class LayeredQuadRenderer : IDisposable
     private int _uBeatFlash;
     private int _uBlackout;
     private int _uOpacity;
+    private int _uStrobe;
     private bool _disposed;
 
     /// <param name="layers">
@@ -112,6 +113,7 @@ public sealed class LayeredQuadRenderer : IDisposable
         _gl.Uniform1(_uBrightness, uniforms.Brightness);
         _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
         _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
+        _gl.Uniform1(_uStrobe, uniforms.Strobe);
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindVertexArray(_vao);
 
@@ -126,8 +128,10 @@ public sealed class LayeredQuadRenderer : IDisposable
             uint source;
             if (layer.Generator is { IsValid: true } generator)
             {
+                // Resolve by the layer's SCENE slot, not the draw index i: a skipped "None" layer beneath
+                // compacts the draw list, so i != slot, and macros (which target the slot) would miss.
                 IReadOnlyDictionary<string, float> generatorParameters = ResolveGeneratorParameters(
-                    i, layer.GeneratorRef, resolvedMacros);
+                    layer.Slot, layer.GeneratorRef, resolvedMacros);
                 source = generator.Render(
                     Math.Max(1, viewportWidth), Math.Max(1, viewportHeight), uniforms, generatorParameters);
             }
@@ -137,7 +141,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             }
 
             IReadOnlyList<ResolvedEffectParameters> effectValues = EffectParameterResolver.Resolve(
-                i,
+                layer.Slot,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
@@ -166,6 +170,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             _gl.Uniform1(_uBrightness, uniforms.Brightness);
             _gl.Uniform1(_uBeatFlash, uniforms.BeatFlash);
             _gl.Uniform1(_uBlackout, uniforms.Blackout ? 1 : 0);
+            _gl.Uniform1(_uStrobe, uniforms.Strobe);
             double opacity = useLiveOpacities ? liveOpacities![i] : layer.Opacity;
             _gl.Uniform1(_uOpacity, (float)opacity);
             _gl.BindTexture(TextureTarget.Texture2D, texture);
@@ -225,6 +230,7 @@ public sealed class LayeredQuadRenderer : IDisposable
         _uBeatFlash = _gl.GetUniformLocation(_program, "uBeatFlash");
         _uBlackout = _gl.GetUniformLocation(_program, "uBlackout");
         _uOpacity = _gl.GetUniformLocation(_program, "uOpacity");
+        _uStrobe = _gl.GetUniformLocation(_program, "uStrobe");
 
         // The sampler is fixed to unit 0; every layer binds its texture to that unit before its draw.
         _gl.UseProgram(_program);
@@ -317,7 +323,7 @@ public sealed class LayeredQuadRenderer : IDisposable
             }
 
             IReadOnlyList<ResolvedEffectParameters> effects = EffectParameterResolver.Resolve(
-                index,
+                layer.Slot,
                 layer.Effects,
                 _effectRegistry,
                 _macros,
@@ -328,7 +334,8 @@ public sealed class LayeredQuadRenderer : IDisposable
                 effectChainHeight,
                 effects,
                 _logger);
-            built.Add(new LayerTexture(texture, generator, generatorRef, blend, layer.Opacity, layer.Effects, effectChain));
+            built.Add(new LayerTexture(
+                texture, generator, generatorRef, blend, layer.Opacity, layer.Effects, effectChain, layer.Slot));
         }
 
         return built;
@@ -413,5 +420,6 @@ public sealed class LayeredQuadRenderer : IDisposable
         BlendModeGl Blend,
         double Opacity,
         IReadOnlyList<EffectRef> Effects,
-        EffectChainRenderer EffectChain);
+        EffectChainRenderer EffectChain,
+        int Slot);
 }
