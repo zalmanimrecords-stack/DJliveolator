@@ -34,12 +34,19 @@
             <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
           </StackPanel>
         </Panel>
-        <!-- time readout: elapsed over remaining, advancing with the playhead -->
+        <!-- time readout: elapsed over remaining (advancing with the playhead), plus the musical key of
+             the loaded track (from the catalog) sitting with the time block. -->
         <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
           <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
                      Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
           <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right"
                      Text="{Binding RemainingText}" ToolTip.Tip="Time remaining in the track" />
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasTrackKey}">
+            <TextBlock Classes="tick" VerticalAlignment="Center" Text="KEY" />
+            <TextBlock Classes="mono accent" FontSize="13" VerticalAlignment="Center"
+                       Text="{Binding TrackKey}" ToolTip.Tip="Musical key of the loaded track" />
+          </StackPanel>
         </StackPanel>
       </Grid>
 
@@ -81,14 +88,17 @@
       <!-- BPM: horizontal fader (0..1 normalised via BpmFaderValue) + nudge buttons for manual beat-sync -->
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
-          <!-- row 1: label · current value · range hint -->
-          <Grid ColumnDefinitions="Auto,*,Auto">
+          <!-- row 1: label · current value · pitch% · range hint -->
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
             <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
             <TextBlock Grid.Column="1" Classes="mono"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
                        IsEnabled="{Binding IsBpmEnabled}" />
-            <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
+            <TextBlock Grid.Column="2" Classes="mono" Margin="0,0,8,0" VerticalAlignment="Center"
+                       Text="{Binding PitchPercentText}"
+                       ToolTip.Tip="Pitch offset (percent of the real tempo)" />
+            <TextBlock Grid.Column="3" Classes="tick" VerticalAlignment="Center" Text="±8%" />
           </Grid>
           <!-- row 2: nudge left · slider · nudge right -->
           <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">

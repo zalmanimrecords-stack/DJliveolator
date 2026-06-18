@@ -78,6 +78,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _applyingBpmFeedback;
     private string _elapsedText = NoTime;
     private string _remainingText = NoTime;
+    private string? _trackKey;
+    private readonly ObservableAsPropertyHelper<string> _pitchPercentText;
     private CancellationTokenSource? _loadCts;
     private bool _disposed;
 
@@ -186,6 +188,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             "Pitch", Seed(PerformanceActionKind.DeckPitch, PitchCentre),
             enabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
 
+        // Signed pitch-percent readout: the normalized fader (0..1, centre 0.5) maps to the engine's real
+        // tempo range of +-PitchRangePercent, so the displayed percent = (Value - 0.5) * 2 * 100 * range.
+        // Tracks the same Pitch.Value the fader/feedback drive, so a controller move updates the readout too.
+        _pitchPercentText = this
+            .WhenAnyValue(deck => deck.Pitch.Value)
+            .Select(FormatPitchPercent)
+            .ToProperty(this, nameof(PitchPercentText), FormatPitchPercent(Pitch.Value));
+
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckBpm, slot) is { } bpmFeedback)
             ApplyBpmFeedback(bpmFeedback);
 
@@ -207,6 +217,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double EqBands_Unity = 0.5;
     private const double FilterCentre = 0.5;
     private const double PitchCentre = 0.5;
+
+    /// <summary>The +-fraction of the real tempo the pitch fader spans at its extremes (0.5 +- this).
+    /// Mirrors <c>TwoDeckBassEngine.PitchRangePercent</c> (0.08 = +-8%); the engine owns the audible rate,
+    /// this is only for the on-screen readout. Keep the two in sync if the engine range changes.</summary>
+    private const double PitchRangePercent = 0.08;
 
     /// <summary>Default loop length emitted by the LOOP button, in beats (a 1-bar loop in 4/4).</summary>
     private const double DefaultLoopBeats = 4.0;
@@ -232,6 +247,34 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public bool HasTrackMeta => _meta != NoMeta;
 
     private const string NoMeta = "—";
+
+    /// <summary>The loaded track's musical key (e.g. "8A"), from the catalog facts; null when no track is
+    /// loaded or the catalog has no key for it. Surfaced as its own labelled readout on both decks.</summary>
+    public string? TrackKey
+    {
+        get => _trackKey;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _trackKey, value);
+            this.RaisePropertyChanged(nameof(HasTrackKey));
+        }
+    }
+
+    /// <summary>True when a musical key is known for the loaded track (drives the key readout's visibility).</summary>
+    public bool HasTrackKey => !string.IsNullOrWhiteSpace(_trackKey);
+
+    /// <summary>The current pitch offset as a signed percentage of the real tempo range (e.g. "+2.4%"),
+    /// derived from <see cref="Pitch"/>.Value and <see cref="PitchRangePercent"/>. Display only.</summary>
+    public string PitchPercentText => _pitchPercentText.Value;
+
+    // Map the 0..1 fader (centre 0.5) to a signed percentage of the engine's +-PitchRangePercent range.
+    // Centre -> "0.0%", full up -> "+8.0%", full down -> "-8.0%" (with the default +-8% range). The value
+    // is kept as a fraction (0.08 at full up) so the "%" format specifier scales it by 100 for display.
+    private static string FormatPitchPercent(double normalized)
+    {
+        double fraction = (normalized - PitchCentre) * 2.0 * PitchRangePercent;
+        return fraction.ToString("+0.0%;-0.0%;0.0%", CultureInfo.InvariantCulture);
+    }
 
     /// <summary>The loaded track's waveform peaks (0..1), or null when none is decoded (placeholder).</summary>
     public IReadOnlyList<float>? Waveform
@@ -543,6 +586,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
+        _pitchPercentText.Dispose();
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged -= OnFeedback;
     }
@@ -701,6 +745,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             ? $"{i.Key} · {i.Bpm} BPM · {i.Duration}"
             : bpm > 0 ? $"{bpm:0.0} BPM" : NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
+        // Key comes only from the catalog facts (the load action carries no key); clear it when the track
+        // isn't in the catalog so the dedicated readout never shows a stale key from a previous load.
+        TrackKey = string.IsNullOrWhiteSpace(info?.Key) ? null : info!.Key;
         Progress = 0;
         Waveform = null;          // empty state while the new overview decodes (no fake waveform)
         KickPeaks = null;

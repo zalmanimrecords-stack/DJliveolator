@@ -104,6 +104,19 @@
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
               ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
 
+      <!-- KEY · pitch%: the loaded track's musical key (BPM-level prominence, from the catalog) on the left,
+           the live signed pitch offset (DeckPitch, hardware/MIDI-driven) on the right. -->
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="KEY" />
+        <TextBlock Grid.Column="1" Classes="mono accent" Margin="8,0,0,0" FontSize="14"
+                   VerticalAlignment="Center" Text="{Binding TrackKey}"
+                   IsVisible="{Binding HasTrackKey}" ToolTip.Tip="Musical key of the loaded track" />
+        <TextBlock Grid.Column="3" Classes="tick" VerticalAlignment="Center" Text="PITCH" />
+        <TextBlock Grid.Column="4" Classes="mono" Margin="8,0,0,0" VerticalAlignment="Center"
+                   Text="{Binding PitchPercentText}"
+                   ToolTip.Tip="Pitch offset (percent of the real tempo)" />
+      </Grid>
+
       <!-- BPM: horizontal fader (0..1 normalised) + nudge buttons for manual beat-sync -->
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
