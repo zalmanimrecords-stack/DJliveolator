@@ -329,6 +329,14 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>True when a log file exists to open (false in headless/test composition).</summary>
     public bool CanOpenLogs => _logLocator is not null;
 
+    private readonly AppVersionInfo _version = AppVersionInfo.FromEntryAssembly();
+
+    /// <summary>The running app's release version (e.g. <c>0.1.1</c>), shown in the Diagnostics tab.</summary>
+    public string AppVersion => _version.Version;
+
+    /// <summary>The build identifier (git commit) of the running app, shown in the Diagnostics tab.</summary>
+    public string BuildNumber => _version.Build;
+
     /// <summary>The MIDI mapping / learn surface, embedded in the MIDI settings tab (null in headless tests).</summary>
     public MappingsViewModel? Mappings { get; }
 

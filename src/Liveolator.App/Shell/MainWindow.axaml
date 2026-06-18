@@ -75,17 +75,36 @@
                      Text="{Binding Status.MidiFeedbackName, StringFormat='· LED {0}'}"
                      IsVisible="{Binding Status.MidiFeedbackName, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
           <Button Classes="spartan"
-                  Content="MIDI LEARN"
-                  Padding="9,4"
+                  Padding="7,4"
                   Margin="8,0,0,0"
-                  Command="{Binding MidiLearn.ToggleCommand}" />
+                  ToolTip.Tip="MIDI Learn — bind a control to the next hardware message"
+                  Command="{Binding MidiLearn.ToggleCommand}">
+            <!-- 5-pin DIN connector: the universal MIDI glyph (ring + pins) -->
+            <Viewbox Width="16" Height="16">
+              <Canvas Width="24" Height="24">
+                <Ellipse Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
+                         Stroke="{DynamicResource Accent}" StrokeThickness="2" />
+                <Ellipse Width="3" Height="3" Canvas.Left="10.5" Canvas.Top="4"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="5"    Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="16"   Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="7"    Canvas.Top="14" Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="14"   Canvas.Top="14" Fill="{DynamicResource Accent}" />
+              </Canvas>
+            </Viewbox>
+          </Button>
           <Button x:Name="FullScreenButton"
                   Classes="spartan"
-                  Content="WINDOW"
-                  Padding="9,4"
+                  Padding="7,4"
                   Margin="8,0,0,0"
                   ToolTip.Tip="Toggle borderless full screen (F11)"
-                  Click="OnFullScreenClick" />
+                  Click="OnFullScreenClick">
+            <!-- expand-corners: toggle borderless full screen -->
+            <Viewbox Width="16" Height="16">
+              <Path Data="M2,6 L2,2 L6,2 M14,6 L14,2 L10,2 M2,10 L2,14 L6,14 M14,10 L14,14 L10,14"
+                    Stroke="{DynamicResource Accent}" StrokeThickness="2"
+                    StrokeLineCap="Round" StrokeJoin="Round" />
+            </Viewbox>
+          </Button>
         </StackPanel>
 
       </Grid>

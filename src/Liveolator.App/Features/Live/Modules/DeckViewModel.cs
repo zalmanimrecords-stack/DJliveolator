@@ -796,9 +796,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             // real time (so the follow view shows a consistent ~PlayingZoomSeconds regardless of length).
             _durationSeconds = overview.IsEmpty ? 0 : overview.DurationSeconds;
             UpdateTimeTexts(); // the elapsed/remaining readout can resolve now
-            RecomputeBeatGrid();
             this.RaisePropertyChanged(nameof(KickAnchorFraction));
+            // Size the zoom window from the now-known duration BEFORE signalling the grid. RecomputeBeatGrid
+            // raises BeatGrid, which any awaiter (e.g. the UI / tests) treats as "the load has settled"; if
+            // the zoom were sized after, that observer could read a stale (pre-duration) window.
             ZoomWindow = ComputeZoomWindow();
+            RecomputeBeatGrid();
         }
         catch (OperationCanceledException)
         {

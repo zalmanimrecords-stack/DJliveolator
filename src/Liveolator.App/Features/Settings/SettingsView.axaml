@@ -255,6 +255,17 @@
             <TextBlock Classes="section" Text="DIAGNOSTICS / LOGS" />
             <Border Classes="panel">
               <StackPanel Spacing="12" Margin="14">
+                <StackPanel Orientation="Horizontal" Spacing="24">
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="faint" Text="Version" />
+                    <SelectableTextBlock Classes="mono" Text="{Binding AppVersion}" />
+                  </StackPanel>
+                  <StackPanel Spacing="4">
+                    <TextBlock Classes="faint" Text="Build" />
+                    <SelectableTextBlock Classes="mono" Text="{Binding BuildNumber}" />
+                  </StackPanel>
+                </StackPanel>
+
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Log detail (applies after restart) — raise to Debug/Trace when reproducing a problem" />
                   <ComboBox ItemsSource="{Binding LogLevels}"
