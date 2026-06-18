@@ -128,9 +128,11 @@
             </Border>
 
             <!-- The MIDI mapping / learn surface, moved here from the old top-level MAPPINGS tab. It brings
-                 its own header + panels and uses a star-sized binding list, so it needs a bounded height
-                 inside this scrolling stack. -->
-            <mappings:MappingsView DataContext="{Binding Mappings}" Height="520" Margin="0,4,0,0" />
+                 its own header + panels and a star-sized binding list, so it needs a bounded height inside
+                 this scrolling stack. A MinHeight/MaxHeight range (instead of a fixed 520) lets it size to
+                 its content for small mapping sets (single outer scroll) and only cap + scroll internally
+                 for large ones, so it neither wastes space on a tall window nor crams a short one. -->
+            <mappings:MappingsView DataContext="{Binding Mappings}" MinHeight="360" MaxHeight="560" Margin="0,4,0,0" />
             <TextBlock Classes="faint"
                        Text="Import/Export above is per device model (.json) — share a mapping between machines; Save applies an import." />
           </StackPanel>
