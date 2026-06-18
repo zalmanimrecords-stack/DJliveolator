@@ -230,6 +230,18 @@
                 <CheckBox Content="Warp to project tempo (keylock)" IsChecked="{Binding SelectedClip.WarpEnabled}" />
                 <TextBlock Classes="mono accent" Text="{Binding SelectedClip.WarpBadge}" />
               </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="GAIN" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.Gain}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="FADE IN (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.FadeInSeconds}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="FADE OUT (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.FadeOutSeconds}" />
+              </StackPanel>
               <Button Classes="spartan" HorizontalAlignment="Left" Content="Remove clip"
                       Command="{Binding RemoveClipCommand}" />
             </StackPanel>
