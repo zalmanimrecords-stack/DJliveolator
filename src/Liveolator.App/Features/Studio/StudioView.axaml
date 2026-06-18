@@ -51,13 +51,16 @@
         </Button.Flyout>
       </Button>
 
-      <Button Classes="spartan" Content="EDIT  ▾" ToolTip.Tip="Undo, redo, remove clip">
+      <Button Classes="spartan" Content="EDIT  ▾" ToolTip.Tip="Undo, redo, remove clip, harmonize">
         <Button.Flyout>
           <MenuFlyout Placement="BottomEdgeAlignedLeft">
             <MenuItem Header="Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z" />
             <MenuItem Header="Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Y" />
             <Separator />
             <MenuItem Header="Remove clip" Command="{Binding RemoveClipCommand}" />
+            <Separator />
+            <MenuItem Header="Harmonize timeline" Command="{Binding HarmonizeCommand}"
+                      ToolTip.Tip="Auto-arrange the timeline's tracks into a harmonic set (Camelot + tempo) on alternating decks with crossfades" />
           </MenuFlyout>
         </Button.Flyout>
       </Button>

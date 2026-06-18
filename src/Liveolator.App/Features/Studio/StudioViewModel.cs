@@ -16,6 +16,7 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
+using Liveolator.Core.Playlist;
 using Liveolator.Core.Studio;
 using Liveolator.Core.Waveform;
 using Avalonia.Threading;
@@ -141,6 +142,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         OpenCommand = ReactiveCommand.CreateFromTask(OpenAsync, hasSaved);
         DeleteCommand = ReactiveCommand.CreateFromTask(DeleteAsync, hasSaved);
         RenderCommand = ReactiveCommand.CreateFromTask(RenderAsync, this.WhenAnyValue(x => x.CanRender));
+        HarmonizeCommand = ReactiveCommand.Create(Harmonize, this.WhenAnyValue(x => x.CanHarmonize));
 
         this.WhenAnyValue(x => x.LibrarySearch).Subscribe(_ => ApplyLibraryFilter());
         this.WhenAnyValue(x => x.PixelsPerSecond).Subscribe(PropagateZoom);
@@ -189,9 +191,14 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> OpenCommand { get; }
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> RenderCommand { get; }
+    public ReactiveCommand<Unit, Unit> HarmonizeCommand { get; }
 
     /// <summary>Live preview is available only when the realtime engine (dispatcher + clock) is wired.</summary>
     public bool CanPlay => _dispatcher is not null && _clock is not null;
+
+    /// <summary>True when at least two distinct, analyzed+keyed tracks are placed on the lanes — the
+    /// minimum the harmonic arranger needs to produce a reordered set (drives <see cref="HarmonizeCommand"/>).</summary>
+    public bool CanHarmonize => ResolveTimelineTracks().Count >= 2;
 
     /// <summary>Offline render is available only when a decoder is wired.</summary>
     public bool CanRender => _decoder is not null;
@@ -414,6 +421,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         RaiseHistoryChanged();
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        this.RaisePropertyChanged(nameof(CanHarmonize));
         Status = "New project — drag tracks from the library onto the deck lanes, then Play or Render.";
     }
 
@@ -440,6 +448,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         LoadWaveform(vm);
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        this.RaisePropertyChanged(nameof(CanHarmonize));
         Status = $"Dropped \"{vm.Title}\" on deck {Lanes[deckSlot].Label}.";
     }
 
@@ -454,6 +463,56 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         SelectedClip = null;
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        this.RaisePropertyChanged(nameof(CanHarmonize));
+    }
+
+    /// <summary>
+    /// Re-arranges the tracks currently on the timeline into a harmonic set (Camelot + BPM trend) and
+    /// lays them back-to-back on alternating decks with crossfade overlaps, via
+    /// <see cref="HarmonicAutoArranger"/>. Replaces the current arrangement as one undoable edit.
+    /// </summary>
+    private void Harmonize()
+    {
+        IReadOnlyList<MusicTrack> tracks = ResolveTimelineTracks();
+        if (tracks.Count < 2)
+            return;
+
+        StudioProject arranged = new HarmonicAutoArranger().Arrange(
+            tracks,
+            new HarmonicSetOptions(Length: tracks.Count),
+            new AutoArrangeOptions(ProjectName: Name.Trim()));
+        if (arranged.Clips.Count == 0)
+        {
+            // No keyed seed among the placed tracks — nothing the harmonic builder can order.
+            Status = "Harmonize: no analyzed, keyed tracks to arrange.";
+            return;
+        }
+
+        BeginEdit(); // one undoable step: Undo restores the pre-harmonize arrangement
+        LoadProject(arranged);
+        Status = $"Harmonized {arranged.Clips.Count} tracks.";
+    }
+
+    /// <summary>
+    /// The DISTINCT analyzed tracks currently placed on the lanes, resolved from each clip's path against
+    /// the library snapshot, in first-seen timeline order. Unresolved (not in the library) clips are
+    /// skipped; the harmonic builder itself drops unkeyed tracks, so they need no special handling here.
+    /// </summary>
+    private IReadOnlyList<MusicTrack> ResolveTimelineTracks()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tracks = new List<MusicTrack>();
+        foreach (StudioClipViewModel clip in Lanes
+                     .SelectMany(l => l.Clips)
+                     .OrderBy(c => c.TimelineStartSeconds))
+        {
+            if (!seen.Add(clip.TrackPath))
+                continue;
+            if (_byPath.GetValueOrDefault(clip.TrackPath) is { } track)
+                tracks.Add(track);
+        }
+
+        return tracks;
     }
 
     private void TogglePlay()
@@ -610,6 +669,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         SelectedClip = null;
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        this.RaisePropertyChanged(nameof(CanHarmonize));
     }
 
     private async void LoadWaveform(StudioClipViewModel clip)
