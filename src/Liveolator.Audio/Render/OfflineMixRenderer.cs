@@ -52,6 +52,13 @@ public sealed class OfflineMixRenderer
     // warped clips get a pitch-preserved, time-stretched buffer at the render rate.
     private static string SourceKey(string path, double factor) => $"{path}|{factor:F4}";
 
+    // Identity of the source currently sounding on a deck, used to decide when the persistent biquad
+    // cascade must restart from zero history. Two clips that share a track + warp are still distinct
+    // sources when their timeline anchor or source-in differs, so the timeline start and source-in are
+    // part of the key - a new clip never inherits the previous clip's filter ring.
+    private static string ActiveSourceKey(DeckMixState state)
+        => $"{SourceKey(state.SourcePath!, state.WarpFactor)}|{state.ClipStartSeconds:F6}|{state.SourceInSeconds:F6}";
+
     /// <summary>
     /// Render <paramref name="project"/> to a 16-bit stereo WAV at <paramref name="outputPath"/>.
     /// Reports 0..1 progress. An empty/zero-length project writes an empty WAV.
@@ -90,7 +97,15 @@ public sealed class OfflineMixRenderer
         int decks = plan.DeckCount;
         // Per-deck biquad cascade (low -> mid -> high -> filter), each a single 2-channel StatefulBiquad
         // addressed by channel index so L and R carry independent delay state (mirrors BassMixerChannel).
+        // The delay state PERSISTS across every block for the duration of a deck's continuous source, so
+        // filtering across a block boundary is identical to one continuous pass (the live mixer never
+        // resets state per block). Only the coefficients are refreshed per block (from automation).
         StatefulBiquad[] low = NewBiquads(decks), mid = NewBiquads(decks), high = NewBiquads(decks), filt = NewBiquads(decks);
+        // The source currently feeding each deck's cascade. When a deck's active source changes (it went
+        // silent, or a different clip's source took over), its biquads are recreated so the new source
+        // starts from zero delay history - mirroring a freshly loaded live stream, never inheriting the
+        // previous source's filter ring. StatefulBiquad is intentionally not reset in place (Core-owned).
+        var deckSource = new string?[decks];
 
         for (int blockStart = 0; blockStart < totalSamples; blockStart += BlockSize)
         {
@@ -103,7 +118,24 @@ public sealed class OfflineMixRenderer
                 DeckMixState state = plan.EvaluateDeck(slot, tBlock);
                 if (!state.HasAudio || state.SourcePath is null ||
                     !sources.TryGetValue(SourceKey(state.SourcePath, state.WarpFactor), out StereoBuffer? src))
+                {
+                    // Deck is silent this block: its next sounding clip is a genuine source discontinuity,
+                    // so drop the persistent state (a fresh stream would start at zero).
+                    deckSource[slot] = null;
                     continue;
+                }
+
+                // Identify the active source on this deck. A different clip (path, warp, or timeline anchor)
+                // is a discontinuity even on the same deck slot, so recreate the cascade from zero history.
+                string activeSource = ActiveSourceKey(state);
+                if (deckSource[slot] != activeSource)
+                {
+                    low[slot] = new StatefulBiquad(OutputChannels);
+                    mid[slot] = new StatefulBiquad(OutputChannels);
+                    high[slot] = new StatefulBiquad(OutputChannels);
+                    filt[slot] = new StatefulBiquad(OutputChannels);
+                    deckSource[slot] = activeSource;
+                }
 
                 low[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, state.Eq, sampleRate));
                 mid[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Mid, state.Eq, sampleRate));

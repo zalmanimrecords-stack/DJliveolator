@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
+using Liveolator.Audio.Playback;
 using Liveolator.Audio.Render;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Mixer;
 using Liveolator.Core.Studio;
 using Xunit;
 
@@ -230,5 +232,135 @@ public class OfflineMixRendererTests
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    // The renderer walks the output in fixed BlockSize chunks; this must match the renderer's constant.
+    private const int RenderBlockSize = 256;
+    private const double FilterLowPassKnob = 0.2;  // below 0.5 = a low-pass that rings on a step
+    private const double FilterHighPassKnob = 0.8; // above 0.5 = a high-pass: blocks DC, so a step rings then decays to ~0
+
+    // A reference single, continuous biquad cascade pass over a whole mono buffer using the same MixerMath
+    // coefficients + StatefulBiquad the renderer uses - i.e. what the rendered output MUST equal if delay
+    // state truly persists across every block boundary (no per-block reset).
+    private static float[] ContinuousFilterPass(float[] mono, double filterKnob, int sampleRate)
+        => ContinuousFilterPass(mono, filterKnob, sampleRate, primeWith: null);
+
+    // Run the renderer's exact 4-stage cascade (flat EQ + a filter) over a mono buffer from zero history.
+    // When primeWith is supplied, the cascade is first warmed up over that buffer (without keeping its
+    // output) so the delay state at the start of mono mimics a carried-over (un-reset) source - the
+    // discontinuity a source-boundary reset must AVOID.
+    private static float[] ContinuousFilterPass(float[] mono, double filterKnob, int sampleRate, float[]? primeWith)
+    {
+        var low = new StatefulBiquad(1);
+        var mid = new StatefulBiquad(1);
+        var high = new StatefulBiquad(1);
+        var filt = new StatefulBiquad(1);
+        low.SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, EqBands.Flat, sampleRate));
+        mid.SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Mid, EqBands.Flat, sampleRate));
+        high.SetCoefficients(MixerMath.EqBandCoefficients(EqBand.High, EqBands.Flat, sampleRate));
+        filt.SetCoefficients(MixerMath.FilterCoefficients(filterKnob, sampleRate));
+
+        if (primeWith is not null)
+            foreach (float p in primeWith)
+                filt.Process(0, high.Process(0, mid.Process(0, low.Process(0, p))));
+
+        var outBuf = new float[mono.Length];
+        for (int i = 0; i < mono.Length; i++)
+            outBuf[i] = (float)filt.Process(0, high.Process(0, mid.Process(0, low.Process(0, mono[i]))));
+        return outBuf;
+    }
+
+    [Fact]
+    public async Task Render_NonFlatFilter_IsContinuousAcrossBlockBoundary()
+    {
+        // The deck biquads must carry delay state continuously over the whole stream, exactly as the live
+        // mixer does. So a single steady clip through a non-flat (low-pass) filter must render IDENTICALLY
+        // to one continuous-state biquad pass over the same buffer. If the renderer reset/recreated the
+        // delay state at each ~256-sample block boundary, the low-pass step transient would reappear at
+        // every boundary and the rendered output would diverge from this single-pass reference there.
+        const int rate = 8_000;
+        const float dc = 0.5f;
+        int lengthSamples = RenderBlockSize * 6; // several block boundaries inside one contiguous clip
+
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(lengthSamples / (double)rate)) },
+            new[]
+            {
+                new AutomationLane(AutomationTarget.Filter, 0, new[] { new AutomationKeyframe(0, FilterLowPassKnob) }),
+            });
+
+        float[] outSamples = await Render(project, new ConstantDecoder(dc, lengthSamples), rate);
+
+        var source = new float[lengthSamples];
+        Array.Fill(source, dc);
+        float[] expected = ContinuousFilterPass(source, FilterLowPassKnob, rate);
+
+        Assert.Equal(lengthSamples, outSamples.Length);
+        // Whole-stream equality within 16-bit quantisation: identical to one continuous-state pass.
+        for (int i = 0; i < lengthSamples; i++)
+            Assert.True(Math.Abs(outSamples[i] - expected[i]) < 3e-4f,
+                $"sample {i}: rendered {outSamples[i]} vs continuous {expected[i]}");
+
+        // Pin the boundary itself: rendered and continuous step the same way across the first block edge,
+        // so there is no per-block-reset jump there.
+        int b = RenderBlockSize;
+        Assert.True(Math.Abs(outSamples[b] - expected[b]) < 3e-4f, "block boundary diverged from continuous pass");
+    }
+
+    [Fact]
+    public async Task Render_NewClipAfterGap_DoesNotInheritPreviousFilterRing()
+    {
+        // A genuine source discontinuity (the deck goes silent, then a different clip starts on the SAME
+        // deck) must reset the biquad delay state - mirroring a freshly loaded live stream. Otherwise the
+        // new clip inherits the previous clip's filter state (a click the live preview never has).
+        //
+        // A high-pass filter discriminates reset vs carry: it blocks DC, so during clip A the cascade
+        // settles its delay state toward a steady DC-rejecting condition. A FRESH stream at clip B's onset
+        // sees a step (0 -> dc) and produces a decaying spike; a CARRIED state continues near zero with no
+        // spike. The rendered second clip must match the fresh pass and clearly differ from the carried one.
+        const int rate = 8_000;
+        const float dc = 0.5f;
+        int clipSamples = RenderBlockSize * 4;
+        double clipSecs = clipSamples / (double)rate;
+        double gapSecs = clipSecs;          // a full clip-length of silence between the two clips
+        double secondStart = clipSecs + gapSecs;
+
+        var project = new StudioProject("p", 120,
+            new[]
+            {
+                // Both clips on deck slot 0; bounded length so the deck genuinely goes silent in the gap.
+                new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(clipSecs)),
+                new StudioClip(0, "/m/b.wav", secondStart, TimeSpan.Zero, TimeSpan.FromSeconds(clipSecs)),
+            },
+            new[]
+            {
+                new AutomationLane(AutomationTarget.Filter, 0, new[] { new AutomationKeyframe(0, FilterHighPassKnob) }),
+            });
+
+        float[] outSamples = await Render(project, new ConstantDecoder(dc, clipSamples), rate);
+
+        var source = new float[clipSamples];
+        Array.Fill(source, dc);
+        // Fresh (reset) reference: clip B filtered from ZERO history - what a freshly loaded live stream gives.
+        float[] freshSecond = ContinuousFilterPass(source, FilterHighPassKnob, rate);
+        // Carried (un-reset) reference: clip B filtered through state primed by clip A's audio - the bug.
+        float[] carriedSecond = ContinuousFilterPass(source, FilterHighPassKnob, rate, primeWith: source);
+
+        // The two references must genuinely diverge at the onset, else this test cannot discriminate.
+        Assert.True(Math.Abs(freshSecond[0] - carriedSecond[0]) > 0.05f,
+            "test signal must distinguish fresh vs carried filter state at the onset");
+
+        int secondStartSample = (int)Math.Round(secondStart * rate);
+        for (int i = 0; i < clipSamples; i++)
+        {
+            int idx = secondStartSample + i;
+            if (idx >= outSamples.Length) break;
+            Assert.True(Math.Abs(outSamples[idx] - freshSecond[i]) < 3e-4f,
+                $"second clip sample {i}: rendered {outSamples[idx]} must match fresh-stream {freshSecond[i]}");
+        }
+
+        // And explicitly NOT the carried-state continuation at the onset.
+        Assert.True(Math.Abs(outSamples[secondStartSample] - carriedSecond[0]) > 0.05f,
+            "second clip onset must not inherit the previous clip's filter state");
     }
 }
