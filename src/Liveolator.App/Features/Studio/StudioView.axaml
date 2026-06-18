@@ -30,18 +30,20 @@
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}" />
       <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
-      <Button Classes="spartan" Content="Render WAV" Command="{Binding RenderCommand}" IsVisible="{Binding CanRender}" />
+      <Button Classes="spartan" Content="Render WAV" Command="{Binding RenderCommand}" IsEnabled="{Binding CanRender}" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
-      <Button Classes="accent" Content="▶ Play" Command="{Binding PlayCommand}" IsVisible="{Binding CanPlay}" />
-      <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" IsVisible="{Binding CanPlay}" />
+      <Button Classes="play" Classes.on="{Binding IsPlaying}" Content="&#x25B6; Play"
+              Command="{Binding PlayCommand}" IsEnabled="{Binding CanPlay}" />
+      <Button Classes="key" Content="&#x25A0; Stop" Command="{Binding StopCommand}" IsEnabled="{Binding CanPlay}" />
       <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
       <Slider Width="150" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
               Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <ToggleButton Classes="spartan" Content="Automation" IsChecked="{Binding AutomationEditMode}"
                     ToolTip.Tip="Edit the per-lane automation envelopes (clips lock while on)" />
-      <ToggleButton Classes="spartan" Content="✏" IsChecked="{Binding AutomationDrawMode}"
-                    ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil)" />
+      <ToggleButton Classes="spartan" Content="&#x270F; Draw" IsChecked="{Binding AutomationDrawMode}"
+                    IsEnabled="{Binding AutomationEditMode}"
+                    ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil) — available while Automation editing is on" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
       <Slider Width="110" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
@@ -227,7 +229,9 @@
                 <TextBox Classes="spartan" Text="{Binding SelectedClip.SourceInSeconds}" />
               </StackPanel>
               <StackPanel Spacing="3">
-                <CheckBox Content="Warp to project tempo (keylock)" IsChecked="{Binding SelectedClip.WarpEnabled}" />
+                <CheckBox Content="Warp to tempo" IsChecked="{Binding SelectedClip.WarpEnabled}" />
+                <TextBlock Classes="faint" FontSize="10"
+                           Text="Time-stretch the clip to the project grid (pitch preserved / keylock)." TextWrapping="Wrap" />
                 <TextBlock Classes="mono accent" Text="{Binding SelectedClip.WarpBadge}" />
               </StackPanel>
               <Button Classes="spartan" HorizontalAlignment="Left" Content="Remove clip"
