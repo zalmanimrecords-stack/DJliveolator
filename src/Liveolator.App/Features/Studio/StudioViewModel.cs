@@ -37,6 +37,12 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private const int WaveformBuckets = 512;
     private const double DefaultPixelsPerSecond = 8.0;
 
+    // Zoom bounds for the VIEW → Zoom in/out commands. Kept in sync with the zoom slider's Minimum/Maximum
+    // in StudioView.axaml so menu zoom and the slider share one range; each step is a fixed ratio.
+    private const double MinPixelsPerSecond = 2.0;
+    private const double MaxPixelsPerSecond = 40.0;
+    private const double ZoomStep = 1.25;
+
     private readonly MusicLibrary _library;
     private readonly IStudioProjectStore _store;
     private readonly IPerformanceActionDispatcher? _dispatcher;
@@ -125,6 +131,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         NewCommand = ReactiveCommand.Create(NewProject);
         UndoCommand = ReactiveCommand.Create(Undo, canUndo);
         RedoCommand = ReactiveCommand.Create(Redo, canRedo);
+        ZoomInCommand = ReactiveCommand.Create(ZoomIn);
+        ZoomOutCommand = ReactiveCommand.Create(ZoomOut);
+        ResetZoomCommand = ReactiveCommand.Create(ResetZoom);
         RemoveClipCommand = ReactiveCommand.Create(RemoveSelectedClip, hasClipSelection);
         PlayCommand = ReactiveCommand.Create(TogglePlay, this.WhenAnyValue(x => x.CanPlay));
         StopCommand = ReactiveCommand.Create(StopPlayback);
@@ -153,9 +162,26 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     /// <summary>The project tempo curve (BPM over time) — warped clips follow it.</summary>
     public TempoLaneViewModel TempoLane { get; } = new();
 
+    /// <summary>True when there is at least one saved project (gates the FILE → Open / Delete submenus).</summary>
+    public bool HasSavedProjects => SavedProjects.Count > 0;
+
+    /// <summary>FILE → Open submenu: one entry per saved project that opens it directly. Rebuilt whenever the
+    /// saved list changes (see <see cref="RefreshSavedAsync"/>); mirrors the library's "Add to playlist" menu.</summary>
+    public IReadOnlyList<MenuActionViewModel> OpenItems =>
+        SavedProjects.Select(name => new MenuActionViewModel(
+            name, ReactiveCommand.CreateFromTask(() => OpenNamedAsync(name)))).ToList();
+
+    /// <summary>FILE → Delete submenu: one entry per saved project that deletes it directly.</summary>
+    public IReadOnlyList<MenuActionViewModel> DeleteItems =>
+        SavedProjects.Select(name => new MenuActionViewModel(
+            name, ReactiveCommand.CreateFromTask(() => DeleteNamedAsync(name)))).ToList();
+
     public ReactiveCommand<Unit, Unit> NewCommand { get; }
     public ReactiveCommand<Unit, Unit> UndoCommand { get; }
     public ReactiveCommand<Unit, Unit> RedoCommand { get; }
+    public ReactiveCommand<Unit, Unit> ZoomInCommand { get; }
+    public ReactiveCommand<Unit, Unit> ZoomOutCommand { get; }
+    public ReactiveCommand<Unit, Unit> ResetZoomCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveClipCommand { get; }
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -365,6 +391,13 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(CanRedo));
     }
 
+    // VIEW → Zoom: step the timeline scale by a fixed ratio within the slider's range, or reset to default.
+    private void ZoomIn() => PixelsPerSecond = Math.Min(MaxPixelsPerSecond, PixelsPerSecond * ZoomStep);
+
+    private void ZoomOut() => PixelsPerSecond = Math.Max(MinPixelsPerSecond, PixelsPerSecond / ZoomStep);
+
+    private void ResetZoom() => PixelsPerSecond = DefaultPixelsPerSecond;
+
     private void NewProject()
     {
         StopPlayback();
@@ -467,9 +500,16 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task OpenAsync()
+    // The OpenCommand/DeleteCommand operate on the picker selection; the FILE-menu submenus open/delete a
+    // named project directly (see OpenItems/DeleteItems). Both funnel through the *Named helpers below.
+    private Task OpenAsync() => OpenNamedAsync(SelectedSaved);
+
+    private Task DeleteAsync() => DeleteNamedAsync(SelectedSaved);
+
+    /// <summary>Open a saved project by name (the FILE → Open submenu entry, or the picker's Open button).</summary>
+    public async Task OpenNamedAsync(string? name)
     {
-        if (SelectedSaved is not { } name)
+        if (string.IsNullOrWhiteSpace(name))
             return;
         try
         {
@@ -481,6 +521,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
                     Status = $"Could not open \"{name}\".";
                     return;
                 }
+                SelectedSaved = name;
                 LoadProject(project);
                 _history.Clear(); // opening a project starts a fresh edit history
                 RaiseHistoryChanged();
@@ -493,9 +534,10 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private async Task DeleteAsync()
+    /// <summary>Delete a saved project by name (the FILE → Delete submenu entry, or the picker's Delete button).</summary>
+    public async Task DeleteNamedAsync(string? name)
     {
-        if (SelectedSaved is not { } name)
+        if (string.IsNullOrWhiteSpace(name))
             return;
         try
         {
@@ -603,6 +645,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             SavedProjects.Clear();
             foreach (string name in names)
                 SavedProjects.Add(name);
+            this.RaisePropertyChanged(nameof(HasSavedProjects));
+            this.RaisePropertyChanged(nameof(OpenItems));
+            this.RaisePropertyChanged(nameof(DeleteItems));
         });
     }
 
