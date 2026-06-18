@@ -9,26 +9,43 @@ using Microsoft.Extensions.Logging;
 namespace Liveolator.Audio.Render;
 
 /// <summary>
-/// Renders a <see cref="StudioProject"/> arrangement to a mono WAV file offline: decodes each clip at
-/// its warp factor (native rate via <see cref="IAudioDecoder"/> when unwarped; pitch-preserving
-/// time-stretch via <see cref="BassFxRenderDecoder"/> when warped), then walks the output timeline
-/// applying the pure <see cref="MixPlan"/> — per-deck gain, 3-band EQ, filter (the same
-/// <see cref="MixerMath"/> coefficients the live mixer uses, through a stateful biquad cascade) — and
-/// sums every deck into the master. Warp factor is constant per clip (sampled at its start). Mono MVP.
+/// Renders a <see cref="StudioProject"/> arrangement to a stereo WAV file offline: decodes each clip at
+/// its warp factor (native rate via <see cref="IAudioDecoder"/> when unwarped - a mono source duplicated
+/// to both channels; pitch-preserving stereo time-stretch via <see cref="BassFxRenderDecoder"/> when
+/// warped), then walks the output timeline applying the pure <see cref="MixPlan"/> - per-deck gain,
+/// 3-band EQ, filter (the same <see cref="MixerMath"/> coefficients the live mixer uses, through a
+/// stateful biquad cascade with independent per-channel delay state, mirroring the realtime
+/// <c>BassMixerChannel</c>) - and sums every deck into a stereo master. Warp factor is constant per clip
+/// (sampled at its start). The summed master is then brick-wall limited (stereo-linked) and written as a
+/// 2-channel WAV.
 /// </summary>
 public sealed class OfflineMixRenderer
 {
-    // Automation/coefficients are refreshed once per block (~6 ms at 44.1 kHz) — fine for envelopes.
+    private const int OutputChannels = 2;     // stereo render
+    private const int Left = 0;
+    private const int Right = 1;
+
+    // Automation/coefficients are refreshed once per block (~6 ms at 44.1 kHz) - fine for envelopes.
     private const int BlockSize = 256;
     private const double UnwarpedEpsilon = 1e-4;
 
     private readonly IAudioDecoder _decoder;
     private readonly BassFxRenderDecoder _stretchDecoder;
 
+    // Optional decode override (tests): supplies a StereoBuffer for a (path, warpFactor) so the renderer
+    // can be exercised with distinct L/R content without real BASS. Null in production.
+    private readonly Func<string, double, StereoBuffer>? _decodeOverride;
+
     public OfflineMixRenderer(IAudioDecoder decoder, ILogger? logger = null)
+        : this(decoder, logger, decodeOverride: null)
+    {
+    }
+
+    internal OfflineMixRenderer(IAudioDecoder decoder, ILogger? logger, Func<string, double, StereoBuffer>? decodeOverride)
     {
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
         _stretchDecoder = new BassFxRenderDecoder(logger);
+        _decodeOverride = decodeOverride;
     }
 
     // One decoded buffer per (clip path, warp factor): unwarped clips share the native-rate decode,
@@ -36,7 +53,7 @@ public sealed class OfflineMixRenderer
     private static string SourceKey(string path, double factor) => $"{path}|{factor:F4}";
 
     /// <summary>
-    /// Render <paramref name="project"/> to a 16-bit mono WAV at <paramref name="outputPath"/>.
+    /// Render <paramref name="project"/> to a 16-bit stereo WAV at <paramref name="outputPath"/>.
     /// Reports 0..1 progress. An empty/zero-length project writes an empty WAV.
     /// </summary>
     public async Task RenderAsync(
@@ -54,9 +71,9 @@ public sealed class OfflineMixRenderer
         var plan = new MixPlan(project);
         int totalSamples = plan.DurationSeconds > 0 ? (int)Math.Ceiling(plan.DurationSeconds * sampleRate) : 0;
 
-        // Decode every distinct (clip, warp factor) once into a mono buffer at the render rate. Unwarped
-        // clips use the managed decoder (identical to before); warped clips use BASS_FX (pitch preserved).
-        var sources = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
+        // Decode every distinct (clip, warp factor) once into a stereo buffer at the render rate. Unwarped
+        // clips use the managed mono decoder duplicated to both channels; warped clips use BASS_FX stereo.
+        var sources = new Dictionary<string, StereoBuffer>(StringComparer.OrdinalIgnoreCase);
         foreach (StudioClip clip in project.Clips)
         {
             double factor = plan.WarpFactorFor(clip);
@@ -64,14 +81,15 @@ public sealed class OfflineMixRenderer
             if (sources.ContainsKey(key))
                 continue;
 
-            sources[key] = Math.Abs(factor - 1.0) < UnwarpedEpsilon
-                ? await DecodeAllAsync(clip.TrackPath, sampleRate, cancellationToken).ConfigureAwait(false)
-                : _stretchDecoder.DecodeStretched(clip.TrackPath, sampleRate, (factor - 1.0) * 100.0);
+            sources[key] = await DecodeSourceAsync(clip.TrackPath, factor, sampleRate, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        var master = new float[totalSamples];
+        // Interleaved stereo master (L0,R0,L1,R1,...) so the stereo-linked limiter sees both channels.
+        var master = new float[totalSamples * OutputChannels];
         int decks = plan.DeckCount;
-        // Per-deck biquad cascade (low → mid → high → filter), mono (1 channel each).
+        // Per-deck biquad cascade (low -> mid -> high -> filter), each a single 2-channel StatefulBiquad
+        // addressed by channel index so L and R carry independent delay state (mirrors BassMixerChannel).
         StatefulBiquad[] low = NewBiquads(decks), mid = NewBiquads(decks), high = NewBiquads(decks), filt = NewBiquads(decks);
 
         for (int blockStart = 0; blockStart < totalSamples; blockStart += BlockSize)
@@ -84,7 +102,7 @@ public sealed class OfflineMixRenderer
             {
                 DeckMixState state = plan.EvaluateDeck(slot, tBlock);
                 if (!state.HasAudio || state.SourcePath is null ||
-                    !sources.TryGetValue(SourceKey(state.SourcePath, state.WarpFactor), out float[]? src))
+                    !sources.TryGetValue(SourceKey(state.SourcePath, state.WarpFactor), out StereoBuffer? src))
                     continue;
 
                 low[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, state.Eq, sampleRate));
@@ -99,50 +117,85 @@ public sealed class OfflineMixRenderer
                 for (int i = 0; i < blockLen; i++)
                 {
                     int si = srcStart + i;
-                    double x = (si >= 0 && si < src.Length ? src[si] : 0.0) * state.Gain;
-                    x = filt[slot].Process(0, high[slot].Process(0, mid[slot].Process(0, low[slot].Process(0, x))));
-                    master[blockStart + i] += (float)x;
+                    bool inRange = si >= 0 && si < src.Length;
+
+                    // Process each channel through its own delay line: filter(high(mid(low(x)))) per L/R.
+                    double l = (inRange ? src.Left[si] : 0.0) * state.Gain;
+                    l = filt[slot].Process(Left, high[slot].Process(Left, mid[slot].Process(Left, low[slot].Process(Left, l))));
+
+                    double r = (inRange ? src.Right[si] : 0.0) * state.Gain;
+                    r = filt[slot].Process(Right, high[slot].Process(Right, mid[slot].Process(Right, low[slot].Process(Right, r))));
+
+                    int frame = (blockStart + i) * OutputChannels;
+                    master[frame + Left] += (float)l;
+                    master[frame + Right] += (float)r;
                 }
             }
 
             progress?.Report(totalSamples == 0 ? 1.0 : Math.Min(1.0, (blockStart + blockLen) / (double)totalSamples));
         }
 
-        float[] limited = ApplyMasterLimiter(master, sampleRate);
+        ApplyMasterLimiter(master, sampleRate);
 
-        WavWriter.WriteMono(outputPath, limited, sampleRate);
+        WriteStereo(outputPath, master, totalSamples, sampleRate);
         progress?.Report(1.0);
     }
 
-    // Run the summed master through the same brick-wall limiter the realtime master bus uses
-    // (BassMixerBackend.OnMasterDsp) so a multi-deck mix that sums past full scale never clips in the
-    // exported WAV. The limiter delays its output by LatencySamples (its look-ahead), so we feed that many
-    // trailing zero frames to flush the delay line and then drop the equivalent leading latency, keeping
-    // the rendered length identical to the input and the tail un-truncated. Mono here (stereo is separate).
-    private static float[] ApplyMasterLimiter(float[] master, int sampleRate)
+    // Decode one (path, warp factor) to a stereo buffer at the render rate. Unwarped: the managed mono
+    // decoder duplicated to both channels (CI-safe, deterministic, no native). Warped: BASS_FX stereo.
+    // A test decode override (when present) supplies the buffer directly so distinct L/R can be injected.
+    private async Task<StereoBuffer> DecodeSourceAsync(
+        string path, double factor, int sampleRate, CancellationToken cancellationToken)
+    {
+        if (_decodeOverride is not null)
+            return _decodeOverride(path, factor);
+
+        if (Math.Abs(factor - 1.0) < UnwarpedEpsilon)
+            return StereoBuffer.FromMono(await DecodeAllAsync(path, sampleRate, cancellationToken).ConfigureAwait(false));
+
+        return _stretchDecoder.DecodeStretchedStereo(path, sampleRate, (factor - 1.0) * 100.0);
+    }
+
+    // Run the summed interleaved-stereo master through the same brick-wall limiter the realtime master bus
+    // uses (BassMixerBackend.OnMasterDsp), constructed for 2 channels so it is stereo-linked - a multi-deck
+    // mix that sums past full scale never clips in the exported WAV. The limiter delays its output by
+    // LatencySamples (its look-ahead), so we process the master plus one look-ahead window of trailing
+    // silence to flush the delay line, then copy back the audio that occupies
+    // [latencyFloats, latencyFloats + master.Length), keeping the rendered length identical to the input
+    // and the tail un-truncated. Limits in place.
+    private static void ApplyMasterLimiter(float[] master, int sampleRate)
     {
         if (master.Length == 0)
-            return master;
+            return;
 
-        var limiter = new MasterLimiter(sampleRate, channels: 1);
-        int latency = limiter.LatencySamples;
+        var limiter = new MasterLimiter(sampleRate, channels: OutputChannels);
+        int latencyFloats = limiter.LatencySamples * OutputChannels;
 
-        // Process the master plus one look-ahead window of silence; output[i] == input[i - latency], so the
-        // real audio occupies [latency, latency + master.Length).
-        var work = new float[master.Length + latency];
+        var work = new float[master.Length + latencyFloats];
         Array.Copy(master, work, master.Length);
         limiter.Process(work);
 
-        var limited = new float[master.Length];
-        Array.Copy(work, latency, limited, 0, master.Length);
-        return limited;
+        // output[i] == input[i - latency]; the real audio occupies [latencyFloats, latencyFloats + length).
+        Array.Copy(work, latencyFloats, master, 0, master.Length);
+    }
+
+    private static void WriteStereo(string outputPath, float[] interleaved, int frames, int sampleRate)
+    {
+        var left = new float[frames];
+        var right = new float[frames];
+        for (int i = 0; i < frames; i++)
+        {
+            left[i] = interleaved[(i * OutputChannels) + Left];
+            right[i] = interleaved[(i * OutputChannels) + Right];
+        }
+        WavWriter.WriteStereo(outputPath, left, right, sampleRate);
     }
 
     private static StatefulBiquad[] NewBiquads(int count)
     {
         var biquads = new StatefulBiquad[count];
         for (int i = 0; i < count; i++)
-            biquads[i] = new StatefulBiquad(channels: 1);
+            biquads[i] = new StatefulBiquad(channels: OutputChannels);
         return biquads;
     }
 

@@ -33,24 +33,33 @@ public class OfflineMixRendererTests
         }
     }
 
-    private static float[] ReadWavMono(string path)
+    // The render output is interleaved 16-bit stereo (L0,R0,L1,R1,...). These helpers read back each channel.
+    private static (float[] Left, float[] Right) ReadWavStereo(string path)
     {
         byte[] bytes = File.ReadAllBytes(path);
         int dataBytes = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(40, 4));
-        int count = dataBytes / 2;
-        var samples = new float[count];
-        for (int i = 0; i < count; i++)
-            samples[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(44 + (i * 2), 2)) / (float)short.MaxValue;
-        return samples;
+        int frames = dataBytes / 4;   // 2 channels * 2 bytes
+        var left = new float[frames];
+        var right = new float[frames];
+        for (int i = 0; i < frames; i++)
+        {
+            left[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(44 + (i * 4), 2)) / (float)short.MaxValue;
+            right[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(44 + (i * 4) + 2, 2)) / (float)short.MaxValue;
+        }
+        return (left, right);
     }
 
+    private static short ReadChannelCount(string path)
+        => BinaryPrimitives.ReadInt16LittleEndian(File.ReadAllBytes(path).AsSpan(22, 2));
+
+    // Render and return the left channel (mono sources duplicate to both, so L == R for those projects).
     private static async Task<float[]> Render(StudioProject project, IAudioDecoder decoder, int sampleRate)
     {
         string path = Path.Combine(Path.GetTempPath(), $"liveolator-render-{Guid.NewGuid():N}.wav");
         try
         {
             await new OfflineMixRenderer(decoder).RenderAsync(project, path, sampleRate);
-            return ReadWavMono(path);
+            return ReadWavStereo(path).Left;
         }
         finally
         {
@@ -148,5 +157,78 @@ public class OfflineMixRendererTests
         // After the limiter settles (mid-buffer, well past attack/look-ahead), the steady DC must be
         // pulled down close to the ceiling rather than passed through at ~1.6 or clipped at 1.0.
         Assert.InRange(outSamples[rate / 2], 0.80f, ceiling + 0.01f);
+    }
+
+    [Fact]
+    public async Task Render_WritesTwoChannelWavHeader()
+    {
+        const int rate = 8_000;
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)) },
+            Array.Empty<AutomationLane>());
+
+        string path = Path.Combine(Path.GetTempPath(), $"liveolator-render-{Guid.NewGuid():N}.wav");
+        try
+        {
+            await new OfflineMixRenderer(new ConstantDecoder(0.5f, rate * 2)).RenderAsync(project, path, rate);
+
+            byte[] bytes = File.ReadAllBytes(path);
+            Assert.Equal(2, BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(22, 2)));    // channels
+            Assert.Equal(rate, BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(24, 4))); // sample rate
+            Assert.Equal(rate * 2 * 2, BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(28, 4))); // byte rate
+            Assert.Equal(4, BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(32, 2)));    // block align (2ch * 2B)
+            Assert.Equal(16, BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(34, 2)));   // bits
+
+            // One second of stereo frames = rate frames * 2 channels * 2 bytes.
+            int dataBytes = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(40, 4));
+            Assert.Equal(rate * 2 * 2, dataBytes);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Render_DistinctLeftRightSource_RoundTripsThePanDifference()
+    {
+        // A genuinely stereo source (L louder than R) must survive the stereo render: the rendered WAV's
+        // left channel must read meaningfully hotter than its right. This exercises the independent
+        // per-channel path (decode -> per-channel biquad -> interleaved master -> stereo WAV). The decode
+        // override injects distinct L/R DC without needing real BASS.
+        const int rate = 8_000;
+        const float leftDc = 0.6f;
+        const float rightDc = 0.2f;
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)) },
+            Array.Empty<AutomationLane>());
+
+        StereoBuffer StereoDc(string _, double __)
+        {
+            var l = new float[rate * 2];
+            var r = new float[rate * 2];
+            Array.Fill(l, leftDc);
+            Array.Fill(r, rightDc);
+            return new StereoBuffer(l, r);
+        }
+
+        string path = Path.Combine(Path.GetTempPath(), $"liveolator-render-{Guid.NewGuid():N}.wav");
+        try
+        {
+            var renderer = new OfflineMixRenderer(new ConstantDecoder(0f, rate * 2), logger: null, decodeOverride: StereoDc);
+            await renderer.RenderAsync(project, path, rate);
+
+            Assert.Equal(2, ReadChannelCount(path));
+            (float[] left, float[] right) = ReadWavStereo(path);
+
+            // Flat controls, unity gain → each channel reproduces its own DC (mid-buffer, past any settle).
+            Assert.InRange(left[rate / 2], leftDc - 0.02f, leftDc + 0.02f);
+            Assert.InRange(right[rate / 2], rightDc - 0.02f, rightDc + 0.02f);
+            Assert.True(left[rate / 2] > right[rate / 2] + 0.2f, "left channel must stay hotter than right");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 }
