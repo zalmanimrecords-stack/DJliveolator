@@ -49,6 +49,28 @@ public sealed class StudioClipViewModel : ViewModelBase
     public MusicTrack? Track { get; }
     public string Title => Track?.Title ?? Path.GetFileNameWithoutExtension(TrackPath);
 
+    /// <summary>
+    /// Set by the timeline VM to its undo-snapshot push; fired BEFORE a user edit to this clip's
+    /// placement/trim/warp (start, source-in/out, warp toggle) so those edits are undoable. Null until
+    /// the VM attaches it (e.g. isolated clip tests). Not fired for VM-driven, non-user changes
+    /// (zoom/warp-target propagation), which set their own backing fields directly.
+    /// </summary>
+    public Action? BeforeMutation { get; set; }
+
+    // While a code-behind timeline drag is in progress the per-move TimelineStartSeconds writes must NOT
+    // each push a snapshot; the drag pushes one snapshot at its start instead (see BeginDrag/EndDrag).
+    private bool _dragging;
+
+    /// <summary>Begin a timeline drag-move: record one undo snapshot, then suppress per-move pushes.</summary>
+    public void BeginDrag()
+    {
+        BeforeMutation?.Invoke();
+        _dragging = true;
+    }
+
+    /// <summary>End a timeline drag-move (re-enable per-edit undo snapshots).</summary>
+    public void EndDrag() => _dragging = false;
+
     /// <summary>The clip track's analyzed tempo (0 = unknown). Warp targets the project tempo from here.</summary>
     public double SourceBpm { get; }
 
@@ -58,6 +80,9 @@ public sealed class StudioClipViewModel : ViewModelBase
         get => _warpEnabled;
         set
         {
+            if (value == _warpEnabled)
+                return;
+            BeforeMutation?.Invoke();
             this.RaiseAndSetIfChanged(ref _warpEnabled, value);
             RaiseWarp();
         }
@@ -96,7 +121,12 @@ public sealed class StudioClipViewModel : ViewModelBase
         get => _timelineStartSeconds;
         set
         {
-            this.RaiseAndSetIfChanged(ref _timelineStartSeconds, System.Math.Max(0, value));
+            double clamped = System.Math.Max(0, value);
+            // A direct (inspector) edit is undoable; per-move drag writes are covered by one push at
+            // drag start (see BeginDrag), so they don't each snapshot.
+            if (!_dragging && clamped != _timelineStartSeconds)
+                BeforeMutation?.Invoke();
+            this.RaiseAndSetIfChanged(ref _timelineStartSeconds, clamped);
             this.RaisePropertyChanged(nameof(X));
             this.RaisePropertyChanged(nameof(TimelineEndSeconds));
         }
@@ -107,7 +137,10 @@ public sealed class StudioClipViewModel : ViewModelBase
         get => _sourceInSeconds;
         set
         {
-            this.RaiseAndSetIfChanged(ref _sourceInSeconds, System.Math.Max(0, value));
+            double clamped = System.Math.Max(0, value);
+            if (clamped != _sourceInSeconds)
+                BeforeMutation?.Invoke();
+            this.RaiseAndSetIfChanged(ref _sourceInSeconds, clamped);
             RaiseSpan();
         }
     }
@@ -117,6 +150,8 @@ public sealed class StudioClipViewModel : ViewModelBase
         get => _sourceOutSeconds;
         set
         {
+            if (value != _sourceOutSeconds)
+                BeforeMutation?.Invoke();
             this.RaiseAndSetIfChanged(ref _sourceOutSeconds, value);
             RaiseSpan();
         }

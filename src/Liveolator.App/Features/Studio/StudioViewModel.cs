@@ -53,6 +53,12 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private bool _automationEditMode;
     private StudioTransport? _transport;
 
+    // Snapshot-based undo/redo: each edit pushes the pre-mutation ToProject() snapshot; Undo/Redo
+    // restore via the existing LoadProject rebuild. Suppresses re-entrant pushes while we are the one
+    // rebuilding the timeline (LoadProject) so a restore is not mistaken for a fresh user edit.
+    private readonly StudioEditHistory _history = new();
+    private bool _restoring;
+
     private string _name = "New project";
     private double _bpm = StudioProject.DefaultBpm;
     private double _pixelsPerSecond = DefaultPixelsPerSecond;
@@ -103,11 +109,22 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             new(0, "A"), new(1, "B"), new(2, "C"), new(3, "D"),
         };
 
+        // Make automation/tempo curve edits undoable: every curve pushes the pre-edit snapshot before it
+        // mutates (the lanes apply this hook to each automation curve they create/load).
+        TempoLane.BeforeMutation = BeginEdit;
+        foreach (StudioLaneViewModel lane in Lanes)
+            lane.AutomationMutationHook = BeginEdit;
+
         var hasName = this.WhenAnyValue(x => x.Name).Select(n => !string.IsNullOrWhiteSpace(n));
         var hasSaved = this.WhenAnyValue(x => x.SelectedSaved).Select(s => !string.IsNullOrWhiteSpace(s));
         var hasClipSelection = this.WhenAnyValue(x => x.SelectedClip).Select(c => c is not null);
 
+        var canUndo = this.WhenAnyValue(x => x.CanUndo);
+        var canRedo = this.WhenAnyValue(x => x.CanRedo);
+
         NewCommand = ReactiveCommand.Create(NewProject);
+        UndoCommand = ReactiveCommand.Create(Undo, canUndo);
+        RedoCommand = ReactiveCommand.Create(Redo, canRedo);
         RemoveClipCommand = ReactiveCommand.Create(RemoveSelectedClip, hasClipSelection);
         PlayCommand = ReactiveCommand.Create(TogglePlay, this.WhenAnyValue(x => x.CanPlay));
         StopCommand = ReactiveCommand.Create(StopPlayback);
@@ -137,6 +154,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     public TempoLaneViewModel TempoLane { get; } = new();
 
     public ReactiveCommand<Unit, Unit> NewCommand { get; }
+    public ReactiveCommand<Unit, Unit> UndoCommand { get; }
+    public ReactiveCommand<Unit, Unit> RedoCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveClipCommand { get; }
     public ReactiveCommand<Unit, Unit> PlayCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -150,6 +169,12 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
     /// <summary>Offline render is available only when a decoder is wired.</summary>
     public bool CanRender => _decoder is not null;
+
+    /// <summary>True when there is an edit to undo (drives <see cref="UndoCommand"/> + Ctrl+Z).</summary>
+    public bool CanUndo => _history.CanUndo;
+
+    /// <summary>True when there is an undone edit to redo (drives <see cref="RedoCommand"/> + Ctrl+Y).</summary>
+    public bool CanRedo => _history.CanRedo;
 
     public string Name { get => _name; set => this.RaiseAndSetIfChanged(ref _name, value); }
     public double Bpm { get => _bpm; set => this.RaiseAndSetIfChanged(ref _bpm, value); }
@@ -189,6 +214,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         targetDeck = Math.Clamp(targetDeck, 0, Lanes.Count - 1);
         if (clip.DeckSlot == targetDeck)
             return;
+        BeginEdit();
         foreach (StudioLaneViewModel lane in Lanes)
             if (lane.Clips.Remove(clip))
                 break;
@@ -283,6 +309,62 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         await RefreshSavedAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Record the current arrangement onto the undo stack BEFORE a user mutation (add/move/trim/remove
+    /// a clip, change a clip's deck, toggle warp, edit automation/tempo). Call this immediately before
+    /// the edit. Suppressed while we are restoring a snapshot so an Undo/Redo rebuild is not recorded as
+    /// a new edit. Identical consecutive states are de-duplicated by the history.
+    /// </summary>
+    public void BeginEdit()
+    {
+        if (_restoring)
+            return;
+        _history.Push(BuildProject());
+        RaiseHistoryChanged();
+    }
+
+    /// <summary>Restore the previous arrangement snapshot (Ctrl+Z / Undo).</summary>
+    public void Undo()
+    {
+        StudioProject? previous = _history.Undo(BuildProject());
+        if (previous is null)
+            return;
+        RestoreSnapshot(previous);
+        Status = "Undo.";
+    }
+
+    /// <summary>Reapply the most recently undone arrangement snapshot (Ctrl+Y / Redo).</summary>
+    public void Redo()
+    {
+        StudioProject? next = _history.Redo(BuildProject());
+        if (next is null)
+            return;
+        RestoreSnapshot(next);
+        Status = "Redo.";
+    }
+
+    // Rebuild the timeline from a history snapshot via the same LoadProject seam Open uses, guarding the
+    // re-entrant push so the rebuild's mutations are not themselves recorded.
+    private void RestoreSnapshot(StudioProject snapshot)
+    {
+        _restoring = true;
+        try
+        {
+            LoadProject(snapshot);
+        }
+        finally
+        {
+            _restoring = false;
+        }
+        RaiseHistoryChanged();
+    }
+
+    private void RaiseHistoryChanged()
+    {
+        this.RaisePropertyChanged(nameof(CanUndo));
+        this.RaisePropertyChanged(nameof(CanRedo));
+    }
+
     private void NewProject()
     {
         StopPlayback();
@@ -295,6 +377,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         SelectedClip = null;
         Name = "New project";
         Bpm = StudioProject.DefaultBpm;
+        _history.Clear();
+        RaiseHistoryChanged();
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
         Status = "New project — drag tracks from the library onto the deck lanes, then Play or Render.";
@@ -309,6 +393,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         if (string.IsNullOrWhiteSpace(trackPath) || deckSlot < 0 || deckSlot >= Lanes.Count)
             return;
 
+        BeginEdit();
         MusicTrack? track = _byPath.GetValueOrDefault(trackPath);
         double start = TimelineMath.Snap(Math.Max(0, startSeconds), TimelineMath.BeatSeconds(Bpm));
         var clip = new StudioClip(
@@ -316,6 +401,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             SourceBpm: track?.Bpm?.Bpm ?? 0.0);
 
         var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = Bpm };
+        vm.BeforeMutation = BeginEdit; // make this clip's later move/trim/warp edits undoable
         Lanes[deckSlot].Clips.Add(vm);
         SelectedClip = vm;
         LoadWaveform(vm);
@@ -328,6 +414,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     {
         if (SelectedClip is not { } clip)
             return;
+        BeginEdit();
         foreach (StudioLaneViewModel lane in Lanes)
             if (lane.Clips.Remove(clip))
                 break;
@@ -395,6 +482,8 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
                     return;
                 }
                 LoadProject(project);
+                _history.Clear(); // opening a project starts a fresh edit history
+                RaiseHistoryChanged();
                 Status = $"Opened \"{project.Name}\" ({project.Clips.Count} clips).";
             });
         }
@@ -464,6 +553,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
                 continue;
             MusicTrack? track = _byPath.GetValueOrDefault(clip.TrackPath);
             var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = project.Bpm };
+            vm.BeforeMutation = BeginEdit; // restored clips remain undoable on later edits
             Lanes[clip.DeckSlot].Clips.Add(vm);
             LoadWaveform(vm);
         }

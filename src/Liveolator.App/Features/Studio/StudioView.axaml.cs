@@ -20,6 +20,7 @@ public partial class StudioView : UserControl
 
     // Horizontal clip drag state (move a clip in time).
     private StudioClipViewModel? _dragClip;
+    private bool _dragMoved;
     private double _dragPressX;
     private double _dragOriginStartSeconds;
 
@@ -92,6 +93,7 @@ public partial class StudioView : UserControl
 
         vm.SelectedClip = clip;
         _dragClip = clip;
+        _dragMoved = false;
         _dragPressX = e.GetPosition(this).X;
         _dragOriginStartSeconds = clip.TimelineStartSeconds;
         e.Pointer.Capture(control);
@@ -104,13 +106,23 @@ public partial class StudioView : UserControl
 
         double dx = e.GetPosition(this).X - _dragPressX;
         double deltaSeconds = vm.PixelsPerSecond > 0 ? dx / vm.PixelsPerSecond : 0;
-        double target = _dragOriginStartSeconds + deltaSeconds;
-        _dragClip.TimelineStartSeconds = TimelineMath.Snap(target, TimelineMath.BeatSeconds(vm.Bpm));
+        double target = TimelineMath.Snap(_dragOriginStartSeconds + deltaSeconds, TimelineMath.BeatSeconds(vm.Bpm));
+
+        // Record one undo snapshot on the first real position change of the gesture (not on a plain
+        // click-to-select), then suppress per-move pushes until release.
+        if (!_dragMoved && target != _dragClip.TimelineStartSeconds)
+        {
+            _dragClip.BeginDrag();
+            _dragMoved = true;
+        }
+        _dragClip.TimelineStartSeconds = target;
     }
 
     private void OnClipPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        _dragClip?.EndDrag();
         _dragClip = null;
+        _dragMoved = false;
         e.Pointer.Capture(null);
     }
 

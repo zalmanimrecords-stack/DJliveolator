@@ -6,6 +6,13 @@
              x:Class="Liveolator.App.Features.Studio.StudioView"
              x:DataType="studio:StudioViewModel">
 
+  <!-- Timeline undo/redo: Ctrl+Z undoes, Ctrl+Y / Ctrl+Shift+Z redo (standard DAW shortcuts). -->
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
+    <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
+  </UserControl.KeyBindings>
+
   <DockPanel LastChildFill="True">
 
     <!-- project + transport bar (single compact row) -->
@@ -15,6 +22,11 @@
       <Button Classes="spartan" Content="Open" Command="{Binding OpenCommand}" />
       <Button Classes="spartan" Content="Delete" Command="{Binding DeleteCommand}" />
       <Button Classes="spartan" Content="New" Command="{Binding NewCommand}" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <Button Classes="spartan" Content="Undo" Command="{Binding UndoCommand}"
+              ToolTip.Tip="Undo the last timeline edit (Ctrl+Z)" />
+      <Button Classes="spartan" Content="Redo" Command="{Binding RedoCommand}"
+              ToolTip.Tip="Redo the last undone edit (Ctrl+Y)" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}" />
       <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />

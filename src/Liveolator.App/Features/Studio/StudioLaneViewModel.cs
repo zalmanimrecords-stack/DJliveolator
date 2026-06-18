@@ -28,6 +28,13 @@ public sealed class StudioLaneViewModel : ViewModelBase
     /// <summary>"A"/"B" for the live decks, "C"/"D" for the hidden STUDIO decks.</summary>
     public string Label { get; }
 
+    /// <summary>
+    /// Set by the timeline VM to its undo-snapshot push; applied to every automation curve this lane
+    /// creates or loads so editing a curve (add/remove/draw a point) is undoable. Set before any curve
+    /// is created so it covers them all.
+    /// </summary>
+    public Action? AutomationMutationHook { get; set; }
+
     public ObservableCollection<StudioClipViewModel> Clips { get; } = new();
 
     /// <summary>The controls whose automation this lane can show (bound to the lane's target picker).</summary>
@@ -54,7 +61,10 @@ public sealed class StudioLaneViewModel : ViewModelBase
     /// <summary>Load an automation curve onto this lane (from a saved project).</summary>
     public void SetAutomation(AutomationLane lane)
     {
-        _automation[lane.Target] = new AutomationLaneViewModel(lane.Target, Slot, lane.Keyframes);
+        _automation[lane.Target] = new AutomationLaneViewModel(lane.Target, Slot, lane.Keyframes)
+        {
+            BeforeMutation = AutomationMutationHook,
+        };
         if (lane.Target == _selectedAutomationTarget)
             this.RaisePropertyChanged(nameof(CurrentAutomation));
     }
@@ -70,7 +80,7 @@ public sealed class StudioLaneViewModel : ViewModelBase
     {
         if (_automation.TryGetValue(target, out AutomationLaneViewModel? lane))
             return lane;
-        lane = new AutomationLaneViewModel(target, Slot);
+        lane = new AutomationLaneViewModel(target, Slot) { BeforeMutation = AutomationMutationHook };
         _automation[target] = lane;
         return lane;
     }
