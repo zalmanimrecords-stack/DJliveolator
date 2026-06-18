@@ -9,14 +9,18 @@
        faders, tighter wells) so the whole DJ screen fits one window without scrolling. The LIVE
        MixerView keeps its taller, roomier layout. -->
   <Border Classes="panel">
-    <StackPanel Margin="14,12" Spacing="10">
+    <!-- Cap the control cluster so the wells/faders gather at a sensible width instead of floating
+         across the fixed 300px DJ-mixer column. Column width itself is owned by the parent layout. -->
+    <StackPanel Margin="14,12" Spacing="10" MaxWidth="200" HorizontalAlignment="Center">
 
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
           <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
-            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="28"
+            <!-- Crossfader is the primary blend control, so it carries more height (36) than the
+                 secondary BPM-nudge fader (26) to reflect its priority. -->
+            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="36"
                             Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
             <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
           </Grid>

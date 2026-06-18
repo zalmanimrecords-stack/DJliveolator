@@ -9,7 +9,10 @@
        hero, hot cues flank it) so the DJ screen reads like a hardware deck and fits one screen. Pitch
        stays hardware/MIDI-only (DeckPitch) — no on-screen pitch fader, matching the LIVE deck. -->
   <Border Classes="panel">
-    <StackPanel Margin="14,12" Spacing="10">
+    <!-- Cap + center the deck content so the controls cluster as one coherent column (the 176px jog plus
+         its 84px hot-cue/loop flanks ~= 360) instead of the platter floating alone in a wide deck column.
+         A plain MaxWidth keeps the square jog undistorted (no aspect-ratio binding). -->
+    <StackPanel Margin="14,12" Spacing="10" MaxWidth="360" HorizontalAlignment="Center">
 
       <!-- header: badge · title/meta · elapsed/remaining -->
       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -142,8 +145,10 @@
         </StackPanel>
       </Border>
 
-      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
-      <UniformGrid Columns="4">
+      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob).
+           Cap the row width + center so the 48px knobs cluster where the hands expect them instead
+           of floating across the wide deck column. -->
+      <UniformGrid Columns="4" MaxWidth="240" HorizontalAlignment="Center">
         <StackPanel Spacing="4" HorizontalAlignment="Center">
           <controls:Knob Width="48" Height="48" HorizontalAlignment="Center"
                          Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
