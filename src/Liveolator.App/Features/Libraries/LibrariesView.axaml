@@ -8,17 +8,25 @@
   <Grid RowDefinitions="Auto,Auto,*">
 
     <!-- sub-bar -->
-    <Grid Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" Margin="0,0,0,12">
-      <Button Grid.Column="0" Classes="spartan" Content="Add folder"
-              Click="OnAddFolder" Margin="0,0,8,0" />
-      <Button Grid.Column="1" Classes="spartan" Content="Folders"
-              Click="OnShowFolders" Margin="0,0,8,0" />
-      <Button Grid.Column="2" Classes="spartan" Content="Playlists"
-              Click="OnShowPlaylists" Margin="0,0,8,0" />
-      <Button Grid.Column="3" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
-      <TextBox Grid.Column="4" Classes="spartan" Margin="12,0"
+    <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
+      <!-- LIBRARY menu: folder + playlist management folded into one dropdown so the everyday
+           Scan + search stay prominent (the same menu-bar pattern as the STUDIO tab). The window-
+           opening actions keep their code-behind Click handlers (they need the TopLevel). -->
+      <Button Grid.Column="0" Classes="spartan" Content="LIBRARY  ▾" Margin="0,0,8,0"
+              ToolTip.Tip="Manage music folders and playlists">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Add folder…" Click="OnAddFolder" />
+            <MenuItem Header="Manage folders…" Click="OnShowFolders" />
+            <Separator />
+            <MenuItem Header="Playlists / sets…" Click="OnShowPlaylists" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+      <Button Grid.Column="1" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
+      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
                Watermark="Search title or key…" Text="{Binding SearchText}" />
-      <TextBlock Grid.Column="5" Classes="mono faint" VerticalAlignment="Center"
+      <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
                  Text="{Binding ScanStatus}" />
     </Grid>
 
