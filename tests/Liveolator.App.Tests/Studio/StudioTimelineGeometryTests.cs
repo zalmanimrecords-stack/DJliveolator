@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,10 +14,12 @@ using Xunit;
 namespace Liveolator.App.Tests.Studio;
 
 /// <summary>
-/// Guards the STUDIO timeline geometry invariants that keep the playhead and dropped clips on true
-/// time-0 and the scroll extent tracking the material: (a) the gutter the playhead math uses is the
-/// same number the lane-header column is sized to (one source of truth), and (b) the scrollable content
-/// width is the arrangement duration (+ trailing margin) scaled by the zoom.
+/// Guards the STUDIO timeline geometry invariants. The lane headers (deck label + automation picker)
+/// live in a fixed left column OUTSIDE the horizontal scroll, so the timeline content has its own
+/// origin at time-0: the playhead and clips share that content coordinate space (X = seconds * zoom,
+/// no gutter offset), and the scrollable content width is the arrangement duration (+ trailing margin)
+/// scaled by the zoom. (a) the bindable gutter width is the single source of truth for the header
+/// column, and (b) content width tracks duration * zoom.
 /// </summary>
 public sealed class StudioTimelineGeometryTests
 {
@@ -35,31 +38,40 @@ public sealed class StudioTimelineGeometryTests
         return new StudioViewModel(library, new FakeStudioProjectStore());
     }
 
-    // --- (a) one gutter source of truth ---
+    // --- (a) the timeline content shares a time-0 origin (headers are a separate fixed column) ---
 
     [Fact]
-    public void LaneGutter_BindableWidth_EqualsTheConstantUsedByPlayheadMath()
+    public void PlayheadX_AtTimeZero_SitsAtTheContentOrigin()
     {
-        // The header ColumnDefinition binds to LaneGutterWidth; the playhead/drop math uses LaneGutterPx.
-        // They MUST be the same number or the playhead and clips drift off time-0.
-        Assert.Equal(StudioViewModel.LaneGutterPx, StudioViewModel.LaneGutterWidth, Tol);
-    }
-
-    [Fact]
-    public void PlayheadX_AtTimeZero_SitsExactlyAtTheGutter()
-    {
+        // The playhead lives inside the content scroller (the headers are a separate fixed column), so
+        // time-0 is the content's left edge, x = 0.
         StudioViewModel vm = BuildViewModel();
         vm.SeekTo(0);
-        Assert.Equal(StudioViewModel.LaneGutterWidth, vm.PlayheadX, Tol);
+        Assert.Equal(0.0, vm.PlayheadX, Tol);
     }
 
     [Fact]
-    public void PlayheadX_IsGutterPlusSecondsTimesZoom()
+    public void PlayheadX_IsSecondsTimesZoom()
     {
         StudioViewModel vm = BuildViewModel();
         vm.PixelsPerSecond = 10;
         vm.SeekTo(4);
-        Assert.Equal(StudioViewModel.LaneGutterPx + 4 * 10, vm.PlayheadX, Tol);
+        Assert.Equal(4 * 10, vm.PlayheadX, Tol);
+    }
+
+    [Fact]
+    public void PlayheadX_MatchesAClipXAtTheSameTime()
+    {
+        // Playhead and clips share the content coordinate space, so the playhead at time T lands exactly
+        // on the left edge of a clip that starts at T — they can never drift apart.
+        StudioViewModel vm = BuildViewModel();
+        vm.PixelsPerSecond = 12;
+        vm.AddClipAt("/m/a.wav", deckSlot: 0, startSeconds: 5);
+        StudioClipViewModel clip = vm.Lanes.SelectMany(l => l.Clips).Single();
+
+        vm.SeekTo(clip.TimelineStartSeconds);
+
+        Assert.Equal(clip.X, vm.PlayheadX, Tol);
     }
 
     // --- (b) content width tracks duration * zoom ---

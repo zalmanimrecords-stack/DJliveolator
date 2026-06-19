@@ -150,4 +150,33 @@ public sealed class MainWindowViewModelTests
         vm.SelectPreviousTab();
         Assert.Same(vm.Tabs[^2], vm.CurrentTab);
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void SelectTabByNumber_SelectsTheTabAtThatPosition(int number)
+    {
+        var vm = BuildShell();
+
+        vm.SelectTabByNumber(number);
+
+        Assert.Same(vm.Tabs[number - 1], vm.CurrentTab);
+    }
+
+    [Theory]
+    [InlineData(0)]                 // below the first tab
+    [InlineData(-3)]                // negative
+    [InlineData(int.MaxValue)]      // far past the last tab
+    public void SelectTabByNumber_OutOfRange_LeavesSelectionUnchanged(int number)
+    {
+        var vm = BuildShell();
+        var before = vm.CurrentTab;
+
+        vm.SelectTabByNumber(number);
+
+        Assert.Same(before, vm.CurrentTab);
+    }
 }

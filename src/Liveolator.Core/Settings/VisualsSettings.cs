@@ -22,8 +22,8 @@ public sealed record VisualsSettings(double WaveformZoomSeconds = 7.0, double Nu
     /// <summary>Default zoom window (seconds): a few bars around the playhead so kicks read large.</summary>
     public const double DefaultZoomSeconds = 7.0;
 
-    /// <summary>Smallest track-nudge step (seconds) — the finest cueing move.</summary>
-    public const double MinNudgeSeconds = 0.02;
+    /// <summary>Smallest track-nudge step (seconds) — the finest cueing move (1 ms, sub-sample-frame fine).</summary>
+    public const double MinNudgeSeconds = 0.001;
 
     /// <summary>Largest track-nudge step (seconds).</summary>
     public const double MaxNudgeSeconds = 2.0;

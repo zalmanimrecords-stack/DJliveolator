@@ -74,12 +74,15 @@ public partial class StudioView : UserControl
         if (System.Math.Abs(newPps - oldPps) < 1e-9)
             return;
 
-        double timeAtCursor = System.Math.Max(0, e.GetPosition(LanesItems).X - StudioViewModel.LaneGutterPx) / oldPps;
+        // LanesItems and LanesScroll are the timeline CONTENT (the lane headers are a separate fixed
+        // column), so the cursor's X is already measured from the content's time-0 origin — no gutter
+        // offset.
+        double timeAtCursor = System.Math.Max(0, e.GetPosition(LanesItems).X) / oldPps;
         double viewportCursorX = e.GetPosition(LanesScroll).X;
 
         vm.PixelsPerSecond = newPps;
 
-        double newContentX = StudioViewModel.LaneGutterPx + (timeAtCursor * newPps);
+        double newContentX = timeAtCursor * newPps;
         LanesScroll.Offset = new Vector(System.Math.Max(0, newContentX - viewportCursorX), LanesScroll.Offset.Y);
     }
 
@@ -169,7 +172,8 @@ public partial class StudioView : UserControl
 
         Point p = e.GetPosition(LanesItems);
         int deck = System.Math.Clamp((int)(p.Y / LaneRowHeightPx), 0, 3);
-        double timeSeconds = TimelineMath.SecondsFromX(p.X - StudioViewModel.LaneGutterPx, vm.PixelsPerSecond);
+        // p.X is relative to the clip content (LanesItems), whose origin is time-0 — no gutter offset.
+        double timeSeconds = TimelineMath.SecondsFromX(p.X, vm.PixelsPerSecond);
         vm.AddClipAt(path, deck, timeSeconds);
         e.Handled = true;
     }

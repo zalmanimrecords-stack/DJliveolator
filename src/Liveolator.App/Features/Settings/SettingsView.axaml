@@ -196,9 +196,9 @@
                 <TextBlock Classes="faint" Margin="0,8,0,0"
                            Text="Track-nudge step — how far the deck ◄ / ► buttons move the track per press" />
                 <Slider Minimum="{Binding NudgeMin}" Maximum="{Binding NudgeMax}"
-                        Value="{Binding NudgeSeconds}" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                        Value="{Binding NudgeSeconds}" TickFrequency="0.001" IsSnapToTickEnabled="True"
                         HorizontalAlignment="Stretch" />
-                <TextBlock Classes="faint" Text="{Binding NudgeSeconds, StringFormat='{}{0:F2} s per press'}" />
+                <TextBlock Classes="faint" Text="{Binding NudgeSeconds, StringFormat='{}{0:F3} s per press'}" />
               </StackPanel>
             </Border>
           </StackPanel>

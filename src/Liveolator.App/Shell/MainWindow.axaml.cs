@@ -32,6 +32,19 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Bare number keys 1..N jump straight to the matching tab (1 = first tab). Like Tab cycling, this
+        // is suppressed while a text/list control owns focus so digits typed into a field aren't hijacked,
+        // and only for an unmodified press so Ctrl/Alt/Shift+digit shortcuts elsewhere are left alone.
+        if (e.KeyModifiers == KeyModifiers.None
+            && DataContext is MainWindowViewModel numberVm
+            && DigitFromKey(e.Key) is int tabNumber
+            && ShouldCycleScreensOnTab(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement()))
+        {
+            numberVm.SelectTabByNumber(tabNumber);
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key != Key.Tab || DataContext is not MainWindowViewModel vm)
         {
             return;
@@ -62,6 +75,15 @@ public partial class MainWindow : Window
     // Pure + static so the decision is unit-testable without spinning up a window and focus tree.
     internal static bool ShouldCycleScreensOnTab(IInputElement? focused)
         => focused is not (TextBox or ComboBox or AutoCompleteBox or NumericUpDown);
+
+    // Maps a top-row or numpad digit key (1..9) to its 1-based tab number; null for any other key.
+    // Pure + static so the mapping is unit-testable without a window.
+    internal static int? DigitFromKey(Key key) => key switch
+    {
+        >= Key.D1 and <= Key.D9 => key - Key.D1 + 1,
+        >= Key.NumPad1 and <= Key.NumPad9 => key - Key.NumPad1 + 1,
+        _ => null,
+    };
 
     private void OnFullScreenClick(object? sender, RoutedEventArgs e)
         => ToggleFullScreen();

@@ -37,8 +37,12 @@ public static class BuiltInUiThemes
                 ["AmberColor"] = "#2F80F6",
                 ["VioletColor"] = "#2F80F6",
                 ["MidiActiveColor"] = "#29C467",
-                ["WaveformColor"] = "#F0C23C",
-                ["KickColor"] = "#27C56A",
+                // Waveform = the VirtualDJ 3-band scheme (mirrors App.axaml; owner-requested, 2026-06-19):
+                // red low/kick, green mid, blue/cyan high. WaveformColor is only the broadband fallback body.
+                ["WaveformColor"] = "#2F80F6",
+                ["KickColor"] = "#E23B2E",
+                ["WaveMidColor"] = "#39C24A",
+                ["WaveHighColor"] = "#A036A6E8",
                 // Default control colours (match the App.axaml control-brush defaults).
                 ["KnobArcColor"] = "#2F80F6",
                 ["KnobTrackColor"] = "#26303F",
@@ -72,8 +76,12 @@ public static class BuiltInUiThemes
                 ["AmberColor"] = "#D78A16",
                 ["VioletColor"] = "#9E6A9A",
                 ["MidiActiveColor"] = "#78B34D",
+                // Waveform = the VirtualDJ 3-band scheme, consistent across themes (owner-requested,
+                // 2026-06-19). WaveformColor (broadband fallback body) keeps the brass tint.
                 ["WaveformColor"] = "#E89A18",
-                ["KickColor"] = "#7DBA50",
+                ["KickColor"] = "#E23B2E",
+                ["WaveMidColor"] = "#39C24A",
+                ["WaveHighColor"] = "#A036A6E8",
             }),
     ];
 

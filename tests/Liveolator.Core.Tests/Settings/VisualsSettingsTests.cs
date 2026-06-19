@@ -36,9 +36,10 @@ public class VisualsSettingsTests
         => Assert.Equal(VisualsSettings.DefaultNudgeSeconds, VisualsSettings.Default.NudgeSeconds, precision: 6);
 
     [Theory]
-    [InlineData(0.01, VisualsSettings.MinNudgeSeconds)] // below the floor → clamped up
-    [InlineData(9.0, VisualsSettings.MaxNudgeSeconds)]  // above the ceiling → clamped down
-    [InlineData(0.1, 0.1)]                              // in range → unchanged
+    [InlineData(0.0001, VisualsSettings.MinNudgeSeconds)] // below the floor → clamped up
+    [InlineData(9.0, VisualsSettings.MaxNudgeSeconds)]    // above the ceiling → clamped down
+    [InlineData(0.005, 0.005)]                            // fine sub-10ms step in range → unchanged
+    [InlineData(0.1, 0.1)]                                // in range → unchanged
     public void Normalized_ClampsNudgeIntoRange(double input, double expected)
         => Assert.Equal(
             expected,

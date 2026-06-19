@@ -15,7 +15,10 @@ public sealed class BuiltInUiThemesTests
         Assert.True(themes.TryGet(BuiltInUiThemes.BrassworkId, out UiThemeDefinition theme));
         Assert.Equal("#D78A16", theme.Tokens["AccentColor"]);
         Assert.Equal("#E89A18", theme.Tokens["WaveformColor"]);
-        Assert.Equal("#7DBA50", theme.Tokens["KickColor"]);
+        // Waveform 3-band colours are the VirtualDJ scheme, consistent across themes (owner-requested).
+        Assert.Equal("#E23B2E", theme.Tokens["KickColor"]);
+        Assert.Equal("#39C24A", theme.Tokens["WaveMidColor"]);
+        Assert.Equal("#A036A6E8", theme.Tokens["WaveHighColor"]);
     }
 
     [Fact]

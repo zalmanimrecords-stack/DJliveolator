@@ -87,6 +87,17 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>Move to the previous tab, wrapping from the first to the last (Shift+Tab).</summary>
     public void SelectPreviousTab() => StepTab(-1);
 
+    /// <summary>Jump straight to the tab at the given 1-based position (number keys 1..N). Out-of-range
+    /// numbers are ignored so a stray key press can never move the selection somewhere unexpected.</summary>
+    public void SelectTabByNumber(int number)
+    {
+        int index = number - 1;
+        if (index >= 0 && index < Tabs.Count)
+        {
+            CurrentTab = Tabs[index];
+        }
+    }
+
     public void CancelMidiLearn() => MidiLearn.Cancel();
 
     private void StepTab(int direction)

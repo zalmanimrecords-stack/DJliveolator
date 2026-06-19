@@ -1,11 +1,29 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Liveolator.App.Shell;
 
 namespace Liveolator.App.Tests.Shell;
 
 public sealed class MainWindowTests
 {
+    [Theory]
+    [InlineData(Key.D1, 1)]
+    [InlineData(Key.D5, 5)]
+    [InlineData(Key.D9, 9)]
+    [InlineData(Key.NumPad1, 1)]
+    [InlineData(Key.NumPad5, 5)]
+    public void DigitFromKey_MapsTopRowAndNumpadDigitsToTabNumbers(Key key, int expected)
+        => Assert.Equal(expected, MainWindow.DigitFromKey(key));
+
+    [Theory]
+    [InlineData(Key.D0)]      // 0 has no tab
+    [InlineData(Key.NumPad0)]
+    [InlineData(Key.A)]
+    [InlineData(Key.Tab)]
+    public void DigitFromKey_ReturnsNull_ForNonTabDigitKeys(Key key)
+        => Assert.Null(MainWindow.DigitFromKey(key));
+
     [AvaloniaTheory]
     [InlineData(typeof(TextBox))]
     [InlineData(typeof(ComboBox))]

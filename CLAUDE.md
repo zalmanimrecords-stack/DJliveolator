@@ -85,6 +85,16 @@ docs/                     # architecture & design
 
 `docs/00-LIVEOLATOR-CONTEXT.md` is authoritative until these land.
 
+## Working rules (owner-set)
+
+- **New feature → advisors + plan before code (owner rule, 2026-06-19).** When the owner
+  requests a *new feature* (not a small or cosmetic fix), FIRST recruit the relevant advisors
+  — the `system-gap-review` ten-expert panel and/or `dj-software-advisor`, plus the matching
+  seam skills (`add-performance-action`, `add-visual-effect`, `add-controller-mapping`,
+  `add-beat-engine-feature`, `add-playlist-rule`, `add-mcp-tool`) — and PROPOSE a work plan
+  for approval BEFORE writing any code. Skip this gate for small or cosmetic changes (bug
+  fixes, copy/label tweaks, styling, renames, doc edits) — just do those directly.
+
 ## Working notes
 
 - **Build status — read before building:** `docs/18-implementation-status.md` is the living

@@ -78,16 +78,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     private readonly DispatcherTimer _playheadTimer;
     private string _status = string.Empty;
 
-    // The lane-header gutter: the width of the label/target column the clip canvases sit behind. This is
-    // the single source of truth shared by (a) the header ColumnDefinition width in StudioView.axaml
-    // (bound via LaneGutterWidth), (b) the playhead overlay X (PlayheadX), and (c) the code-behind
-    // wheel-zoom and drop-time math. The clip content lives in column 1 which begins exactly here, so the
-    // playhead and dropped clips align to true time-0 only while all three use this one number.
-    public const double LaneGutterPx = 84;
-
-    /// <summary>The lane-header gutter as a XAML-bindable width, so the header ColumnDefinition and the
-    /// clip/playhead math share one source of truth (see <see cref="LaneGutterPx"/>).</summary>
-    public static double LaneGutterWidth => LaneGutterPx;
+    // The lane-header gutter width is now a pure UI-layout concern (the fixed header column in
+    // StudioView.axaml) — the playhead and clips live in the content scroller and use a time-0 origin,
+    // so no engine/VM math depends on it. It therefore lives in the view, not here.
 
     public StudioViewModel(
         MusicLibrary library,
@@ -281,8 +274,10 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         set => SeekTo(value);
     }
 
-    /// <summary>The playhead's x-pixel on the timeline overlay (offset past the lane label gutter).</summary>
-    public double PlayheadX => LaneGutterPx + (PlayheadSeconds * PixelsPerSecond);
+    /// <summary>The playhead's x-pixel inside the timeline content scroller. The lane headers are a
+    /// separate fixed column, so the content's origin is time-0 (x = 0) and the playhead shares the same
+    /// coordinate space as the clips (whose X is also seconds * zoom).</summary>
+    public double PlayheadX => PlayheadSeconds * PixelsPerSecond;
 
     /// <summary>m:ss readout of the playhead for the transport bar.</summary>
     public string PositionText => TimeSpan.FromSeconds(PlayheadSeconds).ToString(@"m\:ss");
