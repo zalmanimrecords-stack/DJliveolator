@@ -1,0 +1,13 @@
+{
+  "name": "LIQUID CHROME ORBS",
+  "author": "Liveolator",
+  "description": "Organic metallic blobs with soft reflections and audio-reactive breathing.",
+  "parameters": [
+    { "id": "flow", "uniform": "uFlow", "label": "FLOW", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "metal", "uniform": "uMetal", "label": "METAL", "min": 0.0, "max": 1.0, "default": 0.8 },
+    { "id": "scale", "uniform": "uScale", "label": "SCALE", "min": 0.0, "max": 1.0, "default": 0.55 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 0.7 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uBass;\nuniform float uLowMid;\nuniform float uFlow;\nuniform float uMetal;\nuniform float uScale;\nuniform float uColor;\nuniform float uGlow;\nfloat blob(vec2 p, vec2 c, float r){ return r*r/dot(p-c,p-c); }\nvec3 palette(float t){ return 0.5+0.5*cos(6.28318*(t+vec3(0.0,0.28,0.62)+floor(uColor+0.5)*0.11)); }\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.18+uFlow*0.65);\n  float field=0.0;\n  for(int i=0;i<6;i++){\n    float fi=float(i);\n    vec2 c=vec2(sin(t*(0.7+fi*0.08)+fi*2.1), cos(t*(0.5+fi*0.06)+fi*1.7))*0.45;\n    float r=0.09+uScale*0.08+0.03*sin(t+fi)+uBass*0.025;\n    field+=blob(p,c,r);\n  }\n  float mask=smoothstep(0.72,1.08,field);\n  float edge=smoothstep(0.10,0.0,abs(field-0.95));\n  vec3 n=normalize(vec3(dFdx(field), dFdy(field), 0.55));\n  float shine=pow(max(dot(n,normalize(vec3(-0.4,0.6,0.8))),0.0), 18.0);\n  vec3 base=palette(field*0.08+t*0.04+uLowMid*0.15);\n  vec3 chrome=mix(base*0.35, vec3(0.85,0.92,1.0), uMetal*shine);\n  vec3 col=vec3(0.004,0.004,0.012);\n  col=mix(col, chrome, mask);\n  col+=edge*base*(0.25+uGlow*0.45+uLevel*0.4+uBeatFlash*0.35);\n  col=col/(1.0+col*0.45);\n  fragColor=vec4(col,1.0);\n}\n"
+}
