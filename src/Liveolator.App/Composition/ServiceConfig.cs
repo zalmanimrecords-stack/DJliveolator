@@ -326,8 +326,12 @@ public static class ServiceConfig
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
         TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore);
-        MasterMixPlaybackEngine? masterMix =
-            deckEngine is null ? null : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock);
+        // The master-mix clock phase-locks its detected grid onto the audible kick (OnsetPhaseLock), so
+        // when a deck is NOT the sync master — an un-analyzed track, or live input with no precomputed
+        // grid — the shared clock still tracks the beat without drifting (doc 03 drift prevention).
+        MasterMixPlaybackEngine? masterMix = deckEngine is null
+            ? null
+            : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock, phaseLock: new OnsetPhaseLock());
         bool realtimeUp = deckEngine is not null;
 
         // --- Visual engine (doc 08): the GL compositor binds to the live clock. Base source = the
@@ -566,7 +570,8 @@ public static class ServiceConfig
             sp.GetService<IBeatClock>(),
             sp.GetRequiredService<IMusicCatalogStore>(),
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
-            sp.GetRequiredService<TrackContextActions>()));
+            sp.GetRequiredService<TrackContextActions>(),
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(

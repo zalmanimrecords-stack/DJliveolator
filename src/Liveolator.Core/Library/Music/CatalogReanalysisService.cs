@@ -26,18 +26,26 @@ public sealed class CatalogReanalysisService
     private readonly IMusicCatalogStore? _store;
     private readonly int _persistEvery;
     private readonly Action<string>? _onError;
+    private readonly bool _force;
 
     /// <param name="library">The catalog to re-analyze in place.</param>
     /// <param name="store">Persists the updated catalog; null skips persistence (in-memory only).</param>
     /// <param name="persistEvery">Save the catalog every N processed tracks, bounding lost work on a crash.</param>
     /// <param name="onError">Receives a note for a single track/persist failure; the pass continues.</param>
+    /// <param name="force">
+    /// When true, re-maps the whole catalog ("Rescan all"): re-decodes every track except the
+    /// manually-corrected ones (which stay locked). When false (default), only the stale/failed tracks
+    /// are analyzed.
+    /// </param>
     public CatalogReanalysisService(
-        MusicLibrary library, IMusicCatalogStore? store = null, int persistEvery = 25, Action<string>? onError = null)
+        MusicLibrary library, IMusicCatalogStore? store = null, int persistEvery = 25,
+        Action<string>? onError = null, bool force = false)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store;
         _persistEvery = persistEvery > 0 ? persistEvery : 1;
         _onError = onError;
+        _force = force;
     }
 
     /// <summary>
@@ -49,7 +57,7 @@ public sealed class CatalogReanalysisService
     public async Task<ReanalysisOutcome> RunAsync(
         IProgress<ReanalysisProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<string> pending = _library.PathsNeedingAnalysis();
+        IReadOnlyList<string> pending = _force ? _library.PathsForFullRemap() : _library.PathsNeedingAnalysis();
         int total = pending.Count;
         if (total == 0)
         {
@@ -66,7 +74,11 @@ public sealed class CatalogReanalysisService
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    if (await _library.ReanalyzeAsync(path, cancellationToken).ConfigureAwait(false))
+                    // Force re-maps an already-analyzed track (re-decode); the normal pass skips it.
+                    bool nowAnalyzed = _force
+                        ? await _library.ForceReanalyzeAsync(path, cancellationToken).ConfigureAwait(false)
+                        : await _library.ReanalyzeAsync(path, cancellationToken).ConfigureAwait(false);
+                    if (nowAnalyzed)
                         analyzed++;
                     dirtySincePersist = true;
                 }

@@ -4,6 +4,7 @@ using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
@@ -30,6 +31,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly IMusicCatalogStore? _store;
     private readonly Shared.TrackContextActions? _contextActions;
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
+    private readonly IAutoCueService? _autoCueService;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private string? _selectedArtist;
@@ -45,6 +47,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private TrackRowViewModel? _selectedTrack;
     private string _scanStatus = "Add folders, then Scan.";
     private bool _isScanning;
+    private bool _isAutoCueing;
     private double _scanProgressValue;
     private string _liveBpm = "—";
     private string _loadStatus = string.Empty;
@@ -67,13 +70,15 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IMusicCatalogStore? store = null,
         Playlists.PlaylistBuilderViewModel? playlistBuilder = null,
         Shared.TrackContextActions? contextActions = null,
-        Core.Playlist.DeckTrackLoader? deckLoader = null)
+        Core.Playlist.DeckTrackLoader? deckLoader = null,
+        IAutoCueService? autoCueService = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _store = store;
         _contextActions = contextActions;
+        _autoCueService = autoCueService;
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -88,6 +93,21 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         ScanCommand = ReactiveCommand.CreateFromTask(
             RunScanAsync,
             this.WhenAnyValue(x => x.IsScanning, scanning => !scanning));
+
+        // Auto-cue the whole scanned catalog: place automatic hot cues on every track in the folders.
+        // Disabled while a scan or another auto-cue pass is running, and only available when a decoder +
+        // cue store were wired (CanAutoCue).
+        AutoCueLibraryCommand = ReactiveCommand.CreateFromTask(
+            RunAutoCueLibraryAsync,
+            this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
+                (scanning, cueing) => _autoCueService is not null && !scanning && !cueing));
+
+        // Force re-map of the whole catalog ("Rescan"). Shares the IsScanning busy state so it can't
+        // overlap a scan or an auto-cue pass (and all three buttons disable while any one runs).
+        RescanAllCommand = ReactiveCommand.CreateFromTask(
+            RunRescanAllAsync,
+            this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
+                (scanning, cueing) => !scanning && !cueing));
 
         IObservable<bool> canPlay = this.WhenAnyValue(x => x.SelectedTrack)
             .Select(track => track is not null && _dispatcher is not null);
@@ -159,6 +179,20 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     public Playlists.PlaylistBuilderViewModel? PlaylistBuilder { get; }
 
     public ReactiveCommand<Unit, Unit> ScanCommand { get; }
+
+    /// <summary>Places automatic hot cues on every track in the scanned folders (persisted to the cue store).</summary>
+    public ReactiveCommand<Unit, Unit> AutoCueLibraryCommand { get; }
+
+    /// <summary>
+    /// Force re-maps the whole catalog — re-decodes every track for fresh BPM/key/downbeat/cues,
+    /// skipping only tracks the user has manually corrected. Disabled while a scan or auto-cue runs.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> RescanAllCommand { get; }
+
+    /// <summary>True when automatic hot-cue placement is available (a decoder + cue store were wired); the
+    /// UI hides the Auto-cue button otherwise.</summary>
+    public bool CanAutoCueLibrary => _autoCueService is not null;
+
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
@@ -259,6 +293,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get => _isScanning;
         private set => this.RaiseAndSetIfChanged(ref _isScanning, value);
+    }
+
+    /// <summary>True while a library-wide auto-cue pass is running (drives the Auto-cue button's busy state).</summary>
+    public bool IsAutoCueing
+    {
+        get => _isAutoCueing;
+        private set => this.RaiseAndSetIfChanged(ref _isAutoCueing, value);
     }
 
     /// <summary>Overall scan progress (0–100) for the folder-status window's progress bar.</summary>
@@ -553,6 +594,117 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         finally
         {
             RxApp.MainThreadScheduler.Schedule(() => IsScanning = false);
+        }
+    }
+
+    // Force re-maps every catalogued track (re-decode → BPM / key / downbeat / cues), skipping only the
+    // tracks the user has manually corrected (their hand-set grid is protected, global #7). Reuses the
+    // IsScanning busy state so it can't overlap a scan/auto-cue; progress marshals to the status line;
+    // cancellation is tied to the view-model lifetime; a failure surfaces, never crashes (global #16/#26).
+    private async Task RunRescanAllAsync()
+    {
+        if (_library.PathsForFullRemap().Count == 0)
+        {
+            ScanStatus = "No tracks to re-map — scan folders first.";
+            return;
+        }
+
+        IsScanning = true;
+        ScanProgressValue = 0;
+        try
+        {
+            var service = new CatalogReanalysisService(
+                _library, _store, force: true,
+                onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e));
+
+            var progress = new Progress<ReanalysisProgress>(p =>
+                RxApp.MainThreadScheduler.Schedule(() =>
+                {
+                    ScanStatus = p.Done >= p.Total
+                        ? $"Re-map complete — {p.Analyzed} tracks updated"
+                        : $"Re-mapping all tracks… {p.Done}/{p.Total}";
+                    ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
+                    // Surface freshly-mapped BPM/key periodically without thrashing the UI per track.
+                    if (p.Done >= p.Total || p.Done % 25 == 0)
+                        RefreshRows();
+                }));
+
+            await service.RunAsync(progress, _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                RefreshRows();
+                ScanProgressValue = 100;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-pass — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Re-map failed: {ex.Message}");
+        }
+        finally
+        {
+            RxApp.MainThreadScheduler.Schedule(() => IsScanning = false);
+        }
+    }
+
+    // Places automatic hot cues on every catalogued track (all files from the scanned folders) and
+    // persists them, preserving each track's manual cues. CPU-bound decode/analysis runs off the UI
+    // thread (Task.Run); progress marshals back to the status line. Cancellation is tied to the
+    // view-model lifetime so the pass never outlives the tab. Guarded — a failure surfaces, never crashes.
+    private async Task RunAutoCueLibraryAsync()
+    {
+        if (_autoCueService is null)
+            return;
+
+        List<string> paths = _library.All
+            .Select(t => t.File.Path)
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            ScanStatus = "No tracks to auto-cue — scan folders first.";
+            return;
+        }
+
+        IsAutoCueing = true;
+        ScanProgressValue = 0;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        try
+        {
+            var progress = new Progress<AutoCueProgress>(p =>
+                RxApp.MainThreadScheduler.Schedule(() =>
+                {
+                    ScanStatus = p.Done >= p.Total
+                        ? $"Auto-cue complete — {p.Cued} of {p.Total} tracks cued"
+                        : $"Placing auto cues… {p.Done}/{p.Total}";
+                    ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
+                }));
+
+            // Decode + structural analysis is CPU-bound; keep it off the UI thread.
+            AutoCueOutcome outcome = await Task.Run(
+                () => _autoCueService.RunAsync(paths, progress, linked.Token), linked.Token).ConfigureAwait(false);
+
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                ScanStatus = $"Auto-cue complete — {outcome.Cued} of {outcome.Considered} tracks cued";
+                ScanProgressValue = 100;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // App shutting down / tab disposed — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Auto-cue failed: {ex.Message}");
+        }
+        finally
+        {
+            RxApp.MainThreadScheduler.Schedule(() => IsAutoCueing = false);
         }
     }
 

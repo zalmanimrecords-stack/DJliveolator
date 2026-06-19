@@ -42,6 +42,31 @@ public sealed class LibrariesViewModelTests
     }
 
     [Fact]
+    public async Task RescanAll_remaps_the_catalog_and_keeps_every_track()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        Assert.Equal(2, vm.Tracks.Count);
+
+        await vm.RescanAllCommand.Execute().ToTask();
+
+        Assert.False(vm.IsScanning);
+        Assert.Equal(2, vm.Tracks.Count);            // re-mapped in place, nothing lost
+        Assert.All(vm.Tracks, t => Assert.NotNull(t.Track.Bpm)); // every track carries fresh analysis
+    }
+
+    [Fact]
+    public async Task RescanAll_with_an_empty_catalog_is_a_safe_noop()
+    {
+        LibrariesViewModel vm = BuildViewModel(); // folder added, never scanned → no tracks
+
+        await vm.RescanAllCommand.Execute().ToTask();
+
+        Assert.False(vm.IsScanning);
+        Assert.Empty(vm.Tracks);
+    }
+
+    [Fact]
     public async Task Search_filters_tracks_by_title()
     {
         LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");

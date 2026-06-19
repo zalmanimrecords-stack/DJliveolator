@@ -23,7 +23,14 @@
           </MenuFlyout>
         </Button.Flyout>
       </Button>
-      <Button Grid.Column="1" Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Classes="accent" Content="Scan" Command="{Binding ScanCommand}" />
+        <Button Classes="spartan" Content="Rescan" Command="{Binding RescanAllCommand}"
+                ToolTip.Tip="Re-map every track in the catalog (BPM, key, beat grid, cues); keeps manually-corrected tracks" />
+        <Button Classes="spartan" Content="Auto-cue" Command="{Binding AutoCueLibraryCommand}"
+                IsVisible="{Binding CanAutoCueLibrary}"
+                ToolTip.Tip="Scan every track in your folders and place automatic hot cues" />
+      </StackPanel>
       <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
                Watermark="Search title or key…" Text="{Binding SearchText}" />
       <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"

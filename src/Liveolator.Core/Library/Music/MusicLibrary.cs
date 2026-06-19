@@ -127,6 +127,15 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         => All.Where(NeedsAnalysis).Select(t => t.File.Path).ToList();
 
     /// <summary>
+    /// Paths of every catalogued track eligible for a full re-map ("Rescan all") — all tracks except
+    /// those the user has manually corrected (<see cref="MusicTrack.AnalysisIsManual"/>), whose hand-set
+    /// grid must survive (global #7). Unlike <see cref="PathsNeedingAnalysis"/>, this includes
+    /// already-analyzed tracks, so a forced pass re-decodes them.
+    /// </summary>
+    public IReadOnlyList<string> PathsForFullRemap()
+        => All.Where(t => !t.AnalysisIsManual).Select(t => t.File.Path).ToList();
+
+    /// <summary>
     /// Re-runs offline analysis for one already-catalogued track (e.g. one previously Failed because no
     /// decoder was available) and replaces its entry in place. Returns true when the track is now
     /// analyzed. An unknown or already-analyzed path is a no-op (returns false) so a good track is never

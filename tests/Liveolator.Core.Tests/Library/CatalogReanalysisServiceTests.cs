@@ -108,6 +108,50 @@ public class CatalogReanalysisServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_ForceMode_RemapsAnalyzedTracks_ButSkipsManuallyCorrected()
+    {
+        // Both are already analyzed at the current version (NeedsAnalysis == false), so a normal pass
+        // would do nothing. A forced "Rescan all" must re-decode the auto track yet leave the manual one
+        // untouched (its hand-set grid is protected, global #7).
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["auto.wav"] = TestSignals.ClickTrain(120.0, 44100, seconds: 10),
+            ["manual.wav"] = TestSignals.ClickTrain(120.0, 44100, seconds: 10),
+        });
+        MusicLibrary library = LibraryWith(decoder, Analyzed("auto.wav", 128.0), Analyzed("manual.wav", 100.0));
+        library.SetManualBeatGrid("manual.wav", bpm: 100.0, firstBeatSeconds: 0.2);
+        var store = new RecordingCatalogStore();
+
+        var service = new CatalogReanalysisService(library, store, force: true);
+        ReanalysisOutcome outcome = await service.RunAsync();
+
+        // auto.wav was re-decoded despite being analyzed, and now reflects the click train (~120).
+        Assert.True(decoder.DecodeCalls.ContainsKey("auto.wav"));
+        Assert.InRange(library.TryGet("auto.wav")!.Bpm!.Bpm, 117.0, 123.0);
+        // manual.wav was never touched: not re-decoded, manual grid + lock intact.
+        Assert.False(decoder.DecodeCalls.ContainsKey("manual.wav"));
+        Assert.Equal(100.0, library.TryGet("manual.wav")!.Bpm!.Bpm);
+        Assert.True(library.TryGet("manual.wav")!.AnalysisIsManual);
+
+        Assert.Equal(1, outcome.Considered); // only the non-manual track is eligible
+        Assert.Equal(1, outcome.Analyzed);
+    }
+
+    [Fact]
+    public void PathsForFullRemap_ReturnsEveryTrackExceptManuallyCorrected()
+    {
+        MusicLibrary library = LibraryWith(
+            new MapAudioDecoder(new()), Analyzed("a.wav", 120.0), Analyzed("b.wav", 124.0), Failed("c.wav"));
+        library.SetManualBeatGrid("a.wav", bpm: 126.0, firstBeatSeconds: 0.1);
+
+        IReadOnlyList<string> paths = library.PathsForFullRemap();
+
+        Assert.DoesNotContain("a.wav", paths); // manual is protected
+        Assert.Contains("b.wav", paths);
+        Assert.Contains("c.wav", paths);       // even a failed track is eligible for a full remap
+    }
+
+    [Fact]
     public void NeedsAnalysis_WhenAnalyzerVersionIsStale_ReturnsTrue()
     {
         MusicTrack stale = Analyzed("old.wav", 124.0) with { AnalyzerVersion = TrackAnalyzer.CurrentVersion - 1 };

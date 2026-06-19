@@ -1,4 +1,5 @@
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
@@ -36,6 +37,30 @@ public class JsonCatalogStoreTests
         MusicTrack broken = loaded.Single(t => t.File.Path == "broken.mp3");
         Assert.Equal(MediaAnalysisStatus.Failed, broken.Status);
         Assert.Equal("decode error", broken.Error);
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsBeatGridDownbeat()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        MusicTrack track = TestTracks.Analyzed("grid.wav", 128.0, tonic: 0, mode: KeyMode.Major) with
+        {
+            Bpm = new BpmResult(128.0, Confidence: 0.9, FirstBeatSeconds: 0.05)
+            {
+                DownbeatSeconds = 0.55,
+                BeatsPerBar = 4,
+                DownbeatConfidence = 0.62,
+            },
+        };
+
+        await store.SaveMusicAsync(new[] { track });
+        MusicTrack loaded = (await store.LoadMusicAsync()).Single();
+
+        Assert.Equal(0.55, loaded.Bpm!.DownbeatSeconds, 6);
+        Assert.Equal(4, loaded.Bpm.BeatsPerBar);
+        Assert.Equal(0.62, loaded.Bpm.DownbeatConfidence, 6);
+        Assert.Equal(0.05, loaded.Bpm.FirstBeatSeconds, 6); // existing anchor still intact
     }
 
     [Fact]
