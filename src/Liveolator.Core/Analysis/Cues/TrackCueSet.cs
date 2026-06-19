@@ -76,14 +76,19 @@ public sealed class TrackCueSet
     /// <paramref name="positionSamples"/>, overwriting any existing cue in that slot. The cue's
     /// <see cref="HotCue.Index"/> is forced to <paramref name="index"/> so the slot and cue agree.
     /// </summary>
-    public TrackCueSet SetHotCue(int index, long positionSamples, string? label = null, int? color = null)
+    /// <param name="isAuto">
+    /// True to mark the cue as auto-placed/"suggested" (defaults to a manual cue). Auto-placement uses
+    /// this so the merge step can tell machine cues from a DJ's committed cues.
+    /// </param>
+    public TrackCueSet SetHotCue(
+        int index, long positionSamples, string? label = null, int? color = null, bool isAuto = false)
     {
         ValidateIndex(index);
         if (positionSamples < 0)
             throw new ArgumentOutOfRangeException(nameof(positionSamples), positionSamples, "Cue position cannot be negative.");
 
         HotCue?[] next = (HotCue?[])_slots.Clone();
-        next[index] = new HotCue(index, positionSamples, label, color);
+        next[index] = new HotCue(index, positionSamples, label, color, isAuto);
         return new TrackCueSet(SampleRate, SlotCount, PrimaryCueSamples, next);
     }
 

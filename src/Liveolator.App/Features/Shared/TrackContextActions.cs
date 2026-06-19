@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Reactive.Concurrency;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
@@ -28,6 +29,7 @@ public sealed class TrackContextActions
     private readonly IAudioFingerprinter? _fingerprinter;
     private readonly ITrackEditor? _editor;
     private readonly DeckTrackLoader? _deckLoader;
+    private readonly IAutoCueService? _autoCueService;
 
     public TrackContextActions(
         IPerformanceActionDispatcher? dispatcher,
@@ -38,7 +40,8 @@ public sealed class TrackContextActions
         IMetadataProvider? metadataProvider = null,
         IAudioFingerprinter? fingerprinter = null,
         ITrackEditor? editor = null,
-        DeckTrackLoader? deckLoader = null)
+        DeckTrackLoader? deckLoader = null,
+        IAutoCueService? autoCueService = null)
     {
         _dispatcher = dispatcher;
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -48,6 +51,7 @@ public sealed class TrackContextActions
         _metadataProvider = metadataProvider;
         _fingerprinter = fingerprinter;
         _editor = editor;
+        _autoCueService = autoCueService;
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -65,6 +69,9 @@ public sealed class TrackContextActions
     public bool CanLoadToDeckB { get; }
     public bool CanAnalyze => _library is not null && _catalogStore is not null;
     public bool CanEdit => CanAnalyze && _editor is not null;
+
+    /// <summary>True when automatic hot-cue placement is available (a decoder + cue store were wired).</summary>
+    public bool CanAutoCue => _autoCueService is not null;
     public event EventHandler<string>? TrackChanged;
     public event EventHandler<string>? StatusChanged;
 
@@ -114,6 +121,31 @@ public sealed class TrackContextActions
         catch (Exception ex)
         {
             ReportStatus($"Could not analyze \"{TitleOf(trackPath)}\": {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Places automatic hot cues for a track (the library "Auto-cue track" action) and persists them to
+    /// the cue store, preserving any manual cues. The cues light up the next time the track is loaded onto
+    /// a deck. Reports progress/outcome via the status seam; a failure is surfaced, never swallowed.
+    /// </summary>
+    public async Task AutoCueAsync(string trackPath, CancellationToken cancellationToken = default)
+    {
+        if (!CanAutoCue || string.IsNullOrWhiteSpace(trackPath))
+            return;
+
+        try
+        {
+            ReportStatus($"Auto-cueing \"{TitleOf(trackPath)}\"...");
+            AutoCueOutcome outcome = await _autoCueService!
+                .RunAsync(new[] { trackPath }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            ReportStatus(outcome.Cued > 0
+                ? $"Placed auto cues for \"{TitleOf(trackPath)}\" — they appear when the track is loaded."
+                : $"No auto cues placed for \"{TitleOf(trackPath)}\" (could not read its structure).");
+        }
+        catch (Exception ex)
+        {
+            ReportStatus($"Could not auto-cue \"{TitleOf(trackPath)}\": {ex.Message}");
         }
     }
 

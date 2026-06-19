@@ -33,12 +33,20 @@ public sealed class TrackMenuViewModel
             () => _actions.AnalyzeAgainAsync(_trackPath), Observable.Return(_actions.CanAnalyze));
         EditMetadataCommand = ReactiveCommand.CreateFromTask(
             () => _actions.EditAsync(_trackPath), Observable.Return(_actions.CanEdit));
+        AutoCueCommand = ReactiveCommand.CreateFromTask(
+            () => _actions.AutoCueAsync(_trackPath), Observable.Return(_actions.CanAutoCue));
     }
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckBCommand { get; }
     public ReactiveCommand<Unit, Unit> AnalyzeAgainCommand { get; }
     public ReactiveCommand<Unit, Unit> EditMetadataCommand { get; }
+
+    /// <summary>Places automatic hot cues for this track (persisted; they appear on the next deck load).</summary>
+    public ReactiveCommand<Unit, Unit> AutoCueCommand { get; }
+
+    /// <summary>Drives the "Auto-cue track" menu item's visibility (hidden when no decoder/cue store).</summary>
+    public bool CanAutoCue => _actions.CanAutoCue;
 
     /// <summary>Drives the "Add to Deck B" item's visibility (hidden until a second deck is backed).</summary>
     public bool CanLoadToDeckB => _actions.CanLoadToDeckB;

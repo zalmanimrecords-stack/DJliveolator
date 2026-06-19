@@ -281,6 +281,18 @@ public static class ServiceConfig
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IHotCueStore>(hotCueStore);
 
+        // Automatic hot-cue placement (doc 11/16): an offline pass that decodes a track, detects its
+        // musical structure (drop/breakdown/build/phrases) and writes suggested cues into the same hot-cue
+        // store, preserving the DJ's manual cues. Pure-managed orchestration over the offline decoder — no
+        // audio-thread work — so it is safe to run on a background thread. Registered here so a UI action
+        // (library "Auto-cue track(s)") or an opt-in background pass can resolve and run it; the cues then
+        // light up on the next deck load via the engine's existing hot-cue reload.
+        services.AddSingleton<Liveolator.Core.Analysis.Cues.IAutoCueService>(sp =>
+            new Liveolator.Core.Analysis.Cues.AutoCueService(
+                sp.GetRequiredService<IAudioDecoder>(),
+                sp.GetRequiredService<IHotCueStore>(),
+                onError: w => System.Diagnostics.Trace.TraceWarning(w)));
+
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
         // visuals pulse on the beat" experience works with NO audio hardware. The audio-driven
@@ -531,7 +543,8 @@ public static class ServiceConfig
             catalogStore: sp.GetRequiredService<IMusicCatalogStore>(),
             metadataProvider: sp.GetService<IMetadataProvider>(),
             fingerprinter: sp.GetService<IAudioFingerprinter>(),
-            editor: sp.GetRequiredService<ITrackEditor>()));
+            editor: sp.GetRequiredService<ITrackEditor>(),
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
         services.AddSingleton<ITrackEditor, TrackEditor>();
         // Modal yes/no confirmation for destructive actions (e.g. deleting a visual asset's file).
         services.AddSingleton<IConfirmationService, ConfirmationService>();

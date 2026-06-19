@@ -164,6 +164,14 @@ public interface IMultiDeckPlaybackEngine
     /// </summary>
     void HotCue(int slot, int cueIndex);
 
+    /// <summary>
+    /// Re-read the deck's hot-cue bank from persistent storage for its currently loaded track, replacing
+    /// the in-memory bank. Used by auto-cue placement to surface freshly-written cues without reloading
+    /// the track (doc 11/16). A no-op when nothing is loaded or there is no cue store. Tolerant: a store
+    /// hiccup leaves the bank as-is rather than failing.
+    /// </summary>
+    void ReloadHotCues(int slot);
+
     // --- Loops (doc 11): a beat-length loop repeats a region of the track. Driven via DeckSetLoop.
 
     /// <summary>The deck's active loop length in beats, or 0 when no loop is active.</summary>

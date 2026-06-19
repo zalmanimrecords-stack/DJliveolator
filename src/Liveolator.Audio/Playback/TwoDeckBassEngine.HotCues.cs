@@ -44,6 +44,24 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public void ReloadHotCues(int slot)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck || s.LoadedPath is not { } trackPath)
+                return; // nothing loaded — no bank to refresh
+
+            // Drop the current bank, then re-read it from the store: auto-cue placement has just written
+            // suggested cues for this track and we want them to surface without a reload. A store hiccup
+            // inside LoadPersistedHotCues degrades to an empty bank rather than failing (global #16/#26).
+            for (int i = 0; i < HotCuesPerDeck; i++)
+                s.HotCues[i] = null;
+            LoadPersistedHotCues(slot, deck.Handle, trackPath);
+        }
+    }
+
     // Caller holds _gate. Load a track's persisted cue set (A3) and project the sample-based cues onto
     // this deck's 0..1 fraction bank using the deck length. No store, no length, or an unreadable file
     // all leave the (already-cleared) bank empty — a persistence hiccup must never crash a load.

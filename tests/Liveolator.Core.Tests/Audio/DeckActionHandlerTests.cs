@@ -226,6 +226,15 @@ public class DeckActionHandlerTests
             _setCues.Add((slot, cueIndex));
         }
 
+        public List<int> Reloads { get; } = new();
+        // Simulates the store delivering auto cues on reload: slots 0 and 1 become set for the deck.
+        public void ReloadHotCues(int slot)
+        {
+            Reloads.Add(slot);
+            _setCues.Add((slot, 0));
+            _setCues.Add((slot, 1));
+        }
+
         public double LoopBeats(int slot) => _loopBeats[slot];
         public bool IsLooping(int slot) => _loopBeats[slot] > 0;
         public void SetLoop(int slot, double beats)
@@ -583,6 +592,44 @@ public class DeckActionHandlerTests
         var handler = new DeckActionHandler(new FakeMultiDeckEngine());
 
         Assert.Contains(PerformanceActionKind.DeckHotCue, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void ApplyAutoCues_ReloadsTheDeckSlot()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckApplyAutoCues, Slot: 1));
+
+        Assert.Equal(1, Assert.Single(engine.Reloads));
+    }
+
+    [Fact]
+    public void ApplyAutoCues_RelightsEveryPad_ViaPerIndexFeedback()
+    {
+        var engine = new FakeMultiDeckEngine(); // ReloadHotCues sets slots 0 and 1
+        var handler = new DeckActionHandler(engine);
+        var lit = new List<int>();
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckHotCue && e.Slot == 0 && e.State.IsActive
+                && int.TryParse(e.State.Argument, out int idx))
+                lit.Add(idx);
+        };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckApplyAutoCues, Slot: 0));
+
+        // One feedback per cue slot is raised; the two reloaded cues report active.
+        Assert.Equal(new[] { 0, 1 }, lit);
+    }
+
+    [Fact]
+    public void ApplyAutoCues_IsInHandledKinds()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckApplyAutoCues, handler.HandledKinds);
     }
 
     [Fact]

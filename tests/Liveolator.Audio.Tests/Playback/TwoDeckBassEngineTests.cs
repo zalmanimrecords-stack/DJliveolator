@@ -727,6 +727,43 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void ReloadHotCues_PicksUpCuesWrittenToTheStoreAfterLoad()
+    {
+        using var engine = NewEngineWithStore(out _, out FakeHotCueStore store);
+        engine.Load(0, @"C:\a.wav"); // handle 100, no cues yet
+        Assert.False(engine.IsHotCueSet(0, 3));
+
+        // Auto-cue placement writes a cue to the store for the loaded track, then asks the deck to refresh.
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", new TrackCueSet(48_000, 8).SetHotCue(3, 2_400_000)));
+        engine.ReloadHotCues(0);
+
+        Assert.True(engine.IsHotCueSet(0, 3));
+    }
+
+    [Fact]
+    public void ReloadHotCues_ClearsCuesNoLongerInTheStore()
+    {
+        using var engine = NewEngineWithStore(out _, out FakeHotCueStore store);
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", new TrackCueSet(48_000, 8).SetHotCue(3, 2_400_000)));
+        engine.Load(0, @"C:\a.wav");
+        Assert.True(engine.IsHotCueSet(0, 3));
+
+        // The stored record now has no cues; a reload must drop the stale in-memory cue.
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", new TrackCueSet(48_000, 8)));
+        engine.ReloadHotCues(0);
+
+        Assert.False(engine.IsHotCueSet(0, 3));
+    }
+
+    [Fact]
+    public void ReloadHotCues_NothingLoaded_IsNoOp()
+    {
+        using var engine = NewEngineWithStore(out _, out _);
+        engine.ReloadHotCues(0); // must not throw
+        Assert.False(engine.IsHotCueSet(0, 0));
+    }
+
+    [Fact]
     public void Load_DifferentTracks_RestoreTheirOwnCues()
     {
         using var engine = NewEngineWithStore(out _, out FakeHotCueStore store);

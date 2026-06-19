@@ -173,4 +173,63 @@ public sealed class TrackContextActionsTests
 
         Assert.Equal(new[] { "Closing", "Warmup" }, actions.Playlists);
     }
+
+    private sealed class FakeAutoCueService : Liveolator.Core.Analysis.Cues.IAutoCueService
+    {
+        private readonly int _cued;
+        public FakeAutoCueService(int cued) => _cued = cued;
+        public List<string> Requested { get; } = new();
+
+        public Task<Liveolator.Core.Analysis.Cues.AutoCueOutcome> RunAsync(
+            IReadOnlyList<string> trackPaths,
+            IProgress<Liveolator.Core.Analysis.Cues.AutoCueProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Requested.AddRange(trackPaths);
+            return Task.FromResult(new Liveolator.Core.Analysis.Cues.AutoCueOutcome(trackPaths.Count, _cued));
+        }
+    }
+
+    [Fact]
+    public void CanAutoCue_reflects_whether_a_service_was_wired()
+    {
+        Assert.False(new TrackContextActions(null, new FakePlaylistStore()).CanAutoCue);
+        Assert.True(new TrackContextActions(null, new FakePlaylistStore(),
+            autoCueService: new FakeAutoCueService(cued: 1)).CanAutoCue);
+    }
+
+    [Fact]
+    public async Task AutoCue_runs_the_service_for_the_track_and_reports_success()
+    {
+        var service = new FakeAutoCueService(cued: 1);
+        string? status = null;
+        var actions = new TrackContextActions(null, new FakePlaylistStore(),
+            onStatus: s => status = s, autoCueService: service);
+
+        await actions.AutoCueAsync(@"C:\m\a.wav");
+
+        Assert.Equal(@"C:\m\a.wav", Assert.Single(service.Requested));
+        Assert.NotNull(status);
+        Assert.Contains("auto cues", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AutoCue_reports_when_no_cues_could_be_placed()
+    {
+        string? status = null;
+        var actions = new TrackContextActions(null, new FakePlaylistStore(),
+            onStatus: s => status = s, autoCueService: new FakeAutoCueService(cued: 0));
+
+        await actions.AutoCueAsync(@"C:\m\a.wav");
+
+        Assert.NotNull(status);
+        Assert.Contains("No auto cues", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AutoCue_without_a_service_is_a_no_op()
+    {
+        var actions = new TrackContextActions(null, new FakePlaylistStore());
+        await actions.AutoCueAsync(@"C:\m\a.wav"); // must not throw
+    }
 }

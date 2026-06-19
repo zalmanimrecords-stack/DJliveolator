@@ -33,6 +33,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckKeyLockToggle,
         PerformanceActionKind.DeckHotCue,
+        PerformanceActionKind.DeckApplyAutoCues,
         PerformanceActionKind.DeckSetLoop,
         PerformanceActionKind.DeckSetFirstBeat,
     };
@@ -148,6 +149,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckHotCue:
                 TriggerHotCue(slot, action);
                 break;
+            case PerformanceActionKind.DeckApplyAutoCues:
+                ApplyAutoCues(slot);
+                break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
@@ -221,6 +225,22 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
 
         _engine.HotCue(slot, cueIndex);
         RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, ActiveFeedback(_engine.IsHotCueSet(slot, cueIndex)));
+    }
+
+    private void ApplyAutoCues(int slot)
+    {
+        // The auto-cue analysis has already written the suggested cues to the store; re-read the deck's
+        // bank from it, then relight every pad so the UI reflects the refreshed bank. The hot-cue index
+        // rides in Argument for DeckHotCue feedback, mirroring how a pad press reports a single slot.
+        _engine.ReloadHotCues(slot);
+        for (int cueIndex = 0; cueIndex < _engine.HotCueCount; cueIndex++)
+            RaiseFeedback(
+                PerformanceActionKind.DeckHotCue, slot,
+                new ActionFeedbackState(
+                    IsActive: _engine.IsHotCueSet(slot, cueIndex),
+                    IsAvailable: true,
+                    Value: 0,
+                    Argument: cueIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     private static ActionFeedbackState ValueFeedback(double value)

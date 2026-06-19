@@ -75,6 +75,12 @@ public sealed class WaveformStrip : Control
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(DownbeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE5, 0x40, 0x3A)));
 
+    /// <summary>When <c>true</c>, the CBG beat comb is drawn at the TOP of the strip instead of the bottom.
+    /// The lower deck in a stacked pair sets this so the two decks' beat markers sit ADJACENT — meeting in
+    /// the middle between the strips (the VirtualDJ combined-waveform read), not split to the outer edges.</summary>
+    public static readonly StyledProperty<bool> CombAtTopProperty =
+        AvaloniaProperty.Register<WaveformStrip, bool>(nameof(CombAtTop));
+
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<float>?>(nameof(Peaks));
@@ -122,7 +128,7 @@ public sealed class WaveformStrip : Control
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
             MidBrushProperty, HighBrushProperty,
-            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty,
+            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
             BeatGridProperty, KickAnchorProperty,
             ProgressProperty, ZoomWindowProperty);
@@ -143,6 +149,7 @@ public sealed class WaveformStrip : Control
     public IBrush PlayheadBrush { get => GetValue(PlayheadBrushProperty); set => SetValue(PlayheadBrushProperty, value); }
     public IBrush BeatBrush { get => GetValue(BeatBrushProperty); set => SetValue(BeatBrushProperty, value); }
     public IBrush DownbeatBrush { get => GetValue(DownbeatBrushProperty); set => SetValue(DownbeatBrushProperty, value); }
+    public bool CombAtTop { get => GetValue(CombAtTopProperty); set => SetValue(CombAtTopProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<float>? MidPeaks { get => GetValue(MidPeaksProperty); set => SetValue(MidPeaksProperty, value); }
@@ -206,35 +213,44 @@ public sealed class WaveformStrip : Control
         // that scrolls as Progress advances (follow). All overlays use the same window so they stay aligned.
         (double start, double span) = VisibleWindow(Progress, ZoomWindow);
 
-        // VirtualDJ layout: the waveform body sits clean in the top region, and the beat marking lives in
-        // a dedicated CBG comb strip pinned to the bottom (so no full-height grid lines run through the wave).
+        // VirtualDJ layout: the waveform body sits clean, and the beat marking lives in a dedicated CBG comb
+        // strip. The comb is normally pinned to the BOTTOM; the lower deck flips it to the TOP (CombAtTop) so
+        // the two stacked decks' beat markers sit ADJACENT, meeting in the middle (the combined-view read).
         double combH = CombHeight(b.Height);
+        bool combAtTop = CombAtTop;
+        double combY = combAtTop ? 0 : b.Height - combH;
+        double waveTop = combAtTop ? combH : 0;
         Rect waveRect = b.WithHeight(b.Height - combH);
 
-        RenderKickAnchor(context, waveRect, start, span);
-
-        // Layer order back→front (the kick-forward stack): blue/cyan highs give air/hat texture, the green
-        // mid band is the body, and the red kick band draws LAST so its transients sit in front of everything.
-        // Without band data (older/fake overviews) the broadband body renders instead — never nothing.
-        IReadOnlyList<float>? mid = MidPeaks;
-        IReadOnlyList<float>? high = HighPeaks;
-        if (mid is { Count: > 0 } && high is { Count: > 0 })
+        // Shift the wave layers to the side of the comb so they never overlap it (the comb owns its band,
+        // the wave owns the rest). A pure Y translation keeps the per-layer draw maths unchanged.
+        using (context.PushTransform(Matrix.CreateTranslation(0, waveTop)))
         {
-            RenderBand(context, waveRect, high, HighBrush, start, span);
-            RenderBand(context, waveRect, mid, MidBrush, start, span);
-        }
-        else
-        {
-            RenderWaveform(context, waveRect, peaks, start, span);
+            RenderKickAnchor(context, waveRect, start, span);
+
+            // Layer order back→front (the kick-forward stack): blue/cyan highs give air/hat texture, the green
+            // mid band is the body, and the red kick band draws LAST so its transients sit in front of everything.
+            // Without band data (older/fake overviews) the broadband body renders instead — never nothing.
+            IReadOnlyList<float>? mid = MidPeaks;
+            IReadOnlyList<float>? high = HighPeaks;
+            if (mid is { Count: > 0 } && high is { Count: > 0 })
+            {
+                RenderBand(context, waveRect, high, HighBrush, start, span);
+                RenderBand(context, waveRect, mid, MidBrush, start, span);
+            }
+            else
+            {
+                RenderWaveform(context, waveRect, peaks, start, span);
+            }
+
+            IReadOnlyList<float>? kick = KickPeaks;
+            if (kick is { Count: > 0 })
+                RenderKickBand(context, waveRect, kick, start, span);
         }
 
-        IReadOnlyList<float>? kick = KickPeaks;
-        if (kick is { Count: > 0 })
-            RenderKickBand(context, waveRect, kick, start, span);
-
-        // The CBG comb (beat marking) in the bottom strip, then the playhead over everything so the
-        // current position is never buried under a kick bar or a comb tooth.
-        RenderBeatComb(context, b, b.Height - combH, combH, start, span);
+        // The CBG comb (beat marking), then the playhead over everything so the current position is never
+        // buried under a kick bar or a comb tooth.
+        RenderBeatComb(context, b, combY, combH, combAtTop, start, span);
         RenderPlayhead(context, b, start, span);
     }
 
@@ -282,7 +298,7 @@ public sealed class WaveformStrip : Control
     // is empty in the whole-track overview and resolves into downbeats, then every beat, as the strip
     // zooms in. Lining the red downbeats up across decks A/B is the "on the grid" read used to beat-match.
     private void RenderBeatComb(
-        DrawingContext context, Rect b, double combTop, double combH, double start, double span)
+        DrawingContext context, Rect b, double combTop, double combH, bool combAtTop, double start, double span)
     {
         IReadOnlyList<double>? grid = BeatGrid;
         if (grid is not { Count: >= 2 } || span <= 0 || combH <= 0)
@@ -300,7 +316,11 @@ public sealed class WaveformStrip : Control
         Color beat = (BeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x8E, 0x9A, 0xA8);
         Color down = (DownbeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x40, 0x3A);
         double combBottom = combTop + combH;
-        double beatTop = combTop + combH * 0.45; // beats are short blocks anchored to the comb bottom
+        // Short beat teeth hug the strip's OUTER edge (the side away from the wave): the comb bottom when it
+        // sits below the wave, the comb top when it is flipped above it. So a stacked pair's teeth mirror and
+        // meet in the middle. Downbeats always run the full comb height, so they line up regardless.
+        double beatNear = combAtTop ? combTop : combTop + combH * 0.55;
+        double beatFar = combAtTop ? combTop + combH * 0.45 : combBottom;
         var beatPen = new Pen(new ImmutableSolidColorBrush(beat, 0.60), 1.5);
         var downHaloPen = new Pen(new ImmutableSolidColorBrush(down, 0.35), 4.0);
         var downPen = new Pen(new ImmutableSolidColorBrush(down), 2.5);
@@ -322,7 +342,7 @@ public sealed class WaveformStrip : Control
             }
             else
             {
-                context.DrawLine(beatPen, new Point(x, beatTop), new Point(x, combBottom));
+                context.DrawLine(beatPen, new Point(x, beatNear), new Point(x, beatFar));
             }
         }
     }

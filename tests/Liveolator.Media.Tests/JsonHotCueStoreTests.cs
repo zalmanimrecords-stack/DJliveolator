@@ -43,6 +43,50 @@ public class JsonHotCueStoreTests
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsIsAutoFlag()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonHotCueStore(dir.Path);
+
+        var set = new TrackCueSet(SampleRate)
+            .SetHotCue(0, 1000, "Start", 0xFFFFFF, isAuto: true)
+            .SetHotCue(1, 2000, "Manual", 0x112233, isAuto: false);
+        await store.SaveAsync(TrackCueRecord.FromCueSet(TrackA, set));
+
+        TrackCueSet loaded = (await store.LoadAsync(TrackA))!.ToCueSet();
+        Assert.True(loaded.GetHotCue(0)!.Value.IsAuto);
+        Assert.False(loaded.GetHotCue(1)!.Value.IsAuto);
+    }
+
+    [Fact]
+    public async Task Load_LegacyFileWithoutIsAuto_DefaultsToManual()
+    {
+        // Back-compat guard: a cue file written before the IsAuto field existed must load as manual,
+        // never throw, and never be mistaken for an auto/"suggested" cue.
+        using var dir = new TempDirectory();
+        var store = new JsonHotCueStore(dir.Path);
+        const string legacy = """
+        {
+          "Version": 1,
+          "Tracks": [
+            {
+              "TrackPath": "C:\\Music\\a.wav",
+              "SampleRate": 44100,
+              "SlotCount": 8,
+              "HotCues": [ { "Index": 0, "PositionSamples": 1000, "Label": "Cue" } ]
+            }
+          ]
+        }
+        """;
+        await File.WriteAllTextAsync(store.CuesPath, legacy);
+
+        TrackCueRecord? loaded = await store.LoadAsync(TrackA);
+
+        Assert.NotNull(loaded);
+        Assert.False(loaded!.HotCues[0].IsAuto);
+    }
+
+    [Fact]
     public async Task Load_UnknownTrack_ReturnsNull()
     {
         using var dir = new TempDirectory();

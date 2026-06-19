@@ -42,7 +42,7 @@ public sealed record TrackCueRecord(
         {
             if (cue.Index < 0 || cue.Index >= set.SlotCount || cue.PositionSamples < 0)
                 continue;
-            set = set.SetHotCue(cue.Index, cue.PositionSamples, cue.Label, cue.Color);
+            set = set.SetHotCue(cue.Index, cue.PositionSamples, cue.Label, cue.Color, cue.IsAuto);
         }
 
         if (PrimaryCueSamples is >= 0)

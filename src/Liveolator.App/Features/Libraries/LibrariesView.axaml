@@ -102,6 +102,9 @@
                                 Command="{Binding Menu.AnalyzeAgainCommand}" />
                       <MenuItem Header="Edit BPM / key / genre / notes"
                                 Command="{Binding Menu.EditMetadataCommand}" />
+                      <MenuItem Header="Auto-cue track"
+                                Command="{Binding Menu.AutoCueCommand}"
+                                IsVisible="{Binding Menu.CanAutoCue}" />
                       <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>
@@ -251,6 +254,9 @@
                                     Command="{Binding Menu.AnalyzeAgainCommand}" />
                           <MenuItem Header="Edit BPM / key / genre / notes"
                                     Command="{Binding Menu.EditMetadataCommand}" />
+                          <MenuItem Header="Auto-cue track"
+                                    Command="{Binding Menu.AutoCueCommand}"
+                                    IsVisible="{Binding Menu.CanAutoCue}" />
                           <Separator />
                           <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                             <MenuItem.ItemContainerTheme>

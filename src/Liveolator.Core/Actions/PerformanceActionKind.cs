@@ -124,4 +124,23 @@ public enum PerformanceActionKind
     /// REC button / LED reflects the true capture state. Unavailable when no realtime engine is up.
     /// </summary>
     MasterRecordToggle,
+
+    /// <summary>
+    /// Set the mixer-wide EQ cut-depth mode (doc 11) — how deep every channel's EQ band-cut goes
+    /// (EQ/DEEP/KILL, see <see cref="Mixer.EqCutMode"/>). With <see cref="Mixer.EqCutMode"/> set via
+    /// <see cref="PerformanceAction.Argument"/> the handler selects that mode absolutely; with no
+    /// argument it cycles to the next (progressively coarser) mode — the single global mixer button.
+    /// The handler recomputes and re-pushes every channel's EQ coefficients and reports the active
+    /// mode back so the button face stays in sync.
+    /// </summary>
+    MixerEqCutMode,
+
+    /// <summary>
+    /// Apply the loaded track's stored auto cues to a deck now, without reloading the track (Slot = A/B).
+    /// The DJ-facing "AUTO-CUE" action: after the auto-cue analysis has written suggested cues to the
+    /// hot-cue store, this tells the deck engine to re-read its hot-cue bank from the store so the pads
+    /// light up immediately (doc 11/16). The handler re-emits per-index <see cref="DeckHotCue"/> feedback
+    /// so every pad reflects the refreshed bank. A no-op when no realtime engine / loaded track is present.
+    /// </summary>
+    DeckApplyAutoCues,
 }

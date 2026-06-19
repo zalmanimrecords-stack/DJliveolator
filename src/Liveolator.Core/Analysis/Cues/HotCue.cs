@@ -10,11 +10,19 @@ namespace Liveolator.Core.Analysis.Cues;
 /// <param name="PositionSamples">Cue position as a non-negative sample offset from track start.</param>
 /// <param name="Label">Optional performer label (e.g. "Drop", "Verse"); null when unlabelled.</param>
 /// <param name="Color">Optional 0xRRGGBB display color for pad/UI; null when unset.</param>
+/// <param name="IsAuto">
+/// True when this cue was placed by automatic analysis and not yet confirmed by the DJ (a "suggested"
+/// cue, owner decision 2026-06-19). A manual cue — one the DJ set, moved, or committed by pressing it —
+/// is <c>false</c> and is preserved verbatim across re-analysis (see auto-cue merge). Added after the
+/// original shape with a default of <c>false</c> so existing serialized cues load as manual
+/// (positional-record back-compat).
+/// </param>
 public readonly record struct HotCue(
     int Index,
     long PositionSamples,
     string? Label = null,
-    int? Color = null)
+    int? Color = null,
+    bool IsAuto = false)
 {
     /// <summary>Cue position in seconds, given the track's sample rate (samples per second).</summary>
     public double PositionSeconds(int sampleRate)
