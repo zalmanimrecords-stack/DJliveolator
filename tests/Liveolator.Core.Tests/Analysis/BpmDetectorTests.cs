@@ -58,6 +58,22 @@ public class BpmDetectorTests
     }
 
     [Fact]
+    public void Detect_KickAccentedOnDownbeat_AnchorsDownbeatThere()
+    {
+        const int sr = 44100;
+        // Four-on-the-floor at 120 BPM with a louder kick on beat 1 of each bar: the downbeat anchor
+        // should land near t=0 and report real (non-zero) confidence.
+        float[] signal = KickFourOnFloor(
+            bpm: 120.0, sampleRate: sr, seconds: 16, accentBeat: 0, strong: 1.0f, weak: 0.4f);
+
+        BpmResult result = new BpmDetector().Detect(signal, sr);
+
+        Assert.Equal(4, result.BeatsPerBar);
+        Assert.InRange(result.DownbeatSeconds, 0.0, 0.06);
+        Assert.True(result.DownbeatConfidence > 0.1, $"accented downbeat should be confident, was {result.DownbeatConfidence:F3}");
+    }
+
+    [Fact]
     public void Detect_TooShortSignal_ReturnsZero()
     {
         var tiny = new float[16];
@@ -71,6 +87,28 @@ public class BpmDetectorTests
     {
         var buffer = new float[2048];
         Assert.Throws<ArgumentOutOfRangeException>(() => new BpmDetector().Detect(buffer, 0));
+    }
+
+    /// <summary>
+    /// A four-on-the-floor low-frequency kick pattern: a 55 Hz tone burst on every beat, louder on the
+    /// bar-relative <paramref name="accentBeat"/>, so the downbeat is recoverable from the kick band.
+    /// </summary>
+    private static float[] KickFourOnFloor(
+        double bpm, int sampleRate, double seconds, int accentBeat, float strong, float weak)
+    {
+        const int beatsPerBar = 4;
+        var signal = new float[(int)(sampleRate * seconds)];
+        double samplesPerBeat = 60.0 / bpm * sampleRate;
+        int burstLen = (int)(0.05 * sampleRate);
+        double w = 2.0 * Math.PI * 55.0 / sampleRate;
+        for (double position = 0, beat = 0; position < signal.Length; position += samplesPerBeat, beat++)
+        {
+            float amplitude = (int)beat % beatsPerBar == accentBeat ? strong : weak;
+            int start = (int)position;
+            for (int sample = 0; sample < burstLen && start + sample < signal.Length; sample++)
+                signal[start + sample] = (float)(amplitude * Math.Sin(w * sample));
+        }
+        return signal;
     }
 
     private static float[] AccentedClickTrain(

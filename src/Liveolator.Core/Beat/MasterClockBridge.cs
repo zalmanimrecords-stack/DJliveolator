@@ -38,7 +38,10 @@ public sealed class MasterClockBridge
     {
         _sync.UpdateSync(hostTimeTicks);
 
-        if (_sync.TryGetSyncMasterBeat(out double effectiveBpm, out double continuousBeat))
+        // A master with a usable analyzed grid drives the deck clock; otherwise — no sync master, or a
+        // master playing an un-analyzed track (BPM unknown / non-positive) — fall back to the base clock
+        // so live audio detection takes over instead of showing an idle deck grid.
+        if (_sync.TryGetSyncMasterBeat(out double effectiveBpm, out double continuousBeat) && effectiveBpm > 0.0)
         {
             _deckClock.Update(effectiveBpm, continuousBeat, hostTimeTicks);
             _shared.Select(_deckClock);

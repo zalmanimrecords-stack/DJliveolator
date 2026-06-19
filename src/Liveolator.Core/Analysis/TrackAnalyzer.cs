@@ -14,7 +14,8 @@ public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key, TimeSpan
 public sealed class TrackAnalyzer
 {
     /// <summary>Increment when analyzer output semantics change and cached tracks must be refreshed.</summary>
-    public const int CurrentVersion = 1;
+    /// <remarks>v2: added the kick-band downbeat anchor (<see cref="Bpm.BpmResult.DownbeatSeconds"/>).</remarks>
+    public const int CurrentVersion = 2;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;

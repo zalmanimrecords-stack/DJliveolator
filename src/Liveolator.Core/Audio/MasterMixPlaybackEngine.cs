@@ -25,11 +25,17 @@ public sealed class MasterMixPlaybackEngine : IDisposable
     private readonly AudioBeatClock _beatClock;
     private bool _disposed;
 
+    /// <param name="phaseLock">
+    /// When supplied, the live clock phase-locks its beat grid onto the master mix's kick onsets,
+    /// correcting drift between the detected grid and the audible signal. Null (default) leaves the
+    /// detected grid uncorrected.
+    /// </param>
     public MasterMixPlaybackEngine(
         IAudioSource masterSource,
         IHostClock hostClock,
         SpectrumAnalyzer? analyzer = null,
         int hop = 512,
+        OnsetPhaseLock? phaseLock = null,
         ILoggerFactory? loggerFactory = null)
     {
         ArgumentNullException.ThrowIfNull(masterSource);
@@ -39,7 +45,7 @@ public sealed class MasterMixPlaybackEngine : IDisposable
         _pipeline = new AudioFramePipeline(
             masterSource, analyzer ?? new SpectrumAnalyzer(), hop, loggerFactory.CreateLogger<AudioFramePipeline>());
         _beatClock = new AudioBeatClock(
-            _pipeline, hostClock, logger: loggerFactory.CreateLogger<AudioBeatClock>());
+            _pipeline, hostClock, phaseLock: phaseLock, logger: loggerFactory.CreateLogger<AudioBeatClock>());
     }
 
     /// <summary>The live beat clock fed by the master mix; stable for the engine's lifetime.</summary>

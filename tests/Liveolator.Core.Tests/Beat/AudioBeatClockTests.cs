@@ -108,6 +108,38 @@ public class AudioBeatClockTests
     }
 
     [Fact]
+    public void PhaseLock_AlignsBeatGridOntoTheObservedOnsets()
+    {
+        var provider = new FakeFrameProvider();
+        var host = new FakeHostClock(HostTicksPerSecond);
+        using var clock = new AudioBeatClock(
+            provider, host, confidenceThreshold: 0.0, analysisWindowSeconds: 8.0,
+            estimateIntervalSeconds: 0.3, phaseLock: new OnsetPhaseLock(gain: 0.25, maxBeatStep: 0.1));
+
+        // 2001 frames so the final frame (k = 2000) is itself an onset — Current then reports the beat
+        // phase *at* an onset, which the PLL should have driven onto the beat.
+        PumpPeriodicOnsets(provider, host, frames: 2001, beatPeriodFrames: 50);
+
+        double phase = clock.Current.BeatPhase;
+        double distanceToBeat = Math.Min(phase, 1.0 - phase);
+        Assert.True(distanceToBeat < 0.05, $"onset should sit on the beat after lock, phase was {phase:F4}");
+    }
+
+    [Fact]
+    public void PhaseLock_Disabled_ByDefault_LeavesTempoDetectionUnchanged()
+    {
+        var provider = new FakeFrameProvider();
+        var host = new FakeHostClock(HostTicksPerSecond);
+        using var clock = new AudioBeatClock(
+            provider, host, confidenceThreshold: 0.0, analysisWindowSeconds: 8.0,
+            estimateIntervalSeconds: 0.3); // no phaseLock
+
+        PumpPeriodicOnsets(provider, host, frames: 800, beatPeriodFrames: 50);
+
+        Assert.InRange(clock.Current.Bpm, 116.0, 124.0); // unchanged behavior
+    }
+
+    [Fact]
     public void IgnoresEmptyFrames()
     {
         var provider = new FakeFrameProvider();

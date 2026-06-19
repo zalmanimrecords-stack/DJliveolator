@@ -116,7 +116,7 @@ public sealed class WaveformStripTests
     }
 
     [Theory]
-    [InlineData(84.0, 13.44)]   // a LIVE strip: 16% of the height, inside the readable band
+    [InlineData(84.0, 13.0)]    // a LIVE strip: 16% of the height (13.44), rounded to whole pixels
     [InlineData(200.0, 15.0)]   // a tall strip clamps to the max so the comb never balloons
     [InlineData(40.0, 9.0)]     // a short strip clamps up to the min so the comb stays legible
     public void CombHeight_ClampsToAReadableBand(double totalHeight, double expected)

@@ -490,7 +490,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
         if (length <= 0)
             return;
         long target = (long)(Math.Clamp(fraction, 0.0, 1.0) * length);
-        if (!BassMix.ChannelSetPosition(mixerHandle, target))
+        // MixerReset flushes this source's already-rendered audio out of the mixer buffer so the new
+        // position takes effect immediately. Without it a small *backward* nudge on a PLAYING deck is
+        // inaudible/invisible: the buffered forward audio plays out and playback advances past the tiny
+        // backward offset before it is ever heard, so only forward nudges appeared to move the track.
+        if (!BassMix.ChannelSetPosition(mixerHandle, target, PositionFlags.Bytes | PositionFlags.MixerReset))
             _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
     }
 

@@ -44,6 +44,19 @@ public class MasterClockBridgeTests
     }
 
     [Fact]
+    public void Tick_MasterWithUnknownBpm_FallsBackToLiveDetection()
+    {
+        // The master deck is playing an un-analyzed track (BPM 0): it has no usable grid, so the shared
+        // clock must fall back to the base (live audio) detector rather than show an idle deck clock.
+        var sync = new FakeSyncDriver { HasMaster = true, MasterBpm = 0.0, MasterBeat = 0.0 };
+        var bridge = NewBridge(sync, out _, out var shared, out var baseClock);
+
+        bridge.Tick(0);
+
+        Assert.Same(baseClock, shared.Active);
+    }
+
+    [Fact]
     public void Tick_MasterThenStops_SwitchesDeckClockThenBackToBase()
     {
         var sync = new FakeSyncDriver { MasterBpm = 124.0, MasterBeat = 1.0 };

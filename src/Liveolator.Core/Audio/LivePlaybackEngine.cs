@@ -23,11 +23,17 @@ public sealed class LivePlaybackEngine : IAudioPlaybackEngine, IDisposable
     private IAudioSource? _deck;
     private bool _disposed;
 
+    /// <param name="phaseLock">
+    /// When supplied, the live clock phase-locks its beat grid onto the playing deck's kick onsets —
+    /// the drift correction that matters most for an un-analyzed track or live input, where there is no
+    /// precomputed grid. Null (default) leaves the detected grid uncorrected.
+    /// </param>
     public LivePlaybackEngine(
         IDeckSourceFactory factory,
         IHostClock hostClock,
         SpectrumAnalyzer? analyzer = null,
         int hop = 512,
+        OnsetPhaseLock? phaseLock = null,
         ILoggerFactory? loggerFactory = null)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
@@ -38,7 +44,7 @@ public sealed class LivePlaybackEngine : IAudioPlaybackEngine, IDisposable
         _pipeline = new AudioFramePipeline(
             _switch, analyzer ?? new SpectrumAnalyzer(), hop, loggerFactory.CreateLogger<AudioFramePipeline>());
         _beatClock = new AudioBeatClock(
-            _pipeline, hostClock, logger: loggerFactory.CreateLogger<AudioBeatClock>());
+            _pipeline, hostClock, phaseLock: phaseLock, logger: loggerFactory.CreateLogger<AudioBeatClock>());
     }
 
     /// <summary>The live beat clock fed by the playing deck; stable for the engine's lifetime.</summary>

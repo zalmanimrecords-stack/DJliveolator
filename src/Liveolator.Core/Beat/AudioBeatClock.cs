@@ -29,6 +29,8 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
     private readonly double _minWindowSeconds;
     private readonly double _estimateIntervalSeconds;
     private readonly double _retuneTolerance;
+    private readonly OnsetPhaseLock? _phaseLock;
+    private readonly double _onsetThresholdFactor;
     private readonly ILogger _logger;
     private readonly object _gate = new();
 
@@ -37,6 +39,8 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
     private double _lastTimestamp = double.NaN;
     private double _envelopeRateHz;
     private int _framesSinceEstimate;
+    private double _fluxEma;
+    private double _prevFluxValue;
 
     private BeatTimeline? _timeline;
     private double _bpm;
@@ -57,6 +61,8 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
         double minWindowSeconds = 1.5,
         double estimateIntervalSeconds = 0.35,
         double retuneTolerance = 0.02,
+        OnsetPhaseLock? phaseLock = null,
+        double onsetThresholdFactor = 1.5,
         ILogger<AudioBeatClock>? logger = null)
     {
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
@@ -74,6 +80,8 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
         _minWindowSeconds = minWindowSeconds;
         _estimateIntervalSeconds = estimateIntervalSeconds;
         _retuneTolerance = retuneTolerance;
+        _phaseLock = phaseLock;
+        _onsetThresholdFactor = onsetThresholdFactor;
         _logger = logger ?? NullLogger<AudioBeatClock>.Instance;
 
         Current = BeatClockState.Idle;
@@ -111,7 +119,7 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
         lock (_gate)
         {
             UpdateEnvelopeRate(frame.TimestampSeconds);
-            AccumulateFlux(frame.Spectrum);
+            double flux = AccumulateFlux(frame.Spectrum);
 
             _framesSinceEstimate++;
             if (ShouldEstimate())
@@ -119,6 +127,9 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
                 _framesSinceEstimate = 0;
                 RunEstimate(_hostClock.NowTicks);
             }
+
+            if (_timeline is not null && _phaseLock is not null && flux >= 0.0)
+                AlignPhaseToOnset(flux, _hostClock.NowTicks);
 
             if (_timeline is not null)
                 published = Current = BuildState(_hostClock.NowTicks);
@@ -139,16 +150,47 @@ public sealed class AudioBeatClock : IBeatClock, IDisposable
         _lastTimestamp = timestampSeconds;
     }
 
-    private void AccumulateFlux(float[] spectrum)
+    /// <summary>Enqueues the frame's onset flux and returns it; -1 when no flux was computable yet.</summary>
+    private double AccumulateFlux(float[] spectrum)
     {
+        double flux = -1.0;
         if (_prevSpectrum is not null && _envelopeRateHz > 0.0)
         {
-            _flux.Enqueue(SpectralFlux.Positive(_prevSpectrum, spectrum));
+            flux = SpectralFlux.Positive(_prevSpectrum, spectrum);
+            _flux.Enqueue(flux);
             int maxCount = Math.Max(8, (int)(_analysisWindowSeconds * _envelopeRateHz));
             while (_flux.Count > maxCount)
                 _flux.Dequeue();
         }
         _prevSpectrum = spectrum;
+        return flux;
+    }
+
+    /// <summary>
+    /// When a rising flux peak clears the recent average, treat the frame as an onset and nudge the grid
+    /// phase onto it via the PLL — drift correction only; the tempo (period) is untouched. The flux EMA
+    /// is the running "between-onsets" floor the peak must beat, so steady texture (hats, pads) doesn't
+    /// register as a beat.
+    /// </summary>
+    private void AlignPhaseToOnset(double flux, long nowTicks)
+    {
+        bool isOnset = flux > _prevFluxValue && flux > _onsetThresholdFactor * _fluxEma;
+        // EMA trails the flux; α=0.1 ≈ a ~10-frame memory of the onset floor.
+        _fluxEma += 0.1 * (flux - _fluxEma);
+        _prevFluxValue = flux;
+        if (!isOnset)
+            return;
+
+        double beat = _timeline!.BeatAtTime(nowTicks);
+        double phase = beat - Math.Floor(beat);
+        PhaseCorrection correction = _phaseLock!.Correct(phase);
+        if (!correction.Applied)
+            return;
+
+        // Re-anchor by removing the corrected phase error from the beat count at this instant; the tempo
+        // and host-time anchor are unchanged, so the grid only shifts in phase.
+        _timeline = new BeatTimeline(
+            _bpm, beat - correction.BeatAdjustment, nowTicks, _hostClock.TicksPerSecond);
     }
 
     private bool ShouldEstimate()

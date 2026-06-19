@@ -269,7 +269,10 @@ public sealed class WaveformStrip : Control
             return 0;
         double h = Math.Clamp(totalHeight * CombHeightFraction, CombMinHeight, CombMaxHeight);
         double half = totalHeight * 0.5; // never take more than half the strip on a very short control
-        return h > half ? half : h;
+        if (h > half) h = half;
+        // Whole pixels: the lower deck offsets its wave DOWN by this height (a transform), so a fractional
+        // value would land the wave on a sub-pixel boundary and blur it. Rounding keeps both decks crisp.
+        return Math.Round(h);
     }
 
     // The detected first-beat (downbeat anchor): a faint, neutral full-height hint in the wave area used to
@@ -377,16 +380,15 @@ public sealed class WaveformStrip : Control
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
         const double step = 2.0;
-        double playheadX = (Math.Clamp(Progress, 0.0, 1.0) - start) / span * b.Width;
 
-        var playedPen = new Pen(PlayedBrush, 1.5) { LineCap = PenLineCap.Round };
-        var aheadPen = new Pen(BarBrush, 1.5) { LineCap = PenLineCap.Round };
+        // Uniform full opacity (no played/ahead split) so the strip reads the same regardless of play
+        // position — matches the band render; the playhead alone marks position.
+        var pen = new Pen(PlayedBrush, 1.5) { LineCap = PenLineCap.Round };
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
             double amp = maxAmp * Math.Clamp(ColumnPeak(peaks, x, step, b.Width, start, span), 0f, 1f);
             if (amp < 0.5) amp = 0.5; // keep a hairline so silent regions still read as a strip
-            Pen pen = x <= playheadX ? playedPen : aheadPen;
             context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
         }
     }
@@ -400,12 +402,13 @@ public sealed class WaveformStrip : Control
         double cy = b.Height / 2;
         double maxAmp = (b.Height / 2) - 2;
         const double step = 1.0;
-        double playheadX = (Math.Clamp(Progress, 0.0, 1.0) - start) / span * b.Width;
 
+        // Full opacity across the whole track — the un-played (upcoming) part is NOT dimmed, so a deck cued
+        // at the start reads exactly as clearly as a deck mid-play (both decks always look identical). The
+        // playhead line alone marks the position; the wave brightness no longer depends on play progress.
         Color color = (brush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x3D, 0x5C, 0x8F);
         double opacity = (brush as ISolidColorBrush)?.Opacity ?? 1.0;
-        var playedPen = new Pen(new ImmutableSolidColorBrush(color, opacity), 1.0);
-        var aheadPen = new Pen(new ImmutableSolidColorBrush(color, opacity * 0.55), 1.0);
+        var pen = new Pen(new ImmutableSolidColorBrush(color, opacity), 1.0);
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
@@ -413,7 +416,6 @@ public sealed class WaveformStrip : Control
             if (v <= 0.004f) // skip true silence — the broadband hairline already keeps the strip readable
                 continue;
             double amp = maxAmp * Math.Clamp(v, 0f, 1f);
-            Pen pen = x <= playheadX ? playedPen : aheadPen;
             context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
         }
     }
