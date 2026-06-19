@@ -6,6 +6,7 @@ public static class BuiltInUiThemes
 {
     public const string PackageId = "liveolator.builtin.themes";
     public const string BrassworkId = "Brasswork";
+    public const string RetroSciFiId = "RetroSciFi";
     public const string SpartanId = "Spartan";
 
     public static IReadOnlyList<UiThemeDefinition> All { get; } =
@@ -51,6 +52,8 @@ public static class BuiltInUiThemes
                 ["FaderFillColor"] = "#2F80F6",
                 ["FaderTrackColor"] = "#26303F",
                 ["FaderThumbColor"] = "#E7ECF3",
+                ["PanelRadius"] = "16",
+                ["ControlRadius"] = "3",
             }),
         new UiThemeDefinition(
             BrassworkId,
@@ -82,6 +85,53 @@ public static class BuiltInUiThemes
                 ["KickColor"] = "#E23B2E",
                 ["WaveMidColor"] = "#39C24A",
                 ["WaveHighColor"] = "#A036A6E8",
+                ["KnobArcColor"] = "#D78A16",
+                ["KnobTrackColor"] = "#4A2C0A",
+                ["KnobCapColor"] = "#0B0803",
+                ["KnobPointerColor"] = "#F1D38B",
+                ["FaderFillColor"] = "#D78A16",
+                ["FaderTrackColor"] = "#4A2C0A",
+                ["FaderThumbColor"] = "#F1D38B",
+                ["PanelRadius"] = "10",
+                ["ControlRadius"] = "3",
+            }),
+        new UiThemeDefinition(
+            RetroSciFiId,
+            "Retro Sci-Fi",
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["BgColor"] = "#07080A",
+                ["S1Color"] = "#11181A",
+                ["S2Color"] = "#090D0F",
+                ["S3Color"] = "#182224",
+                ["S4Color"] = "#243236",
+                ["HairColor"] = "#4E5B52",
+                ["TextColor"] = "#E8F4DF",
+                ["DimColor"] = "#A7B894",
+                ["FaintColor"] = "#657263",
+                ["AccentColor"] = "#E2F05A",
+                ["AccentLightColor"] = "#FAFF9A",
+                ["AccentDarkColor"] = "#9EAE24",
+                ["AccentWellColor"] = "#262A0D",
+                ["AccentInkColor"] = "#101107",
+                ["RedColor"] = "#F05A3E",
+                ["GreenColor"] = "#7BD66F",
+                ["AmberColor"] = "#E2F05A",
+                ["VioletColor"] = "#D47AE8",
+                ["MidiActiveColor"] = "#7BD66F",
+                ["WaveformColor"] = "#E2F05A",
+                ["KickColor"] = "#F05A3E",
+                ["WaveMidColor"] = "#7BD66F",
+                ["WaveHighColor"] = "#A0627DF8",
+                ["KnobArcColor"] = "#E2F05A",
+                ["KnobTrackColor"] = "#243236",
+                ["KnobCapColor"] = "#101315",
+                ["KnobPointerColor"] = "#FAFF9A",
+                ["FaderFillColor"] = "#E2F05A",
+                ["FaderTrackColor"] = "#243236",
+                ["FaderThumbColor"] = "#E8F4DF",
+                ["PanelRadius"] = "2",
+                ["ControlRadius"] = "0",
             }),
     ];
 

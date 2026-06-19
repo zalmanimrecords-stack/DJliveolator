@@ -48,6 +48,9 @@
     <Color x:Key="BeatMarkColor">#8E9AA8</Color>
     <Color x:Key="DownbeatMarkColor">#E5403A</Color>
 
+    <x:Double x:Key="PanelRadius">16</x:Double>
+    <x:Double x:Key="ControlRadius">3</x:Double>
+
     <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
     <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage
          (e.g. Analog chrome+wood) makes UiThemeApplier replace this with an ImageBrush at runtime. -->

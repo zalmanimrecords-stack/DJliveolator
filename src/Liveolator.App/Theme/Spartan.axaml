@@ -102,14 +102,14 @@
     </Setter>
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="16" />
+    <Setter Property="CornerRadius" Value="{DynamicResource PanelRadius}" />
   </Style>
 
   <Style Selector="Border.hardware-well">
     <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="BoxShadow" Value="inset 0 2 5 0 #99000000, inset 0 -1 0 0 #1FFFFFFF" />
   </Style>
 
@@ -124,7 +124,7 @@
     </Setter>
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Width" Value="34" />
     <Setter Property="Height" Value="34" />
@@ -237,7 +237,7 @@
     </Setter>
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
@@ -274,7 +274,7 @@
     <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
     <Setter Property="BorderBrush" Value="#6C9BD8" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Padding" Value="12,7" />
     <Setter Property="FontSize" Value="11" />
     <Setter Property="Cursor" Value="Hand" />
@@ -307,7 +307,7 @@
     <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Foreground" Value="{DynamicResource Text}" />
   </Style>
 
@@ -316,7 +316,7 @@
     <Setter Property="Foreground" Value="{DynamicResource Accent}" />
     <Setter Property="Background" Value="{DynamicResource S4}" />
     <Setter Property="MinHeight" Value="5" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
   </Style>
 
   <!-- ============ key (beat keys / transport / hot-cues) ============ -->
@@ -330,7 +330,7 @@
     </Setter>
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="3" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Foreground" Value="{DynamicResource Dim}" />
     <Setter Property="Padding" Value="8,9" />
     <Setter Property="FontSize" Value="10" />
@@ -458,7 +458,7 @@
     </Setter>
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="CornerRadius" Value="{DynamicResource ControlRadius}" />
     <Setter Property="Height" Value="22" />
     <Setter Property="MinHeight" Value="22" />
     <Setter Property="Padding" Value="0" />
