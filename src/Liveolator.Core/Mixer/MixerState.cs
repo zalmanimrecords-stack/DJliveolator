@@ -12,11 +12,13 @@ namespace Liveolator.Core.Mixer;
 /// <param name="Curve">Shape of the crossfader transition.</param>
 /// <param name="Channels">Per-deck channel strips, indexed by deck slot.</param>
 /// <param name="CueBus">The headphone-cue (PFL) bus level and cue/master blend.</param>
+/// <param name="CutMode">Mixer-wide EQ cut-depth mode applied to every channel's bands (doc 11).</param>
 public sealed record MixerState(
     double Crossfader,
     CrossfaderCurve Curve,
     IReadOnlyList<DeckChannelState> Channels,
-    CueBusState CueBus)
+    CueBusState CueBus,
+    EqCutMode CutMode = EqCutMode.Kill)
 {
     /// <summary>Number of deck slots: 2 live (A/B) + 2 hidden STUDIO decks (C/D).</summary>
     public const int DeckCount = 4;
@@ -71,4 +73,7 @@ public sealed record MixerState(
         ArgumentNullException.ThrowIfNull(cueBus);
         return this with { CueBus = cueBus };
     }
+
+    /// <summary>Returns a copy with the mixer-wide EQ cut-depth mode replaced.</summary>
+    public MixerState WithCutMode(EqCutMode cutMode) => this with { CutMode = cutMode };
 }

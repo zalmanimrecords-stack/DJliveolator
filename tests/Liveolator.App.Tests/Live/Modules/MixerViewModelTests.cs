@@ -193,6 +193,52 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
+    public async Task EqCutMode_Command_EmitsMixerEqCutMode_NoArgument()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        await vm.EqCutModeCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerEqCutMode, action.Kind);
+        Assert.Null(action.Argument); // no argument → handler cycles to the next mode
+    }
+
+    [Fact]
+    public void EqCutMode_Label_SeedsFromFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.MixerEqCutMode, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: (int)EqCutMode.Deep, Argument: "Deep"));
+
+        var vm = new MixerViewModel(dispatcher);
+
+        Assert.Equal("DEEP", vm.EqCutModeLabel);
+    }
+
+    [Fact]
+    public void EqCutMode_Label_DefaultsToKill_WhenNoFeedback()
+    {
+        var vm = new MixerViewModel(new FakeDispatcher());
+
+        Assert.Equal("KILL", vm.EqCutModeLabel);
+    }
+
+    [Fact]
+    public void EqCutMode_Label_UpdatesFromFeedback_WithoutReDispatching()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerEqCutMode, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: (int)EqCutMode.Eq, Argument: "Eq"));
+
+        Assert.Equal("EQ", vm.EqCutModeLabel);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
     public void UpdateLevels_ReadsEachDeckPeak()
     {
         var meter = new FakeLevelMeter

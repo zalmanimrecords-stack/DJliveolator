@@ -49,6 +49,7 @@
                                       MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
                                       PlayheadBrush="{DynamicResource WavePlayhead}"
                                       BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
+                                      CombAtTop="True"
                                       Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
                                       BeatGrid="{Binding DeckB.BeatGrid}"
                                       KickAnchor="{Binding DeckB.KickAnchorFraction}"

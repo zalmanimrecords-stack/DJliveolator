@@ -25,6 +25,7 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.MixerCueToggle,
         PerformanceActionKind.MixerCueLevel,
         PerformanceActionKind.MixerCueMix,
+        PerformanceActionKind.MixerEqCutMode,
     };
 
     private readonly IMixer _mixer;
@@ -79,6 +80,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.MixerCueMix:
                 ApplyCueMix(action);
                 break;
+            case PerformanceActionKind.MixerEqCutMode:
+                ApplyEqCutMode(action);
+                break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
@@ -122,7 +126,7 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             double value = ResolveAbsoluteOrDelta(action, BandValue(current, band));
             EqBands next = current.With(band, value);
             _state = _state.WithChannel(slot, _state.Channel(slot) with { Eq = next });
-            _mixer.SetEqBand(slot, band, MixerMath.EqBandCoefficients(band, next, _sampleRate));
+            _mixer.SetEqBand(slot, band, MixerMath.EqBandCoefficients(band, next, _sampleRate, _state.CutMode));
         }
         RaiseFeedback(
             PerformanceActionKind.MixerEqBand, slot,
@@ -189,6 +193,28 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         _logger.LogDebug("Cue mix set to {Mix}", State.CueBus.Mix);
     }
 
+    // The EQ cut-depth mode is mixer-wide, so changing it rebuilds and re-pushes every channel's EQ
+    // band coefficients (their cut floor moved). Absolute select when Argument names a mode; otherwise
+    // cycle to the next, progressively coarser mode — the single global button's behaviour.
+    private void ApplyEqCutMode(PerformanceAction action)
+    {
+        EqCutMode mode;
+        lock (_gate)
+        {
+            mode = ParseCutMode(action.Argument) ?? _state.CutMode.Next();
+            _state = _state.WithCutMode(mode);
+            for (int slot = 0; slot < _state.Channels.Count; slot++)
+            {
+                EqBands eq = _state.Channel(slot).Eq;
+                _mixer.SetEqBand(slot, EqBand.Low, MixerMath.EqBandCoefficients(EqBand.Low, eq, _sampleRate, mode));
+                _mixer.SetEqBand(slot, EqBand.Mid, MixerMath.EqBandCoefficients(EqBand.Mid, eq, _sampleRate, mode));
+                _mixer.SetEqBand(slot, EqBand.High, MixerMath.EqBandCoefficients(EqBand.High, eq, _sampleRate, mode));
+            }
+        }
+        RaiseFeedback(PerformanceActionKind.MixerEqCutMode, slot: 0, CutModeFeedback(mode));
+        _logger.LogDebug("EQ cut mode set to {Mode}", mode);
+    }
+
     // The cue output mix (cued decks vs master, scaled by headphone level) depends only on the cue
     // bus controls, so push it whenever level or mix changes; per-deck PFL routing rides SetCue.
     private void PushCueOutputGains()
@@ -215,9 +241,24 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Channel(slot).Gain),
             PerformanceActionKind.MixerFilter when slot >= 0 && slot < state.Channels.Count
                 => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Channel(slot).Filter),
+            PerformanceActionKind.MixerEqCutMode
+                => CutModeFeedback(state.CutMode),
             _ => ActionFeedbackState.Unavailable,
         };
     }
+
+    // Reports the active cut mode as both its enum index (Value) and its name (Argument) so a button
+    // face can show the label without the UI needing to know the dB ladder.
+    private static ActionFeedbackState CutModeFeedback(EqCutMode mode)
+        => new(IsActive: mode != EqCutMode.Kill, IsAvailable: true, Value: (int)mode, Argument: mode.ToString());
+
+    private static EqCutMode? ParseCutMode(string? argument)
+        => string.IsNullOrWhiteSpace(argument)
+            ? null
+            : Enum.TryParse(argument, ignoreCase: true, out EqCutMode mode) && Enum.IsDefined(mode)
+                ? mode
+                : throw new ArgumentException(
+                    "MixerEqCutMode Argument, when set, must name a cut mode (Eq/Deep/Kill).", nameof(argument));
 
     // Crossfader changes both decks' audible gain, so push both.
     private void PushDeckGains()

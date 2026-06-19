@@ -54,6 +54,17 @@
       </Grid>
       </Border>
 
+      <!-- Global EQ cut-depth mode: one button cycles how deep every channel's EQ band-cut goes
+           (EQ -12 dB / DEEP -24 dB / KILL full). The label shows the active mode. -->
+      <Border Classes="hardware-well" Padding="12,8">
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="EQ CUT" Margin="0,0,12,0" />
+          <Button Grid.Column="1" Classes="key mixer" HorizontalAlignment="Stretch"
+                  Content="{Binding EqCutModeLabel}" Command="{Binding EqCutModeCommand}"
+                  ToolTip.Tip="EQ cut depth, all channels — EQ: -12 dB · DEEP: -24 dB · KILL: full kill" />
+        </Grid>
+      </Border>
+
       <Border Classes="hardware-well" Padding="12,10">
         <Grid ColumnDefinitions="*,18,*">
           <StackPanel Grid.Column="0" Spacing="6" HorizontalAlignment="Center">

@@ -62,9 +62,13 @@ public static class MixerMath
 
     /// <summary>
     /// Designs the biquad for one EQ band from its normalized control (0.5 = flat). Low and High
-    /// are shelving filters, Mid is a peaking filter — the standard DJ EQ topology.
+    /// are shelving filters, Mid is a peaking filter — the standard DJ EQ topology. The boost half
+    /// (control &gt; 0.5) and the band Q are fixed; <paramref name="cutMode"/> only sets how deep the
+    /// cut half (control &lt; 0.5) is allowed to attenuate (see <see cref="EqCutMode"/>). The default
+    /// <see cref="EqCutMode.Kill"/> reproduces the classic full-kill-at-bottom behaviour.
     /// </summary>
-    public static BiquadCoefficients EqBandCoefficients(EqBand band, EqBands eq, int sampleRate)
+    public static BiquadCoefficients EqBandCoefficients(
+        EqBand band, EqBands eq, int sampleRate, EqCutMode cutMode = EqCutMode.Kill)
     {
         ArgumentNullException.ThrowIfNull(eq);
         EnsureSampleRate(sampleRate);
@@ -77,10 +81,7 @@ public static class MixerMath
             _ => throw new ArgumentOutOfRangeException(nameof(band), band, "Unknown EQ band."),
         };
 
-        double clampedControl = Math.Clamp(control, 0.0, 1.0);
-        double gainDb = clampedControl <= 0.0
-            ? EqKillGainDb
-            : (clampedControl - EqBands.Unity) * 2.0 * MaxEqGainDb;
+        double gainDb = EqBandGainDb(Math.Clamp(control, 0.0, 1.0), cutMode);
         if (Math.Abs(gainDb) < 1e-6)
             return BiquadCoefficients.Bypass;
 
@@ -119,6 +120,18 @@ public static class MixerMath
             double cutoff = LogInterp(FilterMinHz, FilterMaxHz, t);
             return HighPass(cutoff, sampleRate);
         }
+    }
+
+    // Maps a clamped 0..1 band control to a gain in dB. The boost half (>= unity) is fixed at the
+    // full +/-MaxEqGainDb slope; the cut half's depth is set by the mode, with Kill snapping to a
+    // true kill at the very bottom of the knob.
+    private static double EqBandGainDb(double control, EqCutMode cutMode)
+    {
+        if (control >= EqBands.Unity)
+            return (control - EqBands.Unity) * 2.0 * MaxEqGainDb;
+        if (cutMode.IsFullKill() && control <= 0.0)
+            return EqKillGainDb;
+        return (control - EqBands.Unity) * 2.0 * cutMode.MaxCutDb();
     }
 
     // Sharp curve: each deck stays near full while the fader is on its own half, then cuts fast.

@@ -148,6 +148,59 @@ public class MixerMathTests
             $"{band} kill should attenuate at least 48 dB at {frequency} Hz, gain was {gain}");
     }
 
+    // --- EQ cut-depth mode (global) ---
+
+    [Theory]
+    [InlineData(EqCutMode.Eq, -12.0)]
+    [InlineData(EqCutMode.Deep, -24.0)]
+    public void EqBand_GentleCutMode_FloorsTheCut_NotAKill(EqCutMode mode, double expectedFloorDb)
+    {
+        // Low band fully down: a gentle mode floors the cut at its depth instead of snapping to silence.
+        BiquadCoefficients c = MixerMath.EqBandCoefficients(EqBand.Low, new EqBands(0.0, 0.5, 0.5), 48_000, mode);
+        double dcDb = 20.0 * Math.Log10(SteadyStateGain(c));
+
+        Assert.Equal(expectedFloorDb, dcDb, 2.0);                  // within 2 dB of the mode floor
+        Assert.True(dcDb > -48.0, $"{mode} must not be a full kill, was {dcDb:F1} dB");
+    }
+
+    [Fact]
+    public void EqBand_KillCutMode_StillKillsAtBottom()
+    {
+        BiquadCoefficients c = MixerMath.EqBandCoefficients(EqBand.Low, new EqBands(0.0, 0.5, 0.5), 48_000, EqCutMode.Kill);
+
+        Assert.True(SteadyStateGain(c) <= Math.Pow(10.0, -48.0 / 20.0), "Kill mode must reach silence at the bottom");
+    }
+
+    [Fact]
+    public void EqBand_DefaultCutMode_PreservesFullKill()
+    {
+        // Omitting the mode keeps the historical full-kill-at-bottom behaviour (backward compatible).
+        BiquadCoefficients c = MixerMath.EqBandCoefficients(EqBand.Low, new EqBands(0.0, 0.5, 0.5), 48_000);
+
+        Assert.True(SteadyStateGain(c) <= Math.Pow(10.0, -48.0 / 20.0));
+    }
+
+    [Fact]
+    public void EqBand_CoarserCutMode_AttenuatesAtLeastAsMuch()
+    {
+        var eq = new EqBands(0.1, 0.5, 0.5); // a partial low cut
+        double Gain(EqCutMode m) => SteadyStateGain(MixerMath.EqBandCoefficients(EqBand.Low, eq, 48_000, m));
+
+        Assert.True(Gain(EqCutMode.Eq) > Gain(EqCutMode.Deep), "Deep should cut more than EQ");
+        Assert.True(Gain(EqCutMode.Deep) >= Gain(EqCutMode.Kill), "Kill should cut at least as deep as Deep");
+    }
+
+    [Fact]
+    public void EqBand_CutMode_LeavesBoostUntouched()
+    {
+        // The mode only governs the cut half; a boosted band is identical across modes.
+        var boosted = new EqBands(0.9, 0.5, 0.5);
+        BiquadCoefficients eqMode = MixerMath.EqBandCoefficients(EqBand.Low, boosted, 48_000, EqCutMode.Eq);
+        BiquadCoefficients killMode = MixerMath.EqBandCoefficients(EqBand.Low, boosted, 48_000, EqCutMode.Kill);
+
+        Assert.Equal(killMode, eqMode);
+    }
+
     // --- Filter coefficient design ---
 
     [Fact]

@@ -96,6 +96,19 @@
         </Grid>
       </Border>
 
+      <!-- Global EQ cut-depth mode: one button cycles how deep every channel's EQ band-cut goes
+           (EQ -12 dB / DEEP -24 dB / KILL full). Kept off the crossfader well so it can't be mis-tapped
+           mid-blend; the label shows the active mode. -->
+      <Border Classes="hardware-well" Padding="10,6">
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="EQ CUT" Margin="0,0,10,0" />
+          <Button Grid.Column="1" Classes="key mixer"
+                  HorizontalAlignment="Stretch" Content="{Binding EqCutModeLabel}"
+                  Command="{Binding EqCutModeCommand}"
+                  ToolTip.Tip="EQ cut depth, all channels — EQ: -12 dB · DEEP: -24 dB · KILL: full kill" />
+        </Grid>
+      </Border>
+
       <Border Classes="hardware-well" Padding="10,8">
         <Grid ColumnDefinitions="*,14,*">
           <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center">

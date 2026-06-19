@@ -17,7 +17,7 @@ public class MixerActionHandlerTests
     }
 
     [Fact]
-    public void HandledKinds_AreTheSevenMixerKinds()
+    public void HandledKinds_AreTheEightMixerKinds()
     {
         MixerActionHandler handler = NewHandler(out _);
 
@@ -28,7 +28,79 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerCueToggle, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueLevel, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueMix, handler.HandledKinds);
-        Assert.Equal(7, handler.HandledKinds.Count);
+        Assert.Contains(PerformanceActionKind.MixerEqCutMode, handler.HandledKinds);
+        Assert.Equal(8, handler.HandledKinds.Count);
+    }
+
+    [Fact]
+    public void EqCutMode_DefaultsToKill()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        Assert.Equal(EqCutMode.Kill, handler.State.CutMode);
+    }
+
+    [Fact]
+    public void EqCutMode_NoArgument_CyclesToNextModeAndRebuildsEveryChannelEq()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+        // Park deck A's low band fully down under the default KILL mode → a real kill.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, Value: 0.0,
+            Slot: MixerState.DeckA, Argument: "Low"));
+        BiquadCoefficients killed = mixer.Eq[(MixerState.DeckA, EqBand.Low)];
+
+        // Cycle the global mode: KILL → EQ. The parked band must be re-pushed, now floored not killed.
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerEqCutMode));
+
+        Assert.Equal(EqCutMode.Eq, handler.State.CutMode);
+        Assert.NotEqual(killed, mixer.Eq[(MixerState.DeckA, EqBand.Low)]);
+        for (int slot = 0; slot < MixerState.DeckCount; slot++)
+        {
+            Assert.True(mixer.Eq.ContainsKey((slot, EqBand.Low)));
+            Assert.True(mixer.Eq.ContainsKey((slot, EqBand.Mid)));
+            Assert.True(mixer.Eq.ContainsKey((slot, EqBand.High)));
+        }
+    }
+
+    [Theory]
+    [InlineData("Eq", EqCutMode.Eq)]
+    [InlineData("Deep", EqCutMode.Deep)]
+    [InlineData("Kill", EqCutMode.Kill)]
+    public void EqCutMode_Argument_SelectsModeAbsolutely(string argument, EqCutMode expected)
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: argument));
+
+        Assert.Equal(expected, handler.State.CutMode);
+    }
+
+    [Fact]
+    public void EqCutMode_BadArgument_Throws()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        Assert.Throws<ArgumentException>(() => handler.Handle(
+            new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: "Bogus")));
+    }
+
+    [Fact]
+    public void EqCutMode_ReportsActiveModeFeedback()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        ActionFeedbackChanged? feedback = null;
+        handler.FeedbackChanged += (_, e) => feedback = e;
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: "Deep"));
+
+        Assert.Equal(PerformanceActionKind.MixerEqCutMode, feedback!.Kind);
+        Assert.Equal("Deep", feedback.State.Argument);
+        Assert.Equal((double)(int)EqCutMode.Deep, feedback.State.Value, Tol);
+
+        ActionFeedbackState query = handler.GetFeedback(PerformanceActionKind.MixerEqCutMode, slot: 0);
+        Assert.True(query.IsAvailable);
+        Assert.Equal("Deep", query.Argument);
     }
 
     [Fact]
