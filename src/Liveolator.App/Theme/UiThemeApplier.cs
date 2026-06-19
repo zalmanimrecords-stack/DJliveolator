@@ -68,7 +68,12 @@ public static class UiThemeApplier
                          System.Globalization.CultureInfo.InvariantCulture,
                          out double number))
             {
-                application.Resources[key] = number;
+                // Radius tokens feed a CornerRadius property. Store them as CornerRadius so style
+                // re-evaluation (which casts the resource directly, without the Double->CornerRadius
+                // conversion the first apply uses) does not throw InvalidCastException and crash the app.
+                application.Resources[key] = key.EndsWith("Radius", StringComparison.Ordinal)
+                    ? new CornerRadius(number)
+                    : number;
             }
         }
 

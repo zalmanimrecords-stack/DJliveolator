@@ -48,8 +48,11 @@
     <Color x:Key="BeatMarkColor">#8E9AA8</Color>
     <Color x:Key="DownbeatMarkColor">#E5403A</Color>
 
-    <x:Double x:Key="PanelRadius">16</x:Double>
-    <x:Double x:Key="ControlRadius">3</x:Double>
+    <!-- CornerRadius (not x:Double): the control styles bind these to a CornerRadius property, and a theme
+         overwrites them with a CornerRadius. Keeping the default the same type avoids a Double->CornerRadius
+         cast on style re-evaluation, which Avalonia does directly and would crash the app. -->
+    <CornerRadius x:Key="PanelRadius">16</CornerRadius>
+    <CornerRadius x:Key="ControlRadius">3</CornerRadius>
 
     <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
     <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage

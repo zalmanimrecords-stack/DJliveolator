@@ -46,6 +46,20 @@ public sealed class UiThemeApplierBackgroundTests
         Assert.Equal(Color.Parse("#E8DCC2"), Assert.IsAssignableFrom<ISolidColorBrush>(value).Color);
     }
 
+    // Radius tokens must land as CornerRadius, not a bare Double: the control styles bind them to a
+    // CornerRadius property, and on style re-evaluation Avalonia casts the resource directly (no implicit
+    // Double->CornerRadius conversion), so a Double resource crashes the app on the next layout pass.
+    [AvaloniaFact]
+    public void Radius_token_is_applied_as_a_corner_radius()
+    {
+        Application app = Application.Current!;
+
+        UiThemeApplier.Apply(app, Theme(("PanelRadius", "2"), ("ControlRadius", "0")));
+
+        Assert.Equal(new CornerRadius(2), Assert.IsType<CornerRadius>(Resource(app, "PanelRadius")));
+        Assert.Equal(new CornerRadius(0), Assert.IsType<CornerRadius>(Resource(app, "ControlRadius")));
+    }
+
     [AvaloniaFact]
     public void Theme_without_background_image_resets_AppBackground_to_solid()
     {
