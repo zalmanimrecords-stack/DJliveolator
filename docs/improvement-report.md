@@ -1,110 +1,102 @@
 # Code Improvement Report
-_Generated: 2026-06-20_
+_Generated: 2026-06-20 (loop 2)_
 
 ## Summary
-An autonomous maintenance pass over the Liveolator codebase. The code is in unusually
-good shape — strict project standards (no dead code, 0 build warnings, ~332 test files,
-no TODO/FIXME) mean the candidate pool was thin. Three safe, evidence-backed improvements
-were made and committed (a stale-doc banner, a UI-control dedup, and a persistence-save
-dedup). Work stayed entirely within scope **a separate, active session is NOT touching** —
-that session is concurrently editing the App-shell / settings / deck-session files, so its
-in-progress files were left untouched and its incomplete repro tests are not this loop's
-regressions (see Risks).
+An autonomous maintenance pass over the Liveolator codebase. The code remains in
+unusually good shape — strict project standards mean a thin candidate pool: no
+TODO/FIXME anywhere in `src`, no obsolete/legacy markers, all README/doc cross-links
+resolve, and the only proven dead code was a single never-called method. Two safe,
+evidence-backed changes were made and committed; everything riskier (audio/GL hot
+loops) was deliberately deferred rather than gambled on. The loop began on a clean tree
+after the owner committed an in-progress STUDIO feature (`9d735ad`), so no in-progress
+work was swept up.
 
 ## Commits Made
 | # | Commit | Type | Scope |
 |---|--------|------|-------|
-| 1 | `4817e73` flag doc 20 as a superseded 2026-06-06 snapshot | docs | gap-analysis |
-| 2 | `2f236ab` extract shared ControlBrush.Halo helper | refactor | controls |
-| 3 | `3f8ce7b` JsonHotCueStore save via shared JsonFileSnapshotIo | refactor | media |
+| 1 | `0a91715` remove unused `Cooldown.Validate()` | refactor | autopilot |
+| 2 | `1a1bb2d` await writer task instead of blocking `Wait()` | test | audio |
 
 ## Validation Commands Run
-- `dotnet build Liveolator.sln -c Debug` — passed (0 warnings, 0 errors) [baseline, from prior alignment]
-- `dotnet test Liveolator.sln` — 2382 passed / 2 skipped [baseline, from prior alignment]
-- `dotnet build src/Liveolator.App -c Debug` — passed (0 warnings, 0 errors) [after ControlBrush dedup]
-- Control tests (`KnobSkinTests`, `JogKickEnergyTests`, `WaveformStripTests`) — passed
-- `dotnet build tests/Liveolator.Media.Tests` — passed (0/0) [after JsonHotCueStore dedup]
-- `JsonHotCueStoreTests` — 12/12 pass (incl. `Save_IsAtomic_NoLeftoverTempFile`)
+- `dotnet restore Liveolator.sln` — passed
+- `dotnet build Liveolator.sln --configuration Release --no-restore` — passed (1 warning, pre-existing)
+- `dotnet test Liveolator.sln --configuration Release --no-build --no-restore` — passed (2,449 passed, 0 failed, 2 skipped)
+- Per-commit: narrow project build + test (Core 1202 green; Audio 231 green)
+
+Baseline before any change: build green, 2,446 passed / 0 failed / 2 skipped.
+Warnings went 2 → 1 (the xUnit1031 blocking-task warning was resolved by commit 2).
 
 ## Improvement Candidates Found
 
 ### needs-refactor-now (addressed)
-- **`docs/20-dj-feature-gap-analysis.md:54`** — asserted "No `BeatGrid` type exists in code" /
-  "grep: no `BeatGrid` in `src/`", but `BeatGrid.cs`, `OnsetPhaseLock.cs`, `MasterLimiter.cs`,
-  `StructuralCueDetector.cs` all now exist → added a STALE banner pointing to the living
-  status doc 18 (matches the repo's existing convention: doc 14, doc 24→27).
-- **`Knob.cs` / `Fader.cs` / `Jog.cs`** — three byte-identical copies of a private
-  `Halo(IBrush, double)` brush-opacity helper → extracted to `Controls/ControlBrush.cs`,
-  call sites qualified, 3 copies removed. Pure function, behavior-preserving.
-- **`JsonHotCueStore.cs` (save path)** — inline atomic-write copy was *inferior* duplication
-  (fixed `.tmp` name, `FileMode.Create`, no orphaned-temp cleanup) → delegated to
-  `JsonFileSnapshotIo.SaveAsync<T>`. Serializer options were already identical, so the
-  on-disk `catalog.cues.json` is byte-for-byte unchanged; the unique-temp + finally-cleanup
-  is a strict robustness gain. 12/12 store tests still pass.
+- **src/Liveolator.Core/Autopilot/Cooldown.cs:11-16** — `Cooldown.Validate()` had zero
+  callers in the whole repo (full-repo grep; `AutopilotEngine` reads `rule.Cooldown` but
+  never validates it, no test invokes it) → removed the dead method.
+- **tests/Liveolator.Audio.Tests/Playback/StatefulBiquadTests.cs:33,62** — concurrency
+  test used `Task.Wait()` (xUnit1031, deadlock risk) → made async and `await` the writer
+  task; behavior preserved (still waits before asserting), warning gone.
 
 ### worth-refactoring-soon (deferred)
-- **`JsonPlaylistStore.cs` (save path)** — same inline atomic-write duplication, but **not a
-  clean parallel** to the cue store: its `SerializerOptions` (line 22, `WriteIndented` only)
-  differ from `JsonFileSnapshotIo`'s (`+ JsonStringEnumConverter + WhenWritingNull`). For the
-  current `PlaylistSnapshot` DTO (no enums, no nullable fields) the output is identical, but
-  routing only the save through the shared helper would create a read/write options asymmetry —
-  a latent footgun if the DTO later gains an enum/nullable field. Deferred per safety rule #6
-  (don't merge subtly-different cases) until load + save options are unified deliberately.
-- **Multiple `Json*Store` load paths** — the file-exists → deserialize → catch/warn → null
-  block is repeated across ~6 stores; the core is already in `JsonFileSnapshotIo.LoadAsync<T>()`,
-  but each store layers store-specific version checks on top. Low-priority; messages/return
-  conventions (`null` vs `Array.Empty<T>()`) would need to standardize first.
+- **src/Liveolator.Audio/Render/OfflineMixRenderer.cs:160-164** — L/R channel filter
+  cascade `filt(high(mid(low(x))))` is duplicated per channel. A `static ProcessCascade`
+  helper would dedup it cleanly and is guarded by `OfflineMixRendererTests`, BUT it sits
+  in a per-sample hot loop the module docs require to mirror the live mixer exactly →
+  deferred; the ~2-line dedup doesn't justify adding indirection to perf-sensitive DSP
+  without owner sign-off.
+- **src/Liveolator.Audio/Render/OfflineMixRenderer.cs:138-148** — the 4-band biquad
+  init + coefficient-set pattern repeats; could collapse to an array+loop. Same hot-loop /
+  state-isolation caution as above → deferred.
+- **src/Liveolator.Audio/Playback/BassMixerBackend.cs:790-828** — four near-identical
+  `Ensure*Scratch` buffer-grow methods could become one `EnsureCapacity(ref float[], …)`
+  helper (~30 lines saved). Realtime BASS backend; native lib absent in CI, so harder to
+  validate safely → deferred (owner should confirm test coverage first).
+- **src/Liveolator.Core/Dsp/MasterLimiter.cs:152-223** — 71-line per-frame `Process`
+  loop with five interleaved DSP phases. Realtime DSP; medium risk → deferred.
+- **src/Liveolator.Visuals/Gl/GlVisualPerformanceEngine.cs:336-464** — 128-line `Run`
+  bundling window config + GL context + handler wiring. Cannot be unit-tested (GL) →
+  deferred.
 
 ### acceptable-as-is
-- **`Fader.cs:75` / `Knob.cs:83` `CoerceUnit`** — 2-line NaN→0 unit coercer, below the
-  10-line duplication threshold and idiomatic Avalonia property-coercer boilerplate.
-- **`ArgumentNullException.ThrowIfNull` guards** (`MixerMath`, `CueMixMath`) — idiomatic
-  C# 11 single-line guards; extraction would reduce, not improve, clarity.
+- **src/Liveolator.Visuals/Gl/LayeredQuadRenderer.cs:113-116 / 170-173** — a scan flagged
+  the second frame-uniform set as "redundant," but that is an *assumption*; removing it
+  would risk a real behavior change with no test to catch it. Left untouched.
+- **tests/Liveolator.Audio.Tests/Playback/FakeLivePlaylist.cs:23** — `Changed` event
+  (CS0067 "never used") is a required `ILivePlaylist` interface member; cannot be removed.
+- **docs/01, 05, 08, 11** — still describe the old Zalmanolator stack (NAudio / DryWetMidi
+  / projectM). Project `CLAUDE.md` keeps these as *intentional historical* references
+  until the rewrite lands; not stale-by-accident.
 
 ### unclear-needs-more-evidence
-- None. Dead-code discovery (cross-project public/internal boundaries, XAML bindings, MCP
-  reflection surface, serialized DTOs) found **no provably-dead symbols**.
+- None this pass — the dead-code sweep surfaced exactly one proven item; everything else
+  in DI/MCP-attribute/XAML-bound territory could not be ruled out as dynamically used and
+  was left alone (the conservative default).
 
 ## Areas Intentionally Left Unchanged
-- **Oversized files** (`ServiceConfig.cs` 1208, `LibrariesViewModel.cs` 894,
-  `BassMixerBackend.cs` 849, `DeckViewModel.cs` 822, `StudioViewModel.cs` 744). Splitting
-  the composition root or large view-models is high-blast-radius and explicitly outside the
-  "smallest safe diff" mandate of this loop. Leave for a deliberate, planned refactor.
-- **The other active session's files** — every modified/untracked file in the current
-  working tree except my four control files belongs to a concurrent session (see Risks).
-  Not staged, not touched, not reverted.
+- All UI ViewModels (`DeckViewModel`, `LibrariesViewModel`, `StudioViewModel`, etc.) —
+  large but XAML/DI-wired; "dead-looking" members are often bound dynamically.
+- `ServiceConfig.cs` (1,210 lines) — the DI composition root; splitting it is high-risk
+  and not a smallest-diff win.
+- Realtime audio (`BassMixerBackend`, `TwoDeckBassEngine`) and all GL/`Visuals` code —
+  perf-sensitive and/or untestable without hardware in CI.
 
 ## Risks and Follow-up Items
-- **⚠️ ACTIVE CONCURRENT SESSION on the main working tree.** During this loop, files I did
-  not author appeared and kept changing (a source-vs-compiled-DLL line mismatch in
-  `DeckSessionRestoreReproTests.cs` proves it was mid-edit). Two features are in flight:
-  1. **Window-layout settings** — `App.axaml.cs`, `Shell/MainWindow.axaml.cs`,
-     `Shell/MainWindowViewModel.cs`, `Core/Settings/AppSettings.cs`, new
-     `Core/Settings/WindowLayoutSettings.cs`, `Media/JsonSettingsStore.cs` (+ tests).
-  2. **Deck-session-restore fix** — `Composition/DeckSessionPersistence.cs` + new
-     `Composition/DeckSessionRestoreReproTests.cs`.
-  - The 2–3 App.Tests failures observed (`Repro_SecondStartupLoad_ClobbersRestoredBpmAndFirstBeat`,
-    `Repro_UnreachablePath_IsSilentlyDropped_DeckComesBackEmpty`) are **that session's
-    intentionally-failing repro tests** whose fix (`DeckSessionPersistence.cs`) is incomplete
-    — NOT regressions from this loop. The `RescanAll` failure was parallel test-host contention
-    (passes in isolation).
-  - **Recommendation:** let that session finish and commit before any further alignment or
-    cleanup. I left its work entirely intact.
-- These two commits are **local only** (not pushed) — appropriate given the concurrent session.
+- **Cooldown bars are now unvalidated anywhere.** `Cooldown(int Bars)` and
+  `ScenePool.CooldownBars` accept negatives silently. Removing the dead `Validate()` did
+  not change behavior (it was never called), but if validation is desired it should be
+  wired into rule/profile construction — an owner/product decision, not a mechanical fix.
 
 ## Suggested Improvements (next loop)
-1. After the concurrent session lands, re-run the full suite to confirm those repro tests
-   flip to green, then resume cleanup.
-2. Finish the persistence-save consolidation: route `JsonPlaylistStore` (and any other
-   stores) through `JsonFileSnapshotIo.SaveAsync<T>()` — but first unify each store's read +
-   write `SerializerOptions` so there is no asymmetry (the cue store was safe only because
-   its options already matched the shared helper's).
+- If the owner confirms `OfflineMixRendererTests` covers output bit-for-bit, do the
+  `ProcessCascade` + filter-array dedup in `OfflineMixRenderer` as one reviewed commit.
+- Audit `BassMixerBackend.Ensure*Scratch` consolidation behind a focused test first.
+- Consider extracting window/GL-context setup out of `GlVisualPerformanceEngine.Run`
+  once a smoke/integration harness exists for the compositor.
 
 ## Topics for Treatment
-- **Persistence-layer consistency** — standardize temp-file naming, `FileMode`, exception
-  handling, and load-failure return conventions across the `Json*Store` family.
-- **Large-file decomposition** — a planned, test-guarded split of `ServiceConfig.cs` and the
-  900-line view-models, done as its own reviewed effort (not an opportunistic loop).
+- Input validation policy for autopilot/scene config (cooldown bars, scene counts):
+  validate-at-construction vs. clamp vs. leave-open — decide once, apply consistently.
+- A consistent "grow-or-reallocate buffer" helper shared by the audio backends.
 
 ## New Feature Ideas
-- (Out of scope for this loop; none surfaced that the existing docs/roadmap don't already cover.)
+- None implied beyond the already-tracked roadmap gaps (VJ authoring UI, keylock,
+  cross-platform packaging — see `docs/22-status-and-roadmap.md`).
