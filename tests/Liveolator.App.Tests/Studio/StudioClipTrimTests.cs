@@ -77,4 +77,36 @@ public sealed class StudioClipTrimTests
 
         Assert.Equal(11, clip.SourceOutSeconds!.Value, Tol);
     }
+
+    [Fact]
+    public void DragFadeIn_LengthensTheHeadFade()
+    {
+        StudioClipViewModel clip = Clip(start: 0, sourceOut: 10);
+
+        clip.DragFadeIn(2);
+
+        Assert.Equal(2, clip.FadeInSeconds, Tol);
+    }
+
+    [Fact]
+    public void DragFadeOut_LengthensTheTailFade()
+    {
+        StudioClipViewModel clip = Clip(start: 0, sourceOut: 10);
+
+        clip.DragFadeOut(1.5);
+
+        Assert.Equal(1.5, clip.FadeOutSeconds, Tol);
+    }
+
+    [Fact]
+    public void DragFade_ClampsToTheClipLengthAndZero()
+    {
+        StudioClipViewModel clip = Clip(start: 0, sourceOut: 10); // 10s timeline length (unwarped)
+
+        clip.DragFadeIn(1000);                       // can't exceed the clip
+        Assert.Equal(10, clip.FadeInSeconds, Tol);
+
+        clip.DragFadeOut(-100);                       // can't go negative
+        Assert.Equal(0, clip.FadeOutSeconds, Tol);
+    }
 }

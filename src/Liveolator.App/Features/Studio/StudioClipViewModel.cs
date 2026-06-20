@@ -138,6 +138,32 @@ public sealed class StudioClipViewModel : ViewModelBase
         RaiseTrimGeometry();
     }
 
+    // The clip's length along the TIMELINE (fades are timeline-domain, so they're bounded by this, not by
+    // the source duration). Equals Width / PixelsPerSecond.
+    private double TimelineDurationSeconds => DurationSeconds / (WarpFactor > 0 ? WarpFactor : 1.0);
+
+    /// <summary>
+    /// Drag the fade-in handle (top-left corner) by <paramref name="timelineDeltaSeconds"/>: lengthens or
+    /// shortens the head fade, clamped to the clip's timeline length. VM-driven (one undo snapshot at the
+    /// drag's start), so it writes the field directly.
+    /// </summary>
+    public void DragFadeIn(double timelineDeltaSeconds)
+    {
+        _fadeInSeconds = Math.Clamp(_fadeInSeconds + timelineDeltaSeconds, 0, TimelineDurationSeconds);
+        this.RaisePropertyChanged(nameof(FadeInSeconds));
+    }
+
+    /// <summary>
+    /// Drag the fade-out handle (top-right corner) by <paramref name="timelineDeltaSeconds"/>: lengthens or
+    /// shortens the tail fade, clamped to the clip's timeline length. VM-driven (one undo snapshot at the
+    /// drag's start), so it writes the field directly.
+    /// </summary>
+    public void DragFadeOut(double timelineDeltaSeconds)
+    {
+        _fadeOutSeconds = Math.Clamp(_fadeOutSeconds + timelineDeltaSeconds, 0, TimelineDurationSeconds);
+        this.RaisePropertyChanged(nameof(FadeOutSeconds));
+    }
+
     private void RaiseTrimGeometry()
     {
         this.RaisePropertyChanged(nameof(SourceInSeconds));

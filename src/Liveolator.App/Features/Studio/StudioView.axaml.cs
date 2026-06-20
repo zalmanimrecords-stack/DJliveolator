@@ -29,11 +29,14 @@ public partial class StudioView : UserControl
     private double _lastTrimX;        // last pointer X for incremental edge-trim deltas
     private ClipDragMode _clipDragMode;
 
-    // How a clip pointer-press is interpreted: grab near an edge trims it, elsewhere moves it.
-    private enum ClipDragMode { Move, TrimStart, TrimEnd }
+    // How a clip pointer-press is interpreted: a top corner adjusts a fade, an edge trims, elsewhere moves.
+    private enum ClipDragMode { Move, TrimStart, TrimEnd, FadeIn, FadeOut }
 
     // Pointer distance from a clip edge that counts as grabbing that edge's trim handle.
     private const double EdgeGrabPx = 7;
+    // The top strip / corner width within which a grab adjusts a fade instead of trimming.
+    private const double FadeZoneTopPx = 16;
+    private const double FadeCornerPx = 12;
 
     // Library drag-source state (drag a track onto a lane).
     private Point _libPressPoint;
@@ -169,10 +172,15 @@ public partial class StudioView : UserControl
         _dragOriginStartSeconds = clip.TimelineStartSeconds;
         _lastTrimX = _dragPressX;
 
-        // Grabbing within EdgeGrabPx of an edge trims that edge; elsewhere moves the clip.
-        double localX = e.GetPosition(control).X;
-        _clipDragMode = localX <= EdgeGrabPx ? ClipDragMode.TrimStart
-            : localX >= control.Bounds.Width - EdgeGrabPx ? ClipDragMode.TrimEnd
+        // A top corner adjusts a fade; an edge (below the top strip) trims; the body moves the clip.
+        Point local = e.GetPosition(control);
+        double width = control.Bounds.Width;
+        bool topZone = local.Y <= FadeZoneTopPx;
+        _clipDragMode =
+            topZone && local.X <= FadeCornerPx ? ClipDragMode.FadeIn
+            : topZone && local.X >= width - FadeCornerPx ? ClipDragMode.FadeOut
+            : local.X <= EdgeGrabPx ? ClipDragMode.TrimStart
+            : local.X >= width - EdgeGrabPx ? ClipDragMode.TrimEnd
             : ClipDragMode.Move;
 
         e.Pointer.Capture(control);
@@ -201,22 +209,26 @@ public partial class StudioView : UserControl
             return;
         }
 
-        // Edge trim: apply the incremental timeline delta since the last move (BeginDrag once, so the whole
-        // trim is one undo step). The clip VM clamps and honours the warp factor.
+        // Edge trim / corner fade: apply the incremental timeline delta since the last move (BeginDrag once,
+        // so the whole gesture is one undo step). The clip VM clamps and honours the warp factor.
         double currentX = e.GetPosition(this).X;
-        double trimDelta = vm.PixelsPerSecond > 0 ? (currentX - _lastTrimX) / vm.PixelsPerSecond : 0;
+        double delta = vm.PixelsPerSecond > 0 ? (currentX - _lastTrimX) / vm.PixelsPerSecond : 0;
         _lastTrimX = currentX;
-        if (trimDelta == 0)
+        if (delta == 0)
             return;
         if (!_dragMoved)
         {
             _dragClip.BeginDrag();
             _dragMoved = true;
         }
-        if (_clipDragMode == ClipDragMode.TrimStart)
-            _dragClip.DragStartEdge(trimDelta);
-        else
-            _dragClip.DragEndEdge(trimDelta);
+        switch (_clipDragMode)
+        {
+            case ClipDragMode.TrimStart: _dragClip.DragStartEdge(delta); break;
+            case ClipDragMode.TrimEnd: _dragClip.DragEndEdge(delta); break;
+            case ClipDragMode.FadeIn: _dragClip.DragFadeIn(delta); break;
+            // Tail fade grows as the corner is dragged inward (leftward), so invert the delta.
+            case ClipDragMode.FadeOut: _dragClip.DragFadeOut(-delta); break;
+        }
     }
 
     private void OnClipPointerReleased(object? sender, PointerReleasedEventArgs e)
