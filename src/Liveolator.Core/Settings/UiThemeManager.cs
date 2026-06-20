@@ -35,6 +35,15 @@ public sealed class UiThemeManager : IUiThemeManager
         "UiFontFamily", "MonoFontFamily",
     };
 
+    // Enum tokens pick one of a fixed set of named looks rather than a colour/number. KnobStyle lets a
+    // theme swap the knob's drawn shape (e.g. the Retro Sci-Fi chicken-head amp knob) without affecting
+    // other themes. The App maps the value to a render variant; an absent token = the default Rotary look.
+    private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> EnumTokens =
+        new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
+        {
+            ["KnobStyle"] = new HashSet<string>(StringComparer.Ordinal) { "Rotary", "ChickenHead" },
+        };
+
     private readonly object _gate = new();
     private readonly Dictionary<string, UiThemeDefinition[]> _packages = new(StringComparer.Ordinal);
     private UiThemeDefinition[] _themes = Array.Empty<UiThemeDefinition>();
@@ -72,6 +81,11 @@ public sealed class UiThemeManager : IUiThemeManager
             {
                 if (string.IsNullOrWhiteSpace(value) || value.Length > 1024 || value.Any(char.IsControl))
                     errors.Add($"Token '{key}' must be a non-empty asset reference (avares:// or a file path).");
+            }
+            else if (EnumTokens.TryGetValue(key, out IReadOnlySet<string>? allowed))
+            {
+                if (!allowed.Contains(value))
+                    errors.Add($"Token '{key}' must be one of: {string.Join(", ", allowed)}.");
             }
             else
             {

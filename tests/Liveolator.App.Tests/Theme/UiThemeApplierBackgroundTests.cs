@@ -72,6 +72,28 @@ public sealed class UiThemeApplierBackgroundTests
         Assert.IsAssignableFrom<ISolidColorBrush>(Resource(app, "AppBackground"));
     }
 
+    [AvaloniaFact]
+    public void Knob_style_token_sets_the_knob_style_resource()
+    {
+        Application app = Application.Current!;
+
+        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ChickenHead")));
+
+        Assert.Equal(Liveolator.App.Controls.KnobStyle.ChickenHead, Resource(app, "KnobStyle"));
+    }
+
+    [AvaloniaFact]
+    public void Theme_without_knob_style_resets_to_rotary()
+    {
+        Application app = Application.Current!;
+
+        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ChickenHead")));
+        Assert.Equal(Liveolator.App.Controls.KnobStyle.ChickenHead, Resource(app, "KnobStyle"));
+
+        UiThemeApplier.Apply(app, Theme()); // no token -> back to the default rotary knob
+        Assert.Equal(Liveolator.App.Controls.KnobStyle.Rotary, Resource(app, "KnobStyle"));
+    }
+
     private static object Resource(Application app, string key)
     {
         Assert.True(app.TryGetResource(key, null, out object? value));

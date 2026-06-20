@@ -44,13 +44,23 @@ public class Knob : Control
     public static readonly StyledProperty<IBrush> CapBrushProperty =
         AvaloniaProperty.Register<Knob, IBrush>(nameof(CapBrush), new SolidColorBrush(Color.FromRgb(0x12, 0x17, 0x1F)));
 
+    /// <summary>Number of evenly spaced detents the knob snaps to (e.g. 3 = a 3-position selector at
+    /// 0 / 0.5 / 1). 0 (default) or 1 leaves the knob continuous. Arrow keys then step one detent.</summary>
+    public static readonly StyledProperty<int> DetentsProperty =
+        AvaloniaProperty.Register<Knob, int>(nameof(Detents), defaultValue: 0);
+
+    /// <summary>The drawn shape, set per UI theme via the <c>KnobStyle</c> resource. Defaults to the
+    /// skeuomorphic rotary look; the Retro Sci-Fi theme switches it to the chicken-head amp knob.</summary>
+    public static readonly StyledProperty<KnobStyle> VariantProperty =
+        AvaloniaProperty.Register<Knob, KnobStyle>(nameof(Variant), defaultValue: KnobStyle.Rotary);
+
     private bool _dragging;
     private double _dragStartY;
     private double _dragStartValue;
 
     static Knob()
     {
-        AffectsRender<Knob>(ValueProperty, DefaultValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty);
+        AffectsRender<Knob>(ValueProperty, DefaultValueProperty, ArcBrushProperty, TrackBrushProperty, PointerBrushProperty, CapBrushProperty, IsEnabledProperty, DetentsProperty, VariantProperty);
     }
 
     public Knob()
@@ -80,8 +90,36 @@ public class Knob : Control
     public IBrush PointerBrush { get => GetValue(PointerBrushProperty); set => SetValue(PointerBrushProperty, value); }
     public IBrush CapBrush { get => GetValue(CapBrushProperty); set => SetValue(CapBrushProperty, value); }
 
-    private static double CoerceUnit(AvaloniaObject _, double value)
-        => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
+    /// <summary>Detent count: 0/1 = continuous, N≥2 = snap to N evenly spaced positions.</summary>
+    public int Detents { get => GetValue(DetentsProperty); set => SetValue(DetentsProperty, value); }
+
+    /// <summary>The drawn knob shape (theme-selected). Behaviour is identical across styles.</summary>
+    public KnobStyle Variant { get => GetValue(VariantProperty); set => SetValue(VariantProperty, value); }
+
+    private static double CoerceUnit(AvaloniaObject sender, double value)
+    {
+        if (double.IsNaN(value))
+            value = 0;
+        value = Math.Clamp(value, 0.0, 1.0);
+        // Snap to the nearest detent so drag, keyboard, and binding write-backs all land on a position.
+        if (sender is Knob { Detents: >= 2 } knob)
+        {
+            int steps = knob.Detents - 1;
+            value = Math.Round(value * steps, MidpointRounding.AwayFromZero) / steps;
+        }
+        return value;
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        // Detents may be applied after Value (e.g. XAML attribute order), so re-snap when it changes.
+        if (change.Property == DetentsProperty)
+        {
+            CoerceValue(ValueProperty);
+            CoerceValue(DefaultValueProperty);
+        }
+    }
 
     public override void Render(DrawingContext context)
     {
@@ -93,6 +131,13 @@ public class Knob : Control
         bool on = IsEnabled;
         double value = Math.Clamp(Value, 0, 1);
         var centre = new Point(bounds.Width / 2, bounds.Height / 2);
+
+        if (Variant == KnobStyle.ChickenHead)
+        {
+            RenderChickenHead(context, centre, size, value, on);
+            return;
+        }
+
         double arcStroke = Math.Max(2.5, size * 0.055);
         double arcRadius = (size / 2) - (arcStroke / 2) - 1;
         double bodyRadius = arcRadius - (arcStroke / 2) - size * 0.06;
@@ -139,6 +184,98 @@ public class Knob : Control
             { LineCap = PenLineCap.Round }, tickInner + highlightOffset, tickOuter + highlightOffset);
         context.DrawLine(new Pen(pointer, Math.Max(1.5, arcStroke * 0.55))
             { LineCap = PenLineCap.Round }, tickInner, tickOuter);
+    }
+
+    // Chicken-head amp knob (Retro Sci-Fi theme): a rooster-head pointer on a low skirt that rotates to
+    // aim its beak at the value, with faint min/max marks on the skirt. No domed cap — the pointer shape
+    // itself is the indicator. Uses the same StartAngle/SweepAngle sweep as the rotary look so the value
+    // reads identically; theme brushes (Cap = body, Pointer = beak tip, Arc = live ring) keep it themable.
+    private void RenderChickenHead(DrawingContext context, Point centre, double size, double value, bool on)
+    {
+        double r = size * 0.30;
+        double baseR = size * 0.42;
+        double angle = StartAngle + (SweepAngle * value);
+
+        DrawCastShadow(context, centre, baseR * 0.92, size);
+
+        // Low skirt foot (no dome): flat disc + ambient rim, so the knob reads as short, not bulbous.
+        context.DrawEllipse(on ? CapBrush : TrackBrush, null, centre, baseR, baseR);
+        context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x02, 0x06)),
+            Math.Max(1, size * 0.03)), centre, baseR, baseR);
+
+        // Faint min/max ticks on the skirt edge — the classic amp-dial end stops.
+        var tickPen = new Pen(ControlBrush.Halo(PointerBrush, 0.4), Math.Max(1, size * 0.025))
+            { LineCap = PenLineCap.Round };
+        foreach (double end in new[] { StartAngle, StartAngle + SweepAngle })
+            context.DrawLine(tickPen, PointOnCircle(centre, baseR + size * 0.02, end),
+                PointOnCircle(centre, baseR + size * 0.10, end));
+
+        // Live accent ring ties the knob to the theme accent when enabled.
+        if (on)
+            context.DrawEllipse(null, new Pen(ControlBrush.Halo(ArcBrush, 0.35), Math.Max(1, size * 0.02)),
+                centre, baseR * 0.66, baseR * 0.66);
+
+        double rad = angle * Math.PI / 180.0;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+
+        // Chicken-head silhouette in local space (+X = pointing toward the value), scaled by r.
+        (double X, double Y)[] outline =
+        [
+            (1.30, 0.00),   // beak tip
+            (0.45, -0.26),  // upper beak
+            (-0.10, -0.40), // head top
+            (-0.18, -0.72), // comb peak A
+            (-0.38, -0.48), // comb dip
+            (-0.62, -0.66), // comb peak B
+            (-0.86, -0.18), // upper back
+            (-0.74, 0.34),  // lower back
+            (-0.10, 0.46),  // jaw
+            (0.45, 0.26),   // lower beak
+        ];
+
+        StreamGeometry head = Polygon(centre, outline, r, cos, sin);
+        context.DrawGeometry(on ? CapBrush : TrackBrush, null, head);
+
+        // Fixed top-light sheen + bottom shade fake the molded-plastic 3D independent of rotation.
+        var sheen = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF), 0),
+                new GradientStop(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 0.45),
+                new GradientStop(Color.FromArgb(0x00, 0x00, 0x00, 0x00), 0.55),
+                new GradientStop(Color.FromArgb(0x55, 0x00, 0x00, 0x00), 1),
+            },
+        };
+        context.DrawGeometry(sheen, new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0x00, 0x02, 0x06)),
+            Math.Max(1.2, size * 0.03)), head);
+
+        // White beak tip = the indicator. A small triangle at the nose painted in the pointer brush.
+        StreamGeometry beak = Polygon(centre,
+            [(1.30, 0.00), (0.55, -0.20), (0.55, 0.20)], r, cos, sin);
+        context.DrawGeometry(on ? PointerBrush : TrackBrush, null, beak);
+
+        // Centre pivot screw.
+        context.DrawEllipse(new SolidColorBrush(Color.FromArgb(0xCC, 0x00, 0x02, 0x06)), null,
+            centre, size * 0.05, size * 0.05);
+    }
+
+    private static StreamGeometry Polygon(Point centre, (double X, double Y)[] local, double scale, double cos, double sin)
+    {
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext ctx = geometry.Open())
+        {
+            Point Map((double X, double Y) p)
+                => new(centre.X + (((p.X * cos) - (p.Y * sin)) * scale),
+                       centre.Y + (((p.X * sin) + (p.Y * cos)) * scale));
+            ctx.BeginFigure(Map(local[0]), isFilled: true);
+            for (int i = 1; i < local.Length; i++)
+                ctx.LineTo(Map(local[i]));
+            ctx.EndFigure(true);
+        }
+        return geometry;
     }
 
     private void DrawTrackChannel(DrawingContext context, Point centre, double radius, double stroke)
@@ -315,14 +452,15 @@ public class Knob : Control
         base.OnKeyDown(e);
         if (!IsEnabled)
             return;
+        double step = Detents >= 2 ? 1.0 / (Detents - 1) : KeyStep;
         if (e.Key is Key.Up or Key.Right)
         {
-            Value = Math.Clamp(Value + KeyStep, 0, 1);
+            Value = Math.Clamp(Value + step, 0, 1);
             e.Handled = true;
         }
         else if (e.Key is Key.Down or Key.Left)
         {
-            Value = Math.Clamp(Value - KeyStep, 0, 1);
+            Value = Math.Clamp(Value - step, 0, 1);
             e.Handled = true;
         }
     }

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Liveolator.App.Controls;
 using Liveolator.Core.Settings;
 
 namespace Liveolator.App.Theme;
@@ -79,6 +80,19 @@ public static class UiThemeApplier
 
         ApplyFluentAccent(application, theme.Tokens);
         ApplyBackground(application, theme.Tokens);
+        ApplyKnobStyle(application, theme.Tokens);
+    }
+
+    // The knob's drawn shape (doc 30 control look): a theme may switch it to the chicken-head amp knob.
+    // A theme that omits the token resets to Rotary, so switching back to another theme restores the
+    // default knob (mirrors how ApplyBackground resets a left-over background image).
+    private static void ApplyKnobStyle(Application application, IReadOnlyDictionary<string, string> tokens)
+    {
+        KnobStyle style = KnobStyle.Rotary;
+        if (tokens.TryGetValue("KnobStyle", out string? value)
+            && Enum.TryParse(value, ignoreCase: false, out KnobStyle parsed))
+            style = parsed;
+        application.Resources["KnobStyle"] = style;
     }
 
     // The app (main-window) background: a theme may replace the solid Bg with a texture image (doc 30 —

@@ -43,6 +43,8 @@ public sealed class BuiltInUiThemesTests
         Assert.Equal("2", theme.Tokens["PanelRadius"]);
         Assert.Equal("0", theme.Tokens["ControlRadius"]);
         Assert.Equal("#101315", theme.Tokens["KnobCapColor"]);
+        // The chicken-head amp knob is unique to this theme.
+        Assert.Equal("ChickenHead", theme.Tokens["KnobStyle"]);
     }
 
     [Fact]

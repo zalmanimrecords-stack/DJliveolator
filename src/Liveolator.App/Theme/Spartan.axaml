@@ -43,6 +43,8 @@
     <Setter Property="TrackBrush" Value="{DynamicResource KnobTrack}" />
     <Setter Property="CapBrush" Value="{DynamicResource KnobCap}" />
     <Setter Property="PointerBrush" Value="{DynamicResource KnobPointer}" />
+    <!-- The drawn shape: defaults to Rotary; a theme (Retro Sci-Fi) sets the KnobStyle resource to swap it. -->
+    <Setter Property="Variant" Value="{DynamicResource KnobStyle}" />
   </Style>
   <Style Selector="controls|Knob:disabled">
     <Setter Property="ArcBrush" Value="{DynamicResource S4}" />

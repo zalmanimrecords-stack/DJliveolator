@@ -59,6 +59,28 @@ public sealed class UiThemeManagerTokenTests
     }
 
     [Fact]
+    public void Accepts_a_known_knob_style_enum_token()
+    {
+        var result = new UiThemeManager().Validate(Theme(new Dictionary<string, string>
+        {
+            ["KnobStyle"] = "ChickenHead",
+        }));
+
+        Assert.True(result.IsValid, string.Join("; ", result.Errors));
+    }
+
+    [Fact]
+    public void Rejects_an_unknown_knob_style_value()
+    {
+        var result = new UiThemeManager().Validate(Theme(new Dictionary<string, string>
+        {
+            ["KnobStyle"] = "Triangle",
+        }));
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
     public void Still_rejects_an_unknown_token()
     {
         var result = new UiThemeManager().Validate(Theme(new Dictionary<string, string>

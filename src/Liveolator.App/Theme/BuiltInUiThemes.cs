@@ -132,6 +132,8 @@ public static class BuiltInUiThemes
                 ["FaderThumbColor"] = "#E8F4DF",
                 ["PanelRadius"] = "2",
                 ["ControlRadius"] = "0",
+                // Old-guitar-amp chicken-head pointer knobs, unique to this theme.
+                ["KnobStyle"] = "ChickenHead",
             }),
     ];
 
