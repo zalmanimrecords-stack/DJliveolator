@@ -30,7 +30,7 @@ public sealed class StatefulBiquadTests
     }
 
     [Fact]
-    public void ConcurrentSetAndProcess_NeverThrows_AndStaysFinite()
+    public async System.Threading.Tasks.Task ConcurrentSetAndProcess_NeverThrows_AndStaysFinite()
     {
         // Guards the atomic-publish contract (doc 27 B1): hammering SetCoefficients from one thread while
         // Process runs on another must never throw and must always yield a finite sample — the audio
@@ -59,7 +59,7 @@ public sealed class StatefulBiquadTests
         }
         catch (Exception ex) { failure = ex; }
 
-        writer.Wait();
+        await writer;
         Assert.Null(failure);
     }
 }
