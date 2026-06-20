@@ -7,6 +7,7 @@ using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
@@ -44,6 +45,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>BPM step per nudge button press (±0.1 BPM — fine enough for manual beat-sync).</summary>
     private const double NudgeBpmStep = 0.1;
 
+    // NUDGE pitch-bend: a tap momentarily bends the deck rate by this fraction (±3%) for PitchBendWindow,
+    // then restores — sliding the phase to manually beat-match without a position skip. Rapid taps re-arm
+    // the window so a press-and-tap holds the bend. ±3% sits well inside the deck's pitch range.
+    private const double PitchBendFraction = 0.03;
+    private static readonly TimeSpan PitchBendWindow = TimeSpan.FromMilliseconds(140);
+
     /// <summary>BPM step per GRID-tempo edit press (±1 BPM — coarse hand-correction; the analyzer already
     /// resolves sub-BPM, and half/double handles octave errors).</summary>
     private const double GridBpmStep = 1.0;
@@ -77,6 +84,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // Seconds the track-nudge buttons (◄ / ►) move the playhead per press — the configurable cueing step
     // (doc 12 Settings). Seeded from VisualsSettings; updated live via SetNudgeSeconds.
     private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
+    // Restores the deck's normal rate after a momentary NUDGE pitch-bend (see PitchBendTap).
+    private readonly DispatcherTimer _pitchBendRestore;
     private decimal _bpm;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
@@ -170,6 +179,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // known (waveform still decoding) it is a no-op rather than a guessed jump (the engine clamps to [0,1]).
         SeekBackCommand = ReactiveCommand.Create(() => NudgeSeek(-_nudgeSeconds), canEmit);
         SeekForwardCommand = ReactiveCommand.Create(() => NudgeSeek(+_nudgeSeconds), canEmit);
+
+        // NUDGE pitch-bend (the platter-push): each tap momentarily bends the deck's rate to slide its
+        // phase for manual beat-matching, with NO position skip, then restores on the timer below. ◄ slows
+        // (drift back), ► speeds up (drift forward).
+        _pitchBendRestore = new DispatcherTimer { Interval = PitchBendWindow };
+        _pitchBendRestore.Tick += (_, _) =>
+        {
+            _pitchBendRestore.Stop();
+            _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: 0, Slot: slot));
+        };
+        NudgeBendDownCommand = ReactiveCommand.Create(() => PitchBendTap(-PitchBendFraction), canEmit);
+        NudgeBendUpCommand = ReactiveCommand.Create(() => PitchBendTap(+PitchBendFraction), canEmit);
 
         // Grid edit (rekordbox/Serato "grid edit"): re-tempo / re-phase the BEAT GRID so it sits on the
         // kicks, via DeckSetGridBpm + DeckSetFirstBeat. These change the analyzed grid/sync tempo and phase
@@ -615,6 +637,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Nudges the track playhead 0.5 s forward (relative seek) — fine cueing / manual line-up.</summary>
     public ReactiveCommand<Unit, Unit> SeekForwardCommand { get; }
 
+    /// <summary>NUDGE ◄ — momentary pitch-bend DOWN: briefly slows the deck so its beats drift back, to
+    /// manually beat-match without skipping the playhead (the platter-push). Restores on its own.</summary>
+    public ReactiveCommand<Unit, Unit> NudgeBendDownCommand { get; }
+
+    /// <summary>NUDGE ► — momentary pitch-bend UP: briefly speeds the deck so its beats drift forward.</summary>
+    public ReactiveCommand<Unit, Unit> NudgeBendUpCommand { get; }
+
+    /// <summary>True when pitch-bend can be emitted (the realtime engine is wired).</summary>
+    public bool CanPitchBend => IsEnabled;
+
     /// <summary>Grid edit: lower the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible — does
     /// not move the pitch fader). For hand-correcting a mis-detected tempo so the grid sits on the kicks.</summary>
     public ReactiveCommand<Unit, Unit> GridBpmDownCommand { get; }
@@ -671,6 +703,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     // Shift the playhead by a signed number of seconds via a RELATIVE DeckSeek. Converts seconds to a
     // 0..1 fraction using the decoded duration; a no-op until the duration is known (engine clamps to [0,1]).
+    // Emit a momentary pitch-bend and (re)arm the restore window: the deck bends its rate by bendFraction
+    // now and snaps back to its normal rate when the window elapses. Rapid taps re-arm the window, so a
+    // press-and-tap holds the bend; this slides the deck's phase with no position skip (manual beat-match).
+    private void PitchBendTap(double bendFraction)
+    {
+        if (_dispatcher is null)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: bendFraction, Slot: _slot));
+        _pitchBendRestore.Stop();
+        _pitchBendRestore.Start();
+    }
+
     private void NudgeSeek(double seconds)
     {
         if (_dispatcher is null || _durationSeconds <= 0.0)

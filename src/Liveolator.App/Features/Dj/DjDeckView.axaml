@@ -78,11 +78,11 @@
           <TextBlock Classes="section" Text="NUDGE" Margin="0,4,0,0" />
           <Grid ColumnDefinitions="*,*">
             <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
-                    Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                    ToolTip.Tip="Nudge the track left (fine cueing)" />
+                    Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
+                    ToolTip.Tip="Nudge — tap to bend the deck slower (beats drift back); tap repeatedly to beat-match. No skip." />
             <Button Grid.Column="1" Classes="key" Content="►" Height="30"
-                    Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                    ToolTip.Tip="Nudge the track right (fine cueing)" />
+                    Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
+                    ToolTip.Tip="Nudge — tap to bend the deck faster (beats drift forward); tap repeatedly to beat-match. No skip." />
           </Grid>
         </StackPanel>
       </Grid>

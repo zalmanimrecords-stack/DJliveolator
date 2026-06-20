@@ -135,16 +135,16 @@
         </Grid>
         <UniformGrid Columns="2">
           <Button Classes="key" Margin="0,0,4,0"
-                  Command="{Binding SeekForwardCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                  ToolTip.Tip="Nudge the track: slide the waveform left (fine cueing)">
+                  Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
+                  ToolTip.Tip="Nudge — tap to bend the deck slower (beats drift back); tap repeatedly to beat-match. No skip.">
             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
               <TextBlock Text="◄" />
               <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
             </StackPanel>
           </Button>
           <Button Classes="key"
-                  Command="{Binding SeekBackCommand}" IsEnabled="{Binding CanNudgeSeek}"
-                  ToolTip.Tip="Nudge the track: slide the waveform right (fine cueing)">
+                  Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
+                  ToolTip.Tip="Nudge — tap to bend the deck faster (beats drift forward); tap repeatedly to beat-match. No skip.">
             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
               <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
               <TextBlock Text="►" />

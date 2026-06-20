@@ -152,4 +152,13 @@ public enum PerformanceActionKind
     /// (slide the grid to the playhead) and is persisted to the catalog as a manual beat grid.
     /// </summary>
     DeckSetGridBpm,
+
+    /// <summary>
+    /// Momentary pitch-bend for manual beat-matching (the NUDGE buttons / platter push): Value is the signed
+    /// rate offset as a fraction (e.g. +0.03 = +3% faster, -0.03 = slower), 0 = release/restore. Temporarily
+    /// scales the deck's playback rate WITHOUT moving the pitch fader or the nominal BPM, sliding the deck's
+    /// phase so beats drift into alignment — never a position seek (which would skip). Restored to the
+    /// deck's normal rate on release. A synced deck ignores it (Sync owns the rate).
+    /// </summary>
+    DeckPitchBend,
 }

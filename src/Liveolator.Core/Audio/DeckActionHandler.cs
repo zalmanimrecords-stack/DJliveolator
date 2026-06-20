@@ -27,6 +27,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckPitch,
         PerformanceActionKind.DeckBpm,
         PerformanceActionKind.DeckBpmNudge,
+        PerformanceActionKind.DeckPitchBend,
         PerformanceActionKind.DeckCue,
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckSyncToggle,
@@ -126,6 +127,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 // position is left untouched, so editing the grid never changes what the floor hears.
                 _engine.SetDeckBaseBpm(slot, action.Value);
                 RaiseBpmFeedback(slot);
+                break;
+            case PerformanceActionKind.DeckPitchBend:
+                // Momentary rate bend for manual beat-matching (Value = signed fraction, 0 = release). No
+                // feedback: it doesn't move the pitch fader or nominal BPM, so no indicator changes.
+                _engine.PitchBend(slot, action.Value);
                 break;
             case PerformanceActionKind.DeckBpmNudge:
                 // Relative delta in BPM (+0.1 / -0.1 from nudge buttons). The engine's SetDeckBpm

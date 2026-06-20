@@ -115,6 +115,7 @@ public class DeckActionHandlerTests
         public List<(int Slot, double DeltaSeconds)> Jogs { get; } = new();
         public List<(int Slot, double Value, bool Relative)> Pitches { get; } = new();
         public List<(int Slot, double Bpm)> Bpms { get; } = new();
+        public List<(int Slot, double Bend)> Bends { get; } = new();
         public List<int> SyncOnceCalls { get; } = new();
         public List<int> Cues { get; } = new();
         public List<(int Slot, double Beats)> Loops { get; } = new();
@@ -174,6 +175,8 @@ public class DeckActionHandlerTests
             Bpms.Add((slot, bpm));
             _bpm[slot] = Math.Clamp(bpm, MinimumDeckBpm(slot), MaximumDeckBpm(slot));
         }
+
+        public void PitchBend(int slot, double bendFraction) => Bends.Add((slot, bendFraction));
 
         public void Cue(int slot)
         {
@@ -261,6 +264,20 @@ public class DeckActionHandlerTests
 
         Assert.Equal(128.0, engine.DeckBaseBpm(1), precision: 6);
         Assert.Equal(0.0, engine.DeckBaseBpm(0), precision: 6); // other deck untouched
+    }
+
+    [Fact]
+    public void DeckPitchBend_RoutesSignedFractionToEngine_ForBendAndRelease()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: 0.03, Slot: 1)); // bend
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: 0.0, Slot: 1));  // release
+
+        Assert.Equal(new[] { (1, 0.03), (1, 0.0) }, engine.Bends);
     }
 
     [Fact]

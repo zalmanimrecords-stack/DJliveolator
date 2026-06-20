@@ -123,6 +123,25 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public void PitchBend(int slot, double bendFraction)
+    {
+        ValidateSlot(slot);
+        if (!double.IsFinite(bendFraction))
+            return;
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            // Sync owns a locked deck's rate; bending it would fight the sync corrector, so leave it be.
+            if (s.Deck is not { } deck || s.SyncLocked)
+                return;
+            // Apply a transient rate on TOP of the deck's normal rate (0 ⇒ restore). PitchPosition /
+            // PlaybackRate are untouched, so the pitch fader and nominal BPM don't move — only the heard
+            // rate bends, sliding the phase. The next normal rate change (or release) restores it.
+            double rate = bendFraction != 0.0 ? s.PlaybackRate * (1.0 + bendFraction) : s.PlaybackRate;
+            _backend.SetDeckRate(deck.Handle, rate);
+        }
+    }
+
     // Caller holds _gate. A one-shot sync may exceed the manual pitch fader's display range, so audible
     // tempo follows the separately retained playback rate. 0 when base BPM is unknown.
     private double EffectiveBpm(int slot)

@@ -368,6 +368,25 @@ public sealed class DeckViewModelTests
         Assert.Equal(0.5 / 4.0, Assert.Single(dispatcher.Dispatched).Value, precision: 6);
     }
 
+    [Fact]
+    public async Task NudgeBend_EmitsAMomentaryPitchBend_SignedByDirection()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        await vm.NudgeBendUpCommand.Execute().ToTask();
+        PerformanceAction up = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPitchBend, up.Kind);
+        Assert.Equal(0, up.Slot);
+        Assert.True(up.Value > 0, "bend up speeds the deck (positive rate fraction)");
+
+        dispatcher.Dispatched.Clear();
+        await vm.NudgeBendDownCommand.Execute().ToTask();
+        PerformanceAction down = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPitchBend, down.Kind);
+        Assert.True(down.Value < 0, "bend down slows the deck (negative rate fraction)");
+    }
+
     [Theory]
     [InlineData(-0.5, 0.0)]
     [InlineData(1.7, 1.0)]

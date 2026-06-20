@@ -82,6 +82,14 @@ public interface IMultiDeckPlaybackEngine
     /// </summary>
     void SetDeckBpm(int slot, double bpm);
 
+    /// <summary>
+    /// Apply a momentary pitch-bend for manual beat-matching: temporarily scale the deck's playback rate by
+    /// <c>1 + <paramref name="bendFraction"/></c> (e.g. +0.03 = 3% faster) WITHOUT changing the pitch fader
+    /// or nominal BPM, so the deck's phase slides smoothly. Pass 0 to restore the deck's normal rate
+    /// (release). A no-op when nothing is loaded or the deck is sync-locked (Sync owns the rate).
+    /// </summary>
+    void PitchBend(int slot, double bendFraction);
+
     /// <summary>Jump the playhead to the deck's cue point (defaults to the track start) and pause there.</summary>
     void Cue(int slot);
 
