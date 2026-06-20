@@ -1,0 +1,13 @@
+{
+  "name": "KALEIDOSCOPE TUNNEL",
+  "author": "Liveolator",
+  "description": "Mirrored radial tunnel with rotating color facets and beat shockwaves.",
+  "parameters": [
+    { "id": "segments", "uniform": "uSegments", "label": "SEG", "min": 0.0, "max": 1.0, "default": 0.65 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.5, "default": 1.0 },
+    { "id": "zoom", "uniform": "uZoom", "label": "ZOOM", "min": 0.0, "max": 2.0, "default": 0.9 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 2.0 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uBeatPhase;\nuniform float uLevel;\nuniform float uBass;\nuniform float uMid;\nuniform float uSegments;\nuniform float uSpeed;\nuniform float uZoom;\nuniform float uColor;\nuniform float uGlow;\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.2+uSpeed*0.9);\n  float r=length(p)+0.001;\n  float a=atan(p.y,p.x);\n  float seg=5.0+floor(uSegments*19.0);\n  float sector=6.2831853/seg;\n  float folded=abs(mod(a+t*0.25+sector*0.5,sector)-sector*0.5);\n  float tunnel=sin((1.0/r)*(4.0+uZoom*8.0)+folded*seg*3.0-t*3.0+uBass*2.0);\n  float bands=smoothstep(0.22,0.95,tunnel)*smoothstep(1.2,0.06,r);\n  float wave=uBeatFlash*smoothstep(0.04,0.0,abs(r-(0.15+uBeatPhase*0.75)));\n  vec3 pal=0.5+0.5*cos(6.28318*(vec3(0.0,0.31,0.68)+folded/sector+uColor*0.12+t*0.03+uMid*0.12));\n  vec3 col=vec3(0.003,0.002,0.012)+pal*(bands+wave)*(0.45+uGlow*0.6+uLevel*0.5);\n  col=col/(1.0+col*0.55);\n  fragColor=vec4(col,1.0);\n}\n"
+}

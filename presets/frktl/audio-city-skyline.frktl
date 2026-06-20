@@ -1,0 +1,13 @@
+{
+  "name": "AUDIO CITY SKYLINE",
+  "author": "Liveolator",
+  "description": "Neon city silhouette whose buildings rise with the spectrum.",
+  "parameters": [
+    { "id": "height", "uniform": "uHeight", "label": "HEIGHT", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.6 },
+    { "id": "lights", "uniform": "uLights", "label": "LIGHTS", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 0.0 },
+    { "id": "pulse", "uniform": "uPulse", "label": "PULSE", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uBass;\nuniform float uLowMid;\nuniform float uMid;\nuniform float uHigh;\nuniform float uHeight;\nuniform float uSpeed;\nuniform float uLights;\nuniform float uColor;\nuniform float uPulse;\nfloat hash(float x){return fract(sin(x*127.1)*43758.5453);} \nvec3 pal(float t){return 0.5+0.5*cos(6.28318*(t+vec3(0.0,0.34,0.67)+floor(uColor+0.5)*0.12));}\nvoid main(){\n  vec2 uv=vTexCoord;\n  float cols=42.0;\n  float id=floor(uv.x*cols);\n  float local=fract(uv.x*cols);\n  float audio=mix(uBass,uHigh,fract(id*0.17)); audio=max(audio, uMid*hash(id+2.0));\n  float h=0.18+hash(id)*0.38+audio*0.28*uHeight+uBeatFlash*0.08*uPulse;\n  float building=step(uv.y, h)*step(0.08,local)*step(local,0.92);\n  float winGrid=step(0.78,hash(floor(uv.y*38.0)+id*4.0+floor(uTime*(1.0+uSpeed)*2.0)))*uLights;\n  float windows=building*winGrid*step(0.16,local)*step(local,0.84);\n  float horizon=exp(-abs(uv.y-h)*55.0)*building;\n  vec3 sky=mix(vec3(0.003,0.004,0.018),vec3(0.03,0.01,0.06),uv.y);\n  vec3 col=sky;\n  col+=building*vec3(0.006,0.008,0.018);\n  col+=pal(id*0.04+uLowMid*0.1)*(windows*(0.25+uLights*0.45)+horizon*0.35);\n  col+=vec3(0.2,0.6,1.0)*exp(-abs(uv.y-0.18)*28.0)*0.05*(1.0+uBeatFlash*uPulse);\n  col=col/(1.0+col*0.55);\n  fragColor=vec4(col,1.0);\n}\n"
+}

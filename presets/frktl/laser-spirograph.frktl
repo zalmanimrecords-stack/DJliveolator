@@ -1,0 +1,13 @@
+{
+  "name": "LASER SPIROGRAPH",
+  "author": "Liveolator",
+  "description": "Lissajous laser curves with audio-reactive trails and color cycling.",
+  "parameters": [
+    { "id": "rate", "uniform": "uRate", "label": "RATE", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "shape", "uniform": "uShape", "label": "SHAPE", "min": 0.0, "max": 1.0, "default": 0.55 },
+    { "id": "width", "uniform": "uWidth", "label": "WIDTH", "min": 0.0, "max": 2.0, "default": 0.8 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 1.0 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 1.1 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uBass;\nuniform float uHigh;\nuniform float uRate;\nuniform float uShape;\nuniform float uWidth;\nuniform float uColor;\nuniform float uGlow;\nfloat line(vec2 p, vec2 a, vec2 b, float w){ vec2 pa=p-a, ba=b-a; float h=clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0); float d=length(pa-ba*h); return exp(-d*d/(w*w)); }\nvec2 curve(float t){ float ax=2.0+floor(uShape*5.0); float ay=3.0+floor(uShape*7.0); return vec2(sin(t*ax+uBass), sin(t*ay+1.2+uHigh))*0.72; }\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.25+uRate*0.85);\n  float acc=0.0;\n  vec2 prev=curve(t);\n  for(int i=1;i<42;i++){ float fi=float(i); vec2 cur=curve(t+fi*0.055); acc+=line(p,prev,cur,0.004+uWidth*0.006)*(1.0-fi/44.0); prev=cur; }\n  acc*=0.5+uGlow*0.75+uLevel*0.5+uBeatFlash*0.7;\n  vec3 pal=0.5+0.5*cos(6.28318*(vec3(0.0,0.33,0.67)+uColor*0.13+t*0.04));\n  vec3 col=vec3(0.001,0.002,0.009)+pal*acc+vec3(0.6,0.85,1.0)*pow(acc,2.0)*0.25;\n  col=col/(1.0+col*0.55);\n  fragColor=vec4(col,1.0);\n}\n"
+}
