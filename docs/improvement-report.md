@@ -4,21 +4,27 @@ _Generated: 2026-06-20_
 ## Summary
 An autonomous maintenance pass over the Liveolator codebase. The code is in unusually
 good shape — strict project standards (no dead code, 0 build warnings, ~332 test files,
-no TODO/FIXME) mean the candidate pool was thin. Two safe, evidence-backed improvements
-were made and committed. **The loop was then stopped early because a separate, active
-session is concurrently modifying the main working tree** (see Risks).
+no TODO/FIXME) mean the candidate pool was thin. Three safe, evidence-backed improvements
+were made and committed (a stale-doc banner, a UI-control dedup, and a persistence-save
+dedup). Work stayed entirely within scope **a separate, active session is NOT touching** —
+that session is concurrently editing the App-shell / settings / deck-session files, so its
+in-progress files were left untouched and its incomplete repro tests are not this loop's
+regressions (see Risks).
 
 ## Commits Made
 | # | Commit | Type | Scope |
 |---|--------|------|-------|
 | 1 | `4817e73` flag doc 20 as a superseded 2026-06-06 snapshot | docs | gap-analysis |
 | 2 | `2f236ab` extract shared ControlBrush.Halo helper | refactor | controls |
+| 3 | `3f8ce7b` JsonHotCueStore save via shared JsonFileSnapshotIo | refactor | media |
 
 ## Validation Commands Run
 - `dotnet build Liveolator.sln -c Debug` — passed (0 warnings, 0 errors) [baseline, from prior alignment]
 - `dotnet test Liveolator.sln` — 2382 passed / 2 skipped [baseline, from prior alignment]
 - `dotnet build src/Liveolator.App -c Debug` — passed (0 warnings, 0 errors) [after ControlBrush dedup]
 - Control tests (`KnobSkinTests`, `JogKickEnergyTests`, `WaveformStripTests`) — passed
+- `dotnet build tests/Liveolator.Media.Tests` — passed (0/0) [after JsonHotCueStore dedup]
+- `JsonHotCueStoreTests` — 12/12 pass (incl. `Save_IsAtomic_NoLeftoverTempFile`)
 
 ## Improvement Candidates Found
 
@@ -30,13 +36,20 @@ session is concurrently modifying the main working tree** (see Risks).
 - **`Knob.cs` / `Fader.cs` / `Jog.cs`** — three byte-identical copies of a private
   `Halo(IBrush, double)` brush-opacity helper → extracted to `Controls/ControlBrush.cs`,
   call sites qualified, 3 copies removed. Pure function, behavior-preserving.
+- **`JsonHotCueStore.cs` (save path)** — inline atomic-write copy was *inferior* duplication
+  (fixed `.tmp` name, `FileMode.Create`, no orphaned-temp cleanup) → delegated to
+  `JsonFileSnapshotIo.SaveAsync<T>`. Serializer options were already identical, so the
+  on-disk `catalog.cues.json` is byte-for-byte unchanged; the unique-temp + finally-cleanup
+  is a strict robustness gain. 12/12 store tests still pass.
 
 ### worth-refactoring-soon (deferred)
-- **`JsonHotCueStore.cs` / `JsonPlaylistStore.cs` (save path)** — duplicate the atomic
-  temp-file-write-then-move pattern that `JsonFileSnapshotIo.SaveAsync<T>()` already
-  provides, BUT with subtle variations (`.tmp` vs `.{Guid:N}.tmp`, `FileMode.Create` vs
-  `CreateNew`). Consolidating would touch persistence atomicity/concurrency semantics —
-  needs careful per-store verification + characterization tests first. **Not a pure no-op.**
+- **`JsonPlaylistStore.cs` (save path)** — same inline atomic-write duplication, but **not a
+  clean parallel** to the cue store: its `SerializerOptions` (line 22, `WriteIndented` only)
+  differ from `JsonFileSnapshotIo`'s (`+ JsonStringEnumConverter + WhenWritingNull`). For the
+  current `PlaylistSnapshot` DTO (no enums, no nullable fields) the output is identical, but
+  routing only the save through the shared helper would create a read/write options asymmetry —
+  a latent footgun if the DTO later gains an enum/nullable field. Deferred per safety rule #6
+  (don't merge subtly-different cases) until load + save options are unified deliberately.
 - **Multiple `Json*Store` load paths** — the file-exists → deserialize → catch/warn → null
   block is repeated across ~6 stores; the core is already in `JsonFileSnapshotIo.LoadAsync<T>()`,
   but each store layers store-specific version checks on top. Low-priority; messages/return
@@ -82,8 +95,10 @@ session is concurrently modifying the main working tree** (see Risks).
 ## Suggested Improvements (next loop)
 1. After the concurrent session lands, re-run the full suite to confirm those repro tests
    flip to green, then resume cleanup.
-2. Consolidate the `Json*Store` save path onto `JsonFileSnapshotIo.SaveAsync<T>()` — but
-   only with characterization tests pinning the atomic-rename + temp-naming behavior first.
+2. Finish the persistence-save consolidation: route `JsonPlaylistStore` (and any other
+   stores) through `JsonFileSnapshotIo.SaveAsync<T>()` — but first unify each store's read +
+   write `SerializerOptions` so there is no asymmetry (the cue store was safe only because
+   its options already matched the shared helper's).
 
 ## Topics for Treatment
 - **Persistence-layer consistency** — standardize temp-file naming, `FileMode`, exception
