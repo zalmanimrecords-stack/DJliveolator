@@ -23,6 +23,14 @@ public sealed class StudioArranger
         => _project = project ?? throw new ArgumentNullException(nameof(project));
 
     /// <summary>
+    /// The project tempo (BPM) at a timeline position — the tempo a warped clip starting there should play
+    /// at. Reads the project's tempo curve (falling back to the fixed project BPM). The live transport uses
+    /// it to warp a clip's deck to the project grid on its Start event.
+    /// </summary>
+    public double ProjectTempoAt(double timelineSeconds)
+        => _project.EffectiveTempo.TempoAt(timelineSeconds, _project.Bpm);
+
+    /// <summary>
     /// Clip Start/Stop events whose time falls in <c>[t0, t1)</c>, in time order. A clip emits a Start
     /// at its <see cref="StudioClip.TimelineStartSeconds"/> and a Stop at its
     /// <see cref="StudioClip.TimelineEndSeconds"/> (only when the out-point is known).

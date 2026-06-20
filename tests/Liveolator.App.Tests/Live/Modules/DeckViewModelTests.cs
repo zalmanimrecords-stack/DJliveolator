@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Threading.Tasks;
 using System.Threading;
@@ -887,6 +888,114 @@ public sealed class DeckViewModelTests
         // No guessed time without a real duration (the readout must never invent numbers).
         Assert.Equal("--:--", vm.ElapsedText);
         Assert.Equal("--:--", vm.RemainingText);
+    }
+
+    // --- Self-heal: a load without BPM pulls the grid from the catalog ---
+
+    [Fact]
+    public void LoadWithoutBpm_SelfHealsTheGridFromTheCatalog()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(140.0, 0.8, 0.29);
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => analysis);
+
+        // A restored deck whose saved session predates analysis loads with BPM = 0. The load feedback is
+        // handled synchronously, so the self-heal grid actions are emitted by the time this returns.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\a.flac"));
+
+        // The deck re-emits the catalog's grid through the grid actions instead of staying blank.
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetGridBpm && Math.Abs(a.Value - 140.0) < 1e-9 && a.Slot == 0);
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetFirstBeat && Math.Abs(a.Value - 0.29) < 1e-9 && a.Slot == 0);
+    }
+
+    [Fact]
+    public void LoadWithBpm_DoesNotSelfHeal_TrustsTheLoadValue()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => new Liveolator.Core.Analysis.Bpm.BpmResult(140.0, 0.8, 0.29));
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\a.flac"));
+
+        // The load already carried a BPM, so no self-heal grid actions are emitted.
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetGridBpm);
+    }
+
+    // --- Grid edit (DeckSetGridBpm / DeckSetFirstBeat) ---
+
+    [Theory]
+    [InlineData(nameof(DeckViewModel.GridBpmUpCommand), 141.0)]
+    [InlineData(nameof(DeckViewModel.GridBpmDownCommand), 139.0)]
+    [InlineData(nameof(DeckViewModel.GridHalveCommand), 70.0)]
+    [InlineData(nameof(DeckViewModel.GridDoubleCommand), 280.0)]
+    public async Task GridBpmEdit_EmitsDeckSetGridBpm_AtTheExpectedTempo(string command, double expectedBpm)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120));
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140.0, Argument: @"C:\a.flac"));
+        await gridSet;
+        dispatcher.Dispatched.Clear();
+
+        var cmd = (ReactiveCommand<Unit, Unit>)typeof(DeckViewModel).GetProperty(command)!.GetValue(vm)!;
+        await cmd.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetGridBpm, action.Kind);
+        Assert.Equal(expectedBpm, action.Value, precision: 6);
+        Assert.Equal(0, action.Slot);
+    }
+
+    [Fact]
+    public async Task SetGridHere_EmitsDeckSetFirstBeat_WithTheWithinBeatAnchorAtThePlayhead()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher, FakeWaveformProvider.WithDuration(121));
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140.0, Argument: @"C:\b.flac"));
+        await gridSet;
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5)); // playhead to mid-track
+        dispatcher.Dispatched.Clear();
+
+        await vm.SetGridHereCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, action.Kind);
+        Assert.Equal(DeckViewModel.GridAnchorAtPlayhead(0.5, 121, 140), action.Value, precision: 6);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
+    public async Task GridEdit_BeforeATrackLoads_IsANoOp()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no track → no tempo/duration
+
+        await vm.GridBpmUpCommand.Execute().ToTask();
+        await vm.GridDoubleCommand.Execute().ToTask();
+        await vm.SetGridHereCommand.Execute().ToTask();
+
+        Assert.Empty(dispatcher.Dispatched); // never push a 0/negative grid BPM or a bogus anchor
+    }
+
+    [Theory]
+    [InlineData(0.0, 120, 140, 0.0)]      // playhead at start → anchor 0
+    [InlineData(0.5, 120, 120, 0.0)]      // 60 s at 120 BPM (0.5 s/beat) → exactly on a beat → 0
+    [InlineData(0.5, 121, 100, 0.5)]      // 60.5 s at 100 BPM (0.6 s/beat) → 0.5 s past the last beat
+    public void GridAnchorAtPlayhead_FoldsThePlayheadIntoOneBeat(
+        double progress, double duration, double bpm, double expected)
+    {
+        Assert.Equal(expected, DeckViewModel.GridAnchorAtPlayhead(progress, duration, bpm), precision: 6);
     }
 
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load

@@ -35,6 +35,75 @@ public class OfflineMixRendererTests
         }
     }
 
+    // A decoder that yields in small blocks up to a long total, recording how far enumeration actually got.
+    // Lets a test assert the renderer stops decoding once it has the samples a clip needs.
+    private sealed class CountingDecoder : IAudioDecoder
+    {
+        private readonly int _blockSize;
+        private readonly int _totalSamples;
+
+        public CountingDecoder(int blockSize, int totalSamples)
+        {
+            _blockSize = blockSize;
+            _totalSamples = totalSamples;
+        }
+
+        public int YieldedSamples { get; private set; }
+
+        public bool CanDecode(string filePath) => true;
+
+        public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
+            string filePath, int targetSampleRate, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            int produced = 0;
+            while (produced < _totalSamples)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int n = Math.Min(_blockSize, _totalSamples - produced);
+                var block = new float[n];
+                Array.Fill(block, 0.3f);
+                produced += n;
+                YieldedSamples = produced;
+                yield return block;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Render_TrimmedClipOnLongTrack_DecodesOnlyWhatTheClipUses()
+    {
+        // A 1-second clip cut from a 30-second "file": the renderer must stop decoding shortly past the
+        // clip span instead of materialising the whole track (the memory fix), while still decoding enough
+        // to fill the clip.
+        const int rate = 8_000;
+        var decoder = new CountingDecoder(blockSize: 1_000, totalSamples: rate * 30);
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)) },
+            Array.Empty<AutomationLane>());
+
+        await Render(project, decoder, rate);
+
+        Assert.True(decoder.YieldedSamples >= rate, $"must decode at least the clip span; got {decoder.YieldedSamples}");
+        Assert.True(decoder.YieldedSamples < rate * 30, $"must stop before the whole file; got {decoder.YieldedSamples}");
+    }
+
+    [Fact]
+    public async Task Render_OpenEndedClip_DecodesTheWholeFile()
+    {
+        // No out-point ⇒ the clip may need the whole file, so the decode is not capped.
+        const int rate = 8_000;
+        int total = rate * 5;
+        var decoder = new CountingDecoder(blockSize: 1_000, totalSamples: total);
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, SourceOut: null) },
+            Array.Empty<AutomationLane>());
+
+        await Render(project, decoder, rate);
+
+        Assert.Equal(total, decoder.YieldedSamples);
+    }
+
     // The render output is interleaved 16-bit stereo (L0,R0,L1,R1,...). These helpers read back each channel.
     private static (float[] Left, float[] Right) ReadWavStereo(string path)
     {

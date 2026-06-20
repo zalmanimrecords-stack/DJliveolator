@@ -74,6 +74,21 @@ public class BpmDetectorTests
     }
 
     [Fact]
+    public void Detect_FourOnFloor_RefinesToCleanIntegerTempo()
+    {
+        const int sr = 44100;
+        // A clean 140 BPM four-on-the-floor. Integer-lag autocorrelation lands on 139.67 (lag 37); the
+        // grid refiner must pull it back to a clean 140 so a uniform grid stays on the kicks for the whole
+        // track. This is the regression guard for the "kick and grid not in the same place" bug.
+        float[] signal = KickFourOnFloor(
+            bpm: 140.0, sampleRate: sr, seconds: 30, accentBeat: 0, strong: 1.0f, weak: 1.0f);
+
+        BpmResult result = new BpmDetector().Detect(signal, sr);
+
+        Assert.InRange(result.Bpm, 139.9, 140.1);
+    }
+
+    [Fact]
     public void Detect_TooShortSignal_ReturnsZero()
     {
         var tiny = new float[16];

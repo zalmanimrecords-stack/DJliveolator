@@ -26,7 +26,7 @@ using ReactiveUI;
 namespace Liveolator.App.Features.Studio;
 
 /// <summary>
-/// The STUDIO tab: a basic-DAW timeline. Clips are placed on four deck lanes (A/B live + C/D hidden);
+/// The STUDIO tab: a basic-DAW timeline. Clips are placed on the two deck lanes (A/B);
 /// Play drives the real decks live via <see cref="StudioTransport"/> (through the dispatcher), and
 /// Render mixes the arrangement down to a WAV via <see cref="OfflineMixRenderer"/>. Holds no Avalonia
 /// types; store/transport/render calls are guarded and surfaced on <see cref="Status"/>.
@@ -41,7 +41,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
     // Zoom bounds for the VIEW → Zoom in/out commands. Kept in sync with the zoom slider's Minimum/Maximum
     // in StudioView.axaml so menu zoom and the slider share one range; each step is a fixed ratio.
     private const double MinPixelsPerSecond = 2.0;
-    private const double MaxPixelsPerSecond = 40.0;
+    private const double MaxPixelsPerSecond = 200.0;
     private const double ZoomStep = 1.25;
 
     private readonly MusicLibrary _library;
@@ -104,9 +104,11 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         _renderDirectory = renderDirectory
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator", "renders");
 
+        // STUDIO arranges on the two channels A/B (matching the live mixer's primary deck pair). The
+        // shared engine still has more deck slots, but the arrangement UI is intentionally two lanes.
         Lanes = new ObservableCollection<StudioLaneViewModel>
         {
-            new(0, "A"), new(1, "B"), new(2, "C"), new(3, "D"),
+            new(0, "A"), new(1, "B"),
         };
 
         // Make automation/tempo curve edits undoable: every curve pushes the pre-edit snapshot before it
@@ -434,10 +436,12 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         double start = TimelineMath.Snap(Math.Max(0, startSeconds), TimelineMath.BeatSeconds(Bpm));
         var clip = new StudioClip(
             deckSlot, trackPath, start, TimeSpan.Zero, track?.Duration,
-            SourceBpm: track?.Bpm?.Bpm ?? 0.0);
+            SourceBpm: track?.Bpm?.Bpm ?? 0.0,
+            SourceDownbeatSeconds: track?.Bpm?.DownbeatSeconds ?? 0.0,
+            SourceBeatsPerBar: track?.Bpm?.BeatsPerBar ?? 4);
 
-        var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = Bpm };
-        vm.BeforeMutation = BeginEdit; // make this clip's later move/trim/warp edits undoable
+        var vm = new StudioClipViewModel(clip, track, PixelsPerSecond);
+        AttachClip(vm);
         Lanes[deckSlot].Clips.Add(vm);
         SelectedClip = vm;
         LoadWaveform(vm);
@@ -449,13 +453,92 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
     private void RemoveSelectedClip()
     {
-        if (SelectedClip is not { } clip)
+        if (SelectedClip is { } clip)
+            RemoveClip(clip);
+    }
+
+    // Conservative floor on the analyzed downbeat confidence: above it we trust the bar and snap clips to
+    // the project's downbeats (phrase-locked); below it the bar is genuinely ambiguous (e.g. four-on-the-
+    // floor), so we snap to the nearest beat instead of trusting a guessed downbeat (doc 03).
+    private const double DownbeatConfidenceFloor = 0.5;
+
+    /// <summary>
+    /// Wire a freshly created clip VM into the timeline: point its warp target at the project tempo, make
+    /// its edits undoable, and attach the right-click context commands that need the timeline (sync to the
+    /// project BPM, duplicate, remove). Used by both drop (<see cref="AddClipAt"/>) and load.
+    /// </summary>
+    private void AttachClip(StudioClipViewModel vm)
+    {
+        vm.WarpTargetBpm = Bpm;
+        vm.BeforeMutation = BeginEdit;
+        vm.SyncToGridCommand = ReactiveCommand.Create(() => SyncClipToProjectGrid(vm));
+        vm.DuplicateCommand = ReactiveCommand.Create(() => DuplicateClip(vm));
+        vm.RemoveCommand = ReactiveCommand.Create(() => RemoveClip(vm));
+    }
+
+    /// <summary>
+    /// Warp a clip to the project tempo and snap its first audible downbeat onto the project grid, in phase
+    /// with the rest of the set — the right-click "Sync to project BPM". Bar-locked when the track's downbeat
+    /// is confident; otherwise beat-aligned (never trusting a guessed bar). Lands as close as possible to the
+    /// clip's current position. One undoable edit.
+    /// </summary>
+    public void SyncClipToProjectGrid(StudioClipViewModel clip)
+    {
+        ArgumentNullException.ThrowIfNull(clip);
+        if (clip.SourceBpm <= 0)
+        {
+            Status = $"Can't sync \"{clip.Title}\" — its tempo isn't analyzed.";
             return;
+        }
+
+        double confidence = clip.Track?.Bpm?.DownbeatConfidence ?? 0.0;
+        GridSnapMode mode = confidence >= DownbeatConfidenceFloor
+            ? GridSnapMode.NearestDownbeat
+            : GridSnapMode.NearestBeat;
+
+        StudioClip synced = WarpSync.SnapClipToProjectGrid(clip.ToClip(), Bpm, mode);
+
+        BeginEdit(); // one undo step covers the warp toggle + the move
+        clip.ApplySync(synced.WarpEnabled, synced.TimelineStartSeconds);
+        SelectedClip = clip;
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        Status = mode == GridSnapMode.NearestDownbeat
+            ? $"Synced \"{clip.Title}\" to {Bpm:0} BPM (bar-locked)."
+            : $"Synced \"{clip.Title}\" to {Bpm:0} BPM (beat-aligned — low downbeat confidence).";
+    }
+
+    /// <summary>Place a copy of <paramref name="clip"/> back-to-back after it on the same lane.</summary>
+    public void DuplicateClip(StudioClipViewModel clip)
+    {
+        ArgumentNullException.ThrowIfNull(clip);
+        int lane = clip.DeckSlot;
+        if (lane < 0 || lane >= Lanes.Count)
+            return;
+
+        BeginEdit();
+        StudioClip copy = clip.ToClip() with { TimelineStartSeconds = clip.TimelineEndSeconds };
+        var vm = new StudioClipViewModel(copy, clip.Track, PixelsPerSecond);
+        AttachClip(vm);
+        Lanes[lane].Clips.Add(vm);
+        SelectedClip = vm;
+        LoadWaveform(vm);
+        this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
+        this.RaisePropertyChanged(nameof(TimelineContentWidth));
+        this.RaisePropertyChanged(nameof(CanHarmonize));
+        Status = $"Duplicated \"{vm.Title}\".";
+    }
+
+    /// <summary>Remove a clip from whichever lane holds it (one undoable edit).</summary>
+    public void RemoveClip(StudioClipViewModel clip)
+    {
+        ArgumentNullException.ThrowIfNull(clip);
         BeginEdit();
         foreach (StudioLaneViewModel lane in Lanes)
             if (lane.Clips.Remove(clip))
                 break;
-        SelectedClip = null;
+        if (ReferenceEquals(SelectedClip, clip))
+            SelectedClip = null;
         this.RaisePropertyChanged(nameof(ProjectDurationSeconds));
         this.RaisePropertyChanged(nameof(TimelineContentWidth));
         this.RaisePropertyChanged(nameof(CanHarmonize));
@@ -645,18 +728,22 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
         foreach (StudioClip clip in project.Clips)
         {
-            if (clip.DeckSlot < 0 || clip.DeckSlot >= Lanes.Count)
-                continue;
+            // STUDIO now has two lanes (A/B). A clip saved on an old C/D lane is folded onto its paired
+            // primary lane (C→A, D→B) so its audio is preserved rather than silently dropped on load.
+            int slot = clip.DeckSlot < 0 ? 0 : clip.DeckSlot % Lanes.Count;
             MusicTrack? track = _byPath.GetValueOrDefault(clip.TrackPath);
-            var vm = new StudioClipViewModel(clip, track, PixelsPerSecond) { WarpTargetBpm = project.Bpm };
-            vm.BeforeMutation = BeginEdit; // restored clips remain undoable on later edits
-            Lanes[clip.DeckSlot].Clips.Add(vm);
+            var vm = new StudioClipViewModel(clip with { DeckSlot = slot }, track, PixelsPerSecond);
+            AttachClip(vm); // WarpTargetBpm is corrected to project.Bpm when Bpm is assigned below
+            Lanes[slot].Clips.Add(vm);
             LoadWaveform(vm);
         }
 
         foreach (AutomationLane lane in project.Automation)
-            if (lane.DeckSlot >= 0 && lane.DeckSlot < Lanes.Count)
-                Lanes[lane.DeckSlot].SetAutomation(lane);
+        {
+            // Fold an old C/D automation lane onto its paired primary lane, matching the clip remap above.
+            int laneSlot = lane.DeckSlot < 0 ? 0 : lane.DeckSlot % Lanes.Count;
+            Lanes[laneSlot].SetAutomation(lane);
+        }
 
         TempoLane.Load(project.EffectiveTempo);
         Name = project.Name;

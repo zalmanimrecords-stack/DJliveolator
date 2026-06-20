@@ -26,8 +26,10 @@ public sealed class BassFxRenderDecoder
     /// Decode <paramref name="path"/> at <paramref name="sampleRate"/> (stereo), time-stretched by
     /// <paramref name="tempoPercent"/> (e.g. +16.7 for 120-&gt;140 BPM) with pitch preserved. The result is
     /// split into equal-length left/right channel buffers; an empty result means the decode failed.
+    /// Decoding stops once <paramref name="maxFrames"/> stereo frames have been produced, so a clip that
+    /// only uses the head of a long track does not pull (and hold) the whole file in memory.
     /// </summary>
-    internal StereoBuffer DecodeStretchedStereo(string path, int sampleRate, double tempoPercent)
+    internal StereoBuffer DecodeStretchedStereo(string path, int sampleRate, double tempoPercent, int maxFrames = int.MaxValue)
     {
         int decode = Bass.CreateStream(path, 0, 0, BassFlags.Decode | BassFlags.Float);
         if (decode == 0)
@@ -64,9 +66,14 @@ public sealed class BassFxRenderDecoder
             return Empty();
         }
 
+        // Cap the pull at the frames the caller needs (+ a small margin for block-boundary rounding), so a
+        // trimmed clip on a long track holds only what it plays. int.MaxValue ⇒ decode the whole stream.
+        long maxFloats = maxFrames >= int.MaxValue / RenderChannels
+            ? long.MaxValue
+            : (long)(maxFrames + PullFloats) * RenderChannels;
         var interleaved = new List<float>();
         var buffer = new float[PullFloats];
-        while (true)
+        while (interleaved.Count < maxFloats)
         {
             int bytes = Bass.ChannelGetData(mixer, buffer, PullFloats * sizeof(float));
             if (bytes <= 0)

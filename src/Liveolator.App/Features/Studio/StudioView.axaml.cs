@@ -14,15 +14,26 @@ public partial class StudioView : UserControl
     // One lane row's pixel height: the lane Grid (62) + its bottom margin (4). Used to map a drop's
     // Y to a deck index. Must match StudioView.axaml's lane template.
     private const double LaneRowHeightPx = 66;
+
+    // STUDIO has two lanes (A=0, B=1); a drop's Y maps into this range.
+    private const int MaxDeckIndex = 1;
     private const double DragThresholdPx = 5;
 
     private bool _initialized;
 
-    // Horizontal clip drag state (move a clip in time).
+    // Horizontal clip drag state (move a clip in time, or trim either edge).
     private StudioClipViewModel? _dragClip;
     private bool _dragMoved;
     private double _dragPressX;
     private double _dragOriginStartSeconds;
+    private double _lastTrimX;        // last pointer X for incremental edge-trim deltas
+    private ClipDragMode _clipDragMode;
+
+    // How a clip pointer-press is interpreted: grab near an edge trims it, elsewhere moves it.
+    private enum ClipDragMode { Move, TrimStart, TrimEnd }
+
+    // Pointer distance from a clip edge that counts as grabbing that edge's trim handle.
+    private const double EdgeGrabPx = 7;
 
     // Library drag-source state (drag a track onto a lane).
     private Point _libPressPoint;
@@ -53,12 +64,21 @@ public partial class StudioView : UserControl
         // Wheel / trackpad scroll over the timeline zooms (Tunnel so it pre-empts the ScrollViewer's pan).
         LanesScroll.AddHandler(InputElement.PointerWheelChangedEvent, OnTimelineWheel, RoutingStrategies.Tunnel);
 
+        // Grab-to-pan: drag the timeline left/right with the mouse. Middle button pans anywhere; left button
+        // pans on empty lane background (a clip press is marked handled, so it drags the clip instead).
+        // handledEventsToo so we still see a clip's handled press and can correctly decline to pan over it.
+        LanesScroll.AddHandler(InputElement.PointerPressedEvent, OnTimelinePanPressed,
+            RoutingStrategies.Bubble, handledEventsToo: true);
+        LanesScroll.AddHandler(InputElement.PointerMovedEvent, OnTimelinePanMoved, RoutingStrategies.Bubble);
+        LanesScroll.AddHandler(InputElement.PointerReleasedEvent, OnTimelinePanReleased,
+            RoutingStrategies.Bubble, handledEventsToo: true);
+
         if (DataContext is StudioViewModel vm)
             await vm.InitializeAsync();
     }
 
     private const double MinZoom = 2;
-    private const double MaxZoom = 40;
+    private const double MaxZoom = 200;
 
     // Zoom the timeline around the cursor: change pixels-per-second and shift the horizontal scroll so the
     // time under the pointer stays put (standard DAW wheel-zoom). Works with a mouse wheel or trackpad scroll.
@@ -86,10 +106,58 @@ public partial class StudioView : UserControl
         LanesScroll.Offset = new Vector(System.Math.Max(0, newContentX - viewportCursorX), LanesScroll.Offset.Y);
     }
 
+    // --- timeline pan (grab-drag to scroll the arrangement horizontally) ---
+
+    private bool _panning;
+    private double _panPressX;       // pointer X (this control's space) at the grab start
+    private double _panStartOffsetX; // horizontal scroll offset at the grab start
+
+    private void OnTimelinePanPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var props = e.GetCurrentPoint(this).Properties;
+        // Middle button pans anywhere; left button pans only on empty background — a clip press is marked
+        // handled (clip drag), and an envelope-edit gesture owns the left button while Automation mode is on.
+        bool middle = props.IsMiddleButtonPressed;
+        bool leftOnEmpty = props.IsLeftButtonPressed && !e.Handled;
+        if (!middle && !leftOnEmpty)
+            return;
+
+        _panning = true;
+        _panPressX = e.GetPosition(this).X;
+        _panStartOffsetX = LanesScroll.Offset.X;
+        Cursor = new Cursor(StandardCursorType.SizeWestEast);
+        e.Pointer.Capture(LanesScroll);
+        e.Handled = true;
+    }
+
+    private void OnTimelinePanMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_panning)
+            return;
+
+        double dx = e.GetPosition(this).X - _panPressX;
+        double maxOffset = System.Math.Max(0, LanesScroll.Extent.Width - LanesScroll.Viewport.Width);
+        double target = System.Math.Clamp(_panStartOffsetX - dx, 0, maxOffset);
+        LanesScroll.Offset = new Vector(target, LanesScroll.Offset.Y);
+    }
+
+    private void OnTimelinePanReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_panning)
+            return;
+
+        _panning = false;
+        Cursor = Cursor.Default;
+        e.Pointer.Capture(null);
+    }
+
     // --- clip drag (move in time) ---
 
     private void OnClipPointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        // Only the left button drags a clip; middle/right is reserved for panning the timeline.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+            return;
         if (sender is not Control control || control.DataContext is not StudioClipViewModel clip ||
             DataContext is not StudioViewModel vm)
             return;
@@ -99,7 +167,16 @@ public partial class StudioView : UserControl
         _dragMoved = false;
         _dragPressX = e.GetPosition(this).X;
         _dragOriginStartSeconds = clip.TimelineStartSeconds;
+        _lastTrimX = _dragPressX;
+
+        // Grabbing within EdgeGrabPx of an edge trims that edge; elsewhere moves the clip.
+        double localX = e.GetPosition(control).X;
+        _clipDragMode = localX <= EdgeGrabPx ? ClipDragMode.TrimStart
+            : localX >= control.Bounds.Width - EdgeGrabPx ? ClipDragMode.TrimEnd
+            : ClipDragMode.Move;
+
         e.Pointer.Capture(control);
+        e.Handled = true; // a clip press is a clip drag — stop the timeline-pan handler from also firing
     }
 
     private void OnClipPointerMoved(object? sender, PointerEventArgs e)
@@ -107,18 +184,39 @@ public partial class StudioView : UserControl
         if (_dragClip is null || DataContext is not StudioViewModel vm)
             return;
 
-        double dx = e.GetPosition(this).X - _dragPressX;
-        double deltaSeconds = vm.PixelsPerSecond > 0 ? dx / vm.PixelsPerSecond : 0;
-        double target = TimelineMath.Snap(_dragOriginStartSeconds + deltaSeconds, TimelineMath.BeatSeconds(vm.Bpm));
+        if (_clipDragMode == ClipDragMode.Move)
+        {
+            double dx = e.GetPosition(this).X - _dragPressX;
+            double deltaSeconds = vm.PixelsPerSecond > 0 ? dx / vm.PixelsPerSecond : 0;
+            double target = TimelineMath.Snap(_dragOriginStartSeconds + deltaSeconds, TimelineMath.BeatSeconds(vm.Bpm));
 
-        // Record one undo snapshot on the first real position change of the gesture (not on a plain
-        // click-to-select), then suppress per-move pushes until release.
-        if (!_dragMoved && target != _dragClip.TimelineStartSeconds)
+            // Record one undo snapshot on the first real position change of the gesture (not on a plain
+            // click-to-select), then suppress per-move pushes until release.
+            if (!_dragMoved && target != _dragClip.TimelineStartSeconds)
+            {
+                _dragClip.BeginDrag();
+                _dragMoved = true;
+            }
+            _dragClip.TimelineStartSeconds = target;
+            return;
+        }
+
+        // Edge trim: apply the incremental timeline delta since the last move (BeginDrag once, so the whole
+        // trim is one undo step). The clip VM clamps and honours the warp factor.
+        double currentX = e.GetPosition(this).X;
+        double trimDelta = vm.PixelsPerSecond > 0 ? (currentX - _lastTrimX) / vm.PixelsPerSecond : 0;
+        _lastTrimX = currentX;
+        if (trimDelta == 0)
+            return;
+        if (!_dragMoved)
         {
             _dragClip.BeginDrag();
             _dragMoved = true;
         }
-        _dragClip.TimelineStartSeconds = target;
+        if (_clipDragMode == ClipDragMode.TrimStart)
+            _dragClip.DragStartEdge(trimDelta);
+        else
+            _dragClip.DragEndEdge(trimDelta);
     }
 
     private void OnClipPointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -171,7 +269,7 @@ public partial class StudioView : UserControl
             return;
 
         Point p = e.GetPosition(LanesItems);
-        int deck = System.Math.Clamp((int)(p.Y / LaneRowHeightPx), 0, 3);
+        int deck = System.Math.Clamp((int)(p.Y / LaneRowHeightPx), 0, MaxDeckIndex);
         // p.X is relative to the clip content (LanesItems), whose origin is time-0 — no gutter offset.
         double timeSeconds = TimelineMath.SecondsFromX(p.X, vm.PixelsPerSecond);
         vm.AddClipAt(path, deck, timeSeconds);

@@ -12,7 +12,7 @@
     <!-- Cap + center the deck content so the controls cluster as one coherent column (the 176px jog plus
          its 84px hot-cue/loop flanks ~= 360) instead of the platter floating alone in a wide deck column.
          A plain MaxWidth keeps the square jog undistorted (no aspect-ratio binding). -->
-    <StackPanel Margin="14,12" Spacing="10" MaxWidth="360" HorizontalAlignment="Center">
+    <StackPanel Margin="14,10" Spacing="8" MaxWidth="360" HorizontalAlignment="Center">
 
       <!-- header: badge · title/meta · elapsed/remaining -->
       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -63,7 +63,7 @@
           </ItemsControl>
         </StackPanel>
 
-        <controls:Jog Grid.Column="1" Width="176" Height="176" HorizontalAlignment="Center"
+        <controls:Jog Grid.Column="1" Width="144" Height="144" HorizontalAlignment="Center"
                       ArcBrush="{DynamicResource Accent}"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       IsEnabled="{Binding IsEnabled}"
@@ -87,25 +87,23 @@
         </StackPanel>
       </Grid>
 
-      <!-- transport: CUE · Play · Sync -->
-      <UniformGrid Columns="3">
-        <Button Classes="key" Content="CUE" Command="{Binding CueCommand}"
-                IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
-        <Button Classes="play" Classes.on="{Binding IsPlaying}"
-                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
+      <!-- transport: CUE · Play · Sync · Key-lock — icon buttons. KEY LOCK lives here (one row up) so the
+           deck fits one screen; it stays a toggle (lights when engaged). Tooltips carry the labels. -->
+      <Grid ColumnDefinitions="*,1.3*,*,*">
+        <Button Grid.Column="0" Classes="key" Content="⏮" FontSize="16" Margin="0,0,4,0"
+                Command="{Binding CueCommand}" IsEnabled="{Binding CanCue}"
+                ToolTip.Tip="Cue — jump to the cue point / track start" />
+        <Button Grid.Column="1" Classes="play" Classes.on="{Binding IsPlaying}"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0" ToolTip.Tip="Play / pause">
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
         </Button>
-        <Button Classes="key" Content="SYNC"
+        <Button Grid.Column="2" Classes="key" Content="⇄" FontSize="16" Margin="0,0,4,0"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
-                ToolTip.Tip="Match tempo + phase to the other deck (one-shot)" />
-      </UniformGrid>
-
-      <!-- KEY LOCK (master tempo): mirrors the LIVE deck's toggle (commit b4d6872) — hold the musical key
-           constant while the tempo/pitch moves. Binds the same IsKeyLock / KeyLockCommand on DeckViewModel. -->
-      <Button Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
-              Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
-              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-              ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
+                ToolTip.Tip="Sync — match tempo + phase to the other deck (one-shot)" />
+        <Button Grid.Column="3" Classes="key" Classes.on="{Binding IsKeyLock}" Content="🔒" FontSize="14"
+                Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
+      </Grid>
 
       <!-- KEY · pitch%: the loaded track's musical key (BPM-level prominence, from the catalog) on the left,
            the live signed pitch offset (DeckPitch, hardware/MIDI-driven) on the right. -->
@@ -141,6 +139,22 @@
             <Button Grid.Column="2" Classes="key" Content="►" Width="34" Height="26"
                     Command="{Binding NudgeRightCommand}"
                     ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
+          </Grid>
+          <!-- GRID edit: hand-correct the analyzed beat grid so it lands on the kicks. Re-tempo (−/+, ½/×2)
+               or SET (slide a beat line onto the kick under the playhead). Inaudible — unlike the BPM nudge
+               above, these change only the GRID/sync tempo, never the playing pitch. -->
+          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
+            <TextBlock Grid.Column="0" Classes="tick" VerticalAlignment="Center" Text="GRID" Margin="0,0,6,0" />
+            <Button Grid.Column="1" Classes="key" Content="−" Width="28" Height="22"
+                    Command="{Binding GridBpmDownCommand}" ToolTip.Tip="Grid tempo −1 BPM (does not change pitch)" />
+            <Button Grid.Column="2" Classes="key" Content="+" Width="28" Height="22" Margin="4,0,0,0"
+                    Command="{Binding GridBpmUpCommand}" ToolTip.Tip="Grid tempo +1 BPM (does not change pitch)" />
+            <Button Grid.Column="3" Classes="key" Content="½" Width="28" Height="22" Margin="4,0,0,0"
+                    Command="{Binding GridHalveCommand}" ToolTip.Tip="Halve the grid tempo (octave fix)" />
+            <Button Grid.Column="4" Classes="key" Content="×2" Width="28" Height="22" Margin="4,0,0,0"
+                    Command="{Binding GridDoubleCommand}" ToolTip.Tip="Double the grid tempo (octave fix)" />
+            <Button Grid.Column="6" Classes="key" Content="SET" Width="44" Height="22"
+                    Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead" />
           </Grid>
         </StackPanel>
       </Border>

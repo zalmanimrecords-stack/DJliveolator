@@ -36,6 +36,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckApplyAutoCues,
         PerformanceActionKind.DeckSetLoop,
         PerformanceActionKind.DeckSetFirstBeat,
+        PerformanceActionKind.DeckSetGridBpm,
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
@@ -117,6 +118,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckBpm:
                 _engine.SetDeckBpm(slot, action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
+                RaiseBpmFeedback(slot);
+                break;
+            case PerformanceActionKind.DeckSetGridBpm:
+                // Re-tempo the GRID/sync reference (a hand-corrected analyzed BPM), NOT the audible rate:
+                // set base BPM only and re-emit BPM feedback so the deck rebuilds its beat grid. The pitch
+                // position is left untouched, so editing the grid never changes what the floor hears.
+                _engine.SetDeckBaseBpm(slot, action.Value);
                 RaiseBpmFeedback(slot);
                 break;
             case PerformanceActionKind.DeckBpmNudge:

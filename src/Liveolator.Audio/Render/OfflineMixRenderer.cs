@@ -78,6 +78,11 @@ public sealed class OfflineMixRenderer
         var plan = new MixPlan(project);
         int totalSamples = plan.DurationSeconds > 0 ? (int)Math.Ceiling(plan.DurationSeconds * sampleRate) : 0;
 
+        // The furthest source position (seconds) any clip needs for each (path, factor): a clip bounded by
+        // its out-point only needs up to SourceOut; an open-ended clip needs the whole file. Decoding only
+        // this far keeps render memory proportional to the material used, not the source file lengths.
+        Dictionary<string, double> sourceEndSeconds = MaxSourceEndPerKey(project, plan);
+
         // Decode every distinct (clip, warp factor) once into a stereo buffer at the render rate. Unwarped
         // clips use the managed mono decoder duplicated to both channels; warped clips use BASS_FX stereo.
         var sources = new Dictionary<string, StereoBuffer>(StringComparer.OrdinalIgnoreCase);
@@ -88,7 +93,7 @@ public sealed class OfflineMixRenderer
             if (sources.ContainsKey(key))
                 continue;
 
-            sources[key] = await DecodeSourceAsync(clip.TrackPath, factor, sampleRate, cancellationToken)
+            sources[key] = await DecodeSourceAsync(clip.TrackPath, factor, sampleRate, sourceEndSeconds[key], cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -173,19 +178,47 @@ public sealed class OfflineMixRenderer
         progress?.Report(1.0);
     }
 
-    // Decode one (path, warp factor) to a stereo buffer at the render rate. Unwarped: the managed mono
-    // decoder duplicated to both channels (CI-safe, deterministic, no native). Warped: BASS_FX stereo.
-    // A test decode override (when present) supplies the buffer directly so distinct L/R can be injected.
+    // The furthest source position (seconds) any clip needs per (path, factor). A clip with a known
+    // out-point needs up to SourceOut; an open-ended clip (null out) needs the whole file, recorded as
+    // PositiveInfinity so the decode is not capped. Shared buffers take the maximum across their clips.
+    private static Dictionary<string, double> MaxSourceEndPerKey(StudioProject project, MixPlan plan)
+    {
+        var needed = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (StudioClip clip in project.Clips)
+        {
+            string key = SourceKey(clip.TrackPath, plan.WarpFactorFor(clip));
+            double end = clip.SourceOut?.TotalSeconds ?? double.PositiveInfinity;
+            needed[key] = needed.TryGetValue(key, out double existing) ? Math.Max(existing, end) : end;
+        }
+
+        return needed;
+    }
+
+    // Decode one (path, warp factor) to a stereo buffer at the render rate, up to maxSourceEndSeconds of
+    // source (PositiveInfinity = the whole file). Unwarped: the managed mono decoder duplicated to both
+    // channels (CI-safe, deterministic, no native). Warped: BASS_FX stereo. A test decode override (when
+    // present) supplies the buffer directly so distinct L/R can be injected.
     private async Task<StereoBuffer> DecodeSourceAsync(
-        string path, double factor, int sampleRate, CancellationToken cancellationToken)
+        string path, double factor, int sampleRate, double maxSourceEndSeconds, CancellationToken cancellationToken)
     {
         if (_decodeOverride is not null)
             return _decodeOverride(path, factor);
 
-        if (Math.Abs(factor - 1.0) < UnwarpedEpsilon)
-            return StereoBuffer.FromMono(await DecodeAllAsync(path, sampleRate, cancellationToken).ConfigureAwait(false));
+        // The decoded buffer plays 1:1 with the timeline, so source second s maps to buffer second s/factor.
+        // The furthest buffer frame any clip reads is therefore maxSourceEnd/factor (+ a block of margin for
+        // rounding at the boundary). Infinite ⇒ no cap.
+        int maxFrames = int.MaxValue;
+        if (!double.IsPositiveInfinity(maxSourceEndSeconds) && factor > 0)
+        {
+            double bufferSeconds = maxSourceEndSeconds / factor;
+            double frames = (bufferSeconds * sampleRate) + (2 * BlockSize);
+            maxFrames = frames >= int.MaxValue ? int.MaxValue : (int)Math.Ceiling(frames);
+        }
 
-        return _stretchDecoder.DecodeStretchedStereo(path, sampleRate, (factor - 1.0) * 100.0);
+        if (Math.Abs(factor - 1.0) < UnwarpedEpsilon)
+            return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+
+        return _stretchDecoder.DecodeStretchedStereo(path, sampleRate, (factor - 1.0) * 100.0, maxFrames);
     }
 
     // Run the summed interleaved-stereo master through the same brick-wall limiter the realtime master bus
@@ -231,7 +264,9 @@ public sealed class OfflineMixRenderer
         return biquads;
     }
 
-    private async Task<float[]> DecodeAllAsync(string path, int sampleRate, CancellationToken cancellationToken)
+    // Decode mono PCM up to maxFrames samples (int.MaxValue = the whole file), stopping enumeration early
+    // once enough is buffered so a trimmed clip on a long track doesn't materialise the entire file.
+    private async Task<float[]> DecodeMonoAsync(string path, int sampleRate, int maxFrames, CancellationToken cancellationToken)
     {
         var samples = new List<float>();
         await foreach (ReadOnlyMemory<float> block in _decoder.DecodeMonoAsync(path, sampleRate, cancellationToken)
@@ -240,6 +275,8 @@ public sealed class OfflineMixRenderer
             cancellationToken.ThrowIfCancellationRequested();
             for (int i = 0; i < block.Length; i++)
                 samples.Add(block.Span[i]);
+            if (samples.Count >= maxFrames)
+                break;
         }
 
         return samples.ToArray();

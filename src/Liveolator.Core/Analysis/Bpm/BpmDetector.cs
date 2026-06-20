@@ -41,19 +41,22 @@ public sealed class BpmDetector
     private readonly FirstBeatEstimator _firstBeat;
     private readonly LowBandOnsetEnvelope _kickOnset;
     private readonly DownbeatEstimator _downbeat;
+    private readonly GridRefiner _gridRefiner;
 
     public BpmDetector(
         OnsetEnvelope? onset = null,
         TempoEstimator? tempo = null,
         FirstBeatEstimator? firstBeat = null,
         LowBandOnsetEnvelope? kickOnset = null,
-        DownbeatEstimator? downbeat = null)
+        DownbeatEstimator? downbeat = null,
+        GridRefiner? gridRefiner = null)
     {
         _onset = onset ?? new OnsetEnvelope();
         _tempo = tempo ?? new TempoEstimator();
         _firstBeat = firstBeat ?? new FirstBeatEstimator();
         _kickOnset = kickOnset ?? new LowBandOnsetEnvelope();
         _downbeat = downbeat ?? new DownbeatEstimator();
+        _gridRefiner = gridRefiner ?? new GridRefiner();
     }
 
     public BpmResult Detect(ReadOnlySpan<float> mono, int sampleRate)
@@ -67,18 +70,38 @@ public sealed class BpmDetector
 
         double envelopeRateHz = _onset.EnvelopeRateHz(sampleRate);
         TempoEstimate estimate = _tempo.Estimate(envelope, envelopeRateHz);
-        double bpm = Math.Round(estimate.Bpm, 2);
-        double firstBeatSeconds = Math.Round(_firstBeat.Estimate(envelope, bpm, envelopeRateHz), 4);
+        double bpm = estimate.Bpm;
+        double confidence = estimate.Confidence;
 
-        // Downbeat uses the kick band, not the broadband envelope: beats land on every onset (hats,
-        // stabs, vocals), but the bar starts where the kick energy concentrates, so the bar anchor must
-        // come from the low band. Falls back to the beat anchor (no bar phase) when the band can't form.
+        // The kick band drives both the grid refinement (below) and the downbeat anchor.
         double[] kickEnvelope = _kickOnset.Compute(mono, sampleRate);
+        double kickRateHz = _kickOnset.EnvelopeRateHz(sampleRate);
+
+        // Refine the TEMPO to the kicks: the autocorrelation tempo is quantized to integer envelope lags
+        // (e.g. 139.67 for a true 140), which drifts a uniform grid off the kicks over a long track. The
+        // refiner fits a sub-frame tempo by onset-phase coherence (and fixes octave/3:2 confusions); accept
+        // it only when the kick structure is strong (else the coarse tempo stands — ambient/no-kick material).
+        // Only the tempo is taken from the kick fit; the PHASE stays with the broadband estimator below, as
+        // the kick band's low-pass group delay would bias the first-beat anchor (and sync) late.
+        if (bpm > 0 && kickEnvelope.Length > 0)
+        {
+            GridFit fit = _gridRefiner.Refine(kickEnvelope, kickRateHz, bpm, 0.0);
+            if (fit.Coherence >= GridRefiner.AcceptCoherence && fit.Bpm > 0)
+                bpm = fit.Bpm; // tempo only; grid coherence stays separate from tempo-detection confidence
+        }
+
+        // Beat phase from the broadband envelope at the (refined) tempo — true-beat phase, no group delay.
+        double firstBeatSeconds = _firstBeat.Estimate(envelope, bpm, envelopeRateHz);
+        bpm = Math.Round(bpm, 2);
+        firstBeatSeconds = Math.Round(firstBeatSeconds, 4);
+
+        // Downbeat uses the (now-refined) tempo against the kick band; falls back to the beat anchor (no
+        // bar phase) when the band can't form.
         DownbeatEstimate downbeat = kickEnvelope.Length > 0
-            ? _downbeat.Estimate(kickEnvelope, bpm, _kickOnset.EnvelopeRateHz(sampleRate), firstBeatSeconds)
+            ? _downbeat.Estimate(kickEnvelope, bpm, kickRateHz, firstBeatSeconds)
             : new DownbeatEstimate(firstBeatSeconds, 4, 0.0);
 
-        return new BpmResult(bpm, Math.Round(estimate.Confidence, 4), firstBeatSeconds)
+        return new BpmResult(bpm, Math.Round(confidence, 4), firstBeatSeconds)
         {
             DownbeatSeconds = Math.Round(downbeat.DownbeatSeconds, 4),
             BeatsPerBar = downbeat.BeatsPerBar,

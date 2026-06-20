@@ -91,7 +91,7 @@
               Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
       <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
-      <Slider Width="110" Minimum="2" Maximum="40" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
+      <Slider Width="110" Minimum="2" Maximum="200" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
       <TextBox Classes="spartan" Width="56" Text="{Binding Bpm}" />
     </StackPanel>
@@ -110,7 +110,7 @@
           <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
             <TextBlock Classes="section" Text="TIMELINE" />
             <TextBlock Classes="faint" VerticalAlignment="Center"
-                       Text="· drag a track from the library onto a lane · drag a clip to move it · pick a control per lane to automate" />
+                       Text="· drag a track onto a lane · drag a clip to move · drag a clip edge to trim · right-click a clip to sync/warp · drag empty space (or middle-button) to pan" />
           </StackPanel>
 
           <!-- DAW layout: a FIXED left header column (deck labels + automation pickers) beside the
@@ -161,7 +161,11 @@
                    playhead and clips share one coordinate space (X = seconds * zoom). -->
               <ScrollViewer Grid.Column="1" x:Name="LanesScroll"
                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <Grid RowDefinitions="Auto,*" Width="{Binding TimelineContentWidth}" HorizontalAlignment="Left">
+                <!-- MinWidth (not Width) so the lane backgrounds fill the viewport when the project is
+                     shorter than the window, yet still grow past it (and scroll) when the material is longer.
+                     Clips/playhead position by absolute X = seconds * zoom, so the extra trailing width is
+                     purely the empty lane background. -->
+                <Grid RowDefinitions="Auto,*" MinWidth="{Binding TimelineContentWidth}" HorizontalAlignment="Stretch">
 
                   <!-- TEMPO lane content: the project BPM curve (warped clips follow it); always editable -->
                   <Border Grid.Row="0" Background="{DynamicResource S2}" CornerRadius="2"
@@ -198,6 +202,20 @@
                                           PointerPressed="OnClipPointerPressed"
                                           PointerMoved="OnClipPointerMoved"
                                           PointerReleased="OnClipPointerReleased">
+                                    <!-- Right-click clip menu. The flyout inherits the clip VM as its
+                                         DataContext, so these bind to the clip's own commands. -->
+                                    <Border.ContextFlyout>
+                                      <MenuFlyout>
+                                        <MenuItem Header="Sync to project BPM" Command="{Binding SyncToGridCommand}"
+                                                  ToolTip.Tip="Warp this clip to the project tempo and snap its downbeat onto the grid, in phase with the other tracks — nearest to where it sits now" />
+                                        <MenuItem Header="Warp to tempo" ToggleType="CheckBox" IsChecked="{Binding WarpEnabled}" />
+                                        <Separator />
+                                        <MenuItem Header="Duplicate" Command="{Binding DuplicateCommand}" />
+                                        <MenuItem Header="Reset trim" Command="{Binding ResetTrimCommand}" />
+                                        <Separator />
+                                        <MenuItem Header="Remove" Command="{Binding RemoveCommand}" />
+                                      </MenuFlyout>
+                                    </Border.ContextFlyout>
                                     <Grid RowDefinitions="Auto,*">
                                       <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="3,1,3,0">
                                         <TextBlock Grid.Column="0" Classes="mono" FontSize="9"
@@ -228,6 +246,13 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
+
+                  <!-- bar/beat grid overlay: faint vertical lines on the project grid (bright on bars +
+                       a bar number, fainter on beats) so beat-snapping and sync-to-BPM are visible. Drawn
+                       over the lanes but under the playhead; non-interactive. Shares the time-0 origin. -->
+                  <controls:TimelineGridStrip Grid.Row="0" Grid.RowSpan="2"
+                                              PixelsPerSecond="{Binding PixelsPerSecond}"
+                                              Bpm="{Binding Bpm}" />
 
                   <!-- playhead overlay: a thin accent line over the content. Its X is seconds * zoom from
                        the content origin (time-0); spans both rows so the cursor is continuous, and the
@@ -283,8 +308,6 @@
                 <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding SelectedClipDeck}">
                   <ComboBoxItem>A</ComboBoxItem>
                   <ComboBoxItem>B</ComboBoxItem>
-                  <ComboBoxItem>C</ComboBoxItem>
-                  <ComboBoxItem>D</ComboBoxItem>
                 </ComboBox>
               </StackPanel>
               <StackPanel Spacing="3">

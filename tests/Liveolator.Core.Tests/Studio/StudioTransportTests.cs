@@ -50,6 +50,67 @@ public class StudioTransportTests
     }
 
     [Fact]
+    public void Advance_ClipStart_LoadCarriesTheAnalyzedSourceBpmAsTheGrid()
+    {
+        var dispatcher = new RecordingDispatcher();
+        StudioProject project = new("p", 124,
+            new[] { new StudioClip(0, "/m/w.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(10), SourceBpm: 120) }, Array.Empty<AutomationLane>());
+        using StudioTransport transport = Build(dispatcher, project);
+
+        transport.Advance(1); // crosses the clip start at 0
+
+        PerformanceAction load = Assert.Single(
+            dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckLoadTrack));
+        Assert.Equal(120, load.Value, 1e-9); // the deck grid/sync reference, not 0
+    }
+
+    [Fact]
+    public void Advance_WarpedClip_KeylocksAndSetsTheDeckToTheProjectBpm()
+    {
+        var dispatcher = new RecordingDispatcher();
+        StudioProject project = new("p", 124,
+            new[] { new StudioClip(0, "/m/w.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(10), SourceBpm: 120, WarpEnabled: true) }, Array.Empty<AutomationLane>());
+        using StudioTransport transport = Build(dispatcher, project);
+
+        transport.Advance(1);
+
+        // Key-lock turned on (fake feedback reports it off) so the warp preserves pitch.
+        Assert.Single(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckKeyLockToggle && a.Slot == 0));
+        // Deck warped to the project tempo.
+        PerformanceAction bpm = Assert.Single(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckBpm));
+        Assert.Equal(124, bpm.Value, 1e-9);
+    }
+
+    [Fact]
+    public void Advance_UnwarpedClip_DoesNotTouchKeylockOrBpm()
+    {
+        var dispatcher = new RecordingDispatcher();
+        StudioProject project = new("p", 124,
+            new[] { new StudioClip(0, "/m/n.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(10), SourceBpm: 120, WarpEnabled: false) }, Array.Empty<AutomationLane>());
+        using StudioTransport transport = Build(dispatcher, project);
+
+        transport.Advance(1);
+
+        Assert.Empty(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckKeyLockToggle));
+        Assert.Empty(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckBpm));
+    }
+
+    [Fact]
+    public void Advance_ClipWithTrimIn_SeeksToTheSourceInOnStart()
+    {
+        var dispatcher = new RecordingDispatcher();
+        StudioProject project = new("p", 120,
+            new[] { new StudioClip(0, "/m/t.wav", 0, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15)) }, Array.Empty<AutomationLane>());
+        using StudioTransport transport = Build(dispatcher, project);
+
+        transport.Advance(1);
+
+        PerformanceAction seek = Assert.Single(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckSeek));
+        Assert.Equal(5, seek.Value, 1e-9);
+        Assert.Equal(ActionInputMode.Absolute, seek.InputMode);
+    }
+
+    [Fact]
     public void Advance_PastClipEnd_DispatchesTransportStopForThatDeck()
     {
         var dispatcher = new RecordingDispatcher();

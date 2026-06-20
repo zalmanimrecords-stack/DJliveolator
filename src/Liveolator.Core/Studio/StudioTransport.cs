@@ -132,20 +132,49 @@ public sealed class StudioTransport : IDisposable
     {
         int slot = ev.Clip.DeckSlot;
         if (ev.Kind == StudioClipEventKind.Start)
-        {
-            // Load then start. Value carries the deck base BPM (0 = native rate); the arrangement
-            // positions clips in time, it does not beatmatch, so the native rate is the MVP behaviour.
-            _dispatcher.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckLoadTrack, ActionInputMode.Momentary,
-                Value: 0, Slot: slot, Argument: ev.Clip.TrackPath, Origin: StudioArranger.Origin));
-            _dispatcher.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckPlayPause, Slot: slot, Origin: StudioArranger.Origin));
-        }
+            StartClip(ev.Clip, slot);
         else
-        {
             _dispatcher.Dispatch(new PerformanceAction(
                 PerformanceActionKind.TransportStop, Slot: slot, Origin: StudioArranger.Origin));
+    }
+
+    // Start a clip on its deck: load (carrying the analyzed grid BPM), honour the trim-in, warp to the
+    // project tempo (keylock = pitch preserved) when the clip is warped, then play.
+    private void StartClip(StudioClip clip, int slot)
+    {
+        // Value carries the clip's analyzed source BPM so the deck's grid/sync reference is set (the deck
+        // handler routes Value to SetDeckBaseBpm); previously 0 left the deck with no grid.
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Momentary,
+            Value: clip.SourceBpm, Slot: slot, Argument: clip.TrackPath, Origin: StudioArranger.Origin));
+
+        // Honour the clip's trim-in: begin reading at SourceIn instead of the file head.
+        double sourceIn = clip.SourceIn.TotalSeconds;
+        if (sourceIn > 0)
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSeek, ActionInputMode.Absolute,
+                Value: sourceIn, Slot: slot, Origin: StudioArranger.Origin));
+
+        // Warp the deck to the project tempo so a warped clip is HEARD at the project BPM in preview (not
+        // just drawn shorter). Pitch is preserved via key-lock. Key-lock is a toggle, so only flip it when
+        // off. Note: the deck's BPM rides its ±8% pitch rail, so preview matches small warps exactly and
+        // saturates for large ratios — the offline render does the full, arbitrary time-stretch.
+        if (clip.CanWarp)
+        {
+            double targetBpm = _arranger.ProjectTempoAt(clip.TimelineStartSeconds);
+            if (targetBpm > 0)
+            {
+                if (!_dispatcher.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, slot).IsActive)
+                    _dispatcher.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.DeckKeyLockToggle, Slot: slot, Origin: StudioArranger.Origin));
+                _dispatcher.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckBpm, ActionInputMode.Absolute,
+                    Value: targetBpm, Slot: slot, Origin: StudioArranger.Origin));
+            }
         }
+
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckPlayPause, Slot: slot, Origin: StudioArranger.Origin));
     }
 
     private void Run()

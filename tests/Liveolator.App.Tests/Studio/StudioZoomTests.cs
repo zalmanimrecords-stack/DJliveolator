@@ -61,7 +61,7 @@ public sealed class StudioZoomTests
         for (int i = 0; i < 50; i++)
             vm.ZoomInCommand.Execute().Subscribe();
 
-        Assert.Equal(40.0, vm.PixelsPerSecond, 1e-9); // matches the zoom slider's Maximum
+        Assert.Equal(200.0, vm.PixelsPerSecond, 1e-9); // matches the zoom slider's Maximum (deep magnification)
     }
 
     [Fact]

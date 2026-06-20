@@ -39,6 +39,23 @@ public partial class App : Application
             ResolveSkin(skins, settings.Extensions.ActiveSliderSkinId),
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
+        // Populate the analyzed catalog into the library BEFORE the decks/tabs are created, so a restored
+        // deck can resolve its track's BPM + beat grid right away. Otherwise the catalog only loads later,
+        // async, when the Libraries tab restores (line below) — and the decks come up with no BPM/grid until
+        // then. Idempotent (the Libraries tab re-restores) and tolerant (a load failure just leaves it empty).
+        try
+        {
+            var musicLibrary = services.GetRequiredService<Liveolator.Core.Library.Music.MusicLibrary>();
+            IReadOnlyList<Liveolator.Core.Library.Music.MusicTrack> cachedTracks =
+                services.GetRequiredService<IMusicCatalogStore>().LoadMusicAsync().GetAwaiter().GetResult();
+            if (cachedTracks is { Count: > 0 })
+                musicLibrary.Restore(cachedTracks);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Eager catalog preload failed: {ex.Message}");
+        }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var mainWindowViewModel = services.GetRequiredService<MainWindowViewModel>();

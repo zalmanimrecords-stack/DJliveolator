@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Settings;
@@ -36,8 +37,8 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds)
     {
         _library = library;
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, waveformZoomSeconds, nudgeSeconds);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, waveformZoomSeconds, nudgeSeconds);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds);
         // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
         Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);
@@ -128,30 +129,37 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     // the same way the Libraries table shows them. Null when there is no library or no matching entry.
     private DeckTrackInfo? ResolveTrackInfo(string trackPath)
     {
-        if (_library is null || string.IsNullOrEmpty(trackPath))
-            return null;
-
-        MusicTrack? track = _library.All
-            .FirstOrDefault(t => string.Equals(t.File.Path, trackPath, StringComparison.OrdinalIgnoreCase));
-
-        // The loaded path can differ in form from the catalog's (e.g. a mapped drive vs the UNC share the
-        // track was scanned under, or a deck-queue path), so an exact match can miss a track that IS in the
-        // library. Fall back to a file-name match so the deck still surfaces its Key·BPM·duration (deck B
-        // was showing no BPM because of this).
-        if (track is null)
-        {
-            string fileName = System.IO.Path.GetFileName(trackPath);
-            if (!string.IsNullOrEmpty(fileName))
-                track = _library.All.FirstOrDefault(t =>
-                    string.Equals(System.IO.Path.GetFileName(t.File.Path), fileName, StringComparison.OrdinalIgnoreCase));
-        }
-
-        if (track is null)
+        if (FindTrack(trackPath) is not { } track)
             return null;
 
         string bpm = track.Bpm is { } b ? b.Bpm.ToString("0.0") : "—";
         string key = track.Key?.Camelot ?? "—";
         string duration = track.Duration is { } d ? $"{(int)d.TotalMinutes}:{d.Seconds:00}" : "—";
         return new DeckTrackInfo(track.Title, bpm, key, duration);
+    }
+
+    // The track's analyzed beat grid (BPM + first-beat) from the catalog, the source of truth. Lets a deck
+    // self-heal a load that arrived without analysis (a restored session predating analysis, a queue load)
+    // so the grid/BPM still appear. Null when there is no library/match or the track is unanalyzed.
+    private BpmResult? ResolveAnalysis(string trackPath) => FindTrack(trackPath)?.Bpm;
+
+    // The catalog entry for a loaded path. The loaded path can differ in form from the catalog's (a mapped
+    // drive vs the UNC share it was scanned under, or a deck-queue path), so an exact match can miss a track
+    // that IS in the library — fall back to a file-name match (deck B was showing no BPM because of this).
+    private MusicTrack? FindTrack(string trackPath)
+    {
+        if (_library is null || string.IsNullOrEmpty(trackPath))
+            return null;
+
+        MusicTrack? track = _library.All
+            .FirstOrDefault(t => string.Equals(t.File.Path, trackPath, StringComparison.OrdinalIgnoreCase));
+        if (track is not null)
+            return track;
+
+        string fileName = System.IO.Path.GetFileName(trackPath);
+        return string.IsNullOrEmpty(fileName)
+            ? null
+            : _library.All.FirstOrDefault(t =>
+                string.Equals(System.IO.Path.GetFileName(t.File.Path), fileName, StringComparison.OrdinalIgnoreCase));
     }
 }

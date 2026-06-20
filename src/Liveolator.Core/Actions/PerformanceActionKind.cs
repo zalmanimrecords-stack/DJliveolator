@@ -143,4 +143,13 @@ public enum PerformanceActionKind
     /// so every pad reflects the refreshed bank. A no-op when no realtime engine / loaded track is present.
     /// </summary>
     DeckApplyAutoCues,
+
+    /// <summary>
+    /// Set a deck's GRID tempo — the analyzed base BPM the beat grid is drawn from and Sync references
+    /// (Slot = A/B, Value = BPM). Used to hand-correct an inaccurate auto-detected tempo so the grid lands
+    /// on the kicks (the rekordbox/Serato "grid edit"). Distinct from <see cref="DeckBpm"/>, which changes
+    /// the AUDIBLE pitch: a grid edit must NOT alter the playing pitch. Pairs with <see cref="DeckSetFirstBeat"/>
+    /// (slide the grid to the playhead) and is persisted to the catalog as a manual beat grid.
+    /// </summary>
+    DeckSetGridBpm,
 }

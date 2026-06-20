@@ -25,7 +25,7 @@ public sealed class StudioLaneViewModel : ViewModelBase
 
     public int Slot { get; }
 
-    /// <summary>"A"/"B" for the live decks, "C"/"D" for the hidden STUDIO decks.</summary>
+    /// <summary>The lane label — "A" or "B" (the two STUDIO channels).</summary>
     public string Label { get; }
 
     /// <summary>

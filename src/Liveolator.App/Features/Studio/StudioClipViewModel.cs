@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Reactive;
 using Liveolator.App.Shell;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Studio;
@@ -49,11 +50,32 @@ public sealed class StudioClipViewModel : ViewModelBase
         _fadeInSeconds = clip.FadeInSeconds;
         _fadeOutSeconds = clip.FadeOutSeconds;
         SourceBpm = clip.SourceBpm > 0 ? clip.SourceBpm : (track?.Bpm?.Bpm ?? 0);
+        // The source bar grid (for sync-to-project-BPM). Prefer the clip's saved values; fall back to the
+        // track's analyzed downbeat so clips saved before these fields existed still sync correctly.
+        SourceDownbeatSeconds = clip.SourceDownbeatSeconds != 0 ? clip.SourceDownbeatSeconds : (track?.Bpm?.DownbeatSeconds ?? 0);
+        SourceBeatsPerBar = clip.SourceBeatsPerBar > 0 ? clip.SourceBeatsPerBar : (track?.Bpm?.BeatsPerBar ?? 4);
+
+        // Trim back to the full source (the clip-local "Reset trim" context action); placement is untouched.
+        ResetTrimCommand = ReactiveCommand.Create(ResetTrim);
     }
 
     public string TrackPath { get; }
     public MusicTrack? Track { get; }
     public string Title => Track?.Title ?? Path.GetFileNameWithoutExtension(TrackPath);
+
+    /// <summary>The source track's analyzed downbeat (beat-1 offset, seconds); 0 when unknown.</summary>
+    public double SourceDownbeatSeconds { get; }
+
+    /// <summary>The source track's meter (4 for 4/4).</summary>
+    public int SourceBeatsPerBar { get; }
+
+    // Right-click context-menu commands. The clip-local one (Reset trim) is created here; the ones that
+    // touch the timeline (Sync to project BPM, Duplicate, Remove) are injected by the timeline VM, which
+    // owns the lanes and the project tempo. Bound from the clip's ContextFlyout in StudioView.axaml.
+    public ReactiveCommand<Unit, Unit> ResetTrimCommand { get; }
+    public ReactiveCommand<Unit, Unit>? SyncToGridCommand { get; set; }
+    public ReactiveCommand<Unit, Unit>? DuplicateCommand { get; set; }
+    public ReactiveCommand<Unit, Unit>? RemoveCommand { get; set; }
 
     /// <summary>
     /// Set by the timeline VM to its undo-snapshot push; fired BEFORE a user edit to this clip's
@@ -76,6 +98,56 @@ public sealed class StudioClipViewModel : ViewModelBase
 
     /// <summary>End a timeline drag-move (re-enable per-edit undo snapshots).</summary>
     public void EndDrag() => _dragging = false;
+
+    // The shortest a trimmed clip may become, so an edge drag can't collapse it to nothing.
+    private const double MinTrimSeconds = 0.05;
+
+    /// <summary>
+    /// Drag the clip's left (head) edge by <paramref name="timelineDeltaSeconds"/>: trims the source-in and
+    /// shifts the start by the same amount of time so the rest of the clip stays anchored where it sits
+    /// (rekordbox/Ableton head-trim). The source moves by the warp factor (source seconds per timeline
+    /// second). Clamped so the head can't pass the tail or go before the file start. VM-driven (one undo
+    /// snapshot is taken at the drag's start), so it writes fields directly.
+    /// </summary>
+    public void DragStartEdge(double timelineDeltaSeconds)
+    {
+        double factor = WarpFactor > 0 ? WarpFactor : 1.0;
+        double tail = _sourceOutSeconds ?? Track?.Duration?.TotalSeconds ?? (_sourceInSeconds + DefaultOpenLengthSeconds);
+        double newIn = Math.Clamp(_sourceInSeconds + timelineDeltaSeconds * factor, 0, tail - MinTrimSeconds);
+
+        double appliedTimelineDelta = (newIn - _sourceInSeconds) / factor;
+        _sourceInSeconds = newIn;
+        _timelineStartSeconds = Math.Max(0, _timelineStartSeconds + appliedTimelineDelta);
+        RaiseTrimGeometry();
+    }
+
+    /// <summary>
+    /// Drag the clip's right (tail) edge by <paramref name="timelineDeltaSeconds"/>: changes the source-out
+    /// (the clip length); the start is untouched. Clamped so the tail can't pass the head or run past the
+    /// end of the file. VM-driven (one undo snapshot at the drag's start), so it writes fields directly.
+    /// </summary>
+    public void DragEndEdge(double timelineDeltaSeconds)
+    {
+        double factor = WarpFactor > 0 ? WarpFactor : 1.0;
+        double currentOut = _sourceOutSeconds ?? Track?.Duration?.TotalSeconds ?? (_sourceInSeconds + DefaultOpenLengthSeconds);
+        double newOut = Math.Max(_sourceInSeconds + MinTrimSeconds, currentOut + timelineDeltaSeconds * factor);
+        if (Track?.Duration?.TotalSeconds is { } trackLength)
+            newOut = Math.Min(newOut, trackLength);
+
+        _sourceOutSeconds = newOut;
+        RaiseTrimGeometry();
+    }
+
+    private void RaiseTrimGeometry()
+    {
+        this.RaisePropertyChanged(nameof(SourceInSeconds));
+        this.RaisePropertyChanged(nameof(SourceOutSeconds));
+        this.RaisePropertyChanged(nameof(TimelineStartSeconds));
+        this.RaisePropertyChanged(nameof(DurationSeconds));
+        this.RaisePropertyChanged(nameof(X));
+        this.RaisePropertyChanged(nameof(Width));
+        this.RaisePropertyChanged(nameof(TimelineEndSeconds));
+    }
 
     /// <summary>The clip track's analyzed tempo (0 = unknown). Warp targets the project tempo from here.</summary>
     public double SourceBpm { get; }
@@ -246,7 +318,32 @@ public sealed class StudioClipViewModel : ViewModelBase
         WarpEnabled,
         Gain,
         FadeInSeconds,
-        FadeOutSeconds);
+        FadeOutSeconds,
+        SourceDownbeatSeconds,
+        SourceBeatsPerBar);
+
+    // Reset the source trim to the whole file (clears in/out), leaving placement and warp as they are.
+    private void ResetTrim()
+    {
+        SourceInSeconds = 0;
+        SourceOutSeconds = null;
+    }
+
+    /// <summary>
+    /// Apply a sync-to-grid result (warp on + new start) as one VM-driven change. The timeline VM has
+    /// already recorded a single undo snapshot, so this writes the backing fields directly (no per-setter
+    /// snapshot) and just refreshes the bound geometry.
+    /// </summary>
+    public void ApplySync(bool warpEnabled, double timelineStartSeconds)
+    {
+        _warpEnabled = warpEnabled;
+        _timelineStartSeconds = System.Math.Max(0, timelineStartSeconds);
+        this.RaisePropertyChanged(nameof(WarpEnabled));
+        this.RaisePropertyChanged(nameof(TimelineStartSeconds));
+        this.RaisePropertyChanged(nameof(X));
+        this.RaisePropertyChanged(nameof(TimelineEndSeconds));
+        RaiseWarp();
+    }
 
     private void RaiseSpan()
     {

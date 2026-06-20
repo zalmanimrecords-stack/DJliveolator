@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -43,10 +44,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>BPM step per nudge button press (±0.1 BPM — fine enough for manual beat-sync).</summary>
     private const double NudgeBpmStep = 0.1;
 
+    /// <summary>BPM step per GRID-tempo edit press (±1 BPM — coarse hand-correction; the analyzer already
+    /// resolves sub-BPM, and half/double handles octave errors).</summary>
+    private const double GridBpmStep = 1.0;
+
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IWaveformProvider? _waveformProvider;
     private readonly Func<string, DeckTrackInfo?>? _trackInfo;
+    private readonly Func<string, BpmResult?>? _analysisInfo;
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
@@ -90,6 +96,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         IPerformanceActionDispatcher? dispatcher = null,
         IWaveformProvider? waveformProvider = null,
         Func<string, DeckTrackInfo?>? trackInfo = null,
+        Func<string, BpmResult?>? analysisInfo = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds)
     {
@@ -97,6 +104,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _dispatcher = dispatcher;
         _waveformProvider = waveformProvider;
         _trackInfo = trackInfo;
+        _analysisInfo = analysisInfo;
         _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
         _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
@@ -162,6 +170,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // known (waveform still decoding) it is a no-op rather than a guessed jump (the engine clamps to [0,1]).
         SeekBackCommand = ReactiveCommand.Create(() => NudgeSeek(-_nudgeSeconds), canEmit);
         SeekForwardCommand = ReactiveCommand.Create(() => NudgeSeek(+_nudgeSeconds), canEmit);
+
+        // Grid edit (rekordbox/Serato "grid edit"): re-tempo / re-phase the BEAT GRID so it sits on the
+        // kicks, via DeckSetGridBpm + DeckSetFirstBeat. These change the analyzed grid/sync tempo and phase
+        // only — never the audible pitch — and are no-ops until the track's tempo/duration are known.
+        GridBpmDownCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm - GridBpmStep), canEmit);
+        GridBpmUpCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm + GridBpmStep), canEmit);
+        GridHalveCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 0.5), canEmit);
+        GridDoubleCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 2.0), canEmit);
+        SetGridHereCommand = ReactiveCommand.Create(EmitGridHere, canEmit);
 
         var hotCues = new HotCuePadViewModel[HotCueCount];
         for (int index = 0; index < HotCueCount; index++)
@@ -528,6 +545,41 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
             : Array.Empty<double>();
 
+    // Set the grid tempo (absolute BPM) — emits DeckSetGridBpm; a no-op when the new tempo is non-positive
+    // or no track tempo is known yet (so an edit press before a track loads can't push a 0/negative BPM).
+    private void EmitGridBpm(double bpm)
+    {
+        if (_trackBpm <= 0 || bpm <= 0)
+            return;
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: bpm, Slot: _slot));
+    }
+
+    // Slide the grid so a beat line lands on the kick under the playhead: emit DeckSetFirstBeat with the
+    // within-beat anchor derived from the current position. No-op until tempo + duration are known.
+    private void EmitGridHere()
+    {
+        if (_trackBpm <= 0 || _durationSeconds <= 0)
+            return;
+        double anchor = GridAnchorAtPlayhead(_progress, _durationSeconds, _trackBpm);
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
+    }
+
+    /// <summary>
+    /// The within-beat first-beat anchor (seconds, in [0, 60/bpm)) that puts a beat line on the playhead:
+    /// the playhead time folded into one beat. Pure so the "set grid here" math unit-tests without a VM.
+    /// </summary>
+    public static double GridAnchorAtPlayhead(double progress, double durationSeconds, double bpm)
+    {
+        if (bpm <= 0 || durationSeconds <= 0 || double.IsNaN(progress))
+            return 0.0;
+        double beatSeconds = 60.0 / bpm;
+        double t = Math.Clamp(progress, 0.0, 1.0) * durationSeconds;
+        double anchor = t % beatSeconds;
+        return anchor < 0 ? anchor + beatSeconds : anchor;
+    }
+
     /// <summary>True while this deck has an active loop (drives the LOOP key's active state), from feedback.</summary>
     public bool IsLooping
     {
@@ -562,6 +614,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Nudges the track playhead 0.5 s forward (relative seek) — fine cueing / manual line-up.</summary>
     public ReactiveCommand<Unit, Unit> SeekForwardCommand { get; }
+
+    /// <summary>Grid edit: lower the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible — does
+    /// not move the pitch fader). For hand-correcting a mis-detected tempo so the grid sits on the kicks.</summary>
+    public ReactiveCommand<Unit, Unit> GridBpmDownCommand { get; }
+    /// <summary>Grid edit: raise the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible).</summary>
+    public ReactiveCommand<Unit, Unit> GridBpmUpCommand { get; }
+    /// <summary>Grid edit: halve the GRID tempo (octave fix — e.g. a 140 detected as 280).</summary>
+    public ReactiveCommand<Unit, Unit> GridHalveCommand { get; }
+    /// <summary>Grid edit: double the GRID tempo (octave fix — e.g. a 140 detected as 70).</summary>
+    public ReactiveCommand<Unit, Unit> GridDoubleCommand { get; }
+    /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
+    /// within-beat first-beat anchor from the current position).</summary>
+    public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
 
     /// <summary>The four hot-cue pads (the mock's 1·2·3·4 row).</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
@@ -655,9 +720,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckSetFirstBeat:
                     // The analyzed downbeat anchor (seconds), echoed right after the load — anchor the
                     // beat/bar grid on it so the lines fall on the kicks (and match what Sync aligns to).
-                    _firstBeatSeconds = e.State.Value;
-                    RecomputeBeatGrid();
-                    this.RaisePropertyChanged(nameof(KickAnchorFraction));
+                    // Ignore a stale 0 from a no-analysis restore so it can't wipe a catalog/auto anchor
+                    // (the self-heal in OnTrackLoaded may have already set a real one).
+                    if (e.State.Value != 0 || _firstBeatSeconds == 0)
+                    {
+                        _firstBeatSeconds = e.State.Value;
+                        RecomputeBeatGrid();
+                        this.RaisePropertyChanged(nameof(KickAnchorFraction));
+                    }
                     break;
             }
         });
@@ -761,6 +831,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(KickAnchorFraction));
         ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
+
+        // Self-heal a load that arrived without analysis (e.g. a deck restored from a saved session whose
+        // BPM predates analysis, or a queue load): pull the CURRENT catalog BPM + first-beat and apply them
+        // through the same grid actions a manual edit uses, so the grid/BPM appear instead of staying blank.
+        if (bpm <= 0 && _analysisInfo?.Invoke(trackPath) is { Bpm: > 0 } analysis)
+        {
+            _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: analysis.Bpm, Slot: _slot));
+            if (analysis.FirstBeatSeconds > 0)
+                _dispatcher?.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
+                    Value: analysis.FirstBeatSeconds, Slot: _slot));
+        }
+
         LoadWaveform(trackPath);
     }
 

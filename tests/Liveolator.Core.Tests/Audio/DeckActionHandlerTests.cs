@@ -264,6 +264,33 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
+    public void DeckSetGridBpm_CorrectsGridTempo_WithoutMovingThePitchFader()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, Value: 139.67, Slot: 0, Argument: @"C:\a.wav"));
+        // The DJ has pitched the deck; a grid edit must not disturb the audible rate.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckPitch, ActionInputMode.Absolute, Value: 0.7, Slot: 0));
+        double pitchBefore = engine.PitchPosition(0);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: 140.0, Slot: 0));
+
+        Assert.Equal(140.0, engine.DeckBaseBpm(0), precision: 6);     // grid/sync tempo corrected
+        Assert.Equal(pitchBefore, engine.PitchPosition(0), precision: 6); // pitch fader untouched (inaudible edit)
+    }
+
+    [Fact]
+    public void HandledKinds_IncludeDeckSetGridBpm()
+    {
+        Assert.Contains(
+            PerformanceActionKind.DeckSetGridBpm,
+            new DeckActionHandler(new FakeMultiDeckEngine()).HandledKinds);
+    }
+
+    [Fact]
     public void MultiDeck_RoutesActionsToTheRequestedSlot()
     {
         var engine = new FakeMultiDeckEngine();

@@ -14,8 +14,10 @@ public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key, TimeSpan
 public sealed class TrackAnalyzer
 {
     /// <summary>Increment when analyzer output semantics change and cached tracks must be refreshed.</summary>
-    /// <remarks>v2: added the kick-band downbeat anchor (<see cref="Bpm.BpmResult.DownbeatSeconds"/>).</remarks>
-    public const int CurrentVersion = 2;
+    /// <remarks>v2: added the kick-band downbeat anchor (<see cref="Bpm.BpmResult.DownbeatSeconds"/>).
+    /// v3: sub-frame tempo/phase refinement so the grid lands on the kicks (<see cref="Bpm.GridRefiner"/>) —
+    /// fixes integer-lag drift (139.67→140) and octave/3:2 confusions; existing tracks re-grid in background.</remarks>
+    public const int CurrentVersion = 3;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
