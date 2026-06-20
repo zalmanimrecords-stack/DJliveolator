@@ -134,7 +134,7 @@ public class Jog : Control
         if (on && progress > 0.0008)
         {
             double end = StartAngle + (360.0 * progress);
-            context.DrawGeometry(null, new Pen(Halo(arc, 0.22), ringStroke * 2.2)
+            context.DrawGeometry(null, new Pen(ControlBrush.Halo(arc, 0.22), ringStroke * 2.2)
                 { LineCap = PenLineCap.Round }, Arc(centre, ringRadius, StartAngle, end));
             context.DrawGeometry(null, new Pen(arc, ringStroke)
                 { LineCap = PenLineCap.Round }, Arc(centre, ringRadius, StartAngle, end));
@@ -144,7 +144,7 @@ public class Jog : Control
         IBrush marker = on ? MarkerBrush : TrackBrush;
 
         // Spindle line from the hub to the rim marks the play position like a record's start groove.
-        context.DrawLine(new Pen(Halo(marker, on ? 0.85 : 0.5), Math.Max(2.0, size * 0.018))
+        context.DrawLine(new Pen(ControlBrush.Halo(marker, on ? 0.85 : 0.5), Math.Max(2.0, size * 0.018))
             { LineCap = PenLineCap.Round },
             PointOnCircle(centre, platterRadius * 0.20, markerAngle),
             PointOnCircle(centre, platterRadius * 0.92, markerAngle));
@@ -152,7 +152,7 @@ public class Jog : Control
         if (on)
         {
             Point dot = PointOnCircle(centre, ringRadius, markerAngle);
-            context.DrawEllipse(Halo(arc, 0.35), null, dot, ringStroke * 1.5, ringStroke * 1.5);
+            context.DrawEllipse(ControlBrush.Halo(arc, 0.35), null, dot, ringStroke * 1.5, ringStroke * 1.5);
             context.DrawEllipse(arc, null, dot, ringStroke * 0.7, ringStroke * 0.7);
         }
 
@@ -190,8 +190,8 @@ public class Jog : Control
     private void DrawKickGlow(DrawingContext context, Point centre, double radius, double band, double pulse)
     {
         // A soft wide halo + a brighter core ring, both in the glow colour and scaled by the pulse.
-        context.DrawEllipse(null, new Pen(Halo(GlowBrush, 0.30 * pulse), band * 1.8), centre, radius, radius);
-        context.DrawEllipse(null, new Pen(Halo(GlowBrush, 0.12 + (0.88 * pulse)), band * 0.7), centre, radius, radius);
+        context.DrawEllipse(null, new Pen(ControlBrush.Halo(GlowBrush, 0.30 * pulse), band * 1.8), centre, radius, radius);
+        context.DrawEllipse(null, new Pen(ControlBrush.Halo(GlowBrush, 0.12 + (0.88 * pulse)), band * 0.7), centre, radius, radius);
     }
 
     private void DrawPlatter(DrawingContext context, Point centre, double radius, double size)
@@ -210,17 +210,6 @@ public class Jog : Control
         context.DrawEllipse(new SolidColorBrush(Color.FromRgb(0x16, 0x20, 0x30)),
             new Pen(new SolidColorBrush(Color.FromArgb(0x90, 0x00, 0x02, 0x06)), Math.Max(1, size * 0.01)),
             centre, radius, radius);
-    }
-
-    private static IBrush Halo(IBrush source, double opacity)
-    {
-        if (source is ISolidColorBrush solid)
-        {
-            Color c = solid.Color;
-            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), c.R, c.G, c.B));
-        }
-
-        return source;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

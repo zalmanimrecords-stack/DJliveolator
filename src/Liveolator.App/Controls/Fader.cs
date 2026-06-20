@@ -178,10 +178,10 @@ public class Fader : Control
         IBrush fill,
         double width)
     {
-        context.DrawLine(new Pen(Halo(fill, 0.2), width * 2.8) { LineCap = PenLineCap.Round }, start, end);
-        context.DrawLine(new Pen(Halo(fill, 0.42), width * 1.6) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(ControlBrush.Halo(fill, 0.2), width * 2.8) { LineCap = PenLineCap.Round }, start, end);
+        context.DrawLine(new Pen(ControlBrush.Halo(fill, 0.42), width * 1.6) { LineCap = PenLineCap.Round }, start, end);
         context.DrawLine(new Pen(fill, width) { LineCap = PenLineCap.Round }, start, end);
-        context.DrawLine(new Pen(Halo(fill, 0.7), 1) { LineCap = PenLineCap.Round },
+        context.DrawLine(new Pen(ControlBrush.Halo(fill, 0.7), 1) { LineCap = PenLineCap.Round },
             start + new Point(-0.55, -0.55), end + new Point(-0.55, -0.55));
     }
 
@@ -276,17 +276,6 @@ public class Fader : Control
                 new GradientStop(Color.FromArgb(0xF0, 0x21, 0x2A, 0x36), 1),
             },
         };
-
-    private static IBrush Halo(IBrush source, double opacity)
-    {
-        if (source is ISolidColorBrush solid)
-        {
-            Color color = solid.Color;
-            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
-        }
-
-        return source;
-    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

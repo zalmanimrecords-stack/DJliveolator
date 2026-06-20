@@ -106,7 +106,7 @@ public class Knob : Control
         {
             if (on)
             {
-                context.DrawGeometry(null, new Pen(Halo(arc, 0.22), arcStroke * 2.4)
+                context.DrawGeometry(null, new Pen(ControlBrush.Halo(arc, 0.22), arcStroke * 2.4)
                     { LineCap = PenLineCap.Round }, Arc(centre, arcRadius, StartAngle, angle));
             }
 
@@ -115,7 +115,7 @@ public class Knob : Control
         }
 
         double detentAngle = StartAngle + (SweepAngle * Math.Clamp(DefaultValue, 0, 1));
-        context.DrawLine(new Pen(Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round },
+        context.DrawLine(new Pen(ControlBrush.Halo(PointerBrush, 0.5), 1.5) { LineCap = PenLineCap.Round },
             PointOnCircle(centre, arcRadius - (arcStroke * 0.5), detentAngle),
             PointOnCircle(centre, arcRadius + (arcStroke * 0.5), detentAngle));
 
@@ -125,7 +125,7 @@ public class Knob : Control
         if (on)
         {
             Point dot = PointOnCircle(centre, arcRadius, angle);
-            context.DrawEllipse(Halo(arc, 0.35), null, dot, arcStroke * 1.6, arcStroke * 1.6);
+            context.DrawEllipse(ControlBrush.Halo(arc, 0.35), null, dot, arcStroke * 1.6, arcStroke * 1.6);
             context.DrawEllipse(arc, null, dot, arcStroke * 0.7, arcStroke * 0.7);
         }
 
@@ -135,7 +135,7 @@ public class Knob : Control
         context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0xD0, 0x02, 0x04, 0x08)),
             Math.Max(3.2, arcStroke * 1.05)) { LineCap = PenLineCap.Round }, tickInner, tickOuter);
         Point highlightOffset = PointerHighlightOffset(angle);
-        context.DrawLine(new Pen(Halo(pointer, 0.42), Math.Max(1, arcStroke * 0.35))
+        context.DrawLine(new Pen(ControlBrush.Halo(pointer, 0.42), Math.Max(1, arcStroke * 0.35))
             { LineCap = PenLineCap.Round }, tickInner + highlightOffset, tickOuter + highlightOffset);
         context.DrawLine(new Pen(pointer, Math.Max(1.5, arcStroke * 0.55))
             { LineCap = PenLineCap.Round }, tickInner, tickOuter);
@@ -266,17 +266,6 @@ public class Knob : Control
     {
         double angle = angleDegrees * Math.PI / 180.0;
         return new Point(Math.Sin(angle) * 0.75, -Math.Cos(angle) * 0.75);
-    }
-
-    private static IBrush Halo(IBrush source, double opacity)
-    {
-        if (source is ISolidColorBrush solid)
-        {
-            Color color = solid.Color;
-            return new SolidColorBrush(Color.FromArgb((byte)(opacity * 255), color.R, color.G, color.B));
-        }
-
-        return source;
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
