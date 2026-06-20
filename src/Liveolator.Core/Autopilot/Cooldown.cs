@@ -7,11 +7,4 @@ public sealed record Cooldown(int Bars)
 {
     /// <summary>No cooldown.</summary>
     public static Cooldown None { get; } = new(0);
-
-    /// <summary>Validates the cooldown is non-negative.</summary>
-    public void Validate()
-    {
-        if (Bars < 0)
-            throw new ArgumentOutOfRangeException(nameof(Bars), Bars, "Cooldown bars cannot be negative.");
-    }
 }
