@@ -32,6 +32,7 @@ public sealed class JsonHotCueStore : IHotCueStore
 
     private readonly string _directory;
     private readonly Action<string>? _onWarning;
+    private readonly JsonFileSnapshotIo _io;
 
     // Serializes read-modify-write so two concurrent SaveAsync calls cannot clobber each other's edits.
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -40,6 +41,7 @@ public sealed class JsonHotCueStore : IHotCueStore
     {
         _directory = rootDirectory ?? DefaultRoot();
         _onWarning = onWarning;
+        _io = new JsonFileSnapshotIo(onWarning);
     }
 
     /// <summary>Full path of the per-track cue JSON file.</summary>
@@ -132,14 +134,10 @@ public sealed class JsonHotCueStore : IHotCueStore
 
     private async Task PersistAsync(IEnumerable<TrackCueRecord> records, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(_directory);
         var snapshot = new HotCueSnapshot(HotCueSnapshot.CurrentVersion, records.ToList());
-
-        // Write to a temp file then move, so an interrupted write never corrupts the live cue file.
-        string tempPath = CuesPath + ".tmp";
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, CuesPath, overwrite: true);
+        // Atomic temp-then-move via the shared helper (unique temp name + orphaned-temp cleanup), so an
+        // interrupted write never corrupts the live cue file.
+        await _io.SaveAsync(CuesPath, snapshot, cancellationToken).ConfigureAwait(false);
     }
 
     private static Dictionary<string, TrackCueRecord> EmptyMap() => new();
