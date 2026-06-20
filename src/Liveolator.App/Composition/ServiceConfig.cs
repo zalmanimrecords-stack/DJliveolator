@@ -469,7 +469,9 @@ public static class ServiceConfig
         if (realtimeUp)
         {
             var deckSession = new DeckSessionPersistence(
-                dispatcher, deckSessionStore, deckEngine!.DeckCount);
+                dispatcher, deckSessionStore, deckEngine!.DeckCount,
+                fileExists: File.Exists,
+                logger: loggerFactory.CreateLogger<DeckSessionPersistence>());
             services.AddSingleton(deckSession);
         }
 
