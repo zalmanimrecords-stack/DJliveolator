@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Liveolator.App.Composition;
@@ -40,10 +41,16 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = services.GetRequiredService<MainWindowViewModel>(),
-            };
+            var mainWindowViewModel = services.GetRequiredService<MainWindowViewModel>();
+            var mainWindow = new MainWindow { DataContext = mainWindowViewModel };
+            // Restore the persisted window size/position + full-screen state so the app reopens where the
+            // performer left it (the active tab is restored by the view-model from the same settings).
+            ApplyWindowLayout(mainWindow, settings.WindowLayout.Normalized());
+            // Persist the layout on close. Reload the latest settings first so a device/theme change made
+            // during the session (saved from the Settings tab) is never clobbered by this layout write.
+            mainWindow.Closing += (_, _) =>
+                SaveWindowLayout(services.GetRequiredService<ISettingsStore>(), mainWindow, mainWindowViewModel);
+            desktop.MainWindow = mainWindow;
 
             // Restore the persisted library state (scan folders + analyzed catalog) so the app opens
             // where the last run left off. The same Libraries singleton backs the open tab; the call
@@ -68,4 +75,47 @@ public partial class App : Application
 
     private static ControlSkinFile? ResolveSkin(IControlSkinCatalog catalog, string? skinId)
         => skinId is not null && catalog.TryGet(skinId, out ControlSkinFile skin) ? skin : null;
+
+    // Applies a persisted window layout to the main window at startup: size, an optional saved position,
+    // and the full-screen / windowed state (which also sets the decorations + toggle-button label).
+    private static void ApplyWindowLayout(MainWindow window, WindowLayoutSettings layout)
+    {
+        window.Width = layout.Width;
+        window.Height = layout.Height;
+        if (layout.X is { } x && layout.Y is { } y)
+        {
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.Position = new PixelPoint((int)x, (int)y);
+        }
+        window.SetFullScreen(layout.IsFullScreen);
+    }
+
+    // Persists the current window layout on close. Reloads the latest settings first so a device/theme
+    // change saved during the session is preserved (only the WindowLayout section is updated). Tolerant:
+    // a failed read/write is logged, never thrown, so it cannot block shutdown (global standards #16/#26).
+    private static void SaveWindowLayout(ISettingsStore store, MainWindow window, MainWindowViewModel vm)
+    {
+        try
+        {
+            AppSettings current = store.LoadAsync().GetAwaiter().GetResult();
+            bool fullScreen = window.WindowState == WindowState.FullScreen;
+            // While full-screen the window bounds are the screen, not the user's chosen size — keep the
+            // last windowed size/position and record only the active tab + the full-screen flag. When
+            // windowed, capture the live bounds + position.
+            WindowLayoutSettings layout = fullScreen
+                ? current.WindowLayout with { ActiveTabId = vm.CurrentTabId, IsFullScreen = true }
+                : new WindowLayoutSettings(
+                    ActiveTabId: vm.CurrentTabId,
+                    Width: window.Bounds.Width,
+                    Height: window.Bounds.Height,
+                    X: window.Position.X,
+                    Y: window.Position.Y,
+                    IsFullScreen: false);
+            store.SaveAsync(current with { WindowLayout = layout.Normalized() }).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not save the window layout: {ex.Message}.");
+        }
+    }
 }

@@ -25,6 +25,9 @@ public sealed record AppSettings
     /// <summary>Per-add-on preferences (e.g. the custom VU-meter face image).</summary>
     public AddonSettings Addons { get; init; } = AddonSettings.Default;
 
+    /// <summary>Main-window layout (active tab, size/position, full-screen) restored on the next launch.</summary>
+    public WindowLayoutSettings WindowLayout { get; init; } = WindowLayoutSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -38,5 +41,6 @@ public sealed record AppSettings
             Visuals = Visuals.Normalized(),
             Diagnostics = Diagnostics.Normalized(),
             Addons = Addons.Normalized(),
+            WindowLayout = WindowLayout.Normalized(),
         };
 }

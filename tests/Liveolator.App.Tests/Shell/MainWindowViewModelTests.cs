@@ -101,7 +101,7 @@ public sealed class MainWindowViewModelTests
         public Task DeleteAsync(string name, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    private static MainWindowViewModel BuildShell()
+    private static MainWindowViewModel BuildShell(AppSettings? appSettings = null)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
         var status = new ShellStatusViewModel(
@@ -119,7 +119,7 @@ public sealed class MainWindowViewModelTests
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
             studio, visualLibrary, addons, settings, midiLearn, status,
-            new SystemVolumeControlViewModel());
+            new SystemVolumeControlViewModel(), appSettings);
     }
 
     [Fact]
@@ -149,6 +149,33 @@ public sealed class MainWindowViewModelTests
 
         vm.SelectPreviousTab();
         Assert.Same(vm.Tabs[^2], vm.CurrentTab);
+    }
+
+    [Fact]
+    public void Constructor_RestoresThePersistedActiveTab()
+    {
+        var settings = AppSettings.Default with
+        {
+            WindowLayout = new WindowLayoutSettings(ActiveTabId: "DJ"),
+        };
+
+        var vm = BuildShell(settings);
+
+        Assert.Equal("DJ", vm.CurrentTab.Title);
+        Assert.Equal("DJ", vm.CurrentTabId);
+    }
+
+    [Fact]
+    public void Constructor_UnknownPersistedTab_FallsBackToFirstTab()
+    {
+        var settings = AppSettings.Default with
+        {
+            WindowLayout = new WindowLayoutSettings(ActiveTabId: "NONEXISTENT"),
+        };
+
+        var vm = BuildShell(settings);
+
+        Assert.Same(vm.Tabs[0], vm.CurrentTab);
     }
 
     [Theory]

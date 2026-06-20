@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
@@ -8,6 +10,7 @@ using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
+using Liveolator.Core.Settings;
 using ReactiveUI;
 
 namespace Liveolator.App.Shell;
@@ -31,7 +34,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         SettingsViewModel settings,
         GlobalMidiLearnCoordinator midiLearn,
         ShellStatusViewModel status,
-        SystemVolumeControlViewModel systemVolume)
+        SystemVolumeControlViewModel systemVolume,
+        AppSettings? appSettings = null)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
@@ -61,8 +65,11 @@ public sealed class MainWindowViewModel : ViewModelBase
             new("SETTINGS", settings),
         };
 
-        // Open the Live tab — the full performance surface (mock-faithful) is the app's centrepiece.
-        _currentTab = Tabs[0];
+        // Reopen the tab the performer left on last time (persisted by its stable label id); fall back to
+        // the Live tab — the full performance surface (mock-faithful) — on first run or an unknown id.
+        string? activeTabId = appSettings?.WindowLayout.Normalized().ActiveTabId;
+        _currentTab = Tabs.FirstOrDefault(
+            tab => string.Equals(tab.Title, activeTabId, StringComparison.OrdinalIgnoreCase)) ?? Tabs[0];
     }
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
@@ -80,6 +87,10 @@ public sealed class MainWindowViewModel : ViewModelBase
         get => _currentTab;
         set => this.RaiseAndSetIfChanged(ref _currentTab, value);
     }
+
+    /// <summary>The stable id (tab label) of the currently selected tab — persisted as the layout's
+    /// active tab so the app reopens here on the next launch.</summary>
+    public string CurrentTabId => CurrentTab.Title;
 
     /// <summary>Move to the next tab, wrapping from the last back to the first (Tab key).</summary>
     public void SelectNextTab() => StepTab(+1);

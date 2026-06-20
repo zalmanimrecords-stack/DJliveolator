@@ -27,7 +27,13 @@ public sealed record SettingsSnapshot(
     string? VuMeterBackgroundImagePath = null,
     int? VuMeterNeedleOrigin = null,
     string? ActiveKnobSkinId = null,
-    string? ActiveSliderSkinId = null)
+    string? ActiveSliderSkinId = null,
+    string? ActiveTabId = null,
+    double? WindowWidth = null,
+    double? WindowHeight = null,
+    double? WindowX = null,
+    double? WindowY = null,
+    bool? WindowIsFullScreen = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -115,6 +121,15 @@ public sealed class JsonSettingsStore : ISettingsStore
             Addons = new AddonSettings(
                 snapshot.VuMeterBackgroundImagePath,
                 (VuMeterNeedleOrigin)(snapshot.VuMeterNeedleOrigin ?? (int)VuMeterNeedleOrigin.Bottom)),
+            // Fields written before they existed read null → their defaults (back-compat, #20/#22):
+            // an older settings.json has no window layout, so the app opens full-screen on the first tab.
+            WindowLayout = new WindowLayoutSettings(
+                snapshot.ActiveTabId,
+                snapshot.WindowWidth ?? WindowLayoutSettings.DefaultWidth,
+                snapshot.WindowHeight ?? WindowLayoutSettings.DefaultHeight,
+                snapshot.WindowX,
+                snapshot.WindowY,
+                snapshot.WindowIsFullScreen ?? true),
         }.Normalized();
     }
 
@@ -140,7 +155,13 @@ public sealed class JsonSettingsStore : ISettingsStore
             normalized.Diagnostics.MinimumLevel,
             normalized.Addons.VuMeterBackgroundImagePath,
             ActiveKnobSkinId: normalized.Extensions.ActiveKnobSkinId,
-            ActiveSliderSkinId: normalized.Extensions.ActiveSliderSkinId);
+            ActiveSliderSkinId: normalized.Extensions.ActiveSliderSkinId,
+            ActiveTabId: normalized.WindowLayout.ActiveTabId,
+            WindowWidth: normalized.WindowLayout.Width,
+            WindowHeight: normalized.WindowLayout.Height,
+            WindowX: normalized.WindowLayout.X,
+            WindowY: normalized.WindowLayout.Y,
+            WindowIsFullScreen: normalized.WindowLayout.IsFullScreen);
 
         await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);

@@ -257,6 +257,46 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsWindowLayout()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with
+        {
+            WindowLayout = new WindowLayoutSettings(
+                ActiveTabId: "DJ", Width: 1600, Height: 900, X: 120, Y: 80, IsFullScreen: false),
+        };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal("DJ", loaded.WindowLayout.ActiveTabId);
+        Assert.Equal(1600, loaded.WindowLayout.Width);
+        Assert.Equal(900, loaded.WindowLayout.Height);
+        Assert.Equal(120, loaded.WindowLayout.X);
+        Assert.Equal(80, loaded.WindowLayout.Y);
+        Assert.False(loaded.WindowLayout.IsFullScreen);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutWindowLayout_OpensFullScreenOnFirstTab()
+    {
+        // Back-compat: a file written before the window-layout fields existed must read the launch
+        // default — full-screen, first tab, default size — not break the load (global #20/#22).
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":40,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Null(loaded.WindowLayout.ActiveTabId);
+        Assert.True(loaded.WindowLayout.IsFullScreen);
+        Assert.Equal(WindowLayoutSettings.DefaultWidth, loaded.WindowLayout.Width);
+        Assert.Equal(WindowLayoutSettings.DefaultHeight, loaded.WindowLayout.Height);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

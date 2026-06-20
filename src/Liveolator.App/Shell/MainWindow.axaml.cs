@@ -88,15 +88,14 @@ public partial class MainWindow : Window
     private void OnFullScreenClick(object? sender, RoutedEventArgs e)
         => ToggleFullScreen();
 
-    internal void ToggleFullScreen()
+    internal void ToggleFullScreen() => SetFullScreen(WindowState != WindowState.FullScreen);
+
+    // Applies a full-screen / windowed state and keeps the toggle button's label in step. Shared by the
+    // F11/button toggle and the startup layout restore so both routes stay consistent (decorations + label).
+    internal void SetFullScreen(bool fullScreen)
     {
-        bool enterFullScreen = WindowState != WindowState.FullScreen;
-        SystemDecorations = enterFullScreen
-            ? SystemDecorations.None
-            : SystemDecorations.Full;
-        WindowState = enterFullScreen
-            ? WindowState.FullScreen
-            : WindowState.Normal;
-        FullScreenButton.Content = enterFullScreen ? "WINDOW" : "FULL";
+        SystemDecorations = fullScreen ? SystemDecorations.None : SystemDecorations.Full;
+        WindowState = fullScreen ? WindowState.FullScreen : WindowState.Normal;
+        FullScreenButton.Content = fullScreen ? "WINDOW" : "FULL";
     }
 }
