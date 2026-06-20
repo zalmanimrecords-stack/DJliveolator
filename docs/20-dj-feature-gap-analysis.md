@@ -1,5 +1,14 @@
 # 20 — DJ Feature Gap Analysis
 
+> **⚠️ Point-in-time snapshot (2026-06-06) — partially superseded.** Several rows below have
+> since been built; for current code status always trust `docs/18-implementation-status.md`
+> (the living map). Notably built *after* this audit: a real beatgrid / downbeat anchor
+> (`src/Liveolator.Core/Analysis/Bpm/BeatGrid.cs`, `DownbeatEstimator.cs`) and kick-onset
+> phase lock (`src/Liveolator.Core/Beat/OnsetPhaseLock.cs`) — rows 2.2 / 2.5; a master
+> limiter (`src/Liveolator.Core/Dsp/MasterLimiter.cs`) — row 3.8; and structural / auto
+> hot-cue detection (`src/Liveolator.Core/Analysis/Cues/StructuralCueDetector.cs`) — row 1.3.
+> The architectural analysis still stands; treat the individual ✅ / 🟡 / 🔴 cells as historical.
+
 > **Author's lens:** written as a working club/festival DJ + DSP engineer auditing
 > Liveolator strictly as a **DJ application** (the VJ side is out of scope here except
 > where it intersects). Sources: design docs 00–18 and the actual code under `src/`,
