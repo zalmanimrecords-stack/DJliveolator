@@ -390,4 +390,191 @@ public class MasterLimiterTests
         limiter.Process(Array.Empty<float>());
         Assert.Equal(1.0, limiter.CurrentGain, precision: 6);
     }
+
+    // --- Smart (program-dependent) release ----------------------------------------------------------
+
+    private static MasterLimiter MakeSmartLimiter(double character = 0.5, double ceilingDbTp = -1.0)
+    {
+        var limiter = MakeStereoLimiter(ceilingDbTp);
+        limiter.ApplySettings(new LimiterSettings(SmartRelease: true, Character: character, CeilingDbTp: ceilingDbTp));
+        return limiter;
+    }
+
+    private static float[] DcBuffer(int frames, float value)
+    {
+        var buffer = new float[frames * Stereo];
+        Array.Fill(buffer, value);
+        return buffer;
+    }
+
+    // Drive a limiter into reduction with a dense, constantly-limiting passage, then recover over a fixed
+    // quiet window; the recovered gain is how far the release has travelled toward unity.
+    private static double GainAfterDenseThenQuiet(MasterLimiter limiter, int loudFrames, int quietFrames)
+    {
+        limiter.Process(DcBuffer(loudFrames, 2.0f)); // +6 dB: constant engagement → high "activity"
+        limiter.Process(DcBuffer(quietFrames, 0.0f));
+        return limiter.CurrentGain;
+    }
+
+    [Fact]
+    public void ApplySettings_DoesNotChangeLatency()
+    {
+        var limiter = MakeStereoLimiter();
+        int before = limiter.LatencySamples;
+
+        limiter.ApplySettings(new LimiterSettings(SmartRelease: true, Character: 1.0, CeilingDbTp: -2.0));
+        Assert.Equal(before, limiter.LatencySamples);
+
+        limiter.ApplySettings(new LimiterSettings(SmartRelease: false, Character: 0.0, CeilingDbTp: -0.3));
+        Assert.Equal(before, limiter.LatencySamples);
+    }
+
+    [Fact]
+    public void ApplySettings_TogglesSmartReleaseFlag()
+    {
+        var limiter = MakeStereoLimiter();
+        Assert.False(limiter.SmartReleaseEnabled); // bare class default is the predictable fixed-release limiter
+
+        limiter.ApplySettings(LimiterSettings.Default);
+        Assert.True(limiter.SmartReleaseEnabled);
+
+        limiter.ApplySettings(LimiterSettings.Default with { SmartRelease = false });
+        Assert.False(limiter.SmartReleaseEnabled);
+    }
+
+    [Fact]
+    public void ApplySettings_NullThrows() =>
+        Assert.Throws<ArgumentNullException>(() => MakeStereoLimiter().ApplySettings(null!));
+
+    [Fact]
+    public void ApplySettings_ClampsOutOfRangeValues_AndStillLimitsToZeroDb()
+    {
+        var limiter = MakeStereoLimiter();
+        // Character above 1 and a ceiling above full scale must be clamped, not throw or break the wall.
+        limiter.ApplySettings(new LimiterSettings(SmartRelease: true, Character: 9.0, CeilingDbTp: 6.0));
+
+        limiter.Process(DcBuffer(SampleRate / 4, 4.0f));
+        // The clamped ceiling is still below 0 dB (linear < 1), so an overload is held under unity.
+        Assert.True(limiter.CurrentGain < 1.0, "limiter did not engage after a clamped settings change");
+    }
+
+    [Fact]
+    public void ApplySettings_LowerCeiling_LimitsToTheNewCeiling()
+    {
+        var limiter = MakeStereoLimiter();
+        const double newCeilingDbTp = -6.0;
+        limiter.ApplySettings(new LimiterSettings(SmartRelease: false, Character: 0.5, CeilingDbTp: newCeilingDbTp));
+        double ceiling = CeilingLinear(newCeilingDbTp);
+
+        var buffer = new float[SampleRate * Stereo];
+        for (int f = 0; f < SampleRate; f++)
+        {
+            float s = 2.0f * (float)Math.Sin(2.0 * Math.PI * 220.0 * f / SampleRate);
+            buffer[f * Stereo] = s;
+            buffer[f * Stereo + 1] = s;
+        }
+
+        limiter.Process(buffer);
+
+        double peak = Peak(buffer.AsSpan(buffer.Length / 2));
+        Assert.True(peak <= ceiling + 1e-3, $"peak {peak} exceeded the new ceiling {ceiling}");
+    }
+
+    [Fact]
+    public void SmartRelease_RecoversSlowerThanFixed_OnDenseMaterial()
+    {
+        // Dense, constantly-limiting material should get a LONGER release (no pumping on 4-on-the-floor):
+        // after the same loud passage and the same recovery window, smart recovers less than fixed. Tested
+        // at the most anti-pump character (transparent) where the effect is unambiguous; the stage-2
+        // smoother masks it over very short windows, so the recovery window is past that smoother.
+        const int loud = SampleRate;     // 1 s of constant engagement → activity climbs
+        const int quiet = 12000;         // ~250 ms recovery window, past the 60 ms stage-2 smoother
+        double smart = GainAfterDenseThenQuiet(MakeSmartLimiter(character: 0.0), loud, quiet);
+        double fixedRel = GainAfterDenseThenQuiet(MakeStereoLimiter(), loud, quiet);
+
+        Assert.True(smart < fixedRel - 3e-3,
+            $"smart release ({smart}) did not recover slower than fixed ({fixedRel}) on dense material");
+        Assert.True(smart > 0.0 && fixedRel <= 1.0 + 1e-6);
+    }
+
+    [Fact]
+    public void SmartRelease_RecoversFasterThanFixed_OnSparseMaterial()
+    {
+        // A lone transient barely moves the engagement measure, so smart stays near its FAST release bound
+        // and recovers MORE than the fixed release over the same window — transparent on sparse material.
+        const int quiet = 1500;
+        var smart = MakeSmartLimiter(character: 0.5);
+        var fixedRel = MakeStereoLimiter();
+
+        foreach (var limiter in new[] { smart, fixedRel })
+        {
+            var buffer = new float[(64 + quiet) * Stereo];
+            for (int f = 0; f < 64; f++) { buffer[f * Stereo] = 4.0f; buffer[f * Stereo + 1] = 4.0f; }
+            limiter.Process(buffer);
+        }
+
+        Assert.True(smart.CurrentGain > fixedRel.CurrentGain + 1e-4,
+            $"smart release ({smart.CurrentGain}) did not recover faster than fixed ({fixedRel.CurrentGain}) on sparse material");
+    }
+
+    [Fact]
+    public void Character_Punchy_RecoversFasterThanTransparent_OnDenseMaterial()
+    {
+        const int loud = SampleRate;
+        const int quiet = 1440;
+        double punchy = GainAfterDenseThenQuiet(MakeSmartLimiter(character: 1.0), loud, quiet);
+        double transparent = GainAfterDenseThenQuiet(MakeSmartLimiter(character: 0.0), loud, quiet);
+
+        Assert.True(punchy > transparent + 1e-2,
+            $"punchy character ({punchy}) did not recover faster than transparent ({transparent})");
+    }
+
+    [Fact]
+    public void SmartRelease_NeverExceedsCeiling_OnExtremeInput()
+    {
+        var limiter = MakeSmartLimiter(character: 1.0);
+        double ceiling = CeilingLinear(-1.0);
+        var buffer = new float[4096 * Stereo];
+        Array.Fill(buffer, 10.0f);
+
+        limiter.Process(buffer);
+
+        foreach (float s in buffer)
+            Assert.True(Math.Abs(s) <= ceiling + 1e-3, $"sample {s} exceeded ceiling {ceiling}");
+    }
+
+    [Fact]
+    public void SmartRelease_GainIsContinuousAcrossArbitraryBufferSplits()
+    {
+        // The smart-release engagement state must carry across Process calls exactly like the rest of the
+        // limiter state, so whole vs. chunked processing produces identical output.
+        const int frames = 6000;
+        var signal = new float[frames * Stereo];
+        var rng = new Random(11);
+        for (int f = 0; f < frames; f++)
+        {
+            float s = (float)(Math.Sin(2.0 * Math.PI * 130.0 * f / SampleRate) * 1.7 + (rng.NextDouble() - 0.5) * 0.5);
+            signal[f * Stereo] = s;
+            signal[f * Stereo + 1] = s * 0.8f;
+        }
+
+        var whole = (float[])signal.Clone();
+        MakeSmartLimiter().Process(whole);
+
+        var split = (float[])signal.Clone();
+        var chunked = MakeSmartLimiter();
+        int[] chunkFrames = { 1, 3, 17, 256, 999, 1, 4096 };
+        int offset = 0, ci = 0;
+        while (offset < split.Length)
+        {
+            int framesThis = Math.Min(chunkFrames[ci % chunkFrames.Length], (split.Length - offset) / Stereo);
+            ci++;
+            if (framesThis <= 0) break;
+            chunked.Process(split.AsSpan(offset, framesThis * Stereo));
+            offset += framesThis * Stereo;
+        }
+
+        for (int i = 0; i < whole.Length; i++)
+            Assert.Equal(whole[i], split[i], precision: 6);
+    }
 }

@@ -27,6 +27,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
@@ -40,6 +41,7 @@ using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 using Liveolator.Media;
 using Liveolator.Media.Extensions;
+using Liveolator.Media.Import;
 using Liveolator.Midi;
 using Liveolator.Online;
 using Liveolator.Core.Platform;
@@ -293,6 +295,16 @@ public static class ServiceConfig
                 sp.GetRequiredService<IHotCueStore>(),
                 onError: w => System.Diagnostics.Trace.TraceWarning(w)));
 
+        // Library import from other DJ apps (doc: import): plain-XML parsers (Rekordbox/Traktor) + the
+        // format-agnostic mapping service that remaps paths and writes tracks/cues/playlists through the
+        // existing stores. Parsing is pure (Core seam); the file-probe is the only OS touch (StatImportFile).
+        services.AddSingleton<ILibraryImporter, RekordboxXmlImporter>();
+        services.AddSingleton<ILibraryImporter, TraktorNmlImporter>();
+        services.AddSingleton<LibraryImportService>(sp => new LibraryImportService(
+            sp.GetRequiredService<IHotCueStore>(),
+            sp.GetRequiredService<IPlaylistStore>(),
+            StatImportFile));
+
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
         // visuals pulse on the beat" experience works with NO audio hardware. The audio-driven
@@ -464,6 +476,15 @@ public static class ServiceConfig
                 ActionInputMode.Absolute,
                 Value: mixerHandler.State.Crossfader,
                 Slot: 0));
+
+            // Push the authoritative smart-limiter defaults (SMART on, balanced character, −1 dBTP) to the
+            // running master limiter at startup. Any one MixerLimiter* action re-applies the whole settings
+            // via the handler, so an absolute character push (value unchanged) carries the SMART flag too.
+            dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.MixerLimiterCharacter,
+                ActionInputMode.Absolute,
+                Value: mixerHandler.State.Limiter.Character,
+                Slot: 0));
         }
 
         if (realtimeUp)
@@ -532,7 +553,10 @@ public static class ServiceConfig
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetService<IDeckLevelMeter>(),
             appSettings.Visuals.WaveformZoomSeconds,
-            appSettings.Visuals.NudgeSeconds));
+            appSettings.Visuals.NudgeSeconds,
+            // Deck transport is handled only when the realtime engine is up; in catalog-browser mode the
+            // decks disable Play/Cue/Sync/etc. instead of silently dropping those actions (QA finding S1).
+            deckTransportEnabled: realtimeUp));
 
         WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -574,7 +598,9 @@ public static class ServiceConfig
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
             sp.GetRequiredService<TrackContextActions>(),
             autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
-            hotCueStore: sp.GetService<IHotCueStore>()));
+            hotCueStore: sp.GetService<IHotCueStore>(),
+            importService: sp.GetService<LibraryImportService>(),
+            importers: sp.GetServices<ILibraryImporter>().ToList()));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
@@ -726,6 +752,22 @@ public static class ServiceConfig
     // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when
     // the native bass/bassmix libraries are absent (e.g. CI / a dev box without the per-platform
     // binaries). Never throws for that case — the app falls back to the catalog browser.
+    // File-probe for the library importer: the only OS touch in the import path. Returns the file's
+    // ScannedFile (size + mtime) when it exists, else null — a source path that doesn't resolve here is
+    // then remapped by filename against the catalog.
+    private static ScannedFile? StatImportFile(string path)
+    {
+        try
+        {
+            var info = new System.IO.FileInfo(path);
+            return info.Exists ? new ScannedFile(info.FullName, info.Length, info.LastWriteTimeUtc) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static TwoDeckBassEngine? TryBuildDeckEngine(
         BassMixer mixer,
         AudioSettings audioSettings,
@@ -1159,12 +1201,19 @@ public static class ServiceConfig
     }
 
     // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
-    // and Pioneer DDJ-FLX4 today; persisted/custom profiles (doc 13) extend this set later. The generic
-    // template is appended LAST and intentionally has an empty DeviceHint, so MidiProfileSelector always
-    // prefers an exact device match and the generic never wins auto-selection — it is a learn-from-scratch
-    // label any unrecognized controller falls back to.
-    private static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
-        => new[] { CmdStudio2AProfile.Default, DdjFlx4Profile.Default, GenericControllerProfile.Default };
+    // (DJ), Pioneer DDJ-FLX4 (DJ), and Ableton Push 1 (visuals) today; persisted/custom profiles (doc 13)
+    // extend this set later. The generic template is appended LAST and intentionally has an empty
+    // DeviceHint, so MidiProfileSelector always prefers an exact device match and the generic never wins
+    // auto-selection — it is a learn-from-scratch label any unrecognized controller falls back to.
+    // Internal so the catalog's membership (e.g. that Push 1 is wired in, not orphaned) is unit-testable.
+    internal static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
+        => new[]
+        {
+            CmdStudio2AProfile.Default,
+            DdjFlx4Profile.Default,
+            Push1Profile.Default,
+            GenericControllerProfile.Default,
+        };
 
     internal static MidiSettings ResolveMidiSettings(
         MidiSettings configured,

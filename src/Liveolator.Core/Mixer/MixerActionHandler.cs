@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Dsp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -26,7 +27,14 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.MixerCueLevel,
         PerformanceActionKind.MixerCueMix,
         PerformanceActionKind.MixerEqCutMode,
+        PerformanceActionKind.MixerLimiterSmart,
+        PerformanceActionKind.MixerLimiterCharacter,
+        PerformanceActionKind.MixerLimiterCeiling,
     };
+
+    /// <summary>UI/controller-meaningful true-peak ceiling range (dBTP): hot but never full scale.</summary>
+    private const double CeilingMaxDbTp = -0.3;
+    private const double CeilingMinDbTp = -2.0;
 
     private readonly IMixer _mixer;
     private readonly int _sampleRate;
@@ -82,6 +90,15 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.MixerEqCutMode:
                 ApplyEqCutMode(action);
+                break;
+            case PerformanceActionKind.MixerLimiterSmart:
+                ApplyLimiterSmart();
+                break;
+            case PerformanceActionKind.MixerLimiterCharacter:
+                ApplyLimiterCharacter(action);
+                break;
+            case PerformanceActionKind.MixerLimiterCeiling:
+                ApplyLimiterCeiling(action);
                 break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
@@ -215,6 +232,49 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         _logger.LogDebug("EQ cut mode set to {Mode}", mode);
     }
 
+    // SAFE↔SMART toggle: flip the program-dependent-release mode and push the whole limiter settings to
+    // the realtime master limiter. Character/ceiling ride along unchanged.
+    private void ApplyLimiterSmart()
+    {
+        bool smart;
+        lock (_gate)
+        {
+            smart = !_state.Limiter.SmartRelease;
+            _state = _state.WithLimiter(_state.Limiter with { SmartRelease = smart });
+            PushLimiter();
+        }
+        RaiseFeedback(PerformanceActionKind.MixerLimiterSmart, slot: 0,
+            new ActionFeedbackState(IsActive: smart, IsAvailable: true, Value: 0));
+        _logger.LogDebug("Smart limiter {Mode}", smart ? "SMART" : "SAFE");
+    }
+
+    private void ApplyLimiterCharacter(PerformanceAction action)
+    {
+        lock (_gate)
+        {
+            double character = Math.Clamp(ResolveAbsoluteOrDelta(action, _state.Limiter.Character), 0.0, 1.0);
+            _state = _state.WithLimiter(_state.Limiter with { Character = character });
+            PushLimiter();
+        }
+        RaiseFeedback(PerformanceActionKind.MixerLimiterCharacter, slot: 0,
+            ValueFeedback(State.Limiter.Character));
+    }
+
+    private void ApplyLimiterCeiling(PerformanceAction action)
+    {
+        lock (_gate)
+        {
+            double ceiling = Math.Clamp(
+                ResolveAbsoluteOrDelta(action, _state.Limiter.CeilingDbTp), CeilingMinDbTp, CeilingMaxDbTp);
+            _state = _state.WithLimiter(_state.Limiter with { CeilingDbTp = ceiling });
+            PushLimiter();
+        }
+        RaiseFeedback(PerformanceActionKind.MixerLimiterCeiling, slot: 0,
+            ValueFeedback(State.Limiter.CeilingDbTp));
+    }
+
+    private void PushLimiter() => _mixer.SetLimiter(_state.Limiter);
+
     // The cue output mix (cued decks vs master, scaled by headphone level) depends only on the cue
     // bus controls, so push it whenever level or mix changes; per-deck PFL routing rides SetCue.
     private void PushCueOutputGains()
@@ -243,6 +303,12 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Channel(slot).Filter),
             PerformanceActionKind.MixerEqCutMode
                 => CutModeFeedback(state.CutMode),
+            PerformanceActionKind.MixerLimiterSmart
+                => new ActionFeedbackState(IsActive: state.Limiter.SmartRelease, IsAvailable: true, Value: 0),
+            PerformanceActionKind.MixerLimiterCharacter
+                => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Limiter.Character),
+            PerformanceActionKind.MixerLimiterCeiling
+                => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Limiter.CeilingDbTp),
             _ => ActionFeedbackState.Unavailable,
         };
     }

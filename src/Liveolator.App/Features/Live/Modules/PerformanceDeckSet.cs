@@ -28,17 +28,21 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     /// <param name="waveformProvider">Decodes the deck waveform overview; null leaves the placeholder strip.</param>
     /// <param name="library">Catalog used to surface a loaded track's Key · BPM · duration; null omits the meta.</param>
     /// <param name="waveformZoomSeconds">Initial deck waveform zoom (seconds shown) from the user's settings.</param>
+    /// <param name="deckTransportEnabled">Whether a realtime deck engine backs the decks (so transport
+    /// actions are handled). False in catalog-browser mode, where the decks disable their transport controls
+    /// instead of silently dropping actions; the mixer EQ/filter knobs stay live (mixer handler is always on).</param>
     public PerformanceDeckSet(
         IPerformanceActionDispatcher? dispatcher = null,
         IWaveformProvider? waveformProvider = null,
         MusicLibrary? library = null,
         IDeckLevelMeter? levelMeter = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
-        double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds)
+        double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
+        bool deckTransportEnabled = true)
     {
         _library = library;
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled);
         // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
         Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);

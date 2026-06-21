@@ -131,6 +131,12 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
         if (_backend is ICueOutput cueOutput)
             _mixer.SetCueOutput(cueOutput);
 
+        // The real BASSmix backend also owns the master limiter; register it so MixerLimiter* actions
+        // reach the running limiter. A fake backend (tests) without limiter control simply skips this —
+        // the mixer then holds the pushed settings and replays them if/when a real control registers.
+        if (_backend is ILimiterControl limiterControl)
+            _mixer.SetLimiterControl(limiterControl);
+
         MasterMixInfo info = _backend.CreateMaster();
         _sampleRate = info.SampleRate;
         MasterSampleRate = info.SampleRate;

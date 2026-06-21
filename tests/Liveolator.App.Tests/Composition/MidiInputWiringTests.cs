@@ -137,6 +137,33 @@ public sealed class MidiInputWiringTests
     }
 
     [Fact]
+    public void ControllerFound_AutoSelectsPush1Profile_ForAnAbletonPushDevice()
+    {
+        // Regression: Push1Profile shipped but was never in the catalog, so a connected Push got the
+        // empty generic profile instead of its 64-pad/8-encoder default. It must now auto-select.
+        var input = new FakeMidiInput("Ableton Push 1 - User Port");
+        var provider = new FakeMidiDeviceProvider { InputToReturn = input };
+        var dispatcher = new RecordingDispatcher();
+        var settings = new MidiSettings { ControllerInputName = "Ableton Push 1 - User Port" };
+
+        using MidiInputPipeline? pipeline = ServiceConfig.TryOpenMidiPipeline(provider, dispatcher, settings);
+
+        Assert.NotNull(pipeline);
+        Assert.Same(Push1Profile.Default, pipeline!.ActiveProfile);
+    }
+
+    [Fact]
+    public void AvailableMidiProfiles_IncludesPush1_WithTheGenericTemplateLast()
+    {
+        IReadOnlyList<ControllerMappingProfile> catalog = ServiceConfig.AvailableMidiProfiles();
+
+        Assert.Contains(Push1Profile.Default, catalog);
+        // The empty-hint generic template must stay last so MidiProfileSelector never prefers it over a
+        // real device match (it is a learn-from-scratch fallback, not an auto-select).
+        Assert.Same(GenericControllerProfile.Default, catalog[^1]);
+    }
+
+    [Fact]
     public void FeedbackOutputSelected_IsOpened_AndUsed()
     {
         var input = new FakeMidiInput("CMD Studio 2A");

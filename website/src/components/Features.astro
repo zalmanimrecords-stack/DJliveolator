@@ -1,0 +1,70 @@
+---
+import { features } from "../data/site";
+---
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head reveal">
+      <p class="eyebrow">What it does</p>
+      <h2>A DJ rig and a VJ rig that share one clock</h2>
+      <p>
+        Most setups bolt visuals onto a separate machine and hope they stay in
+        time. Liveolator runs both engines off the same beat — so the show moves
+        as one.
+      </p>
+    </div>
+
+    <div class="grid">
+      {
+        features.map((f) => (
+          <article class="card feature reveal">
+            <span class="feature-tag">{f.tag}</span>
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .feature {
+    padding: 28px 26px 30px;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+  .feature:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-3px);
+  }
+  .feature-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 16px;
+  }
+  .feature h3 {
+    font-size: 21px;
+    margin-bottom: 12px;
+  }
+  .feature p {
+    color: var(--text-dim);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>

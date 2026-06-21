@@ -62,6 +62,17 @@ public class Jog : Control
     public static readonly StyledProperty<IBrush> GlowBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(GlowBrush), new SolidColorBrush(Color.FromRgb(0x39, 0xFF, 0x6A)));
 
+    /// <summary>Optional artwork drawn at the centre of the platter (clipped to a disc). When set — e.g. a
+    /// photoreal jellyfish PNG dropped into the App assets — it replaces the built-in vector medusa; the
+    /// bitmap should be roughly square so the disc clip doesn't crop it oddly.</summary>
+    public static readonly StyledProperty<IImage?> CenterImageProperty =
+        AvaloniaProperty.Register<Jog, IImage?>(nameof(CenterImage));
+
+    /// <summary>The colour the centre medusa is washed toward on the bass (default the reserved red token).
+    /// The wash intensity tracks the kick/bass pulse at the playhead (see <see cref="BassTintStrength"/>).</summary>
+    public static readonly StyledProperty<IBrush> BassTintBrushProperty =
+        AvaloniaProperty.Register<Jog, IBrush>(nameof(BassTintBrush), new SolidColorBrush(Color.FromRgb(0xE5, 0x54, 0x4A)));
+
     private bool _dragging;
     private double _lastAngleRadians;
     private double _baseFraction;
@@ -72,7 +83,8 @@ public class Jog : Control
     {
         AffectsRender<Jog>(ProgressProperty, ArcBrushProperty, TrackBrushProperty,
             PlatterBrushProperty, MarkerBrushProperty, IsEnabledProperty,
-            KickPeaksProperty, IsKickActiveProperty, GlowBrushProperty);
+            KickPeaksProperty, IsKickActiveProperty, GlowBrushProperty,
+            CenterImageProperty, BassTintBrushProperty);
     }
 
     public Jog()
@@ -96,6 +108,8 @@ public class Jog : Control
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public bool IsKickActive { get => GetValue(IsKickActiveProperty); set => SetValue(IsKickActiveProperty, value); }
     public IBrush GlowBrush { get => GetValue(GlowBrushProperty); set => SetValue(GlowBrushProperty, value); }
+    public IImage? CenterImage { get => GetValue(CenterImageProperty); set => SetValue(CenterImageProperty, value); }
+    public IBrush BassTintBrush { get => GetValue(BassTintBrushProperty); set => SetValue(BassTintBrushProperty, value); }
 
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
@@ -126,7 +140,15 @@ public class Jog : Control
         double platterRadius = ringRadius - ringStroke - (size * 0.02);
         IBrush arc = on ? ArcBrush : TrackBrush;
 
+        // The kick/bass pulse at the playhead (0..1) drives BOTH the centre medusa's red wash and the rim
+        // glow, so they breathe together on the same beat. Zero unless the deck is actually playing.
+        double pulse = (on && IsKickActive) ? KickEnergyAt(Math.Clamp(Progress, 0, 1), KickPeaks) : 0.0;
+
         DrawPlatter(context, centre, platterRadius, size);
+
+        // The medusa sits on the platter, beneath the transport indicators (spindle/marker/hub) so seeking
+        // and the playhead stay readable — it is the hero artwork, not a replacement for the readout.
+        DrawMedusa(context, centre, platterRadius * 0.72, pulse);
 
         // Neutral full-circle track behind the progress arc.
         context.DrawEllipse(null, new Pen(TrackBrush, ringStroke), centre, ringRadius, ringRadius);
@@ -161,12 +183,8 @@ public class Jog : Control
         // Phosphorescent rim glow that tracks the actual kick in the SOUND: the low-band (kick/bass)
         // magnitude of the analyzed audio, sampled at the playhead. Drawn last so it reads as a frame
         // around the platter; brightest where the track's kick hits, dim between.
-        if (on && IsKickActive)
-        {
-            double pulse = KickEnergyAt(Math.Clamp(Progress, 0, 1), KickPeaks);
-            if (pulse > 0.001)
-                DrawKickGlow(context, centre, (size / 2) - 1 - (glowBand * 0.5), glowBand, pulse);
-        }
+        if (pulse > 0.001)
+            DrawKickGlow(context, centre, (size / 2) - 1 - (glowBand * 0.5), glowBand, pulse);
     }
 
     /// <summary>
@@ -185,6 +203,115 @@ public class Jog : Control
         double energy = Math.Clamp(kickPeaks[index], 0.0, 1.0);
         // Gamma > 1 darkens the quiet low-end "floor" and lets the kick transients pop.
         return energy * energy;
+    }
+
+    /// <summary>Peak alpha of the medusa's red bass-wash on a full kick. Deliberately well below 1 so the
+    /// wash reads as a subtle tint of the artwork, never a flat red repaint of it.</summary>
+    internal const double MaxBassTint = 0.5;
+
+    /// <summary>The 0..<see cref="MaxBassTint"/> red-wash strength for a given kick/bass pulse. Linear in the
+    /// pulse and capped, so silence is untinted and a hard kick is a gentle red bloom. 0 for invalid input.</summary>
+    internal static double BassTintStrength(double pulse)
+    {
+        if (double.IsNaN(pulse))
+            return 0.0;
+        return Math.Clamp(pulse, 0.0, 1.0) * MaxBassTint;
+    }
+
+    /// <summary>
+    /// Draws the platter centrepiece inside a disc of the given radius: the user's <see cref="CenterImage"/>
+    /// (e.g. a photoreal jellyfish) if set, otherwise a built-in translucent vector medusa. Either way the
+    /// bass <paramref name="pulse"/> washes it toward <see cref="BassTintBrush"/> — a subtle red bloom on the
+    /// kick — so the artwork pulses with the low end. Everything is clipped to the disc so it never spills
+    /// onto the vinyl grooves or rim.
+    /// </summary>
+    private void DrawMedusa(DrawingContext context, Point centre, double radius, double pulse)
+    {
+        if (radius <= 0)
+            return;
+
+        double tint = BassTintStrength(pulse);
+        var disc = new Rect(centre.X - radius, centre.Y - radius, radius * 2, radius * 2);
+        using (context.PushGeometryClip(new EllipseGeometry(disc)))
+        {
+            if (CenterImage is { } image)
+                context.DrawImage(image, disc);
+            else
+                DrawVectorMedusa(context, centre, radius, tint);
+
+            // Red wash on the bass — drawn over the artwork, clamped to the disc by the clip.
+            if (tint > 0.001 && BassTintBrush is SolidColorBrush red)
+            {
+                var wash = new SolidColorBrush(Color.FromArgb((byte)(tint * 255), red.Color.R, red.Color.G, red.Color.B));
+                context.DrawEllipse(wash, null, centre, radius, radius);
+            }
+        }
+    }
+
+    /// <summary>The fallback hand-drawn jellyfish: a layered translucent bell over flowing oral arms. Cool
+    /// aqua at rest, lerped toward the bass-tint colour as <paramref name="tint"/> rises so the whole medusa
+    /// reddens on the kick (independent of the flat red wash, which also stacks on top).</summary>
+    private void DrawVectorMedusa(DrawingContext context, Point centre, double radius, double tint)
+    {
+        // Cool base palette, warmed toward the tint colour. Using the tint colour keeps the vector and the
+        // overlaid wash visually consistent.
+        Color tintTarget = (BassTintBrush as SolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x54, 0x4A);
+        Color bell = Lerp(Color.FromArgb(0xB0, 0x8C, 0xDC, 0xF0), tintTarget, tint * 0.7);
+        Color bellCore = Lerp(Color.FromArgb(0xE0, 0xCF, 0xF2, 0xFB), tintTarget, tint * 0.5);
+        Color tentacle = Lerp(Color.FromArgb(0x96, 0x7F, 0xCF, 0xE6), tintTarget, tint * 0.7);
+
+        var bellCentre = new Point(centre.X, centre.Y - radius * 0.22);
+        double bellW = radius * 1.5;
+        double bellH = radius * 1.18;
+
+        // Oral arms first (behind the bell): a few curved, tapering translucent strands hanging below.
+        double[] sway = { -0.62, -0.3, 0.0, 0.3, 0.62 };
+        var tentaclePen = new Pen(new SolidColorBrush(tentacle), Math.Max(1.5, radius * 0.07))
+        {
+            LineCap = PenLineCap.Round,
+        };
+        double top = bellCentre.Y + bellH * 0.28;
+        for (int i = 0; i < sway.Length; i++)
+        {
+            double x = bellCentre.X + sway[i] * (bellW * 0.42);
+            double len = radius * (1.02 - Math.Abs(sway[i]) * 0.45);
+            context.DrawGeometry(null, tentaclePen, Tentacle(x, top, len, sway[i] * radius * 0.5));
+        }
+
+        // Soft outer halo, then the main bell dome, then a brighter inner cap — three stacked ellipses give
+        // the translucent, lit-from-within look of a real jellyfish bell.
+        var halo = Color.FromArgb(0x40, bell.R, bell.G, bell.B);
+        context.DrawEllipse(new SolidColorBrush(halo), null, bellCentre, bellW * 0.62, bellH * 0.62);
+        context.DrawEllipse(new SolidColorBrush(bell), null, bellCentre, bellW * 0.5, bellH * 0.5);
+        context.DrawEllipse(new SolidColorBrush(bellCore), null,
+            new Point(bellCentre.X, bellCentre.Y - bellH * 0.08), bellW * 0.30, bellH * 0.32);
+    }
+
+    /// <summary>One tapering oral arm as a wavy vertical curve from (x, top) hanging down by <paramref name="length"/>,
+    /// with a horizontal <paramref name="drift"/> so the strands fan out and curl.</summary>
+    private static StreamGeometry Tentacle(double x, double top, double length, double drift)
+    {
+        var geometry = new StreamGeometry();
+        using (StreamGeometryContext ctx = geometry.Open())
+        {
+            ctx.BeginFigure(new Point(x, top), isFilled: false);
+            var c1 = new Point(x + drift * 0.6, top + length * 0.4);
+            var c2 = new Point(x - drift * 0.4, top + length * 0.7);
+            var end = new Point(x + drift, top + length);
+            ctx.CubicBezierTo(c1, c2, end);
+            ctx.EndFigure(false);
+        }
+        return geometry;
+    }
+
+    private static Color Lerp(Color a, Color b, double t)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        return Color.FromArgb(
+            (byte)(a.A + (b.A - a.A) * t),
+            (byte)(a.R + (b.R - a.R) * t),
+            (byte)(a.G + (b.G - a.G) * t),
+            (byte)(a.B + (b.B - a.B) * t));
     }
 
     private void DrawKickGlow(DrawingContext context, Point centre, double radius, double band, double pulse)

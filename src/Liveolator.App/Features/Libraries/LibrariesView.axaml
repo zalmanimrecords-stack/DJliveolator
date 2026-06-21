@@ -20,6 +20,12 @@
             <MenuItem Header="Manage folders…" Click="OnShowFolders" />
             <Separator />
             <MenuItem Header="Playlists / sets…" Click="OnShowPlaylists" />
+            <Separator />
+            <MenuItem Header="Import library" IsEnabled="{Binding CanImportLibrary}"
+                      ToolTip.Tip="Import tracks, cues, beat grids and playlists from another DJ app">
+              <MenuItem Header="From Rekordbox (XML)…" Click="OnImportRekordbox" />
+              <MenuItem Header="From Traktor (NML)…" Click="OnImportTraktor" />
+            </MenuItem>
           </MenuFlyout>
         </Button.Flyout>
       </Button>

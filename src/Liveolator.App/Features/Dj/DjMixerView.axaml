@@ -127,6 +127,35 @@
         </Grid>
       </Border>
 
+      <!-- Master "smart limiter": SAFE↔SMART toggle (program-dependent release that adapts to what is
+           playing) + Character (Transparent↔Punchy) and Ceiling (true-peak) knobs. The brick-wall peak
+           guarantee always holds; SMART only reshapes the release so kicks don't pump (doc 11). -->
+      <!-- Compact (single tick row per knob) so the extra well still fits the one-screen DJ fold. -->
+      <Border Classes="hardware-well" Padding="10,6">
+        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="LIMITER" />
+          <!-- Lit (.on) = SMART; unlit = SAFE fixed-release brick wall. Mirrors the CUE-button pattern. -->
+          <Button Grid.Row="0" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsSmartLimiter}"
+                  HorizontalAlignment="Right" Command="{Binding LimiterSmartCommand}" Content="SMART"
+                  ToolTip.Tip="SMART = release adapts to what is playing; SAFE = fixed brick-wall release" />
+
+          <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,6,12,0" HorizontalAlignment="Center"
+                      ToolTip.Tip="Gentle ↔ Hard: how aggressively the smart release reacts">
+            <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
+                           Value="{Binding LimiterCharacter.Value}"
+                           IsEnabled="{Binding LimiterCharacter.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CHARACTER" />
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2" Margin="12,6,0,0" HorizontalAlignment="Center"
+                      ToolTip.Tip="True-peak output ceiling (low ↔ hot)">
+            <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
+                           Value="{Binding LimiterCeiling.Value}"
+                           IsEnabled="{Binding LimiterCeiling.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
     </StackPanel>
   </Border>
 </UserControl>

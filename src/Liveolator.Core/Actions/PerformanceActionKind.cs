@@ -161,4 +161,27 @@ public enum PerformanceActionKind
     /// deck's normal rate on release. A synced deck ignores it (Sync owns the rate).
     /// </summary>
     DeckPitchBend,
+
+    /// <summary>
+    /// Toggle the master "smart limiter" between SAFE (fixed-release brick wall) and SMART (program-
+    /// dependent release that adapts to what is playing — no pumping on dense kicks, transparent on
+    /// breakdowns). No value; the handler flips the current state and reports the active mode back so a
+    /// button/LED reflects it (doc 11). Drives the master <c>MasterLimiter</c> via the mixer seam.
+    /// </summary>
+    MixerLimiterSmart,
+
+    /// <summary>
+    /// Set the smart limiter's CHARACTER knob, <see cref="PerformanceAction.Value"/> in 0..1 (absolute)
+    /// or a signed delta (relative): 0 = Transparent (longer, gentler releases), 1 = Punchy (faster
+    /// releases). Biases the adaptive-release range; only audible while SMART is on. Clamped on apply.
+    /// </summary>
+    MixerLimiterCharacter,
+
+    /// <summary>
+    /// Set the limiter's true-peak output ceiling, <see cref="PerformanceAction.Value"/> in dBTP
+    /// (absolute, ≤ 0; e.g. −1.0) or a signed dB delta (relative). The brick-wall guarantee holds at this
+    /// ceiling regardless of SAFE/SMART; clamped to a sane sub-0-dB range on apply so it can never reach
+    /// full scale.
+    /// </summary>
+    MixerLimiterCeiling,
 }

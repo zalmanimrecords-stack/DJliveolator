@@ -31,4 +31,11 @@ public interface IMixer
     /// (see <see cref="CueMixMath.HeadphoneOutputGains"/>).
     /// </summary>
     void SetCueOutputGains(double cueGain, double masterGain);
+
+    /// <summary>
+    /// Apply the master smart-limiter controls (SAFE↔SMART, character, true-peak ceiling) to the
+    /// realtime master-bus limiter. Core owns the authoritative <see cref="Dsp.LimiterSettings"/>; the
+    /// binding forwards them to the running <see cref="Dsp.MasterLimiter"/> without changing its latency.
+    /// </summary>
+    void SetLimiter(Dsp.LimiterSettings settings);
 }

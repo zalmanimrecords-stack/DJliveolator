@@ -22,11 +22,19 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private const double DefaultGain = 1.0;
     private const double DefaultCueLevel = 1.0;
     private const double DefaultCueMix = 0.0; // 0 = full cue (PFL), 1 = full master
+    private const double DefaultLimiterCharacter = 0.5;
+    private const double DefaultLimiterCeilingDbTp = -1.0;
+
+    // Smart-limiter ceiling knob ↔ dBTP mapping: knob 0 = quietest allowed ceiling, knob 1 = hottest
+    // (mirrors the handler's clamp range). The knob stays a normalized 0..1 control; the action carries dBTP.
+    private const double CeilingHottestDbTp = -0.3;
+    private const double CeilingQuietestDbTp = -2.0;
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IDeckLevelMeter? _levelMeter;
     private bool _isCueA;
     private bool _isCueB;
+    private bool _isSmartLimiter;
     private double _levelA;
     private double _levelB;
     private bool _disposed;
@@ -75,10 +83,21 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
             "Cue / Master", Seed(PerformanceActionKind.MixerCueMix, slot: 0, DefaultCueMix),
             enabled ? v => Emit(PerformanceActionKind.MixerCueMix, v, slot: 0) : null);
 
+        LimiterCharacter = new ContinuousControlViewModel(
+            "Character", Seed(PerformanceActionKind.MixerLimiterCharacter, slot: 0, DefaultLimiterCharacter),
+            enabled ? v => Emit(PerformanceActionKind.MixerLimiterCharacter, v, slot: 0) : null);
+
+        LimiterCeiling = new ContinuousControlViewModel(
+            "Ceiling", CeilingToKnob(Seed(PerformanceActionKind.MixerLimiterCeiling, slot: 0, DefaultLimiterCeilingDbTp)),
+            enabled ? v => Emit(PerformanceActionKind.MixerLimiterCeiling, KnobToCeiling(v), slot: 0) : null);
+
+        LimiterSmartCommand = ReactiveCommand.Create(EmitLimiterSmart, canCue);
+
         if (_dispatcher is not null)
         {
             _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
             _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
+            _isSmartLimiter = _dispatcher.GetFeedback(PerformanceActionKind.MixerLimiterSmart, 0).IsActive;
             _dispatcher.FeedbackChanged += OnFeedback;
         }
     }
@@ -128,6 +147,22 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> CueACommand { get; }
     public ReactiveCommand<Unit, Unit> CueBCommand { get; }
 
+    /// <summary>Smart-limiter CHARACTER knob: 0 = Transparent (gentle), 1 = Punchy (faster release).</summary>
+    public ContinuousControlViewModel LimiterCharacter { get; }
+
+    /// <summary>Smart-limiter true-peak CEILING knob (normalized; maps to dBTP under the hood).</summary>
+    public ContinuousControlViewModel LimiterCeiling { get; }
+
+    /// <summary>SAFE↔SMART toggle for the master limiter (MixerLimiterSmart).</summary>
+    public ReactiveCommand<Unit, Unit> LimiterSmartCommand { get; }
+
+    /// <summary>True when the master limiter is in SMART (program-dependent release) mode.</summary>
+    public bool IsSmartLimiter
+    {
+        get => _isSmartLimiter;
+        private set => this.RaiseAndSetIfChanged(ref _isSmartLimiter, value);
+    }
+
     /// <summary>The mixer-wide EQ cut-depth control as a 3-detent knob (EQ → DEEP → KILL), seated between
     /// the CUE buttons. A user turn emits <see cref="PerformanceActionKind.MixerEqCutMode"/> with the
     /// selected mode; the handler re-applies the new cut floor to every channel and echoes the mode back.</summary>
@@ -167,6 +202,16 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private void EmitCue(int slot)
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerCueToggle, Slot: slot));
 
+    private void EmitLimiterSmart()
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart));
+
+    // Knob (0..1) ↔ ceiling (dBTP) — a linear map between the hottest and quietest allowed ceilings.
+    private static double KnobToCeiling(double knob)
+        => CeilingQuietestDbTp + Math.Clamp(knob, 0.0, 1.0) * (CeilingHottestDbTp - CeilingQuietestDbTp);
+
+    private static double CeilingToKnob(double ceilingDbTp)
+        => Math.Clamp((ceilingDbTp - CeilingQuietestDbTp) / (CeilingHottestDbTp - CeilingQuietestDbTp), 0.0, 1.0);
+
     // Absolute select: name the chosen mode so the handler sets exactly that cut depth (no cycling).
     private void EmitEqCutMode(EqCutMode mode)
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: mode.ToString()));
@@ -204,6 +249,15 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.MixerEqCutMode:
                     EqCut.SetFromMode(ModeFromFeedback(e.State));
+                    break;
+                case PerformanceActionKind.MixerLimiterSmart:
+                    IsSmartLimiter = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerLimiterCharacter:
+                    LimiterCharacter.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerLimiterCeiling:
+                    LimiterCeiling.SetFromFeedback(CeilingToKnob(e.State.Value));
                     break;
             }
         });

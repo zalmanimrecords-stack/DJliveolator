@@ -127,6 +127,37 @@ public sealed class DeckViewModelTests
         Assert.All(vm.HotCues, pad => Assert.False(pad.IsEnabled));
     }
 
+    [Fact]
+    public void DeckTransport_IsDisabled_WhenNoDeckEngineBacksTheDeck_ButMixerEqStaysLive()
+    {
+        // Catalog-browser mode (no realtime audio): a dispatcher exists for the always-present mixer/visual
+        // handlers, but DeckActionHandler is absent, so transport actions would be silently DROPPED. The
+        // deck must present the transport controls disabled (not enabled-but-inert) — QA finding S1.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher, deckTransportEnabled: false);
+
+        Assert.False(vm.IsEnabled);
+        Assert.False(vm.CanCue);
+        Assert.False(vm.CanLoop);
+        Assert.False(vm.CanHotCue);
+        Assert.False(vm.CanSync);
+        Assert.False(vm.CanNudgeSeek);
+        Assert.False(vm.CanPitchBend);
+        Assert.False(vm.Pitch.IsEnabled);
+        Assert.All(vm.HotCues, pad => Assert.False(pad.IsEnabled));
+
+        // A disabled command must not dispatch — proving the action can't be silently dropped.
+        bool canPlay = true;
+        using (vm.PlayPauseCommand.CanExecute.Subscribe(v => canPlay = v)) { }
+        Assert.False(canPlay);
+
+        // The EQ/filter knobs are owned by the always-present MixerActionHandler, so they remain usable.
+        Assert.True(vm.EqHigh.IsEnabled);
+        Assert.True(vm.EqMid.IsEnabled);
+        Assert.True(vm.EqLow.IsEnabled);
+        Assert.True(vm.Filter.IsEnabled);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

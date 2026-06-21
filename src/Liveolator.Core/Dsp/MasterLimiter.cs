@@ -42,12 +42,38 @@ public sealed class MasterLimiter
     private const int OversampleTaps = 16;            // FIR taps per oversampling phase (4× true-peak detector)
     private const int OversampleFactor = 4;
 
+    // ── smart (program-dependent) release region ────────────────────────────────────────────────────
+    // When SMART release is on, the stage-1 release time slides between a fast bound (sparse material →
+    // transparent recovery) and a slow bound (dense, constantly-limiting material → no pumping on 4-on-
+    // the-floor kicks) driven by a smoothed measure of how hard the limiter is currently working. The
+    // Character knob (0 = transparent, 1 = punchy) biases both bounds. The LOOK-AHEAD is never touched, so
+    // latency stays constant and the shared audio↔visual clock stays aligned (doc 00/03/11).
+    private const double ReleaseFastTransparentMs = 140.0; // sparse material, character 0
+    private const double ReleaseFastPunchyMs = 50.0;       // sparse material, character 1
+    private const double ReleaseSlowTransparentMs = 500.0; // dense material, character 0
+    private const double ReleaseSlowPunchyMs = 250.0;      // dense material, character 1
+    private const double ActivitySmoothMs = 250.0;         // how fast the "how hard am I working" measure tracks
+    private const double MinCeilingDbTp = -24.0;           // defensive clamp floor for a runtime ceiling change
+    private const double MaxCeilingDbTp = -0.1;            // never let a runtime change reach 0 dB (full scale)
+    // ── end smart-release region ─────────────────────────────────────────────────────────────────────
+
     private readonly int _channels;
-    private readonly double _ceiling;            // linear, absolute (e.g. ~0.891 for −1.0 dBFS/dBTP)
+    private readonly int _sampleRate;            // kept so a runtime Character/ceiling change can recompute coeffs
+    private double _ceiling;                      // linear, absolute (e.g. ~0.891 for −1.0 dBTP); runtime-settable
     private readonly double _attackCoeff;        // one-pole factor when reducing gain (stage 1)
-    private readonly double _releaseCoeff;       // one-pole factor when recovering gain (stage 1)
+    private readonly double _releaseCoeff;       // one-pole factor when recovering gain (stage 1, FIXED/SAFE mode)
     private readonly double _releaseSmoothCoeff; // one-pole factor for the stage-2 release smoother
     private readonly int _lookahead;             // L: look-ahead in frames (== added latency)
+
+    // Smart-release state/config. _smartRelease and the two coefficient bounds are written by the control
+    // thread (ApplySettings) and read on the audio thread; on 64-bit a torn read is impossible and a brief
+    // mismatch between the two bounds would only nudge one release time for one buffer — benign and self-
+    // correcting. _activity is owned solely by the audio thread (Process/Reset).
+    private volatile bool _smartRelease;
+    private double _releaseCoeffFast = 1.0;       // stage-1 release coeff at the fast bound (sparse)
+    private double _releaseCoeffSlow = 1.0;       // stage-1 release coeff at the slow bound (dense)
+    private readonly double _activitySmoothCoeff; // one-pole factor for the limiter-engagement measure
+    private double _activity;                     // smoothed gain-reduction demand, 0 (idle) .. ~1 (slamming)
 
     // Audio delay line: ring of interleaved frames, length L*channels. Output(frame f) = input(frame f-L).
     private readonly float[] _delay;
@@ -104,10 +130,16 @@ public sealed class MasterLimiter
             throw new ArgumentOutOfRangeException(nameof(lookaheadMs), lookaheadMs, "Look-ahead must be positive.");
 
         _channels = channels;
+        _sampleRate = sampleRate;
         _ceiling = Math.Pow(10.0, ceilingDbTp / 20.0);
         _attackCoeff = OnePoleCoefficient(attackMs, sampleRate);
         _releaseCoeff = OnePoleCoefficient(releaseMs, sampleRate);
         _releaseSmoothCoeff = OnePoleCoefficient(releaseSmoothMs, sampleRate);
+        _activitySmoothCoeff = OnePoleCoefficient(ActivitySmoothMs, sampleRate);
+        // Smart release defaults to OFF here so the bare class stays the predictable fixed-release limiter;
+        // the product turns it on at runtime via ApplySettings (LimiterSettings.Default). Bounds are primed
+        // to the balanced (Character 0.5) range so an ApplySettings that only flips the toggle is sane.
+        ComputeReleaseBounds(0.5);
         _lookahead = Math.Max(1, (int)Math.Round(lookaheadMs * 0.001 * sampleRate));
 
         _delay = new float[_lookahead * channels];
@@ -126,6 +158,42 @@ public sealed class MasterLimiter
     /// <summary>The latency in samples (per channel) the look-ahead adds to the master signal.</summary>
     public int LatencySamples => _lookahead;
 
+    /// <summary>True when SMART (program-dependent) release is active; false = the fixed-release fallback.</summary>
+    public bool SmartReleaseEnabled => _smartRelease;
+
+    /// <summary>
+    /// Apply the user-facing smart-limiter controls at runtime. Safe to call from the control/UI thread
+    /// while <see cref="Process"/> runs on the audio thread: it only writes a bool and a few doubles
+    /// (atomic on 64-bit) and never resizes a buffer or touches the delay line, so it cannot change the
+    /// <see cref="LatencySamples"/> the audio↔visual clock depends on. Every field is clamped defensively
+    /// (Character to 0..1, ceiling to a sane sub-0-dB range) so a bad value can never break the brick wall.
+    /// </summary>
+    public void ApplySettings(LimiterSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        double character = Math.Clamp(settings.Character, 0.0, 1.0);
+        ComputeReleaseBounds(character);
+
+        double ceilingDbTp = Math.Clamp(settings.CeilingDbTp, MinCeilingDbTp, MaxCeilingDbTp);
+        _ceiling = Math.Pow(10.0, ceilingDbTp / 20.0);
+
+        _smartRelease = settings.SmartRelease; // volatile write last so readers see consistent bounds first
+    }
+
+    // Map the Character knob (0 = transparent, 1 = punchy) onto the fast/slow release-time bounds and cache
+    // their one-pole coefficients. Process() then lerps between these two by the current engagement so the
+    // release time tracks the program material without any per-sample transcendental.
+    private void ComputeReleaseBounds(double character)
+    {
+        double fastMs = Lerp(ReleaseFastTransparentMs, ReleaseFastPunchyMs, character);
+        double slowMs = Lerp(ReleaseSlowTransparentMs, ReleaseSlowPunchyMs, character);
+        _releaseCoeffFast = OnePoleCoefficient(fastMs, _sampleRate);
+        _releaseCoeffSlow = OnePoleCoefficient(slowMs, _sampleRate);
+    }
+
+    private static double Lerp(double a, double b, double t) => a + (b - a) * t;
+
     /// <summary>
     /// Clears all internal state (delay line, detector history, gain window, envelope) so a re-routed or
     /// re-initialised output starts clean with no stale look-ahead tail. Not realtime-safe to call
@@ -142,6 +210,7 @@ public sealed class MasterLimiter
         _frameCounter = 0;
         _gain1 = 1.0;
         _gain = 1.0;
+        _activity = 0.0;
     }
 
     /// <summary>
@@ -182,9 +251,16 @@ public sealed class MasterLimiter
             // (3) Sliding minimum of the target over the look-ahead window [f-L, f] (max-hold of reduction).
             double windowMin = PushTargetAndWindowMin(target);
 
-            // (4) Two-stage smoothing. Stage 1: fast attack down / slow release up. Stage 2: follow the
-            //     attack immediately (the look-ahead already gives the ramp room) but smooth the release.
-            double coeff = windowMin < _gain1 ? _attackCoeff : _releaseCoeff;
+            // (4) Two-stage smoothing. Stage 1: fast attack down / (program-dependent) release up. Stage 2:
+            //     follow the attack immediately (the look-ahead already gives the ramp room) but smooth the
+            //     release. SMART mode slides the release coeff between its fast (sparse) and slow (dense)
+            //     bounds by a smoothed engagement measure, so kicks don't pump and breakdowns don't dull.
+            double reductionDemand = windowMin < 1.0 ? 1.0 - windowMin : 0.0;
+            _activity += (reductionDemand - _activity) * _activitySmoothCoeff;
+            double releaseCoeff = _smartRelease
+                ? _releaseCoeffFast + (_releaseCoeffSlow - _releaseCoeffFast) * _activity
+                : _releaseCoeff;
+            double coeff = windowMin < _gain1 ? _attackCoeff : releaseCoeff;
             _gain1 += (windowMin - _gain1) * coeff;
             if (_gain1 < _gain)
                 _gain = _gain1;

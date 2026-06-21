@@ -1,0 +1,81 @@
+---
+import { site } from "../data/site";
+---
+
+<section class="section download" id="download">
+  <div class="container">
+    <div class="dl-inner reveal">
+      <p class="eyebrow">Get Liveolator</p>
+      <h2>Download the free build</h2>
+      <p class="dl-note">
+        Liveolator is <strong>Windows-only for now</strong> — grab the installer
+        below and you're mixing in minutes. It works with any MIDI controller you
+        plug in. A macOS build is on the way.
+      </p>
+
+      <div class="dl-actions">
+        <a class="btn btn-primary" href={site.downloadUrl} download>
+          Download for Windows
+        </a>
+        <button class="btn btn-ghost" disabled aria-disabled="true">
+          macOS — coming soon
+        </button>
+      </div>
+
+      <p class="dl-build">
+        Windows installer · v{site.version} · {site.downloadSize} · .exe
+      </p>
+
+      <p class="dl-fine">
+        Prefer to follow along? The project lives on
+        <a href={site.repoUrl} target="_blank" rel="noopener">GitHub</a>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .download {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(700px 280px at 50% 0, rgba(232, 163, 61, 0.1), transparent 65%),
+      var(--bg-elev);
+  }
+  .dl-inner {
+    text-align: center;
+    max-width: 620px;
+    margin: 0 auto;
+  }
+  .download .eyebrow { margin-bottom: 14px; }
+  .download h2 { font-size: clamp(28px, 4.6vw, 44px); }
+  .dl-note {
+    margin: 18px auto 0;
+    color: var(--text-dim);
+    font-size: 18px;
+    max-width: 520px;
+  }
+  .dl-note strong {
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .dl-actions {
+    margin-top: 32px;
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .dl-build {
+    margin-top: 16px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    color: var(--text-mute);
+  }
+  .dl-fine {
+    margin-top: 20px;
+    color: var(--text-mute);
+    font-size: 14.5px;
+  }
+</style>

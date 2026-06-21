@@ -1,3 +1,4 @@
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Mixer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,10 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
     private readonly double[] _gains;
     private readonly ILogger _logger;
     private ICueOutput? _cueOutput;
+    private ILimiterControl? _limiterControl;
+    // Last-pushed limiter settings, retained so they re-apply when the limiter control is (re)registered
+    // — the handler's startup push can arrive before the realtime backend has registered itself.
+    private LimiterSettings? _pendingLimiter;
 
     public BassMixer(int deckCount = MixerState.DeckCount, ILoggerFactory? loggerFactory = null)
     {
@@ -42,6 +47,18 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
     /// device/channel is open. Internal: the implementation lives in this binding.
     /// </summary>
     internal void SetCueOutput(ICueOutput? cueOutput) => _cueOutput = cueOutput;
+
+    /// <summary>
+    /// Registers (or clears) the master smart-limiter control, called by the binding once the realtime
+    /// master limiter exists. Any limiter settings pushed before registration (the startup push) are
+    /// replayed immediately so the running limiter starts in the authoritative Core state.
+    /// </summary>
+    internal void SetLimiterControl(ILimiterControl? limiterControl)
+    {
+        _limiterControl = limiterControl;
+        if (limiterControl is not null && _pendingLimiter is { } settings)
+            limiterControl.ApplyLimiterSettings(settings);
+    }
 
     /// <summary>Number of deck slots this mixer addresses.</summary>
     public int DeckCount => _channels.Length;
@@ -103,6 +120,23 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
         }
 
         cueOutput.SetCueOutputGains(cueGain, masterGain);
+    }
+
+    public void SetLimiter(LimiterSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _pendingLimiter = settings; // retained so a (re)registered limiter control picks up the latest state
+        ILimiterControl? control = _limiterControl;
+        if (control is null)
+        {
+            // The limiter control moved before the realtime backend registered (or none is wired, e.g.
+            // headless/CI). Keep Core authoritative and surface it rather than dropping silently (#26).
+            _logger.LogDebug("SetLimiter held: no realtime limiter registered yet (smart={Smart}, ceiling={Ceiling} dBTP).",
+                settings.SmartRelease, settings.CeilingDbTp);
+            return;
+        }
+
+        control.ApplyLimiterSettings(settings);
     }
 
     public DeckLevel GetLevel(int slot)

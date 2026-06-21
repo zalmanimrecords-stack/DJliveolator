@@ -62,6 +62,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
+    // True when the deck-transport actions are actually handled (a deck engine backs this slot). Gates the
+    // transport/hot-cue/pitch/grid controls so they disable instead of silently dropping actions (QA S1).
+    private readonly bool _transportEnabled;
     private readonly IWaveformProvider? _waveformProvider;
     private readonly Func<string, DeckTrackInfo?>? _trackInfo;
     private readonly Func<string, BpmResult?>? _analysisInfo;
@@ -106,6 +109,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <param name="trackInfo">Resolves a loaded track's catalog facts (title/BPM/key/duration) by path,
     /// so the deck can surface Key · BPM · duration; null leaves the meta line as a placeholder.</param>
+    /// <param name="deckTransportEnabled">Whether the deck-transport actions (play/cue/sync/loop/hot-cue/
+    /// pitch/grid — owned only by <c>DeckActionHandler</c>) are actually handled. False in catalog-browser
+    /// mode (no realtime audio engine), where those actions would otherwise be silently dropped; the EQ/
+    /// filter knobs (owned by the always-present mixer handler) stay live regardless.</param>
     public DeckViewModel(
         int slot,
         IPerformanceActionDispatcher? dispatcher = null,
@@ -113,7 +120,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Func<string, DeckTrackInfo?>? trackInfo = null,
         Func<string, BpmResult?>? analysisInfo = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
-        double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds)
+        double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
+        bool deckTransportEnabled = true)
     {
         _slot = slot;
         _dispatcher = dispatcher;
@@ -123,8 +131,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
         _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
-        bool enabled = dispatcher is not null;
-        IObservable<bool> canEmit = Observable.Return(enabled);
+        bool dispatcherPresent = dispatcher is not null;
+        // Deck transport/hot-cue/pitch/grid actions are owned ONLY by DeckActionHandler, which is absent in
+        // catalog-browser mode (no realtime audio): a present dispatcher is NOT proof those kinds are handled.
+        // Gate them on deckTransportEnabled so they render DISABLED — rather than enabled-but-silently-dropped
+        // (QA finding S1) — when no deck engine backs the slot. EQ/filter stay on dispatcherPresent (the mixer
+        // handler is always registered, so they route in every mode).
+        _transportEnabled = deckTransportEnabled && dispatcherPresent;
+        IObservable<bool> canEmit = Observable.Return(_transportEnabled);
 
         PlayPauseCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause, Slot: slot)),
@@ -214,7 +228,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             int cueIndex = index; // capture per-pad
             hotCues[index] = new HotCuePadViewModel(
                 cueIndex,
-                enabled
+                _transportEnabled
                     ? () => _dispatcher?.Dispatch(new PerformanceAction(
                         PerformanceActionKind.DeckHotCue, Slot: slot, Argument: cueIndex.ToString()))
                     : null);
@@ -224,17 +238,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // so every stored cue is reachable live, not just the first four (audit finding #2).
         ToggleHotCueBankCommand = ReactiveCommand.Create(() => { IsHotCueBankB = !IsHotCueBankB; });
 
-        EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, enabled ? v => EmitEq("High", v) : null);
-        EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity, enabled ? v => EmitEq("Mid", v) : null);
-        EqLow = new ContinuousControlViewModel("Low", EqBands_Unity, enabled ? v => EmitEq("Low", v) : null);
+        // EQ/filter emit Mixer* actions, owned by the always-present MixerActionHandler — usable whenever a
+        // dispatcher exists, even in catalog-browser mode (unlike the deck-transport controls above).
+        EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, dispatcherPresent ? v => EmitEq("High", v) : null);
+        EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity, dispatcherPresent ? v => EmitEq("Mid", v) : null);
+        EqLow = new ContinuousControlViewModel("Low", EqBands_Unity, dispatcherPresent ? v => EmitEq("Low", v) : null);
         Filter = new ContinuousControlViewModel(
             "Flt", Seed(PerformanceActionKind.MixerFilter, FilterCentre),
-            enabled ? v => Emit(PerformanceActionKind.MixerFilter, v) : null);
+            dispatcherPresent ? v => Emit(PerformanceActionKind.MixerFilter, v) : null);
 
-        // Pitch fader: absolute 0..1 (0.5 = no pitch change); follows DeckPitch feedback like the filter.
+        // Pitch fader emits DeckPitch (deck-handler-owned), so it follows the transport gate, not the mixer one.
         Pitch = new ContinuousControlViewModel(
             "Pitch", Seed(PerformanceActionKind.DeckPitch, PitchCentre),
-            enabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
+            _transportEnabled ? v => Emit(PerformanceActionKind.DeckPitch, v) : null);
 
         // Signed pitch-percent readout: the normalized fader (0..1, centre 0.5) maps to the engine's real
         // tempo range of +-PitchRangePercent, so the displayed percent = (Value - 0.5) * 2 * 100 * range.
@@ -426,8 +442,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             : $"{time.Minutes}:{time.Seconds:00}";
     }
 
-    /// <summary>True when transport/EQ can be driven; the UI disables those controls otherwise.</summary>
-    public bool IsEnabled => _dispatcher is not null;
+    /// <summary>True when the deck-transport controls (play/cue/sync/loop/hot-cue/pitch/grid) can be driven;
+    /// the UI disables them otherwise. False in catalog-browser mode where no deck engine backs the slot, so
+    /// those actions would be silently dropped — the mixer EQ/filter knobs stay live independently.</summary>
+    public bool IsEnabled => _transportEnabled;
 
     /// <summary>True while this deck is playing (drives the Play key's active state), from dispatcher feedback.
     /// Toggling play also flips the waveform between the whole-track overview and the zoomed follow view.</summary>

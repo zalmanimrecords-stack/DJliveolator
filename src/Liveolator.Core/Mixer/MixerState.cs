@@ -1,3 +1,5 @@
+using Liveolator.Core.Dsp;
+
 namespace Liveolator.Core.Mixer;
 
 /// <summary>
@@ -20,6 +22,13 @@ public sealed record MixerState(
     CueBusState CueBus,
     EqCutMode CutMode = EqCutMode.Kill)
 {
+    /// <summary>
+    /// The master smart-limiter controls (SAFE↔SMART, character, true-peak ceiling). A non-positional
+    /// property (defaulting to <see cref="LimiterSettings.Default"/>) so it is always present and an
+    /// existing <c>MixerState</c> construction site does not have to pass it; <c>with</c>-copies preserve it.
+    /// </summary>
+    public LimiterSettings Limiter { get; init; } = LimiterSettings.Default;
+
     /// <summary>Number of deck slots: 2 live (A/B) + 2 hidden STUDIO decks (C/D).</summary>
     public const int DeckCount = 4;
 
@@ -76,4 +85,11 @@ public sealed record MixerState(
 
     /// <summary>Returns a copy with the mixer-wide EQ cut-depth mode replaced.</summary>
     public MixerState WithCutMode(EqCutMode cutMode) => this with { CutMode = cutMode };
+
+    /// <summary>Returns a copy with the master smart-limiter settings replaced.</summary>
+    public MixerState WithLimiter(LimiterSettings limiter)
+    {
+        ArgumentNullException.ThrowIfNull(limiter);
+        return this with { Limiter = limiter };
+    }
 }

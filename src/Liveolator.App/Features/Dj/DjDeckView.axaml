@@ -85,7 +85,7 @@
         </StackPanel>
 
         <controls:Jog Grid.Column="1" Width="144" Height="144" HorizontalAlignment="Center"
-                      ArcBrush="{DynamicResource Accent}"
+                      ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       IsEnabled="{Binding IsEnabled}"
                       KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"

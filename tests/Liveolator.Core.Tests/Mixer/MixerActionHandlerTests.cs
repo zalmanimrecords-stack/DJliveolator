@@ -17,7 +17,7 @@ public class MixerActionHandlerTests
     }
 
     [Fact]
-    public void HandledKinds_AreTheEightMixerKinds()
+    public void HandledKinds_AreTheMixerKinds()
     {
         MixerActionHandler handler = NewHandler(out _);
 
@@ -29,7 +29,91 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerCueLevel, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueMix, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerEqCutMode, handler.HandledKinds);
-        Assert.Equal(8, handler.HandledKinds.Count);
+        Assert.Contains(PerformanceActionKind.MixerLimiterSmart, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.MixerLimiterCharacter, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.MixerLimiterCeiling, handler.HandledKinds);
+        Assert.Equal(11, handler.HandledKinds.Count);
+    }
+
+    // --- Smart limiter ------------------------------------------------------------------------------
+
+    [Fact]
+    public void Limiter_DefaultsToSmartOnBalancedMinusOneDbTp()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+
+        Assert.True(handler.State.Limiter.SmartRelease);
+        Assert.Equal(0.5, handler.State.Limiter.Character, Tol);
+        Assert.Equal(-1.0, handler.State.Limiter.CeilingDbTp, Tol);
+    }
+
+    [Fact]
+    public void LimiterSmart_TogglesModeAndPushesWholeSettings()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart));
+
+        Assert.False(handler.State.Limiter.SmartRelease);     // flipped off from the default-on
+        Assert.NotNull(mixer.Limiter);
+        Assert.False(mixer.Limiter!.SmartRelease);            // pushed to the realtime seam
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart));
+        Assert.True(handler.State.Limiter.SmartRelease);      // and back on
+        Assert.True(mixer.Limiter!.SmartRelease);
+    }
+
+    [Fact]
+    public void LimiterCharacter_SetsAbsoluteValueClampedAndPushes()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerLimiterCharacter, ActionInputMode.Absolute, Value: 0.8));
+        Assert.Equal(0.8, handler.State.Limiter.Character, Tol);
+        Assert.Equal(0.8, mixer.Limiter!.Character, Tol);
+
+        // Out-of-range is clamped to 0..1, never breaking the limiter.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerLimiterCharacter, ActionInputMode.Absolute, Value: 5.0));
+        Assert.Equal(1.0, handler.State.Limiter.Character, Tol);
+        Assert.Equal(1.0, mixer.Limiter!.Character, Tol);
+    }
+
+    [Fact]
+    public void LimiterCeiling_ClampsToSafeSubZeroRange()
+    {
+        MixerActionHandler handler = NewHandler(out FakeMixer mixer);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerLimiterCeiling, ActionInputMode.Absolute, Value: -1.5));
+        Assert.Equal(-1.5, handler.State.Limiter.CeilingDbTp, Tol);
+
+        // A request at/above full scale is clamped to the hottest allowed ceiling (never 0 dB).
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerLimiterCeiling, ActionInputMode.Absolute, Value: 3.0));
+        Assert.Equal(-0.3, handler.State.Limiter.CeilingDbTp, Tol);
+        Assert.True(mixer.Limiter!.CeilingDbTp < 0.0);
+
+        // A far-too-low request is clamped to the quietest allowed ceiling.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerLimiterCeiling, ActionInputMode.Absolute, Value: -50.0));
+        Assert.Equal(-2.0, handler.State.Limiter.CeilingDbTp, Tol);
+    }
+
+    [Fact]
+    public void Limiter_FeedbackRoundTripsState()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart)); // → off
+
+        ActionFeedbackState smart = handler.GetFeedback(PerformanceActionKind.MixerLimiterSmart, 0);
+        ActionFeedbackState character = handler.GetFeedback(PerformanceActionKind.MixerLimiterCharacter, 0);
+        ActionFeedbackState ceiling = handler.GetFeedback(PerformanceActionKind.MixerLimiterCeiling, 0);
+
+        Assert.False(smart.IsActive);
+        Assert.Equal(handler.State.Limiter.Character, character.Value, Tol);
+        Assert.Equal(handler.State.Limiter.CeilingDbTp, ceiling.Value, Tol);
     }
 
     [Fact]

@@ -33,6 +33,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
     private readonly IHotCueStore? _hotCueStore;
+    private readonly Core.Library.Import.LibraryImportService? _importService;
+    private readonly IReadOnlyList<Core.Library.Import.ILibraryImporter> _importers;
     // Drops a stale hot-cue load when the selection moves on before an async store read returns.
     private int _hotCueLoadSequence;
     private List<TrackRowViewModel> _all = new();
@@ -75,7 +77,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Shared.TrackContextActions? contextActions = null,
         Core.Playlist.DeckTrackLoader? deckLoader = null,
         IAutoCueService? autoCueService = null,
-        IHotCueStore? hotCueStore = null)
+        IHotCueStore? hotCueStore = null,
+        Core.Library.Import.LibraryImportService? importService = null,
+        IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
@@ -84,6 +88,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _contextActions = contextActions;
         _autoCueService = autoCueService;
         _hotCueStore = hotCueStore;
+        _importService = importService;
+        _importers = importers ?? Array.Empty<Core.Library.Import.ILibraryImporter>();
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -207,6 +213,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <summary>True when automatic hot-cue placement is available (a decoder + cue store were wired); the
     /// UI hides the Auto-cue button otherwise.</summary>
     public bool CanAutoCueLibrary => _autoCueService is not null;
+
+    /// <summary>True when importing another DJ app's library is available (a service + parser were wired).</summary>
+    public bool CanImportLibrary => _importService is not null && _importers.Count > 0;
+
+    /// <summary>The source formats that can be imported (e.g. "Rekordbox", "Traktor"), for the menu.</summary>
+    public IReadOnlyList<string> ImportFormatNames => _importers.Select(i => i.FormatName).ToList();
 
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -720,6 +732,78 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         finally
         {
             RxApp.MainThreadScheduler.Schedule(() => IsAutoCueing = false);
+        }
+    }
+
+    /// <summary>
+    /// Imports another DJ app's library file: parses it with the named importer, maps tracks + cues +
+    /// playlists into Liveolator through the import service (path-remapping against the current catalog),
+    /// merges the resulting tracks into the catalog, persists, and refreshes. Parsing + analysis run off
+    /// the UI thread; the busy state blocks overlapping scans/imports. Guarded — a failure surfaces on the
+    /// status line, never crashes the tab (global standards #16/#26).
+    /// </summary>
+    /// <param name="formatName">The importer to use (matched against <see cref="ImportFormatNames"/>).</param>
+    /// <param name="filePath">The source library file to read.</param>
+    /// <param name="policy">How to treat tracks/cues already present (default: non-destructive FillGaps).</param>
+    public async Task ImportFromFileAsync(
+        string formatName, string filePath,
+        Core.Library.Import.ImportMergePolicy policy = Core.Library.Import.ImportMergePolicy.FillGaps)
+    {
+        if (_importService is null)
+            return;
+        Core.Library.Import.ILibraryImporter? importer = _importers
+            .FirstOrDefault(i => string.Equals(i.FormatName, formatName, StringComparison.OrdinalIgnoreCase));
+        if (importer is null || string.IsNullOrWhiteSpace(filePath))
+            return;
+
+        IsScanning = true; // reuse the busy state so a scan/rescan/auto-cue can't overlap an import
+        try
+        {
+            Core.Library.Import.LibraryImportResult result = await Task.Run(async () =>
+            {
+                using System.IO.FileStream stream = System.IO.File.OpenRead(filePath);
+                Core.Library.Import.LibraryImport parsed = importer.Parse(stream);
+                return await _importService.ImportAsync(parsed, _library.All, policy, _lifetime.Token)
+                    .ConfigureAwait(false);
+            }, _lifetime.Token).ConfigureAwait(false);
+
+            // Merge the imported/enriched tracks into the catalog (Restore dedups by path, import wins as
+            // the later entry), then persist + refresh exactly as a scan does.
+            _library.Restore(_library.All.Concat(result.TracksToUpsert).ToList());
+            await PersistImportedCatalogAsync().ConfigureAwait(false);
+
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                RefreshRows();
+                ScanStatus = $"{importer.FormatName} — {result.Summary.Describe()}";
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-import — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Import failed: {ex.Message}");
+        }
+        finally
+        {
+            RxApp.MainThreadScheduler.Schedule(() => IsScanning = false);
+        }
+    }
+
+    // Persists the catalog after an import. Guarded so a save failure surfaces but never crashes the import.
+    private async Task PersistImportedCatalogAsync()
+    {
+        if (_store is null)
+            return;
+        try
+        {
+            await _store.SaveMusicAsync(_library.All).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Import done; saving the catalog failed: {ex.Message}");
         }
     }
 

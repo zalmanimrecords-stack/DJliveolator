@@ -30,7 +30,7 @@ namespace Liveolator.Audio.Playback;
 /// of the crossfader/master. Native, so verified manually on the CMD STUDIO 2A (doc 11 checklist); the
 /// gain math is pure in <see cref="Liveolator.Core.Mixer.CueMixMath"/> and unit-tested.
 /// </remarks>
-internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
+internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiterControl
 {
     private readonly int _sampleRate;
     private readonly int _channels;
@@ -726,6 +726,21 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput
 
         if (Bass.StreamPutData(deck.CuePush, _cueDeckScratch, byteLength) == -1)
             _logger.LogDebug("Per-deck cue push failed: {Error}", Bass.LastError);
+    }
+
+    /// <summary>
+    /// Apply the Core-owned smart-limiter controls to the running master limiter (<see cref="ILimiterControl"/>).
+    /// Called from the control/UI thread; <see cref="MasterLimiter.ApplySettings"/> is safe to race with
+    /// <see cref="OnMasterDsp"/> (it only writes a bool and a few doubles and never resizes a buffer or
+    /// touches the look-ahead), so the limiter's latency — and thus the audio↔visual clock — is unaffected.
+    /// </summary>
+    public void ApplyLimiterSettings(LimiterSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        _masterLimiter.ApplySettings(settings);
+        _logger.LogDebug(
+            "Master limiter updated: smart={Smart}, character={Character:0.00}, ceiling={Ceiling:0.0} dBTP.",
+            settings.SmartRelease, settings.Character, settings.CeilingDbTp);
     }
 
     // BASS update thread: apply the master brick-wall limiter in place (Gap #5) so two summed decks

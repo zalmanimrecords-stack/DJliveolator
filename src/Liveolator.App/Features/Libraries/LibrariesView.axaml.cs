@@ -1,7 +1,9 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Liveolator.App.Features.Playlists;
 
 namespace Liveolator.App.Features.Libraries;
@@ -82,6 +84,39 @@ public partial class LibrariesView : UserControl
             window.Show(owner);
         else
             window.Show();
+    }
+
+    // Importing another DJ app's library is view-bound (the file picker needs the TopLevel); the chosen
+    // file path is handed to the view-model, which does the format-agnostic parse + merge UI-free.
+    private async void OnImportRekordbox(object? sender, RoutedEventArgs e)
+        => await ImportLibraryAsync("Rekordbox", "Rekordbox collection (XML)", "*.xml");
+
+    private async void OnImportTraktor(object? sender, RoutedEventArgs e)
+        => await ImportLibraryAsync("Traktor", "Traktor collection (NML)", "*.nml");
+
+    private async Task ImportLibraryAsync(string format, string description, string pattern)
+    {
+        if (DataContext is not LibrariesViewModel vm)
+            return;
+
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null)
+            return;
+
+        IReadOnlyList<IStorageFile> picked = await top.StorageProvider.OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = $"Import {format} library",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType(description) { Patterns = new[] { pattern } },
+                },
+            });
+
+        string? path = picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+        if (!string.IsNullOrEmpty(path))
+            await vm.ImportFromFileAsync(format, path);
     }
 
     private void OnOpenGetSongBpm(object? sender, RoutedEventArgs e)

@@ -1,6 +1,7 @@
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Live.Modules;
+using Liveolator.App.Tests.Live;
 using Liveolator.Core.Settings;
 using Xunit;
 
@@ -21,6 +22,25 @@ public sealed class PerformanceDeckSetTests
         Assert.Equal("A", decks.DeckA.DeckId);
         Assert.Equal("B", decks.DeckB.DeckId);
         Assert.NotNull(decks.Mixer);
+    }
+
+    [Fact]
+    public void DeckTransportEnabled_IsForwardedToBothDecks()
+    {
+        // The composition root passes deckTransportEnabled: realtimeUp so that, with no realtime audio
+        // engine, both decks present their transport controls disabled instead of silently dropping
+        // actions (QA finding S1). A dispatcher is still supplied for the always-present mixer handler.
+        using var catalogOnly = new PerformanceDeckSet(
+            new FakeDispatcher(), deckTransportEnabled: false);
+
+        Assert.False(catalogOnly.DeckA.IsEnabled);
+        Assert.False(catalogOnly.DeckB.IsEnabled);
+        Assert.True(catalogOnly.DeckA.EqHigh.IsEnabled); // mixer-owned knobs stay live
+
+        using var realtime = new PerformanceDeckSet(new FakeDispatcher()); // default = transport enabled
+
+        Assert.True(realtime.DeckA.IsEnabled);
+        Assert.True(realtime.DeckB.IsEnabled);
     }
 
     [Fact]

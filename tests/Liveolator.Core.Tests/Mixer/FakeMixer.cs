@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Mixer;
 
 namespace Liveolator.Core.Tests.Mixer;
@@ -12,6 +13,9 @@ internal sealed class FakeMixer : IMixer
     public Dictionary<int, bool> Cue { get; } = new();
     public (double CueGain, double MasterGain)? CueOutputGains { get; private set; }
 
+    /// <summary>The most recent limiter settings pushed (null until <see cref="SetLimiter"/> is called).</summary>
+    public LimiterSettings? Limiter { get; private set; }
+
     public void SetDeckGain(int slot, double linearGain) => DeckGain[slot] = linearGain;
 
     public void SetEqBand(int slot, EqBand band, BiquadCoefficients coefficients)
@@ -23,4 +27,6 @@ internal sealed class FakeMixer : IMixer
 
     public void SetCueOutputGains(double cueGain, double masterGain)
         => CueOutputGains = (cueGain, masterGain);
+
+    public void SetLimiter(LimiterSettings settings) => Limiter = settings;
 }
