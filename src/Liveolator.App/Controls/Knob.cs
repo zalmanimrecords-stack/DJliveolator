@@ -191,14 +191,16 @@ public class Knob : Control
     // and a brass pointer. Theme brushes drive every colour — Track = dial plate, Arc = engraved ink,
     // Cap = bakelite cream, Pointer = brass — so it stays fully themable. Same StartAngle/SweepAngle sweep
     // as the rotary look, so the value reads identically.
-    private const int ScallopBumps = 18;
+    private const int ScallopBumps = 24;
 
     private void RenderScallopedDial(DrawingContext context, Point centre, double size, double value, bool on)
     {
         double plateR = (size / 2) - 1;
-        double capMid = size * 0.33;
-        double scallopAmp = size * 0.026;
-        double angle = StartAngle + (SweepAngle * value);
+        double capMid = size * 0.30;
+        double scallopAmp = size * 0.024;
+        // Full 360deg clock sweep (owner choice): value 0 = 12 o'clock, 0.5 = 6 o'clock, matching the
+        // clock-face dial. Differs from the rotary style's 270deg sweep; isolated to this knob look.
+        double angle = ClockTopAngle + (360.0 * value);
 
         IBrush plate = on ? TrackBrush : ControlBrush.Halo(TrackBrush, 0.5);
         IBrush cap = on ? CapBrush : ControlBrush.Halo(CapBrush, 0.6);
@@ -249,20 +251,38 @@ public class Knob : Control
             { LineCap = PenLineCap.Round }, inner, tip);
     }
 
-    // Engraved scale on the dial plate: 11 major ticks across the sweep with a minor tick between each.
+    // Engraved clock dial (per the owner's reference): 60 fine minute ticks with a longer hour tick every
+    // fifth, plus upright 1–12 numbers laid out clock-style (12 at top). Numbers are drawn only when the
+    // knob is large enough for them to read; small EQ/filter knobs keep just the tick ring.
+    private const double ClockTopAngle = -90.0;
+
     private void DrawDialScale(DrawingContext context, Point centre, double plateR, IBrush ink, double size)
     {
-        const int majors = 10;
-        var majorPen = new Pen(ink, Math.Max(1, size * 0.02)) { LineCap = PenLineCap.Round };
-        var minorPen = new Pen(ControlBrush.Halo(ink, 0.55), Math.Max(0.8, size * 0.012)) { LineCap = PenLineCap.Round };
+        var hourPen = new Pen(ink, Math.Max(1, size * 0.02)) { LineCap = PenLineCap.Round };
+        var minutePen = new Pen(ControlBrush.Halo(ink, 0.5), Math.Max(0.7, size * 0.009)) { LineCap = PenLineCap.Round };
 
-        for (int i = 0; i <= majors * 2; i++)
+        for (int i = 0; i < 60; i++)
         {
-            double a = StartAngle + (SweepAngle * i / (majors * 2));
-            bool major = i % 2 == 0;
-            double from = major ? plateR * 0.78 : plateR * 0.82;
-            context.DrawLine(major ? majorPen : minorPen,
-                PointOnCircle(centre, from, a), PointOnCircle(centre, plateR * 0.90, a));
+            double a = ClockTopAngle + (6.0 * i);
+            bool hour = i % 5 == 0;
+            double inner = hour ? plateR * 0.87 : plateR * 0.915;
+            context.DrawLine(hour ? hourPen : minutePen,
+                PointOnCircle(centre, inner, a), PointOnCircle(centre, plateR * 0.955, a));
+        }
+
+        if (size < 60 || ink is not ISolidColorBrush inkColor)
+            return;
+
+        double fontSize = size * 0.092;
+        var typeface = new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.Medium);
+        for (int hour = 1; hour <= 12; hour++)
+        {
+            double a = ClockTopAngle + (30.0 * hour);
+            Point at = PointOnCircle(centre, plateR * 0.79, a);
+            var text = new FormattedText(hour.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                typeface, fontSize, new SolidColorBrush(inkColor.Color));
+            context.DrawText(text, new Point(at.X - (text.Width / 2), at.Y - (text.Height / 2)));
         }
     }
 
