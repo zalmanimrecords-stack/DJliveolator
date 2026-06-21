@@ -130,30 +130,55 @@
       <!-- Master "smart limiter": SAFE↔SMART toggle (program-dependent release that adapts to what is
            playing) + Character (Transparent↔Punchy) and Ceiling (true-peak) knobs. The brick-wall peak
            guarantee always holds; SMART only reshapes the release so kicks don't pump (doc 11). -->
-      <!-- Compact (single tick row per knob) so the extra well still fits the one-screen DJ fold. -->
+      <!-- Smart-limiter well: CHARACTER knob · SMART brain toggle (centred) · CEILING knob. A single
+           knob row keeps it inside the one-screen DJ fold. The brain icon (not a word) is the SMART
+           toggle: lit (.on) = SMART program-dependent release, unlit = SAFE fixed-release brick wall. -->
       <Border Classes="hardware-well" Padding="10,6">
-        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="LIMITER" />
-          <!-- Lit (.on) = SMART; unlit = SAFE fixed-release brick wall. Mirrors the CUE-button pattern. -->
-          <Button Grid.Row="0" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsSmartLimiter}"
-                  HorizontalAlignment="Right" Command="{Binding LimiterSmartCommand}" Content="SMART"
-                  ToolTip.Tip="SMART = release adapts to what is playing; SAFE = fixed brick-wall release" />
+        <StackPanel Spacing="4">
+          <TextBlock Classes="section" HorizontalAlignment="Center" Text="LIMITER" />
+          <Grid ColumnDefinitions="*,Auto,*">
+            <StackPanel Grid.Column="0" Spacing="2" HorizontalAlignment="Center"
+                        ToolTip.Tip="Gentle ↔ Hard: how aggressively the smart release reacts">
+              <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
+                             Value="{Binding LimiterCharacter.Value}"
+                             IsEnabled="{Binding LimiterCharacter.IsEnabled}" />
+              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CHARACTER" />
+            </StackPanel>
 
-          <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,6,12,0" HorizontalAlignment="Center"
-                      ToolTip.Tip="Gentle ↔ Hard: how aggressively the smart release reacts">
-            <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
-                           Value="{Binding LimiterCharacter.Value}"
-                           IsEnabled="{Binding LimiterCharacter.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CHARACTER" />
-          </StackPanel>
-          <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2" Margin="12,6,0,0" HorizontalAlignment="Center"
-                      ToolTip.Tip="True-peak output ceiling (low ↔ hot)">
-            <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
-                           Value="{Binding LimiterCeiling.Value}"
-                           IsEnabled="{Binding LimiterCeiling.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
-          </StackPanel>
-        </Grid>
+            <Button Grid.Column="1" Classes="key mixer" Classes.on="{Binding IsSmartLimiter}"
+                    VerticalAlignment="Center" Margin="8,0" Padding="8,6"
+                    Command="{Binding LimiterSmartCommand}"
+                    ToolTip.Tip="SMART = release adapts to what is playing; SAFE = fixed brick-wall release">
+              <!-- Brain glyph: two lobes + central fissure + cortex folds. Stroke follows the button
+                   Foreground so it flips with the .on state (Dim when SAFE, AccentInk when SMART). -->
+              <Viewbox Width="22" Height="22">
+                <Canvas Width="24" Height="24">
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M12 20 C 8 22, 4 20, 5 16 C 2 15, 2 10, 5 9 C 4 5, 9 3, 12 6
+                              C 15 3, 20 5, 19 9 C 22 10, 22 15, 19 16 C 20 20, 16 22, 12 20 Z" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M12 6 L 12 20" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M8 9 C 10 10, 10 12, 8.5 13" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M16 9 C 14 10, 14 12, 15.5 13" />
+                </Canvas>
+              </Viewbox>
+            </Button>
+
+            <StackPanel Grid.Column="2" Spacing="2" HorizontalAlignment="Center"
+                        ToolTip.Tip="True-peak output ceiling (low ↔ hot)">
+              <controls:Knob Width="36" Height="36" HorizontalAlignment="Center"
+                             Value="{Binding LimiterCeiling.Value}"
+                             IsEnabled="{Binding LimiterCeiling.IsEnabled}" />
+              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
+            </StackPanel>
+          </Grid>
+        </StackPanel>
       </Border>
 
     </StackPanel>

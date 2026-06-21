@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
@@ -5,6 +6,8 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Liveolator.App.Controls;
 
@@ -24,6 +27,10 @@ public sealed class JogMedusaShot
 
     // 64 buckets: a quiet low-end floor with a kick transient every 16 buckets (a 4-on-the-floor pattern).
     private static readonly float[] Kicks = BuildKicks();
+
+    // The bundled photoreal jellyfish (avares asset) — the real centrepiece shipped in the DJ deck.
+    private static readonly Bitmap Jellyfish =
+        new(AssetLoader.Open(new Uri("avares://Liveolator.App/Assets/jellyfish.png")));
 
     [AvaloniaFact]
     public void Render_jog_medusa_to_png()
@@ -67,6 +74,7 @@ public sealed class JogMedusaShot
         IsEnabled = true,
         ArcBrush = Accent,
         BassTintBrush = Red,
+        CenterImage = Jellyfish,
         Progress = progress,
         KickPeaks = Kicks,
         IsKickActive = active,

@@ -377,8 +377,10 @@
     <Setter Property="Background" Value="{DynamicResource AccentWellColor}" />
     <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
+  <!-- Lit toggle sits 1px down (like play/pad .on), NOT the full 2px of :pressed — otherwise an engaged
+       LOOP or a set hot-cue is indistinguishable from a held-down key and reads as "stuck pressed". -->
   <Style Selector="Button.key.on /template/ ContentPresenter#PART_Face">
-    <Setter Property="RenderTransform" Value="translate(0px, 2px)" />
+    <Setter Property="RenderTransform" Value="translate(0px, 1px)" />
     <Setter Property="BoxShadow" Value="0 1 2 0 #66000000, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C000000" />
   </Style>
   <Style Selector="Button.key.on:pointerover /template/ ContentPresenter#PART_Face">

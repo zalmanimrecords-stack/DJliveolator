@@ -205,9 +205,9 @@ public class Jog : Control
         return energy * energy;
     }
 
-    /// <summary>Peak alpha of the medusa's red bass-wash on a full kick. Deliberately well below 1 so the
-    /// wash reads as a subtle tint of the artwork, never a flat red repaint of it.</summary>
-    internal const double MaxBassTint = 0.5;
+    /// <summary>Peak alpha of the medusa's red bass-wash on a full kick. Deliberately low so the wash reads
+    /// as a subtle red bloom on the artwork (the owner asked for a gentle tint), never a flat red repaint.</summary>
+    internal const double MaxBassTint = 0.32;
 
     /// <summary>The 0..<see cref="MaxBassTint"/> red-wash strength for a given kick/bass pulse. Linear in the
     /// pulse and capped, so silence is untinted and a hard kick is a gentle red bloom. 0 for invalid input.</summary>
