@@ -379,4 +379,38 @@ public class MusicLibraryTests
         Assert.Contains(matches, m => m.File.Path == "a.mp3");
         Assert.DoesNotContain(matches, m => m.File.Path == "c.mp3"); // never the seed itself
     }
+
+    [Fact]
+    public async Task TryGetByPathOrName_FallsBackToFileName_WhenTheExactPathDiffers()
+    {
+        // The track is catalogued under the scanned UNC-style path; a deck loads it under a mapped-drive
+        // path with the SAME file name. An exact lookup misses, but the file-name fallback recovers it —
+        // this is what threads the analyzed BPM to the engine so SYNC/beatmatch works.
+        var enumerator = new FakeFileEnumerator(File(@"\\nas\music\track.mp3"));
+        var decoder = new MapAudioDecoder(new() { [@"\\nas\music\track.mp3"] = TestSignals.ClickTrain(128, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { @"\\nas\music" });
+
+        Assert.Null(library.TryGet(@"S:\track.mp3"));                  // exact lookup misses
+        MusicTrack? recovered = library.TryGetByPathOrName(@"S:\track.mp3");
+        Assert.NotNull(recovered);                                     // file-name fallback finds it
+        Assert.InRange(recovered!.Bpm!.Bpm, 125.0, 131.0);
+    }
+
+    [Fact]
+    public async Task TryGetByPathOrName_PrefersTheExactPath_AndReturnsNullOnNoMatch()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"), File("b.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["b.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        Assert.Equal("a.mp3", library.TryGetByPathOrName("a.mp3")!.File.Path); // exact wins
+        Assert.Null(library.TryGetByPathOrName("nowhere.mp3"));                // genuine miss → null
+        Assert.Null(library.TryGetByPathOrName(""));                           // empty → null, never throws
+    }
 }

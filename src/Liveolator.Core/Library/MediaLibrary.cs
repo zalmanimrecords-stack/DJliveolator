@@ -53,6 +53,34 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
             return _byPath.TryGetValue(path, out TEntry? entry) ? entry : null;
     }
 
+    /// <summary>
+    /// Looks an entry up by exact path, then falls back to a file-name match. The path a deck loads can
+    /// differ in form from the one the catalog was scanned under (a mapped drive S:\ vs the UNC share, or
+    /// a deck-queue path), so an exact match can miss a track that IS catalogued — and the engine would
+    /// then receive no analysis (BPM/grid), silently breaking beatmatch/SYNC even though the UI shows a
+    /// BPM via the same fallback. The file-name fallback recovers the entry so the engine gets the BPM
+    /// the UI already shows. Returns <c>null</c> when neither the exact path nor the file name matches.
+    /// </summary>
+    public TEntry? TryGetByPathOrName(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        lock (_gate)
+        {
+            if (_byPath.TryGetValue(path, out TEntry? exact))
+                return exact;
+
+            string fileName = System.IO.Path.GetFileName(path);
+            if (string.IsNullOrEmpty(fileName))
+                return null;
+            foreach (TEntry entry in _byPath.Values)
+                if (string.Equals(System.IO.Path.GetFileName(entry.File.Path), fileName, StringComparison.OrdinalIgnoreCase))
+                    return entry;
+            return null;
+        }
+    }
+
     /// <summary>Thread-safely inserts or replaces a single entry — used by the background re-analysis
     /// pass to update one track's analysis without disturbing a concurrent UI read of the catalog.</summary>
     protected void Upsert(TEntry entry)

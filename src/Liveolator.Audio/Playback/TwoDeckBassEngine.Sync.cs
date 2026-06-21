@@ -30,12 +30,25 @@ public sealed partial class TwoDeckBassEngine
         {
             DeckSlot s = _slots[slot];
             if (s.Deck is not { } deck || s.BaseBpm <= 0.0)
+            {
+                // Never fail silently (global standard #16/#26): a one-shot SYNC that does nothing must say
+                // why, or it reads as a dead button. The usual cause is a track loaded without its analyzed
+                // BPM reaching the engine (see TryGetByPathOrName on the load path).
+                _logger.LogInformation(
+                    "Deck slot {Slot} one-shot sync skipped: own track/BPM unknown (BaseBpm {Bpm:F1}).",
+                    slot, s.BaseBpm);
                 return;
+            }
 
             int leaderSlot = slot == 0 ? 1 : 0;
             DeckSlot leader = _slots[leaderSlot];
             if (leader.Deck is null || leader.BaseBpm <= 0.0)
+            {
+                _logger.LogInformation(
+                    "Deck slot {Slot} one-shot sync skipped: no valid leader on deck {Leader} (BaseBpm {Bpm:F1}).",
+                    slot, leaderSlot, leader.BaseBpm);
                 return;
+            }
 
             double leaderRate = leader.PlaybackRate;
             double targetRate = TempoSyncCalculator.RateFor(
