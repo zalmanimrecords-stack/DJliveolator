@@ -125,24 +125,36 @@ if (-not $Notes -or $Notes.Count -eq 0) {
             Where-Object { $_ -ne '' -and -not $_.StartsWith('#') -and -not $_.StartsWith('<!--') }
     }
 }
-if (-not $Notes -or @($Notes).Count -eq 0) {
-    $Notes = @('Maintenance build: fixes and small improvements.')
-    Write-Warning "No release notes provided; using a placeholder. Edit website/src/data/changelog.json to refine."
-}
 $Notes = @($Notes | ForEach-Object { ($_ -replace '^[-*]\s*', '').Trim() } | Where-Object { $_ -ne '' })
 
-# --- Update changelog.json (prepend; replace if version already present) -------
+# --- Read existing changelog ---------------------------------------------------
 $existing = @()
 if (Test-Path $changelog) {
     $raw = Read-Utf8Text $changelog
     if ($raw.Trim()) { $existing = @((ConvertFrom-Json $raw)) }
 }
+$prior = $existing | Where-Object { [string]$_.version -eq $Version } | Select-Object -First 1
+
+# No fresh notes? Don't clobber a good existing entry with a placeholder - reuse
+# its notes (and keep its date). Only invent a placeholder for a brand-new version.
+$entryDate = (Get-Date).ToString('yyyy-MM-dd')
+if (@($Notes).Count -eq 0) {
+    if ($prior -and @($prior.notes).Count -gt 0) {
+        $Notes = @($prior.notes)
+        $entryDate = [string]$prior.date
+        Write-Host "  No new notes - keeping the existing v$Version entry." -ForegroundColor Yellow
+    } else {
+        $Notes = @('Maintenance build: fixes and small improvements.')
+        Write-Warning "No release notes provided; using a placeholder. Edit website/RELEASE_NOTES_NEXT.md next time."
+    }
+}
+
+# --- Update changelog.json (prepend; replace if version already present) -------
 $existing = @($existing | Where-Object { [string]$_.version -ne $Version })
-$today = (Get-Date).ToString('yyyy-MM-dd')
-$newEntry = [pscustomobject]@{ version = $Version; date = $today; notes = $Notes }
+$newEntry = [pscustomobject]@{ version = $Version; date = $entryDate; notes = $Notes }
 $entries = @($newEntry) + $existing
 Write-Utf8NoBom $changelog (ConvertTo-ChangelogJson $entries)
-Write-Host "  changelog.json updated ($($Notes.Count) note(s))." -ForegroundColor Green
+Write-Host "  changelog.json updated ($(@($Notes).Count) note(s))." -ForegroundColor Green
 
 # --- Update site.ts ------------------------------------------------------------
 $ts = Read-Utf8Text $siteTs
