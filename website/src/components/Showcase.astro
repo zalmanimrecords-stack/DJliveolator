@@ -1,5 +1,5 @@
 ---
-import { shots } from "../data/site";
+import { shots, site } from "../data/site";
 ---
 
 <section class="section" id="showcase">
@@ -34,7 +34,7 @@ import { shots } from "../data/site";
           shots.map((s, i) => (
             <figure class:list={["frame", { active: i === 0 }]} data-frame={i}>
               <img
-                src={s.src}
+                src={`${s.src}?v=${site.version}`}
                 alt={s.alt}
                 width="1440"
                 height="900"

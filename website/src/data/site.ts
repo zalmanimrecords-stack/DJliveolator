@@ -8,14 +8,19 @@ export const site = {
   tagline: "Mix the music. Move the visuals. One beat.",
   description:
     "A cross-platform DJ + VJ performance app where the visuals are locked to the music on a single shared beat clock.",
+  // Development stage shown across the site. Currently an early alpha.
+  stage: "Alpha",
   // Windows installer, served from the site's own /downloads (bind-mounted on
-  // the VPS — see website/DEPLOY.md). Bump these when a new build is uploaded.
+  // the VPS — see website/DEPLOY.md). These three are updated automatically by
+  // scripts/publish-website-release.ps1 each time an installer is built.
   version: "0.1.3",
   downloadUrl: "/downloads/LiveolatorSetup-0.1.3.exe",
-  downloadSize: "36 MB",
+  downloadSize: "37 MB",
   repoUrl: "https://github.com/zalmanimrecords-stack/Liveolator",
   // Inquiries + efficiency suggestions land here (mailto, see Feedback form).
   contactEmail: "zalmanimrecords@gmail.com",
+  // Bump when the user manual page (/manual) is revised.
+  manualUpdated: "2026-06-21",
 } as const;
 
 export type Feature = {

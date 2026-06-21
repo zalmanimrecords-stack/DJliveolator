@@ -25,7 +25,15 @@
 [CmdletBinding()]
 param(
     [ValidateSet('win-x64')]
-    [string]$Rid = 'win-x64'
+    [string]$Rid = 'win-x64',
+
+    # After a successful build, update the marketing website (changelog + version)
+    # and deploy it. Pass -NoPublish to build the installer only.
+    [switch]$NoPublish,
+
+    # Re-capture the app screenshots (UiShots harness) during the website update,
+    # instead of reusing the latest existing captures. Heavier; use when the UI changed.
+    [switch]$RefreshShots
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,3 +93,21 @@ if (-not (Test-Path $setupExe)) { throw "ISCC reported success but $setupExe was
 $sizeMb = [Math]::Round((Get-Item $setupExe).Length / 1MB, 1)
 Write-Host ''
 Write-Host "Installer ready: $setupExe ($sizeMb MB)" -ForegroundColor Green
+
+# --- 6. Website hook: update changelog + version and deploy ----------------------------
+# Best-effort - a website/publish failure must NOT fail an installer that already built.
+if (-not $NoPublish) {
+    Write-Host ''
+    Write-Host 'Updating website (changelog + version)...' -ForegroundColor Cyan
+    try {
+        $publishArgs = @('-ExecutionPolicy', 'Bypass', '-File',
+            (Join-Path $PSScriptRoot 'publish-website-release.ps1'),
+            '-Version', $version, '-SetupExe', $setupExe)
+        if ($RefreshShots) { $publishArgs += '-CaptureShots' }
+        & powershell @publishArgs
+    }
+    catch {
+        Write-Warning "Website publish failed: $($_.Exception.Message)"
+        Write-Warning 'Installer is fine; run scripts/publish-website-release.ps1 manually to update the site.'
+    }
+}

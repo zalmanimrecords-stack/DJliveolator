@@ -75,6 +75,51 @@ scp -i ~/.ssh/<SSH_KEY> \
 No rebuild is needed just to swap the file (it's a live mount) — only to update
 the version text shown on the page.
 
+## Release hook (installer build -> website)
+
+`scripts/build-installer.ps1` calls `scripts/publish-website-release.ps1` after a
+successful build (pass `-NoPublish` to skip). That publish step:
+
+1. turns `website/RELEASE_NOTES_NEXT.md` (one bullet per line) into a dated entry
+   in `website/src/data/changelog.json`, then resets the notes file;
+2. updates `version` / `downloadUrl` / `downloadSize` in `website/src/data/site.ts`;
+3. uploads the new installer + those two data files to the VPS and rebuilds the
+   container — so https://liveolator.zalmanim.com/changelog and the download button
+   reflect the new build automatically.
+
+So the workflow for a release is: jot the "what's new" lines into
+`website/RELEASE_NOTES_NEXT.md`, then run `scripts/build-installer.ps1`. The site
+updates itself. Run `publish-website-release.ps1` directly (with `-NoDeploy` to
+preview locally) for a website-only refresh.
+
+The local file edits always happen even if the deploy fails, so commit them and
+re-deploy manually if needed.
+
+## Screenshots
+
+The site's screenshots come from the app's UI-shot captures
+(`artifacts/ui-shots/*.png`, produced by `dotnet test tests/Liveolator.App.Tests
+--filter UiShots`). `scripts/sync-website-screenshots.ps1` maps them to the site's
+filenames and copies them into `website/public/screenshots`:
+
+- `publish-website-release.ps1` calls it on every release, so the site's
+  screenshots follow each build automatically.
+- Pass `-Capture` (or `build-installer.ps1 -RefreshShots`) to re-render the shots
+  first — heavier, and best-effort (falls back to the latest existing captures).
+- Run `sync-website-screenshots.ps1 -Deploy` for a screenshots-only push.
+
+**Cache-busting:** the site is behind Cloudflare, which caches images at the edge.
+Screenshot `<img>` URLs carry `?v={site.version}`, so a new build (new version)
+is a new cache key and visitors get the fresh images without a manual purge. If
+you re-capture screenshots *without* bumping the version, either bump it or purge
+the Cloudflare cache for `/screenshots/*` so the edge refreshes.
+
+## User manual
+
+The manual at `/manual` is content-driven from `website/src/data/manual.ts`. When
+app behaviour changes, update the relevant section there and bump `manualUpdated`
+in `site.ts`, then redeploy (full source sync — see "Updating the site later").
+
 ## Useful checks on the VPS
 
 ```sh

@@ -8,9 +8,9 @@ import { site } from "../data/site";
       <p class="eyebrow">Get Liveolator</p>
       <h2>Download the free build</h2>
       <p class="dl-note">
-        Liveolator is <strong>Windows-only for now</strong> — grab the installer
-        below and you're mixing in minutes. It works with any MIDI controller you
-        plug in. A macOS build is on the way.
+        <strong>Alpha, Windows-only for now</strong> — expect bugs. Grab the
+        installer below and you're mixing in minutes; it works with any MIDI
+        controller you plug in. A macOS build is on the way.
       </p>
 
       <div class="dl-actions">
@@ -23,11 +23,13 @@ import { site } from "../data/site";
       </div>
 
       <p class="dl-build">
-        Windows installer · v{site.version} · {site.downloadSize} · .exe
+        Windows installer · {site.stage} v{site.version} · {site.downloadSize} · .exe
+        · <a href="/changelog">what's new</a>
       </p>
 
       <p class="dl-fine">
-        Prefer to follow along? The project lives on
+        New to it? Read the <a href="/manual">manual</a>. Prefer to follow along?
+        The project lives on
         <a href={site.repoUrl} target="_blank" rel="noopener">GitHub</a>.
       </p>
     </div>

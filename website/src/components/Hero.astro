@@ -5,7 +5,7 @@ import { site } from "../data/site";
 <section class="hero" id="top">
   <div class="container hero-inner">
     <div class="hero-copy">
-      <span class="pill"><span class="dot"></span> Free while in development</span>
+      <span class="pill"><span class="dot"></span> {site.stage} · free while in development</span>
 
       <h1>
         Mix the music.<br />
@@ -17,6 +17,12 @@ import { site } from "../data/site";
         {site.name} is a cross-platform DJ + VJ performance app. The visuals are
         locked to the music on a single shared beat clock — so every cut, effect
         and transition lands on the beat, automatically.
+      </p>
+
+      <p class="alpha-note">
+        <strong>Heads up:</strong> this is an early <strong>alpha</strong> — it's
+        rough and there are plenty of bugs. That's exactly why it's free right now,
+        and why your <a href="#feedback">bug reports and ideas</a> matter so much.
       </p>
 
       <div class="hero-actions">
@@ -33,7 +39,7 @@ import { site } from "../data/site";
 
     <figure class="hero-shot reveal">
       <img
-        src="/screenshots/live.png"
+        src={`/screenshots/live.png?v=${site.version}`}
         alt="Liveolator LIVE view — dual waveforms, two decks, mixer and a visuals strip"
         width="1440"
         height="900"
@@ -69,6 +75,16 @@ import { site } from "../data/site";
     color: var(--text-dim);
     font-size: 19px;
   }
+  .alpha-note {
+    margin-top: 20px;
+    max-width: 520px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-dim);
+    border-left: 2px solid var(--amber);
+    padding: 2px 0 2px 14px;
+  }
+  .alpha-note strong { color: var(--amber); font-weight: 700; }
   .hero-actions {
     margin-top: 34px;
     display: flex;
