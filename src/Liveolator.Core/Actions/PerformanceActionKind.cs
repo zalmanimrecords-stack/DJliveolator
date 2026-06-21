@@ -184,4 +184,13 @@ public enum PerformanceActionKind
     /// full scale.
     /// </summary>
     MixerLimiterCeiling,
+
+    /// <summary>
+    /// Set a deck's DOWNBEAT (the musical "one", beat 1 of the bar): Slot = A/B, Value = offset in seconds
+    /// from track start. Where <see cref="DeckSetFirstBeat"/> fixes the BEAT phase (where beats land, mod one
+    /// beat), this fixes the BAR phase (which beat is the bar start) so the waveform's red bar markers sit on
+    /// the one — the rekordbox/Serato "set the downbeat". Display/grid-level only: it moves the bar emphasis,
+    /// never a beat line or the audible pitch. Echoed as feedback so a deck UI can re-anchor its bars.
+    /// </summary>
+    DeckSetDownbeat,
 }

@@ -59,5 +59,37 @@ public static class BeatGridCalculator
         return fractions;
     }
 
+    /// <summary>
+    /// Which beat of the bar the grid (anchored on <paramref name="firstBeatSeconds"/>, index 0) starts on,
+    /// given the track's downbeat (the musical "one"): the 0..<paramref name="beatsPerBar"/>-1 index offset
+    /// the strip uses to mark a comb line as a bar downbeat — line <c>i</c> is a downbeat when
+    /// <c>((i - offset) mod beatsPerBar) == 0</c>. Because the grid is anchored on the first BEAT (beat
+    /// phase) while the downbeat is the BAR phase, the two need not coincide; this folds their difference
+    /// into a beat count. Pure so the bar-marker placement unit-tests without a render.
+    /// </summary>
+    /// <param name="bpm">Track tempo; 0/negative/NaN → 0 (no usable beat interval).</param>
+    /// <param name="firstBeatSeconds">The grid's beat-phase anchor (index 0), in seconds.</param>
+    /// <param name="downbeatSeconds">The analyzed/edited downbeat (bar-1) offset in seconds; 0 or negative
+    /// means "no downbeat known" → offset 0, so index 0 is treated as the bar start (the prior behaviour).</param>
+    /// <param name="beatsPerBar">Meter; 4 for 4/4.</param>
+    public static int DownbeatBarOffset(
+        double bpm, double firstBeatSeconds, double downbeatSeconds, int beatsPerBar = BeatsPerBar)
+    {
+        if (!IsUsable(bpm) || beatsPerBar < 1 || downbeatSeconds <= 0
+            || double.IsNaN(downbeatSeconds) || double.IsInfinity(downbeatSeconds)
+            || double.IsNaN(firstBeatSeconds) || double.IsInfinity(firstBeatSeconds))
+            return 0;
+
+        double beatSeconds = SecondsPerMinute / bpm;
+        if (!IsUsable(beatSeconds))
+            return 0;
+
+        // How many beats the downbeat sits from index 0, folded into one bar. Round so a downbeat that
+        // lands a hair off a grid line still maps to the nearest beat (the line the strip actually draws).
+        long beatsFromAnchor = (long)Math.Round((downbeatSeconds - firstBeatSeconds) / beatSeconds);
+        int offset = (int)(((beatsFromAnchor % beatsPerBar) + beatsPerBar) % beatsPerBar);
+        return offset;
+    }
+
     private static bool IsUsable(double value) => value > 0 && !double.IsNaN(value) && !double.IsInfinity(value);
 }

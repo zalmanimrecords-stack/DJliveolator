@@ -103,6 +103,13 @@ public sealed class WaveformStrip : Control
     public static readonly StyledProperty<IReadOnlyList<double>?> BeatGridProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<double>?>(nameof(BeatGrid));
 
+    /// <summary>Which <see cref="BeatGrid"/> line starts the bar (0..3 for 4/4): comb line <c>i</c> is drawn
+    /// as a red bar downbeat when <c>((i - DownbeatOffset) mod 4) == 0</c>. 0 puts the downbeat on index 0
+    /// (the grid's first beat); the deck sets it from the analyzed/edited downbeat so the bars sit on the
+    /// musical "one" rather than on an arbitrary beat.</summary>
+    public static readonly StyledProperty<int> DownbeatOffsetProperty =
+        AvaloniaProperty.Register<WaveformStrip, int>(nameof(DownbeatOffset));
+
     public static readonly StyledProperty<double?> KickAnchorProperty =
         AvaloniaProperty.Register<WaveformStrip, double?>(nameof(KickAnchor));
 
@@ -130,7 +137,7 @@ public sealed class WaveformStrip : Control
             MidBrushProperty, HighBrushProperty,
             PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
-            BeatGridProperty, KickAnchorProperty,
+            BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty,
             ProgressProperty, ZoomWindowProperty);
     }
 
@@ -155,6 +162,7 @@ public sealed class WaveformStrip : Control
     public IReadOnlyList<float>? MidPeaks { get => GetValue(MidPeaksProperty); set => SetValue(MidPeaksProperty, value); }
     public IReadOnlyList<float>? HighPeaks { get => GetValue(HighPeaksProperty); set => SetValue(HighPeaksProperty, value); }
     public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
+    public int DownbeatOffset { get => GetValue(DownbeatOffsetProperty); set => SetValue(DownbeatOffsetProperty, value); }
     public double? KickAnchor { get => GetValue(KickAnchorProperty); set => SetValue(KickAnchorProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public double ZoomWindow { get => GetValue(ZoomWindowProperty); set => SetValue(ZoomWindowProperty, value); }
@@ -291,8 +299,9 @@ public sealed class WaveformStrip : Control
     private static double TrackFraction(double x, double width, double start, double span)
         => start + (width <= 0 ? 0 : x / width) * span;
 
-    /// <summary>Beats per bar (4/4): every fourth comb tooth (index 0, 4, 8 …) is a bar downbeat, drawn
-    /// as a broad red block. The grid list is anchored on the first beat, so index 0 is a downbeat.</summary>
+    /// <summary>Beats per bar (4/4): every fourth comb tooth is a bar downbeat, drawn as a broad red block.
+    /// Which line is the downbeat is set by <see cref="DownbeatOffset"/> (the analyzed/edited "one"), not a
+    /// fixed index 0 — so the red bars sit on the musical one rather than on whatever beat the grid starts on.</summary>
     private const int BeatsPerBar = 4;
 
     // The CBG comb (VirtualDJ-style beat marking): a row of bottom-anchored teeth in the comb strip.
@@ -328,13 +337,14 @@ public sealed class WaveformStrip : Control
         var downHaloPen = new Pen(new ImmutableSolidColorBrush(down, 0.35), 4.0);
         var downPen = new Pen(new ImmutableSolidColorBrush(down), 2.5);
 
+        int downbeatOffset = DownbeatOffset;
         double end = start + span;
         for (int i = 0; i < grid.Count; i++)
         {
             double fraction = grid[i];
             if (fraction < start || fraction > end)
                 continue;
-            bool isDownbeat = i % BeatsPerBar == 0;
+            bool isDownbeat = IsBarDownbeat(i, downbeatOffset, BeatsPerBar);
             if (!isDownbeat && !drawBeats)
                 continue;
             double x = (fraction - start) / span * b.Width;
@@ -348,6 +358,21 @@ public sealed class WaveformStrip : Control
                 context.DrawLine(beatPen, new Point(x, beatNear), new Point(x, beatFar));
             }
         }
+    }
+
+    /// <summary>
+    /// Whether comb line <paramref name="index"/> is a bar downbeat, given the bar-start
+    /// <paramref name="offset"/> (which beat of the bar the grid begins on) and the meter
+    /// <paramref name="beatsPerBar"/>. True when the line is a whole number of bars from the downbeat, so the
+    /// red bar marker lands on the musical "one" rather than on index 0. Pure and public so the placement
+    /// unit-tests without a render.
+    /// </summary>
+    public static bool IsBarDownbeat(int index, int offset, int beatsPerBar)
+    {
+        if (beatsPerBar < 1)
+            return false;
+        int folded = ((offset % beatsPerBar) + beatsPerBar) % beatsPerBar;
+        return (((index - folded) % beatsPerBar) + beatsPerBar) % beatsPerBar == 0;
     }
 
     /// <summary>

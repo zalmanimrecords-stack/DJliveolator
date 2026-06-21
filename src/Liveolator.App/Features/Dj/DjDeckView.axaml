@@ -86,6 +86,7 @@
 
         <controls:Jog Grid.Column="1" Width="144" Height="144" HorizontalAlignment="Center"
                       ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
+                      CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       IsEnabled="{Binding IsEnabled}"
                       KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
@@ -161,10 +162,11 @@
                     Command="{Binding NudgeRightCommand}"
                     ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
           </Grid>
-          <!-- GRID edit: hand-correct the analyzed beat grid so it lands on the kicks. Re-tempo (−/+, ½/×2)
-               or SET (slide a beat line onto the kick under the playhead). Inaudible — unlike the BPM nudge
-               above, these change only the GRID/sync tempo, never the playing pitch. -->
-          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
+          <!-- GRID edit: hand-correct the analyzed beat grid so it lands on the kicks. Re-tempo (−/+, ½/×2),
+               SET (slide a beat line onto the kick under the playhead), or ONE (mark that beat as the bar's
+               downbeat, snapping the red bar markers onto it). Inaudible — unlike the BPM nudge above, these
+               change only the GRID/sync tempo and phase, never the playing pitch. -->
+          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" IsEnabled="{Binding IsBpmEnabled}">
             <TextBlock Grid.Column="0" Classes="tick" VerticalAlignment="Center" Text="GRID" Margin="0,0,6,0" />
             <Button Grid.Column="1" Classes="key" Content="−" Width="28" Height="22"
                     Command="{Binding GridBpmDownCommand}" ToolTip.Tip="Grid tempo −1 BPM (does not change pitch)" />
@@ -176,6 +178,9 @@
                     Command="{Binding GridDoubleCommand}" ToolTip.Tip="Double the grid tempo (octave fix)" />
             <Button Grid.Column="6" Classes="key" Content="SET" Width="44" Height="22"
                     Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead" />
+            <Button Grid.Column="7" Classes="key" Content="ONE" Width="44" Height="22" Margin="4,0,0,0"
+                    Command="{Binding SetOneCommand}"
+                    ToolTip.Tip="Mark the beat under the playhead as the bar's downbeat (the &quot;one&quot;)" />
           </Grid>
         </StackPanel>
       </Border>

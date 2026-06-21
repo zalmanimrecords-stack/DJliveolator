@@ -808,6 +808,41 @@ public class DeckActionHandlerTests
         Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
     }
 
+    // --- Downbeat (bar-1 "one") anchor seam — display/grid only ---
+
+    [Fact]
+    public void DeckSetDownbeat_IsAHandledKind()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Contains(PerformanceActionKind.DeckSetDownbeat, handler.HandledKinds);
+    }
+
+    [Fact]
+    public void DeckSetDownbeat_RecordsTheAnchor_AndReportsItBackAsFeedback()
+    {
+        // The downbeat is display-only: it must NOT reach the engine's first-beat (phase) anchor, only be
+        // stored and echoed so the deck UI can re-anchor its bar markers on the one.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.55, Slot: 1));
+
+        Assert.Equal(0.55, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 1).Value, precision: 6);
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 1).IsAvailable);
+        // Independent of the first-beat (beat-phase) anchor — setting the bar never moves the beats.
+        Assert.Equal(0.0, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    [Fact]
+    public void DeckSetDownbeat_DefaultsToZero_BeforeAnyEdit()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+
+        Assert.Equal(0.0, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 0).Value, precision: 6);
+    }
+
     // --- DeckBpmNudge ---
 
     [Fact]

@@ -73,4 +73,47 @@ public sealed class BeatGridCalculatorTests
 
         Assert.True(grid.Count <= 4_097, $"expected the grid to be capped, was {grid.Count}");
     }
+
+    // --- DownbeatBarOffset: which grid line carries the red bar marker (the "one") ---
+
+    [Fact]
+    public void DownbeatBarOffset_IsZero_WhenTheDownbeatEqualsTheFirstBeat()
+    {
+        // Downbeat == first beat → index 0 is the bar start (the prior behaviour).
+        Assert.Equal(0, BeatGridCalculator.DownbeatBarOffset(bpm: 120, firstBeatSeconds: 1.0, downbeatSeconds: 1.0));
+    }
+
+    [Theory]
+    // 120 BPM = 0.5 s/beat, first beat at 0. Downbeat N beats later → offset N (mod 4).
+    [InlineData(0.5, 1)]   // one beat after the anchor → beat 1 of the bar is the one
+    [InlineData(1.0, 2)]   // two beats after
+    [InlineData(1.5, 3)]   // three beats after
+    [InlineData(2.0, 0)]   // a full bar later → folds back to 0
+    [InlineData(2.5, 1)]   // wraps past one bar
+    public void DownbeatBarOffset_FoldsTheDownbeatIntoABeatOfTheBar(double downbeatSeconds, int expected)
+    {
+        Assert.Equal(expected,
+            BeatGridCalculator.DownbeatBarOffset(bpm: 120, firstBeatSeconds: 0.0, downbeatSeconds));
+    }
+
+    [Fact]
+    public void DownbeatBarOffset_NormalizesWhenTheDownbeatPrecedesTheFirstBeat()
+    {
+        // first beat 1.5 s, downbeat 0.5 s (the bar started before the beat anchor) at 0.5 s/beat:
+        // (0.5 - 1.5)/0.5 = -2 → folded into [0,4) = 2.
+        Assert.Equal(2,
+            BeatGridCalculator.DownbeatBarOffset(bpm: 120, firstBeatSeconds: 1.5, downbeatSeconds: 0.5));
+    }
+
+    [Theory]
+    [InlineData(0, 0.0, 1.0)]                 // no tempo
+    [InlineData(120, 0.0, 0.0)]               // no downbeat known → index 0 is the bar start
+    [InlineData(120, 0.0, -1.0)]              // negative downbeat → treated as unknown
+    [InlineData(120, double.NaN, 1.0)]        // bad anchor
+    [InlineData(120, 0.0, double.NaN)]        // bad downbeat
+    public void DownbeatBarOffset_FallsBackToZero_OnUnusableInputs(
+        double bpm, double firstBeatSeconds, double downbeatSeconds)
+    {
+        Assert.Equal(0, BeatGridCalculator.DownbeatBarOffset(bpm, firstBeatSeconds, downbeatSeconds));
+    }
 }

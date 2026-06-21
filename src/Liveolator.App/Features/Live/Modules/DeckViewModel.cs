@@ -83,6 +83,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private double _progress;
     private double _trackBpm;
     private double _firstBeatSeconds;
+    // The downbeat (bar-1, the musical "one") anchor in seconds: where the BAR starts, distinct from the
+    // first-beat anchor (where beats land). Drives which grid line carries the red bar marker. Auto-set from
+    // the analyzed downbeat when confident, or placed by the DJ via SET ONE; 0 = unknown → index 0 is the bar.
+    private double _downbeatSeconds;
+    private int _downbeatBarOffset;
     private double _durationSeconds;
     private double _zoomWindow;
     // Seconds of audio the waveform shows around the playhead — the configurable zoom level (doc 12
@@ -221,6 +226,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         GridHalveCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 0.5), canEmit);
         GridDoubleCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 2.0), canEmit);
         SetGridHereCommand = ReactiveCommand.Create(EmitGridHere, canEmit);
+        SetOneCommand = ReactiveCommand.Create(EmitSetOne, canEmit);
 
         var hotCues = new HotCuePadViewModel[HotCueCount];
         for (int index = 0; index < HotCueCount; index++)
@@ -271,6 +277,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 _dispatcher.GetFeedback(PerformanceActionKind.DeckSetFirstBeat, slot);
             if (firstBeat.IsAvailable)
                 _firstBeatSeconds = firstBeat.Value;
+            // A previously-set downbeat ("one") for this slot overrides the auto-resolved one OnTrackLoaded
+            // just derived (mirrors the first-beat read above), so re-entering the DJ tab keeps a manual edit.
+            ActionFeedbackState downbeat =
+                _dispatcher.GetFeedback(PerformanceActionKind.DeckSetDownbeat, slot);
+            if (downbeat.IsAvailable && downbeat.Value != 0)
+                _downbeatSeconds = downbeat.Value;
         }
 
         if (_dispatcher is not null)
@@ -380,6 +392,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _beatGrid;
         private set => this.RaiseAndSetIfChanged(ref _beatGrid, value);
+    }
+
+    /// <summary>
+    /// Which beat of the bar the <see cref="BeatGrid"/> starts on (0..3 for 4/4): the strip marks comb line
+    /// <c>i</c> as a bar downbeat when <c>((i - DownbeatBarOffset) mod 4) == 0</c>, so the red bars sit on the
+    /// analyzed/edited downbeat (the "one") rather than on an arbitrary beat. 0 until a downbeat is known.
+    /// </summary>
+    public int DownbeatBarOffset
+    {
+        get => _downbeatBarOffset;
+        private set => this.RaiseAndSetIfChanged(ref _downbeatBarOffset, value);
     }
 
     public double? KickAnchorFraction =>
@@ -590,9 +613,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // The beat/bar grid needs the BPM (from the load), the decoded duration, and the first-beat anchor
     // (from the DeckSetFirstBeat feedback); empty until the duration is known.
     private void RecomputeBeatGrid()
-        => BeatGrid = _durationSeconds > 0
+    {
+        // Which grid line carries the red bar marker — folds the downbeat (bar phase) against the grid's
+        // first-beat anchor (beat phase). Set BEFORE the grid so any consumer reacting to the BeatGrid change
+        // sees the matching offset already in place (they are one logical update).
+        DownbeatBarOffset = BeatGridCalculator.DownbeatBarOffset(_trackBpm, _firstBeatSeconds, _downbeatSeconds);
+        BeatGrid = _durationSeconds > 0
             ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
             : Array.Empty<double>();
+    }
 
     // Set the grid tempo (absolute BPM) — emits DeckSetGridBpm; a no-op when the new tempo is non-positive
     // or no track tempo is known yet (so an edit press before a track loads can't push a 0/negative BPM).
@@ -613,6 +642,40 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         double anchor = GridAnchorAtPlayhead(_progress, _durationSeconds, _trackBpm);
         _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
+    }
+
+    // Mark the beat under the playhead as the downbeat (the bar's "one"): emit DeckSetDownbeat with the
+    // absolute time of the grid line nearest the playhead. The DJ parks the playhead on the musical 1 (using
+    // the kick-forward waveform) and taps it; the red bars snap onto that beat. No-op until tempo + duration
+    // are known. Display/grid-only — unlike EmitGridHere it does not move the beats, only the bar emphasis.
+    private void EmitSetOne()
+    {
+        if (_trackBpm <= 0 || _durationSeconds <= 0)
+            return;
+        double downbeat = DownbeatAtPlayhead(_progress, _durationSeconds, _trackBpm, _firstBeatSeconds);
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: downbeat, Slot: _slot));
+    }
+
+    /// <summary>
+    /// The absolute time (seconds) of the beat-grid line nearest the playhead — the downbeat the DJ is
+    /// marking as the bar's "one". Snaps to the grid (anchored on <paramref name="firstBeatSeconds"/>) so the
+    /// chosen one always lands on a beat line, never between two. Pure so the "set one" math unit-tests
+    /// without a VM; returns 0 when tempo/duration are unusable.
+    /// </summary>
+    public static double DownbeatAtPlayhead(
+        double progress, double durationSeconds, double bpm, double firstBeatSeconds)
+    {
+        if (bpm <= 0 || durationSeconds <= 0 || double.IsNaN(progress) || double.IsNaN(firstBeatSeconds))
+            return 0.0;
+        double beatSeconds = 60.0 / bpm;
+        double t = Math.Clamp(progress, 0.0, 1.0) * durationSeconds;
+        long beat = (long)Math.Round((t - firstBeatSeconds) / beatSeconds);
+        double downbeat = firstBeatSeconds + beat * beatSeconds;
+        // Keep it on the grid and non-negative (the playhead can sit before the first-beat anchor).
+        while (downbeat < 0)
+            downbeat += beatSeconds;
+        return downbeat;
     }
 
     /// <summary>
@@ -686,6 +749,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
     /// within-beat first-beat anchor from the current position).</summary>
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
+    /// <summary>Grid edit: mark the beat under the playhead as the DOWNBEAT (the bar's "one"), so the red
+    /// bar markers snap onto it. The bar-level sibling of <see cref="SetGridHereCommand"/> — it moves only
+    /// the bar emphasis, never a beat line or the audible pitch.</summary>
+    public ReactiveCommand<Unit, Unit> SetOneCommand { get; }
 
     /// <summary>All eight hot-cue pads (two banks of four). Indexed by absolute cue index for feedback.</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
@@ -824,6 +891,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                         this.RaisePropertyChanged(nameof(KickAnchorFraction));
                     }
                     break;
+                case PerformanceActionKind.DeckSetDownbeat:
+                    // The bar-1 ("one") anchor in seconds: a manual SET ONE (or a session restore re-applying
+                    // one) overrides the auto-resolved downbeat. A reset to 0 (no-analysis re-load) must not
+                    // erase a real anchor, so only apply a non-zero value or the very first 0.
+                    if (e.State.Value != 0 || _downbeatSeconds == 0)
+                    {
+                        _downbeatSeconds = e.State.Value;
+                        RecomputeBeatGrid();
+                    }
+                    break;
             }
         });
     }
@@ -925,16 +1002,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
+        _downbeatSeconds = 0;     // re-resolved below from analysis (or set by SET ONE / a restore)
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
         UpdateTimeTexts();        // back to placeholders until the new track's duration is known
         this.RaisePropertyChanged(nameof(KickAnchorFraction));
         ZoomWindow = ComputeZoomWindow();
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
 
+        BpmResult? analysis = _analysisInfo?.Invoke(trackPath);
+
         // Self-heal a load that arrived without analysis (e.g. a deck restored from a saved session whose
         // BPM predates analysis, or a queue load): pull the CURRENT catalog BPM + first-beat and apply them
         // through the same grid actions a manual edit uses, so the grid/BPM appear instead of staying blank.
-        if (bpm <= 0 && _analysisInfo?.Invoke(trackPath) is { Bpm: > 0 } analysis)
+        if (bpm <= 0 && analysis is { Bpm: > 0 })
         {
             _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: analysis.Bpm, Slot: _slot));
@@ -943,6 +1023,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
                     Value: analysis.FirstBeatSeconds, Slot: _slot));
         }
+
+        // Auto-anchor the bar markers on the analyzed downbeat (the musical "one") only when the analysis is
+        // confident; a low-confidence bar (four-on-the-floor is genuinely ambiguous) would just jump the red
+        // bars onto a guess, so we leave them at the default (index 0) for the DJ to place with SET ONE. A
+        // manual SET ONE / a restored anchor arrives later via DeckSetDownbeat feedback and overrides this.
+        if (analysis is { DownbeatSeconds: > 0 } && analysis.DownbeatConfidence >= DownbeatEstimate.ConfidenceFloor)
+            _downbeatSeconds = analysis.DownbeatSeconds;
 
         LoadWaveform(trackPath);
     }

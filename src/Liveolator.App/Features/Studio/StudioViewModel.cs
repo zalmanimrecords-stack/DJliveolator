@@ -13,6 +13,7 @@ using Liveolator.App.Shell;
 using Liveolator.Audio.Render;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
@@ -459,8 +460,9 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
 
     // Conservative floor on the analyzed downbeat confidence: above it we trust the bar and snap clips to
     // the project's downbeats (phrase-locked); below it the bar is genuinely ambiguous (e.g. four-on-the-
-    // floor), so we snap to the nearest beat instead of trusting a guessed downbeat (doc 03).
-    private const double DownbeatConfidenceFloor = 0.5;
+    // floor), so we snap to the nearest beat instead of trusting a guessed downbeat (doc 03). Shared with
+    // the DJ deck's bar-marker anchor so both gate on the same threshold.
+    private const double DownbeatConfidenceFloor = DownbeatEstimate.ConfidenceFloor;
 
     /// <summary>
     /// Wire a freshly created clip VM into the timeline: point its warp target at the project tempo, make

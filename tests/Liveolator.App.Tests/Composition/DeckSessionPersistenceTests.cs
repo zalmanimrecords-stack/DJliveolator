@@ -59,6 +59,46 @@ public sealed class DeckSessionPersistenceTests
         Assert.Equal(new DeckSessionState(0, "/m/a.wav", 126, 0), saved);
     }
 
+    [Fact]
+    public void Constructor_ReAppliesAManuallySetDownbeat_WhenSaved()
+    {
+        string track = System.IO.Path.GetTempFileName();
+        try
+        {
+            var dispatcher = new FakeDispatcher();
+            var store = new FakeDeckSessionStore(
+                [new DeckSessionState(1, track, 128, 0.2, DownbeatSeconds: 0.55)]);
+
+            using var persistence = new DeckSessionPersistence(dispatcher, store, deckCount: 2);
+
+            // The saved "one" rides back through its own action so the deck re-anchors its bars on restart.
+            Assert.Contains(dispatcher.Dispatched, a =>
+                a.Kind == PerformanceActionKind.DeckSetDownbeat && a.Slot == 1 && Math.Abs(a.Value - 0.55) < 1e-9);
+        }
+        finally
+        {
+            File.Delete(track);
+        }
+    }
+
+    [Fact]
+    public async Task DownbeatFeedback_PersistsTheManuallySetOne()
+    {
+        var dispatcher = new FakeDispatcher();
+        // Restore seeds the deck entry (the file need not exist — deferred entries are still tracked); the
+        // retry timer is off so the test is deterministic.
+        var store = new FakeDeckSessionStore([new DeckSessionState(0, "/m/a.wav", 126, 0.1)]);
+        using var persistence = new DeckSessionPersistence(
+            dispatcher, store, deckCount: 2, enableRetryTimer: false);
+
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckSetDownbeat, 0, new ActionFeedbackState(false, true, 0.55));
+
+        await store.Saved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        DeckSessionState saved = Assert.Single(store.LastSaved!);
+        Assert.Equal(0.55, saved.DownbeatSeconds, 6);
+    }
+
     private sealed class FakeDeckSessionStore : IDeckSessionStore
     {
         private readonly IReadOnlyList<DeckSessionState>? _loaded;

@@ -1102,6 +1102,108 @@ public sealed class DeckViewModelTests
         Assert.Equal(expected, DeckViewModel.GridAnchorAtPlayhead(progress, duration, bpm), precision: 6);
     }
 
+    // --- Downbeat ("the one") grid anchor ---
+
+    [Theory]
+    [InlineData(0.5, 4, 120, 0.0, 2.0)]    // t=2.0 s, 0.5 s/beat → exactly on beat 4 → 2.0 s
+    [InlineData(0.525, 4, 120, 0.0, 2.0)]  // t=2.1 s → snaps to the nearest beat line (2.0 s)
+    [InlineData(0.55, 4, 120, 0.1, 2.1)]   // first beat at 0.1 s → grid lines at 0.1,0.6,…; nearest to 2.2 s = 2.1
+    [InlineData(0.0, 4, 120, 0.0, 0.0)]    // playhead at start → 0
+    public void DownbeatAtPlayhead_SnapsToTheNearestBeatLine(
+        double progress, double duration, double bpm, double firstBeat, double expected)
+    {
+        Assert.Equal(expected, DeckViewModel.DownbeatAtPlayhead(progress, duration, bpm, firstBeat), precision: 6);
+    }
+
+    [Fact]
+    public async Task SetOne_EmitsDeckSetDownbeat_WithTheBeatNearestThePlayhead()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher, FakeWaveformProvider.WithDuration(121));
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140.0, Argument: @"C:\b.flac"));
+        await gridSet;
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5)); // playhead to mid-track
+        dispatcher.Dispatched.Clear();
+
+        await vm.SetOneCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetDownbeat, action.Kind);
+        Assert.Equal(DeckViewModel.DownbeatAtPlayhead(0.5, 121, 140, 0.0), action.Value, precision: 6);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
+    public async Task SetOne_BeforeATrackLoads_IsANoOp()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher); // no track → no tempo/duration
+
+        await vm.SetOneCommand.Execute().ToTask();
+
+        Assert.Empty(dispatcher.Dispatched); // never push a bogus downbeat before a track is loaded
+    }
+
+    [Fact]
+    public async Task BeatGrid_DownbeatBarOffset_TracksDeckSetDownbeatFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4));
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet; // 120 BPM = 0.5 s/beat, first beat at 0
+
+        // SET ONE one beat in (0.5 s) → bar starts on beat index 1 of the grid.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5));
+
+        Assert.Equal(1, vm.DownbeatBarOffset);
+    }
+
+    [Fact]
+    public async Task Load_AnchorsTheBarOnTheAnalyzedDownbeat_WhenConfident()
+    {
+        var dispatcher = new FakeDispatcher();
+        // 120 BPM, downbeat at 1.0 s (= two beats in), high confidence → trusted.
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.9,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4), trackInfo: null, analysisInfo: _ => analysis);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet;
+
+        Assert.Equal(2, vm.DownbeatBarOffset); // 1.0 s / 0.5 s-beat = beat 2 of the bar
+    }
+
+    [Fact]
+    public async Task Load_LeavesTheBarAtTheDefault_WhenTheDownbeatIsLowConfidence()
+    {
+        var dispatcher = new FakeDispatcher();
+        // Same downbeat, but four-on-the-floor low confidence → not trusted; bars stay at index 0.
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.1,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4), trackInfo: null, analysisInfo: _ => analysis);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet;
+
+        Assert.Equal(0, vm.DownbeatBarOffset);
+    }
+
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load
     // sets rather than racing it. Times out so a regression fails fast instead of hanging.
     private static Task WaitForBeatGrid(DeckViewModel vm) => WaitForProperty(vm, nameof(DeckViewModel.BeatGrid));

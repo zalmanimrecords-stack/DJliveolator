@@ -37,12 +37,17 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckApplyAutoCues,
         PerformanceActionKind.DeckSetLoop,
         PerformanceActionKind.DeckSetFirstBeat,
+        PerformanceActionKind.DeckSetDownbeat,
         PerformanceActionKind.DeckSetGridBpm,
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
     private readonly JogWheelSettings _jogSettings;
     private readonly ActionFeedbackState[] _loadedTracks;
+    // The per-deck downbeat (bar-1) anchor in seconds. Display/grid-only (it never reaches the audio engine,
+    // unlike the first-beat anchor), so the handler owns it directly and only relays it back as feedback so a
+    // deck UI can re-anchor its bar markers and a session restore can re-apply a manually-set "one".
+    private readonly double[] _downbeats;
 
     /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
     public DeckActionHandler(IAudioPlaybackEngine engine)
@@ -56,6 +61,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _jogSettings = (jogSettings ?? JogWheelSettings.Default).Normalized();
         _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
+        _downbeats = new double[engine.DeckCount];
     }
 
     /// <inheritdoc />
@@ -91,6 +97,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 // anchor its beat/bar grid on the same downbeat the engine syncs to (grid sits on the kick).
                 _engine.SetDeckFirstBeat(slot, action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, slot, ValueFeedback(action.Value));
+                break;
+            case PerformanceActionKind.DeckSetDownbeat:
+                // The bar-1 ("one") anchor in seconds. Display/grid-only — it never touches the audio engine
+                // or the audible pitch; the handler just records it and echoes it so the deck UI re-anchors
+                // its red bar markers on the one (and a session restore can re-apply a manual edit).
+                _downbeats[slot] = action.Value;
+                RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(action.Value));
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);
@@ -299,6 +312,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckKeyLockToggle => ActiveFeedback(_engine.IsKeyLockEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),
+            PerformanceActionKind.DeckSetDownbeat => ValueFeedback(_downbeats[slot]),
             _ => ActionFeedbackState.Unavailable,
         };
     }

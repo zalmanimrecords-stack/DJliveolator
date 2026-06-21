@@ -132,4 +132,24 @@ public sealed class WaveformStripTests
     {
         Assert.Equal(expected, WaveformStrip.CombHeight(totalHeight), 3);
     }
+
+    [Theory]
+    [InlineData(0, 0, true)]    // offset 0: index 0,4,8 are bar starts (the prior behaviour)
+    [InlineData(4, 0, true)]
+    [InlineData(2, 0, false)]
+    [InlineData(2, 2, true)]    // offset 2: the bar starts on index 2,6,10 (the "one" is two beats in)
+    [InlineData(6, 2, true)]
+    [InlineData(0, 2, false)]   // index 0 is no longer the downbeat once the one moved
+    [InlineData(1, 2, false)]
+    public void IsBarDownbeat_MarksTheOneEveryBar_FromTheOffset(int index, int offset, bool expected)
+    {
+        Assert.Equal(expected, WaveformStrip.IsBarDownbeat(index, offset, beatsPerBar: 4));
+    }
+
+    [Fact]
+    public void IsBarDownbeat_FoldsAnOutOfRangeOffset()
+    {
+        // An offset ≥ beatsPerBar folds, so it behaves the same as its remainder (6 ≡ 2 in 4/4).
+        Assert.Equal(WaveformStrip.IsBarDownbeat(2, 2, 4), WaveformStrip.IsBarDownbeat(2, 6, 4));
+    }
 }

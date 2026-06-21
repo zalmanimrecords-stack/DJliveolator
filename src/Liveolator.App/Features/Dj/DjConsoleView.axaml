@@ -33,6 +33,7 @@
                                       BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
                                       Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
                                       BeatGrid="{Binding DeckA.BeatGrid}"
+                                      DownbeatOffset="{Binding DeckA.DownbeatBarOffset}"
                                       KickAnchor="{Binding DeckA.KickAnchorFraction}"
                                       SeekCommand="{Binding DeckA.SeekCommand}" />
             </Border>
@@ -52,6 +53,7 @@
                                       CombAtTop="True"
                                       Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
                                       BeatGrid="{Binding DeckB.BeatGrid}"
+                                      DownbeatOffset="{Binding DeckB.DownbeatBarOffset}"
                                       KickAnchor="{Binding DeckB.KickAnchorFraction}"
                                       SeekCommand="{Binding DeckB.SeekCommand}" />
             </Border>

@@ -12,7 +12,7 @@ public sealed class JsonDeckSessionStoreTests
         var store = new JsonDeckSessionStore(dir.Path);
         DeckSessionState[] decks =
         [
-            new(0, "/m/a.wav", 128, 0.12),
+            new(0, "/m/a.wav", 128, 0.12, DownbeatSeconds: 0.62), // a manually-set "one" round-trips
             new(1, "/m/b.wav", 132, 0.25),
         ];
 

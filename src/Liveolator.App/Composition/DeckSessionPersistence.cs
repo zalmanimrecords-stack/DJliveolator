@@ -160,6 +160,14 @@ internal sealed class DeckSessionPersistence : IDisposable
             ActionInputMode.Absolute,
             Value: deck.FirstBeatSeconds,
             Slot: deck.Slot));
+        // Re-apply a manually-set downbeat ("one") so a grid edit survives the restart. Only when one was
+        // saved (> 0) — a 0 would just echo the default and the deck would keep its auto-resolved downbeat.
+        if (deck.DownbeatSeconds > 0)
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetDownbeat,
+                ActionInputMode.Absolute,
+                Value: deck.DownbeatSeconds,
+                Slot: deck.Slot));
     }
 
     private void OnFeedbackChanged(object? sender, ActionFeedbackChanged e)
@@ -179,14 +187,16 @@ internal sealed class DeckSessionPersistence : IDisposable
                 // track arrives — otherwise a second startup loader wipes the saved BPM/first-beat to 0.
                 double bpm = e.State.Value;
                 double firstBeat = 0;
+                double downbeat = 0;
                 if (samePath)
                 {
                     if (bpm == 0)
                         bpm = existing!.Bpm;
                     firstBeat = existing!.FirstBeatSeconds;
+                    downbeat = existing!.DownbeatSeconds;
                 }
 
-                _decks[e.Slot] = new DeckSessionState(e.Slot, path, bpm, firstBeat);
+                _decks[e.Slot] = new DeckSessionState(e.Slot, path, bpm, firstBeat, downbeat);
                 QueueSaveLocked();
             }
             else if (e.Kind == PerformanceActionKind.DeckSetFirstBeat
@@ -197,6 +207,18 @@ internal sealed class DeckSessionPersistence : IDisposable
                 if (e.State.Value != 0 || deck.FirstBeatSeconds == 0)
                 {
                     _decks[e.Slot] = deck with { FirstBeatSeconds = e.State.Value };
+                    QueueSaveLocked();
+                }
+            }
+            else if (e.Kind == PerformanceActionKind.DeckSetDownbeat
+                     && _decks.TryGetValue(e.Slot, out DeckSessionState? downbeatDeck))
+            {
+                // Persist a manually-set downbeat ("one") so it survives a restart. As with the first-beat
+                // anchor, a reset to 0 must not erase a saved one — only overwrite on a non-zero edit (or the
+                // first time). The auto-resolved downbeat is NOT persisted (it re-derives from the catalog).
+                if (e.State.Value != 0 && e.State.Value != downbeatDeck.DownbeatSeconds)
+                {
+                    _decks[e.Slot] = downbeatDeck with { DownbeatSeconds = e.State.Value };
                     QueueSaveLocked();
                 }
             }

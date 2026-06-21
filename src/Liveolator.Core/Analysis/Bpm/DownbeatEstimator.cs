@@ -13,7 +13,16 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// ambiguity the tempo stage has at the beat level, so consumers gate on this rather than trusting a
 /// guessed downbeat (doc 03 — expose ambiguity, never hide it).
 /// </param>
-public sealed record DownbeatEstimate(double DownbeatSeconds, int BeatsPerBar, double Confidence);
+public sealed record DownbeatEstimate(double DownbeatSeconds, int BeatsPerBar, double Confidence)
+{
+    /// <summary>
+    /// Conservative floor on <see cref="Confidence"/> above which consumers may TRUST the analyzed downbeat
+    /// and lock to the bar; below it the bar is genuinely ambiguous (e.g. four-on-the-floor) and consumers
+    /// fall back to beat-level alignment rather than a guessed downbeat (doc 03 — expose ambiguity). Shared
+    /// so the STUDIO clip-snap and the DJ deck's bar-marker anchor gate on the same threshold.
+    /// </summary>
+    public const double ConfidenceFloor = 0.5;
+}
 
 /// <summary>
 /// Estimates the downbeat from an onset envelope, a known tempo, and the beat-phase anchor. Where
