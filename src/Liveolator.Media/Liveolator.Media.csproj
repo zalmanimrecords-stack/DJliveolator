@@ -10,4 +10,9 @@
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The Serato binary readers are internal implementation detail; the test project verifies them directly. -->
+    <InternalsVisibleTo Include="Liveolator.Media.Tests" />
+  </ItemGroup>
+
 </Project>

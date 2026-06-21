@@ -300,6 +300,9 @@ public static class ServiceConfig
         // existing stores. Parsing is pure (Core seam); the file-probe is the only OS touch (StatImportFile).
         services.AddSingleton<ILibraryImporter, RekordboxXmlImporter>();
         services.AddSingleton<ILibraryImporter, TraktorNmlImporter>();
+        // Serato is folder-based (cues/grids in per-file GEOB tags + binary .crate playlists), so it
+        // implements the folder seam rather than the single-file one.
+        services.AddSingleton<IFolderLibraryImporter, Liveolator.Media.Import.Serato.SeratoLibraryImporter>();
         services.AddSingleton<LibraryImportService>(sp => new LibraryImportService(
             sp.GetRequiredService<IHotCueStore>(),
             sp.GetRequiredService<IPlaylistStore>(),
@@ -600,7 +603,8 @@ public static class ServiceConfig
             autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
             hotCueStore: sp.GetService<IHotCueStore>(),
             importService: sp.GetService<LibraryImportService>(),
-            importers: sp.GetServices<ILibraryImporter>().ToList()));
+            importers: sp.GetServices<ILibraryImporter>().ToList(),
+            folderImporters: sp.GetServices<IFolderLibraryImporter>().ToList()));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
@@ -1093,7 +1097,10 @@ public static class ServiceConfig
             livePlaylist,
             dispatcher,
             deckEngine,
-            path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
+            // Exact-then-file-name match: a deck-queue / mapped-drive path can differ from the scanned
+            // catalog path, so an exact lookup misses and the engine would get no BPM (silently breaking
+            // SYNC). The file-name fallback gives the engine the same BPM the deck UI already shows.
+            path => sp.GetRequiredService<MusicLibrary>().TryGetByPathOrName(path)?.Bpm,
             slot: 0,
             autoPlay: true,
             autoPlayExistingNow: false));
@@ -1104,7 +1111,10 @@ public static class ServiceConfig
             deckBPlaylist,
             dispatcher,
             deckEngine,
-            path => sp.GetRequiredService<MusicLibrary>().TryGet(path)?.Bpm,
+            // Exact-then-file-name match: a deck-queue / mapped-drive path can differ from the scanned
+            // catalog path, so an exact lookup misses and the engine would get no BPM (silently breaking
+            // SYNC). The file-name fallback gives the engine the same BPM the deck UI already shows.
+            path => sp.GetRequiredService<MusicLibrary>().TryGetByPathOrName(path)?.Bpm,
             slot: 1,
             autoPlay: true,
             autoPlayExistingNow: false));

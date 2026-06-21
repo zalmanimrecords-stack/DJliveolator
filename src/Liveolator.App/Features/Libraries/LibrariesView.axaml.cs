@@ -119,6 +119,25 @@ public partial class LibrariesView : UserControl
             await vm.ImportFromFileAsync(format, path);
     }
 
+    // Serato is folder-based: the DJ picks the library root (the folder containing the music + the
+    // _Serato_ data); the view-model reads the per-file cues/grids and the crate playlists from it.
+    private async void OnImportSerato(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LibrariesViewModel vm)
+            return;
+
+        TopLevel? top = TopLevel.GetTopLevel(this);
+        if (top is null)
+            return;
+
+        IReadOnlyList<IStorageFolder> picked = await top.StorageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions { Title = "Import Serato library — pick the library/drive root", AllowMultiple = false });
+
+        string? path = picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
+        if (!string.IsNullOrEmpty(path))
+            await vm.ImportFromFolderAsync("Serato", path);
+    }
+
     private void OnOpenGetSongBpm(object? sender, RoutedEventArgs e)
     {
         try

@@ -35,6 +35,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly IHotCueStore? _hotCueStore;
     private readonly Core.Library.Import.LibraryImportService? _importService;
     private readonly IReadOnlyList<Core.Library.Import.ILibraryImporter> _importers;
+    private readonly IReadOnlyList<Core.Library.Import.IFolderLibraryImporter> _folderImporters;
     // Drops a stale hot-cue load when the selection moves on before an async store read returns.
     private int _hotCueLoadSequence;
     private List<TrackRowViewModel> _all = new();
@@ -79,7 +80,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IAutoCueService? autoCueService = null,
         IHotCueStore? hotCueStore = null,
         Core.Library.Import.LibraryImportService? importService = null,
-        IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null)
+        IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null,
+        IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
@@ -90,6 +92,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _hotCueStore = hotCueStore;
         _importService = importService;
         _importers = importers ?? Array.Empty<Core.Library.Import.ILibraryImporter>();
+        _folderImporters = folderImporters ?? Array.Empty<Core.Library.Import.IFolderLibraryImporter>();
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -215,10 +218,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     public bool CanAutoCueLibrary => _autoCueService is not null;
 
     /// <summary>True when importing another DJ app's library is available (a service + parser were wired).</summary>
-    public bool CanImportLibrary => _importService is not null && _importers.Count > 0;
+    public bool CanImportLibrary =>
+        _importService is not null && (_importers.Count > 0 || _folderImporters.Count > 0);
 
-    /// <summary>The source formats that can be imported (e.g. "Rekordbox", "Traktor"), for the menu.</summary>
+    /// <summary>The single-file source formats that can be imported (e.g. "Rekordbox", "Traktor").</summary>
     public IReadOnlyList<string> ImportFormatNames => _importers.Select(i => i.FormatName).ToList();
+
+    /// <summary>The folder-based source formats that can be imported (e.g. "Serato").</summary>
+    public IReadOnlyList<string> FolderImportFormatNames => _folderImporters.Select(i => i.FormatName).ToList();
 
     public ReactiveCommand<Unit, Unit> PlaySelectedCommand { get; }
     public ReactiveCommand<Unit, Unit> StopCommand { get; }
@@ -745,37 +752,64 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <param name="formatName">The importer to use (matched against <see cref="ImportFormatNames"/>).</param>
     /// <param name="filePath">The source library file to read.</param>
     /// <param name="policy">How to treat tracks/cues already present (default: non-destructive FillGaps).</param>
-    public async Task ImportFromFileAsync(
+    public Task ImportFromFileAsync(
         string formatName, string filePath,
         Core.Library.Import.ImportMergePolicy policy = Core.Library.Import.ImportMergePolicy.FillGaps)
     {
-        if (_importService is null)
-            return;
         Core.Library.Import.ILibraryImporter? importer = _importers
             .FirstOrDefault(i => string.Equals(i.FormatName, formatName, StringComparison.OrdinalIgnoreCase));
         if (importer is null || string.IsNullOrWhiteSpace(filePath))
+            return Task.CompletedTask;
+
+        return RunImportAsync(importer.FormatName, policy, () =>
+        {
+            using System.IO.FileStream stream = System.IO.File.OpenRead(filePath);
+            return importer.Parse(stream);
+        });
+    }
+
+    /// <summary>
+    /// Imports a folder-based DJ library (e.g. Serato, whose data is spread across the audio files +
+    /// a <c>_Serato_</c> folder). Same mapping/merge/persist path as <see cref="ImportFromFileAsync"/>.
+    /// </summary>
+    public Task ImportFromFolderAsync(
+        string formatName, string folderPath,
+        Core.Library.Import.ImportMergePolicy policy = Core.Library.Import.ImportMergePolicy.FillGaps)
+    {
+        Core.Library.Import.IFolderLibraryImporter? importer = _folderImporters
+            .FirstOrDefault(i => string.Equals(i.FormatName, formatName, StringComparison.OrdinalIgnoreCase));
+        if (importer is null || string.IsNullOrWhiteSpace(folderPath))
+            return Task.CompletedTask;
+
+        return RunImportAsync(importer.FormatName, policy, () => importer.Parse(folderPath));
+    }
+
+    // Shared import runner for both file- and folder-based sources: parse + map (off the UI thread) →
+    // merge the resulting tracks into the catalog (Restore dedups by path, import wins as the later entry)
+    // → persist + refresh exactly as a scan does. The busy state blocks overlapping scans/imports.
+    private async Task RunImportAsync(
+        string formatName, Core.Library.Import.ImportMergePolicy policy, Func<Core.Library.Import.LibraryImport> parse)
+    {
+        if (_importService is null)
             return;
 
-        IsScanning = true; // reuse the busy state so a scan/rescan/auto-cue can't overlap an import
+        IsScanning = true;
         try
         {
             Core.Library.Import.LibraryImportResult result = await Task.Run(async () =>
             {
-                using System.IO.FileStream stream = System.IO.File.OpenRead(filePath);
-                Core.Library.Import.LibraryImport parsed = importer.Parse(stream);
+                Core.Library.Import.LibraryImport parsed = parse();
                 return await _importService.ImportAsync(parsed, _library.All, policy, _lifetime.Token)
                     .ConfigureAwait(false);
             }, _lifetime.Token).ConfigureAwait(false);
 
-            // Merge the imported/enriched tracks into the catalog (Restore dedups by path, import wins as
-            // the later entry), then persist + refresh exactly as a scan does.
             _library.Restore(_library.All.Concat(result.TracksToUpsert).ToList());
             await PersistImportedCatalogAsync().ConfigureAwait(false);
 
             RxApp.MainThreadScheduler.Schedule(() =>
             {
                 RefreshRows();
-                ScanStatus = $"{importer.FormatName} — {result.Summary.Describe()}";
+                ScanStatus = $"{formatName} — {result.Summary.Describe()}";
             });
         }
         catch (OperationCanceledException)

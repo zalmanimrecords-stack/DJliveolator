@@ -25,6 +25,19 @@ public sealed class LibrariesViewModelImportTests
         RxApp.TaskpoolScheduler = ImmediateScheduler.Instance;
     }
 
+    private sealed class FakeFolderImporter : IFolderLibraryImporter
+    {
+        private readonly LibraryImport _result;
+        public string? LastFolder { get; private set; }
+        public FakeFolderImporter(LibraryImport result) => _result = result;
+        public string FormatName => "Serato";
+        public LibraryImport Parse(string rootFolderPath)
+        {
+            LastFolder = rootFolderPath;
+            return _result;
+        }
+    }
+
     private sealed class FakePlaylistStore : IPlaylistStore
     {
         public readonly List<PlaylistRecord> Saved = new();
@@ -94,6 +107,39 @@ public sealed class LibrariesViewModelImportTests
         TrackCueRecordAssert(cues, imported.File.Path);
         Assert.Equal("My Set", playlists.Saved.Single().Name);
         Assert.Contains("Rekordbox", vm.ScanStatus);
+    }
+
+    [Fact]
+    public async Task ImportFromFolder_RunsTheFolderImporter_AndAppliesTheResult()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        var cues = new FakeHotCueStore();
+        var playlists = new FakePlaylistStore();
+        var service = new LibraryImportService(
+            cues, playlists, p => new ScannedFile(p, 10, System.DateTime.UnixEpoch));
+        var serato = new FakeFolderImporter(new LibraryImport(
+            new[]
+            {
+                new ImportedTrack(@"C:\Music\x.mp3", Bpm: 128,
+                    Cues: new[] { new ImportedCue(0, 8.0, "Drop", 0xFF3B30) }),
+            },
+            new[] { new ImportedPlaylist("Crate", new[] { @"C:\Music\x.mp3" }) }));
+        var vm = new LibrariesViewModel(
+            library, hotCueStore: cues, importService: service,
+            importers: System.Array.Empty<ILibraryImporter>(),
+            folderImporters: new IFolderLibraryImporter[] { serato });
+
+        Assert.True(vm.CanImportLibrary);
+        Assert.Contains("Serato", vm.FolderImportFormatNames);
+
+        await vm.ImportFromFolderAsync("Serato", @"C:\SeratoLib");
+
+        Assert.Equal(@"C:\SeratoLib", serato.LastFolder);
+        MusicTrack track = Assert.Single(library.All);
+        Assert.Equal(128, track.Bpm!.Bpm);
+        Assert.Equal("Drop", cues.Get(track.File.Path)!.HotCues.Single().Label);
+        Assert.Equal("Crate", playlists.Saved.Single().Name);
+        Assert.Contains("Serato", vm.ScanStatus);
     }
 
     private static void TrackCueRecordAssert(FakeHotCueStore cues, string trackPath)
