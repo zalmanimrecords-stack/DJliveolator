@@ -238,7 +238,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             throw new ArgumentOutOfRangeException(nameof(action), cueIndex, "Hot-cue index is out of range.");
 
         _engine.HotCue(slot, cueIndex);
-        RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, ActiveFeedback(_engine.IsHotCueSet(slot, cueIndex)));
+        RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, HotCueFeedbackState(slot, cueIndex));
+    }
+
+    // DeckHotCue feedback carries the cue index AND its display metadata (label/color/auto) encoded in the
+    // Argument, so a deck pad can show the cue's name/color, not just a lit number. IsActive is the lit state.
+    private ActionFeedbackState HotCueFeedbackState(int slot, int cueIndex)
+    {
+        HotCueInfo info = _engine.GetHotCueInfo(slot, cueIndex);
+        return new ActionFeedbackState(
+            IsActive: info.IsSet,
+            IsAvailable: true,
+            Value: 0,
+            Argument: HotCueFeedback.Encode(cueIndex, info));
     }
 
     private void ApplyAutoCues(int slot)
@@ -248,13 +260,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         // rides in Argument for DeckHotCue feedback, mirroring how a pad press reports a single slot.
         _engine.ReloadHotCues(slot);
         for (int cueIndex = 0; cueIndex < _engine.HotCueCount; cueIndex++)
-            RaiseFeedback(
-                PerformanceActionKind.DeckHotCue, slot,
-                new ActionFeedbackState(
-                    IsActive: _engine.IsHotCueSet(slot, cueIndex),
-                    IsAvailable: true,
-                    Value: 0,
-                    Argument: cueIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, HotCueFeedbackState(slot, cueIndex));
     }
 
     private static ActionFeedbackState ValueFeedback(double value)

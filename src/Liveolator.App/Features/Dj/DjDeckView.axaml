@@ -2,8 +2,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              x:Class="Liveolator.App.Features.Dj.DjDeckView"
              x:DataType="m:DeckViewModel">
+
+  <UserControl.Styles>
+    <!-- A still-suggested (auto-placed) hot cue is ghosted; it solidifies once the DJ presses (commits) it. -->
+    <Style Selector="Button.cuepad.suggested">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+  </UserControl.Styles>
 
   <!-- DJ-tab deck: the same DeckViewModel as the LIVE tab, but laid out jog-first (the platter is the
        hero, hot cues flank it) so the DJ screen reads like a hardware deck and fits one screen. Pitch
@@ -46,8 +54,13 @@
            and drags to seek (DeckSeek), flanking the platter the way a controller lays pads beside it. -->
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" Width="84">
-          <TextBlock Classes="section" Text="HOT CUES" />
-          <ItemsControl ItemsSource="{Binding HotCues}">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="key" Content="{Binding HotCueBankLabel}" Height="20"
+                    Padding="6,0" Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
+                    ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding VisibleHotCues}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <UniformGrid Columns="2" />
@@ -55,9 +68,17 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="m:HotCuePadViewModel">
-                <!-- The pad's 1-based Label is rendered as content so a DJ can read which cue each pad is. -->
-                <Button Classes="key" Classes.on="{Binding IsSet}" Height="34" Content="{Binding Label}"
-                        Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,4" />
+                <!-- Shows the cue's name (or pad number) + color strip; auto cues render ghosted. -->
+                <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                        Height="34" Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}"
+                        Margin="0,0,4,4" ToolTip.Tip="{Binding CueLabel}">
+                  <Grid RowDefinitions="*,3">
+                    <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                               Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                  </Grid>
+                </Button>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

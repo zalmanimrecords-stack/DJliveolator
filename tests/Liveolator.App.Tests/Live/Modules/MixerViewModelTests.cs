@@ -193,20 +193,20 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
-    public async Task EqCutMode_Command_EmitsMixerEqCutMode_NoArgument()
+    public void EqCut_TurnToDetent_EmitsMixerEqCutMode_WithModeArgument()
     {
         var dispatcher = new FakeDispatcher();
-        var vm = new MixerViewModel(dispatcher);
+        var vm = new MixerViewModel(dispatcher); // no feedback → starts at KILL
 
-        await vm.EqCutModeCommand.Execute().ToTask();
+        vm.EqCut.Value = EqCutModeKnobViewModel.ToValue(EqCutMode.Deep);
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.MixerEqCutMode, action.Kind);
-        Assert.Null(action.Argument); // no argument → handler cycles to the next mode
+        Assert.Equal("Deep", action.Argument); // named mode → handler selects it absolutely
     }
 
     [Fact]
-    public void EqCutMode_Label_SeedsFromFeedback()
+    public void EqCut_SeedsMode_FromFeedback()
     {
         var dispatcher = new FakeDispatcher();
         dispatcher.SeedFeedback(PerformanceActionKind.MixerEqCutMode, 0,
@@ -214,19 +214,21 @@ public sealed class MixerViewModelTests
 
         var vm = new MixerViewModel(dispatcher);
 
-        Assert.Equal("DEEP", vm.EqCutModeLabel);
+        Assert.Equal(EqCutMode.Deep, vm.EqCut.Mode);
+        Assert.Equal("DEEP", vm.EqCut.ModeLabel);
     }
 
     [Fact]
-    public void EqCutMode_Label_DefaultsToKill_WhenNoFeedback()
+    public void EqCut_DefaultsToKill_WhenNoFeedback()
     {
         var vm = new MixerViewModel(new FakeDispatcher());
 
-        Assert.Equal("KILL", vm.EqCutModeLabel);
+        Assert.Equal(EqCutMode.Kill, vm.EqCut.Mode);
+        Assert.Equal("KILL", vm.EqCut.ModeLabel);
     }
 
     [Fact]
-    public void EqCutMode_Label_UpdatesFromFeedback_WithoutReDispatching()
+    public void EqCut_UpdatesFromFeedback_WithoutReDispatching()
     {
         var dispatcher = new FakeDispatcher();
         var vm = new MixerViewModel(dispatcher);
@@ -234,7 +236,7 @@ public sealed class MixerViewModelTests
         dispatcher.RaiseFeedback(PerformanceActionKind.MixerEqCutMode, 0,
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: (int)EqCutMode.Eq, Argument: "Eq"));
 
-        Assert.Equal("EQ", vm.EqCutModeLabel);
+        Assert.Equal("EQ", vm.EqCut.ModeLabel);
         Assert.Empty(dispatcher.Dispatched);
     }
 

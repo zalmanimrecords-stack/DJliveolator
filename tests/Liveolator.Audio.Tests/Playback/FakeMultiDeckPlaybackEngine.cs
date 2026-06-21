@@ -93,6 +93,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetKeyLock(int slot, bool enabled) { }
     public int HotCueCount => 8;
     public bool IsHotCueSet(int slot, int cueIndex) => false;
+    public HotCueInfo GetHotCueInfo(int slot, int cueIndex) => HotCueInfo.Unset;
     public void HotCue(int slot, int cueIndex) { }
     public void ReloadHotCues(int slot) { }
     public double LoopBeats(int slot) => 0;

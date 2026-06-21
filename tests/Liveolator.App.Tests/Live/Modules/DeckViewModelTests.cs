@@ -7,7 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
+using System.Linq;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 using Xunit;
@@ -241,6 +243,58 @@ public sealed class DeckViewModelTests
 
         Assert.True(vm.HotCues[2].IsSet);
         Assert.False(vm.HotCues[0].IsSet);
+    }
+
+    [Fact]
+    public void Deck_Exposes_EightHotCues_AcrossTwoBanks()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        // Audit finding #2: all 8 auto-cue slots must be reachable, not just the first four.
+        Assert.Equal(8, vm.HotCues.Count);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, vm.VisibleHotCues.Select(p => p.Index)); // bank A by default
+        Assert.Equal("A", vm.HotCueBankLabel);
+    }
+
+    [Fact]
+    public void ToggleHotCueBank_SwapsTheVisiblePadsToBankB()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        vm.ToggleHotCueBankCommand.Execute().Subscribe();
+
+        Assert.True(vm.IsHotCueBankB);
+        Assert.Equal("B", vm.HotCueBankLabel);
+        Assert.Equal(new[] { 4, 5, 6, 7 }, vm.VisibleHotCues.Select(p => p.Index)); // bank B (slots 5-8)
+    }
+
+    [Fact]
+    public void HotCuePad_ShowsCueLabelColorAndAuto_FromFeedback()
+    {
+        // Audit finding #3: a pad must show the cue's name/color and mark suggestions, not just light a number.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        string argument = HotCueFeedback.Encode(
+            2, new HotCueInfo(IsSet: true, Label: "Drop", Color: 0xFF3B30, IsAuto: true));
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckHotCue, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: argument));
+
+        HotCuePadViewModel pad = vm.HotCues[2];
+        Assert.True(pad.IsSet);
+        Assert.Equal("Drop", pad.CueLabel);
+        Assert.Equal("Drop", pad.DisplayText);
+        Assert.Equal(0xFF3B30, pad.Color);
+        Assert.True(pad.IsAuto);
+    }
+
+    [Fact]
+    public void HotCuePad_WithNoCueLabel_DisplaysItsNumber()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+
+        Assert.Equal("1", vm.HotCues[0].DisplayText); // 1-based pad number fallback
+        Assert.Equal("8", vm.HotCues[7].DisplayText);
     }
 
     [Fact]

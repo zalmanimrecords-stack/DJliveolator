@@ -6,13 +6,21 @@ namespace Liveolator.Audio.Playback;
 internal sealed record LoadedDeck(int Handle, IBassMixerChannel Channel, bool Playing);
 
 /// <summary>
+/// One in-memory hot-cue on a deck. The position is a 0..1 fraction (resilient to the track length the
+/// backend reports), paired with the cue's display metadata so a set/save round-trip never loses the
+/// label, color, or "suggested" flag that auto-cue analysis assigned (the suggested → commit model,
+/// owner decision 2026-06-19). A manual cue the DJ set or committed has <see cref="IsAuto"/> = false.
+/// </summary>
+internal readonly record struct HotCueState(double Fraction, string? Label, int? Color, bool IsAuto);
+
+/// <summary>
 /// Mutable per-deck transport and sync state for <see cref="TwoDeckBassEngine"/>. One instance per slot,
 /// replacing the engine's parallel per-slot arrays. All access is serialized by the engine's <c>_gate</c>
 /// lock; this type carries no lock of its own and performs no native I/O.
 /// </summary>
 internal sealed class DeckSlot
 {
-    public DeckSlot(int hotCueCount) => HotCues = new double?[hotCueCount];
+    public DeckSlot(int hotCueCount) => HotCues = new HotCueState?[hotCueCount];
 
     /// <summary>The loaded/plugged deck (handle + mixer channel + play state); null = nothing loaded.</summary>
     public LoadedDeck? Deck;
@@ -61,6 +69,7 @@ internal sealed class DeckSlot
     /// <summary>Active loop length in beats; 0 = no loop. Cleared on unload.</summary>
     public double LoopBeats;
 
-    /// <summary>Hot-cue positions (0..1 fraction) per pad; a null entry = unset. Cleared on unload.</summary>
-    public readonly double?[] HotCues;
+    /// <summary>Hot-cue bank per pad (position + label/color/auto metadata); a null entry = unset.
+    /// Cleared on unload.</summary>
+    public readonly HotCueState?[] HotCues;
 }

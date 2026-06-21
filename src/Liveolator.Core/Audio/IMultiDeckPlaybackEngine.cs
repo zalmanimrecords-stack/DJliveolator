@@ -167,6 +167,13 @@ public interface IMultiDeckPlaybackEngine
     bool IsHotCueSet(int slot, int cueIndex);
 
     /// <summary>
+    /// The deck's hot-cue at <paramref name="cueIndex"/> as display state — whether it is set plus its
+    /// label, color and "suggested" (auto) flag — so a pad can show the cue's name/color and mark
+    /// suggestions. Returns <see cref="HotCueInfo.Unset"/> for an empty slot or when nothing is loaded.
+    /// </summary>
+    HotCueInfo GetHotCueInfo(int slot, int cueIndex);
+
+    /// <summary>
     /// Trigger a hot-cue: set it at the current position if unset, otherwise jump the playhead to it.
     /// Hot-cues belong to the loaded track and are cleared when a new track loads.
     /// </summary>

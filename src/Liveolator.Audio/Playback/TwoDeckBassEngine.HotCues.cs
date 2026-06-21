@@ -22,6 +22,19 @@ public sealed partial class TwoDeckBassEngine
         lock (_gate) return _slots[slot].HotCues[cueIndex].HasValue;
     }
 
+    public HotCueInfo GetHotCueInfo(int slot, int cueIndex)
+    {
+        ValidateSlot(slot);
+        if (cueIndex < 0 || cueIndex >= HotCuesPerDeck)
+            return HotCueInfo.Unset;
+        lock (_gate)
+        {
+            return _slots[slot].HotCues[cueIndex] is { } cue
+                ? new HotCueInfo(IsSet: true, cue.Label, cue.Color, cue.IsAuto)
+                : HotCueInfo.Unset;
+        }
+    }
+
     public void HotCue(int slot, int cueIndex)
     {
         ValidateSlot(slot);
@@ -32,13 +45,23 @@ public sealed partial class TwoDeckBassEngine
             DeckSlot s = _slots[slot];
             if (s.Deck is not { } deck)
                 return; // nothing loaded — no position to store or jump to
-            if (s.HotCues[cueIndex] is { } position)
+            if (s.HotCues[cueIndex] is { } cue)
             {
-                _backend.SetDeckPositionFraction(deck.Handle, position); // jump to the stored cue
+                _backend.SetDeckPositionFraction(deck.Handle, cue.Fraction); // jump to the stored cue
+                // Pressing a suggested (auto) cue commits it to a manual cue, keeping its position, label
+                // and color — the owner's "suggested → commit" rule (2026-06-19). Re-analysis then preserves
+                // it verbatim instead of overwriting it. Only persist when the commit actually changed it.
+                if (cue.IsAuto)
+                {
+                    s.HotCues[cueIndex] = cue with { IsAuto = false };
+                    SavePersistedHotCues(slot, deck.Handle);
+                }
             }
             else
             {
-                s.HotCues[cueIndex] = _backend.GetDeckPositionFraction(deck.Handle); // set at current position
+                // A freshly set cue is the DJ's manual choice: no label/color, not a suggestion.
+                s.HotCues[cueIndex] = new HotCueState(
+                    _backend.GetDeckPositionFraction(deck.Handle), Label: null, Color: null, IsAuto: false);
                 SavePersistedHotCues(slot, deck.Handle); // a newly set cue survives the next load/restart
             }
         }
@@ -83,8 +106,11 @@ public sealed partial class TwoDeckBassEngine
             {
                 if (cue.Index < 0 || cue.Index >= HotCuesPerDeck)
                     continue; // tolerate a hand-edited / wider-bank file
-                s.HotCues[cue.Index] =
-                    HotCuePositionMapper.SamplesToFraction(cue.PositionSamples, lengthSeconds, sampleRate);
+                // Carry the full cue (label/color/auto), not just the position, so a later set/save never
+                // strips the metadata auto-cue analysis assigned (the suggested → commit model).
+                s.HotCues[cue.Index] = new HotCueState(
+                    HotCuePositionMapper.SamplesToFraction(cue.PositionSamples, lengthSeconds, sampleRate),
+                    cue.Label, cue.Color, cue.IsAuto);
             }
             _logger.LogInformation(
                 "Deck slot {Slot}: restored {Count} persisted hot cue(s) for {Track}.",
@@ -111,8 +137,10 @@ public sealed partial class TwoDeckBassEngine
         var set = new TrackCueSet(_sampleRate > 0 ? _sampleRate : 1, HotCuesPerDeck);
         for (int i = 0; i < HotCuesPerDeck; i++)
         {
-            if (s.HotCues[i] is { } fraction)
-                set = set.SetHotCue(i, HotCuePositionMapper.FractionToSamples(fraction, lengthSeconds, _sampleRate));
+            if (s.HotCues[i] is { } cue)
+                set = set.SetHotCue(
+                    i, HotCuePositionMapper.FractionToSamples(cue.Fraction, lengthSeconds, _sampleRate),
+                    cue.Label, cue.Color, cue.IsAuto); // preserve label/color/auto across the round-trip
         }
 
         TrackCueRecord record = TrackCueRecord.FromCueSet(trackPath, set);

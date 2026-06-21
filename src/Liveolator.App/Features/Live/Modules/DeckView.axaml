@@ -2,8 +2,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              x:Class="Liveolator.App.Features.Live.Modules.DeckView"
              x:DataType="m:DeckViewModel">
+
+  <UserControl.Styles>
+    <!-- A still-suggested (auto-placed) hot cue is ghosted; it solidifies once the DJ presses (commits) it. -->
+    <Style Selector="Button.cuepad.suggested">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+  </UserControl.Styles>
 
   <Border Classes="panel">
     <StackPanel Margin="18" Spacing="14">
@@ -53,11 +61,19 @@
       <!-- waveform now lives in the two dedicated rows above the decks (see LiveView/DjView) so the kick
            transients of both decks sit side-by-side for beat-sync alignment. -->
 
-      <!-- Hot cues: stored jump points inside the loaded track. Pads 1-4 emit DeckHotCue for their index
-           and light from feedback once a cue point is set. -->
+      <!-- Hot cues: stored jump points inside the loaded track. A pad emits DeckHotCue for its index and
+           lights from feedback once its cue is set; it shows the cue's name + color and a "suggested"
+           (ghosted) state for auto-placed cues. The A/B toggle swaps the visible 4 pads between bank A
+           (slots 1-4) and bank B (slots 5-8) so every stored cue is reachable. -->
       <StackPanel Spacing="6">
-        <TextBlock Classes="section" Text="HOT CUES" />
-        <ItemsControl ItemsSource="{Binding HotCues}">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="key" Content="{Binding HotCueBankLabel}"
+                  Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
+                  MinWidth="36" Padding="6,2"
+                  ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding VisibleHotCues}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <UniformGrid Columns="4" />
@@ -65,8 +81,16 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="m:HotCuePadViewModel">
-              <Button Classes="key" Classes.on="{Binding IsSet}" Content="{Binding Label}"
-                      Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0" />
+              <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                      Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0"
+                      ToolTip.Tip="{Binding CueLabel}">
+                <Grid RowDefinitions="*,3">
+                  <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                             Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                </Grid>
+              </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>

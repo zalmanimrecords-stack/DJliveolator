@@ -789,6 +789,65 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void HotCue_SettingAManualCue_PreservesExistingAutoCueMetadata()
+    {
+        // Regression (audit finding #1): setting a new cue used to re-serialize the whole bank stripped of
+        // IsAuto/label/color, silently turning every suggestion into a committed manual cue and wiping the
+        // pad colors. The bank must now carry the metadata through the set → save round-trip.
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        // An auto-placed "Drop" cue (red) at slot 1: 0.5 of a 100 s / 48 kHz track = 2_400_000 samples.
+        var seeded = new TrackCueSet(48_000, 8).SetHotCue(1, 2_400_000, "Drop", 0xFF3B30, isAuto: true);
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", seeded));
+        engine.Load(0, @"C:\a.wav"); // handle 100
+
+        backend.PositionFraction[100] = 0.25;
+        engine.HotCue(0, 5); // DJ sets a NEW manual cue on an empty pad -> re-saves the bank
+
+        HotCue drop = store.Get(@"C:\a.wav")!.HotCues.Single(c => c.Index == 1);
+        Assert.True(drop.IsAuto);                  // still a suggestion
+        Assert.Equal("Drop", drop.Label);          // label preserved
+        Assert.Equal(0xFF3B30, drop.Color);        // color preserved
+        Assert.Equal(2_400_000L, drop.PositionSamples); // and its position
+    }
+
+    [Fact]
+    public void HotCue_PressingAnAutoCue_CommitsItToAManualCue()
+    {
+        // The owner's "suggested → commit" rule (2026-06-19): pressing a suggested cue commits it — it keeps
+        // its position/label/color but becomes manual (IsAuto = false), so re-analysis preserves it.
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        var seeded = new TrackCueSet(48_000, 8).SetHotCue(2, 2_400_000, "Drop", 0xFF3B30, isAuto: true);
+        store.Seed(TrackCueRecord.FromCueSet(@"C:\a.wav", seeded));
+        engine.Load(0, @"C:\a.wav"); // handle 100
+
+        backend.PositionFraction[100] = 0.9;
+        engine.HotCue(0, 2); // press the auto pad -> jump AND commit
+
+        Assert.Equal(0.5, backend.PositionFraction[100], precision: 6); // jumped to the stored cue
+        HotCue committed = store.Get(@"C:\a.wav")!.HotCues.Single(c => c.Index == 2);
+        Assert.False(committed.IsAuto);            // now a committed manual cue
+        Assert.Equal("Drop", committed.Label);     // keeps its label/color
+        Assert.Equal(0xFF3B30, committed.Color);
+    }
+
+    [Fact]
+    public void HotCue_PressingACommittedCue_JumpsWithoutRepersisting()
+    {
+        // Once committed (manual), a later press is a pure jump — no redundant store write.
+        using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);
+        store.Seed(TrackCueRecord.FromCueSet(
+            @"C:\a.wav", new TrackCueSet(48_000, 8).SetHotCue(0, 2_400_000, isAuto: false)));
+        engine.Load(0, @"C:\a.wav");
+        int savesBefore = store.SaveCount;
+
+        backend.PositionFraction[100] = 0.8;
+        engine.HotCue(0, 0); // manual cue -> jump only
+
+        Assert.Equal(0.5, backend.PositionFraction[100], precision: 6);
+        Assert.Equal(savesBefore, store.SaveCount); // no extra save for a manual jump
+    }
+
+    [Fact]
     public void HotCue_SaveThrows_IsSwallowed()
     {
         using var engine = NewEngineWithStore(out FakeBassMixerBackend backend, out FakeHotCueStore store);

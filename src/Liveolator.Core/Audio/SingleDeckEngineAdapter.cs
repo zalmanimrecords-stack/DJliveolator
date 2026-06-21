@@ -105,6 +105,8 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public bool IsHotCueSet(int slot, int cueIndex) { EnsureSlot(slot); return false; }
 
+    public HotCueInfo GetHotCueInfo(int slot, int cueIndex) { EnsureSlot(slot); return HotCueInfo.Unset; }
+
     public void HotCue(int slot, int cueIndex) => EnsureSlot(slot);
 
     // The legacy single-deck engine has no hot-cue memory or persistence, so there is nothing to reload.

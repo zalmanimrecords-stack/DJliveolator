@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -39,8 +40,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double MinZoomWindow = 0.01;
     private const double DefaultZoomWindow = 0.04; // fallback when the duration is unknown
 
-    /// <summary>Hot-cue pad count shown on the deck (the mock's 1·2·3·4 row).</summary>
-    private const int HotCueCount = 4;
+    /// <summary>Total hot-cue slots per deck (matches the engine's bank), surfaced as two A/B banks of
+    /// <see cref="HotCuesPerBank"/> pads (owner decision 2026-06-19: 4 pads + an A/B toggle).</summary>
+    private const int HotCueCount = 8;
+
+    /// <summary>Pads shown at once; the A/B toggle swaps which bank (slots 0–3 vs 4–7) is visible.</summary>
+    private const int HotCuesPerBank = 4;
 
     /// <summary>BPM step per nudge button press (±0.1 BPM — fine enough for manual beat-sync).</summary>
     private const double NudgeBpmStep = 0.1;
@@ -64,6 +69,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isPlaying;
     private bool _isLooping;
     private bool _isKeyLock;
+    private bool _isHotCueBankB;
     private string _title = "No track loaded";
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
@@ -214,6 +220,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     : null);
         }
         HotCues = hotCues;
+        // Bank B (slots 4–7) holds the auto-cue phrase/outro points; the toggle flips the visible 4 pads
+        // so every stored cue is reachable live, not just the first four (audit finding #2).
+        ToggleHotCueBankCommand = ReactiveCommand.Create(() => { IsHotCueBankB = !IsHotCueBankB; });
 
         EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, enabled ? v => EmitEq("High", v) : null);
         EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity, enabled ? v => EmitEq("Mid", v) : null);
@@ -660,8 +669,31 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// within-beat first-beat anchor from the current position).</summary>
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
 
-    /// <summary>The four hot-cue pads (the mock's 1·2·3·4 row).</summary>
+    /// <summary>All eight hot-cue pads (two banks of four). Indexed by absolute cue index for feedback.</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
+
+    /// <summary>The four pads of the currently selected bank (A = slots 0–3, B = slots 4–7).</summary>
+    public IReadOnlyList<HotCuePadViewModel> VisibleHotCues =>
+        new ArraySegment<HotCuePadViewModel>(
+            (HotCuePadViewModel[])HotCues, (_isHotCueBankB ? 1 : 0) * HotCuesPerBank, HotCuesPerBank);
+
+    /// <summary>True when bank B (slots 4–7) is shown; false for bank A (slots 0–3).</summary>
+    public bool IsHotCueBankB
+    {
+        get => _isHotCueBankB;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isHotCueBankB, value);
+            this.RaisePropertyChanged(nameof(VisibleHotCues));
+            this.RaisePropertyChanged(nameof(HotCueBankLabel));
+        }
+    }
+
+    /// <summary>The active bank's letter for the toggle face ("A"/"B").</summary>
+    public string HotCueBankLabel => _isHotCueBankB ? "B" : "A";
+
+    /// <summary>Flips between hot-cue bank A and bank B.</summary>
+    public ReactiveCommand<Unit, Unit> ToggleHotCueBankCommand { get; }
 
     public ContinuousControlViewModel EqHigh { get; }
     public ContinuousControlViewModel EqMid { get; }
@@ -839,13 +871,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         return $"{meta[..start]}{bpm:0.0}{meta[suffix..]}";
     }
 
-    // The hot-cue index rides in the feedback Argument (the deck is addressed by slot); update only the
-    // matching pad's lit state. A missing/unparseable index is ignored — never throw on a feedback echo.
+    // The cue index + display metadata (label/color/auto) ride encoded in the feedback Argument (the deck
+    // is addressed by slot); update the matching pad's lit state and its label/color so it can show the
+    // cue's name. A missing/unparseable Argument is ignored — never throw on a feedback echo.
     private void UpdateHotCue(ActionFeedbackState state)
     {
-        if (!int.TryParse(state.Argument, out int index) || index < 0 || index >= HotCues.Count)
+        if (!HotCueFeedback.TryDecode(state.Argument, out int index, out HotCueInfo info)
+            || index < 0 || index >= HotCues.Count)
             return;
-        HotCues[index].IsSet = state.IsActive;
+        // The lit state is the feedback's IsActive (an unset slot relights as not-lit); the label/color/auto
+        // come from the decoded cue metadata.
+        HotCues[index].SetState(state.IsActive, info.Label, info.Color, info.IsAuto);
     }
 
     private void OnTrackLoaded(string trackPath, double bpm)
@@ -896,7 +932,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private void ClearHotCues()
     {
         foreach (HotCuePadViewModel pad in HotCues)
-            pad.IsSet = false;
+            pad.Clear();
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick

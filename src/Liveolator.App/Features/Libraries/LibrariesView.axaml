@@ -246,6 +246,34 @@
             </StackPanel>
 
             <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="HOT CUES" />
+              <TextBlock Classes="faint" Text="No hot cues set."
+                         IsVisible="{Binding !HasHotCues}" />
+              <ItemsControl ItemsSource="{Binding HotCues}" IsVisible="{Binding HasHotCues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="lib:HotCueDisplayViewModel">
+                    <Grid ColumnDefinitions="10,24,*,Auto,Auto,Auto,Auto" Margin="0,3">
+                      <Ellipse Grid.Column="0" Width="8" Height="8" VerticalAlignment="Center"
+                               Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                      <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding Number}" Margin="8,0,0,0" />
+                      <TextBlock Grid.Column="2" Classes="muted" Text="{Binding Label}" TextTrimming="CharacterEllipsis" Margin="8,0" />
+                      <TextBlock Grid.Column="3" Classes="faint" Text="{Binding Tag}" VerticalAlignment="Center"
+                                 IsVisible="{Binding Tag, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <TextBlock Grid.Column="4" Classes="mono faint" Text="{Binding Time}" HorizontalAlignment="Right" Margin="8,0,0,0" />
+                      <!-- Confirm a suggestion (commit it so re-analysis keeps it); reject/delete any cue. -->
+                      <Button Grid.Column="5" Classes="spartan" Content="✓" Padding="6,1" Margin="6,0,0,0"
+                              Command="{Binding ConfirmCommand}" IsVisible="{Binding CanConfirm}"
+                              ToolTip.Tip="Confirm this suggested cue (keeps it across re-analysis)" />
+                      <Button Grid.Column="6" Classes="spartan" Content="✕" Padding="6,1" Margin="4,0,0,0"
+                              Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}"
+                              ToolTip.Tip="Remove this hot cue" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
               <TextBlock Classes="faint" Text="HARMONIC MATCHES" />
               <ItemsControl ItemsSource="{Binding HarmonicMatches}">
                 <ItemsControl.ItemTemplate>

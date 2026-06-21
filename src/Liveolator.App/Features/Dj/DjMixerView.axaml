@@ -15,7 +15,6 @@
 
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
-          <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
             <!-- Crossfader is the primary blend control, so it carries more height (36) than the
@@ -91,21 +90,20 @@
 
           <Button Grid.Row="2" Grid.Column="1" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
                   Command="{Binding CueACommand}" Margin="0,8,0,0" />
+
+          <!-- Mixer-wide EQ cut-depth as a 3-detent knob, seated between the two CUE buttons (EQ -12 dB /
+               DEEP -24 dB / KILL full). The caption shows the active mode; double-click resets to KILL. -->
+          <StackPanel Grid.Row="2" Grid.Column="2" Spacing="1" Margin="0,8,0,0"
+                      VerticalAlignment="Top" HorizontalAlignment="Center"
+                      ToolTip.Tip="EQ cut depth, all channels">
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUT" />
+            <controls:Knob Width="34" Height="34" Detents="3" DefaultValue="1" HorizontalAlignment="Center"
+                           Value="{Binding EqCut.Value}" IsEnabled="{Binding EqCut.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding EqCut.ModeLabel}" />
+          </StackPanel>
+
           <Button Grid.Row="2" Grid.Column="3" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                   Command="{Binding CueBCommand}" Margin="0,8,0,0" />
-        </Grid>
-      </Border>
-
-      <!-- Global EQ cut-depth mode: one button cycles how deep every channel's EQ band-cut goes
-           (EQ -12 dB / DEEP -24 dB / KILL full). Kept off the crossfader well so it can't be mis-tapped
-           mid-blend; the label shows the active mode. -->
-      <Border Classes="hardware-well" Padding="10,6">
-        <Grid ColumnDefinitions="Auto,*">
-          <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="EQ CUT" Margin="0,0,10,0" />
-          <Button Grid.Column="1" Classes="key mixer"
-                  HorizontalAlignment="Stretch" Content="{Binding EqCutModeLabel}"
-                  Command="{Binding EqCutModeCommand}"
-                  ToolTip.Tip="EQ cut depth, all channels — EQ: -12 dB · DEEP: -24 dB · KILL: full kill" />
         </Grid>
       </Border>
 

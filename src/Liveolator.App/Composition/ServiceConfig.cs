@@ -573,7 +573,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IMusicCatalogStore>(),
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
             sp.GetRequiredService<TrackContextActions>(),
-            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
+            hotCueStore: sp.GetService<IHotCueStore>()));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(

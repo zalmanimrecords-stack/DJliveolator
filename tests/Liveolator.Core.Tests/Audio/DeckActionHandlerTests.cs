@@ -222,7 +222,13 @@ public class DeckActionHandlerTests
         public int HotCueCount => 8;
         public List<(int Slot, int Index)> HotCues { get; } = new();
         private readonly HashSet<(int, int)> _setCues = new();
+        // Optional per-cue display metadata (label/color/auto) the handler should surface in feedback.
+        public Dictionary<(int, int), HotCueInfo> CueInfo { get; } = new();
         public bool IsHotCueSet(int slot, int cueIndex) => _setCues.Contains((slot, cueIndex));
+        public HotCueInfo GetHotCueInfo(int slot, int cueIndex)
+            => CueInfo.TryGetValue((slot, cueIndex), out HotCueInfo info)
+                ? info
+                : _setCues.Contains((slot, cueIndex)) ? new HotCueInfo(IsSet: true) : HotCueInfo.Unset;
         public void HotCue(int slot, int cueIndex)
         {
             HotCues.Add((slot, cueIndex));
@@ -658,7 +664,7 @@ public class DeckActionHandlerTests
         handler.FeedbackChanged += (_, e) =>
         {
             if (e.Kind == PerformanceActionKind.DeckHotCue && e.Slot == 0 && e.State.IsActive
-                && int.TryParse(e.State.Argument, out int idx))
+                && HotCueFeedback.TryDecode(e.State.Argument, out int idx, out HotCueInfo _))
                 lit.Add(idx);
         };
 
@@ -666,6 +672,30 @@ public class DeckActionHandlerTests
 
         // One feedback per cue slot is raised; the two reloaded cues report active.
         Assert.Equal(new[] { 0, 1 }, lit);
+    }
+
+    [Fact]
+    public void HotCue_Feedback_CarriesCueLabelColorAndAutoFlag()
+    {
+        // A pad must be able to show the cue's name/color and mark a suggestion — so the DeckHotCue feedback
+        // encodes the cue's display metadata, not just its lit state.
+        var engine = new FakeMultiDeckEngine();
+        engine.CueInfo[(0, 2)] = new HotCueInfo(IsSet: true, Label: "Drop", Color: 0xFF3B30, IsAuto: true);
+        var handler = new DeckActionHandler(engine);
+        HotCueInfo decoded = default;
+        int decodedIndex = -1;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckHotCue && e.Slot == 0)
+                HotCueFeedback.TryDecode(e.State.Argument, out decodedIndex, out decoded);
+        };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "2", Slot: 0));
+
+        Assert.Equal(2, decodedIndex);
+        Assert.Equal("Drop", decoded.Label);
+        Assert.Equal(0xFF3B30, decoded.Color);
+        Assert.True(decoded.IsAuto);
     }
 
     [Fact]

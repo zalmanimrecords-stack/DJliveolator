@@ -49,20 +49,21 @@
 
         <Button Grid.Row="2" Grid.Column="0" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
                 Command="{Binding CueACommand}" Margin="0,10,0,0" />
+
+        <!-- Mixer-wide EQ cut-depth as a 3-detent knob, seated between the two CUE buttons (EQ -12 dB /
+             DEEP -24 dB / KILL full). The caption shows the active mode; double-click resets to KILL. -->
+        <StackPanel Grid.Row="2" Grid.Column="1" Spacing="1" Margin="0,10,0,0"
+                    VerticalAlignment="Top" HorizontalAlignment="Center"
+                    ToolTip.Tip="EQ cut depth (all channels): EQ = gentle -12 dB · DEEP = -24 dB · KILL = full silence">
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUT" />
+          <controls:Knob Width="38" Height="38" Detents="3" DefaultValue="1" HorizontalAlignment="Center"
+                         Value="{Binding EqCut.Value}" IsEnabled="{Binding EqCut.IsEnabled}" />
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding EqCut.ModeLabel}" />
+        </StackPanel>
+
         <Button Grid.Row="2" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                 Command="{Binding CueBCommand}" Margin="0,10,0,0" />
       </Grid>
-      </Border>
-
-      <!-- Global EQ cut-depth mode: one button cycles how deep every channel's EQ band-cut goes
-           (EQ -12 dB / DEEP -24 dB / KILL full). The label shows the active mode. -->
-      <Border Classes="hardware-well" Padding="12,8">
-        <Grid ColumnDefinitions="Auto,*">
-          <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="EQ CUT" Margin="0,0,12,0" />
-          <Button Grid.Column="1" Classes="key mixer" HorizontalAlignment="Stretch"
-                  Content="{Binding EqCutModeLabel}" Command="{Binding EqCutModeCommand}"
-                  ToolTip.Tip="EQ cut depth, all channels — EQ: -12 dB · DEEP: -24 dB · KILL: full kill" />
-        </Grid>
       </Border>
 
       <Border Classes="hardware-well" Padding="12,10">

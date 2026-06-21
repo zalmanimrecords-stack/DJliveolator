@@ -32,6 +32,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Shared.TrackContextActions? _contextActions;
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
+    private readonly IHotCueStore? _hotCueStore;
+    // Drops a stale hot-cue load when the selection moves on before an async store read returns.
+    private int _hotCueLoadSequence;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private string? _selectedArtist;
@@ -71,7 +74,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Playlists.PlaylistBuilderViewModel? playlistBuilder = null,
         Shared.TrackContextActions? contextActions = null,
         Core.Playlist.DeckTrackLoader? deckLoader = null,
-        IAutoCueService? autoCueService = null)
+        IAutoCueService? autoCueService = null,
+        IHotCueStore? hotCueStore = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
@@ -79,6 +83,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _store = store;
         _contextActions = contextActions;
         _autoCueService = autoCueService;
+        _hotCueStore = hotCueStore;
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -147,12 +152,22 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 this.WhenAnyValue(x => x.SortKey).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SortDescending).Select(_ => Unit.Default))
             .Subscribe(_ => ApplyFilter());
-        this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ => RebuildMatches());
+        this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ =>
+        {
+            RebuildMatches();
+            RebuildHotCues();
+        });
     }
 
     public ObservableCollection<string> Folders { get; } = new();
     public ObservableCollection<TrackRowViewModel> Tracks { get; } = new();
     public ObservableCollection<TrackRowViewModel> HarmonicMatches { get; } = new();
+
+    /// <summary>The stored hot cue points of the selected track, ordered by pad number (B/doc 11).</summary>
+    public ObservableCollection<HotCueDisplayViewModel> HotCues { get; } = new();
+
+    /// <summary>True when the selected track has at least one stored hot cue (drives the section's empty state).</summary>
+    public bool HasHotCues => HotCues.Count > 0;
 
     /// <summary>Distinct facet values from the catalog (B1). A null selection on each = "all".</summary>
     public ObservableCollection<string> Artists { get; } = new();
@@ -843,6 +858,100 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         foreach (MusicTrack match in _library.HarmonicMatches(_selectedTrack.Track)
                      .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase))
             HarmonicMatches.Add(new TrackRowViewModel(match, _contextActions));
+    }
+
+    // Reloads the selected track's stored hot cues from the cue store (a separate file from the catalog,
+    // keyed by track path). Reads are async, so the visible list is cleared immediately and refilled when
+    // the load returns; a stale read (selection moved on) is dropped via the sequence guard. A null store
+    // (no persistence wired) just leaves the list empty. Guarded — a load failure surfaces, never crashes.
+    private void RebuildHotCues()
+    {
+        int sequence = ++_hotCueLoadSequence;
+        ClearHotCues();
+
+        TrackRowViewModel? track = _selectedTrack;
+        if (_hotCueStore is null || track is null)
+            return;
+
+        _ = LoadHotCuesAsync(track.Track.File.Path, sequence);
+    }
+
+    private async Task LoadHotCuesAsync(string trackPath, int sequence)
+    {
+        try
+        {
+            TrackCueRecord? record = await _hotCueStore!.LoadAsync(trackPath, _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                // The selection changed (or another load started) while we were reading — drop this result.
+                if (sequence != _hotCueLoadSequence)
+                    return;
+
+                ClearHotCues();
+                if (record is null)
+                    return;
+
+                foreach (HotCue cue in record.HotCues.OrderBy(c => c.Index))
+                    HotCues.Add(new HotCueDisplayViewModel(cue, record.SampleRate, ConfirmHotCue, DeleteHotCue));
+                this.RaisePropertyChanged(nameof(HasHotCues));
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-load — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not load hot cues: {ex.Message}");
+        }
+    }
+
+    private void ClearHotCues()
+    {
+        if (HotCues.Count == 0)
+            return;
+        HotCues.Clear();
+        this.RaisePropertyChanged(nameof(HasHotCues));
+    }
+
+    // Commit a suggested (auto) cue to a manual one in the store, so re-analysis preserves it verbatim
+    // (the owner's suggested → commit rule, 2026-06-19). A no-op for a slot that is empty or already manual.
+    private void ConfirmHotCue(int index) => _ = MutateSelectedCuesAsync(set =>
+        set.GetHotCue(index) is { IsAuto: true } cue
+            ? set.SetHotCue(index, cue.PositionSamples, cue.Label, cue.Color, isAuto: false)
+            : set);
+
+    // Reject/remove a stored cue (a suggestion the DJ doesn't want, or any cue) from the track's cue set.
+    private void DeleteHotCue(int index) => _ = MutateSelectedCuesAsync(set => set.ClearHotCue(index));
+
+    // Applies a pure transform to the selected track's persisted cue set and saves it, then refreshes the
+    // shown list. The edit is to the stored cues (the catalog of jump points); a deck currently holding the
+    // track picks the change up on its next load (or an explicit re-apply). Guarded — a store failure
+    // surfaces on the status line, never crashes the tab (global standards #16/#26).
+    private async Task MutateSelectedCuesAsync(Func<TrackCueSet, TrackCueSet> transform)
+    {
+        string? path = _selectedTrack?.Track.File.Path;
+        if (_hotCueStore is null || string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            TrackCueRecord? record = await _hotCueStore.LoadAsync(path, _lifetime.Token).ConfigureAwait(false);
+            if (record is null)
+                return;
+
+            TrackCueSet updated = transform(record.ToCueSet());
+            await _hotCueStore.SaveAsync(TrackCueRecord.FromCueSet(path, updated), _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(RebuildHotCues);
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-edit — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not update hot cues: {ex.Message}");
+        }
     }
 
     // Load + play the selected track via the action layer (doc 04) — the UI never touches the engine.

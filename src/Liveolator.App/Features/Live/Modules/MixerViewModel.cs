@@ -29,7 +29,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private bool _isCueB;
     private double _levelA;
     private double _levelB;
-    private string _eqCutModeLabel = EqCutMode.Kill.Label();
     private bool _disposed;
 
     /// <param name="channelA">Deck A, exposed as the mixer's A channel so the channel-strip EQ/filter knobs
@@ -64,7 +63,9 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         CueACommand = ReactiveCommand.Create(() => EmitCue(slot: 0), canCue);
         CueBCommand = ReactiveCommand.Create(() => EmitCue(slot: 1), canCue);
 
-        EqCutModeCommand = ReactiveCommand.Create(EmitEqCutModeCycle, canCue);
+        EqCut = new EqCutModeKnobViewModel(
+            ModeFromFeedback(_dispatcher?.GetFeedback(PerformanceActionKind.MixerEqCutMode, 0)),
+            enabled ? EmitEqCutMode : null);
 
         CueLevel = new ContinuousControlViewModel(
             "Cue", Seed(PerformanceActionKind.MixerCueLevel, slot: 0, DefaultCueLevel),
@@ -78,7 +79,6 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         {
             _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
             _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
-            _eqCutModeLabel = LabelFromFeedback(_dispatcher.GetFeedback(PerformanceActionKind.MixerEqCutMode, 0));
             _dispatcher.FeedbackChanged += OnFeedback;
         }
     }
@@ -128,17 +128,10 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> CueACommand { get; }
     public ReactiveCommand<Unit, Unit> CueBCommand { get; }
 
-    /// <summary>Cycles the mixer-wide EQ cut-depth mode (EQ → DEEP → KILL → …), emitting
-    /// <see cref="PerformanceActionKind.MixerEqCutMode"/>. The handler re-applies the new cut floor
-    /// to every channel and reports the active mode back via <see cref="EqCutModeLabel"/>.</summary>
-    public ReactiveCommand<Unit, Unit> EqCutModeCommand { get; }
-
-    /// <summary>Short label of the active EQ cut-depth mode for the button face ("EQ"/"DEEP"/"KILL").</summary>
-    public string EqCutModeLabel
-    {
-        get => _eqCutModeLabel;
-        private set => this.RaiseAndSetIfChanged(ref _eqCutModeLabel, value);
-    }
+    /// <summary>The mixer-wide EQ cut-depth control as a 3-detent knob (EQ → DEEP → KILL), seated between
+    /// the CUE buttons. A user turn emits <see cref="PerformanceActionKind.MixerEqCutMode"/> with the
+    /// selected mode; the handler re-applies the new cut floor to every channel and echoes the mode back.</summary>
+    public EqCutModeKnobViewModel EqCut { get; }
 
     /// <summary>True while deck A/B is routed to the headphone cue bus (from dispatcher feedback).</summary>
     public bool IsCueA
@@ -174,14 +167,14 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private void EmitCue(int slot)
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerCueToggle, Slot: slot));
 
-    // No Argument → the handler cycles to the next (coarser) cut mode.
-    private void EmitEqCutModeCycle()
-        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerEqCutMode));
+    // Absolute select: name the chosen mode so the handler sets exactly that cut depth (no cycling).
+    private void EmitEqCutMode(EqCutMode mode)
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: mode.ToString()));
 
-    private static string LabelFromFeedback(ActionFeedbackState feedback)
-        => feedback.IsAvailable && Enum.TryParse(feedback.Argument, out EqCutMode mode)
-            ? mode.Label()
-            : EqCutMode.Kill.Label();
+    private static EqCutMode ModeFromFeedback(ActionFeedbackState? feedback)
+        => feedback is { IsAvailable: true } state && Enum.TryParse(state.Argument, out EqCutMode mode)
+            ? mode
+            : EqCutMode.Kill;
 
     private void OnFeedback(object? sender, ActionFeedbackChanged e)
         => RxApp.MainThreadScheduler.Schedule(() =>
@@ -210,7 +203,7 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     CueMix.SetFromFeedback(e.State.Value);
                     break;
                 case PerformanceActionKind.MixerEqCutMode:
-                    EqCutModeLabel = LabelFromFeedback(e.State);
+                    EqCut.SetFromMode(ModeFromFeedback(e.State));
                     break;
             }
         });
