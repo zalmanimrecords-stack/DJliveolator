@@ -42,9 +42,9 @@ public sealed class BuiltInUiThemesTests
         Assert.Equal("#07080A", theme.Tokens["BgColor"]);
         Assert.Equal("2", theme.Tokens["PanelRadius"]);
         Assert.Equal("0", theme.Tokens["ControlRadius"]);
-        Assert.Equal("#101315", theme.Tokens["KnobCapColor"]);
-        // The chicken-head amp knob is unique to this theme.
-        Assert.Equal("ChickenHead", theme.Tokens["KnobStyle"]);
+        Assert.Equal("#ECE2C8", theme.Tokens["KnobCapColor"]);
+        // The vintage cream-bakelite scalloped amp-dial knob is unique to this theme.
+        Assert.Equal("ScallopedDial", theme.Tokens["KnobStyle"]);
     }
 
     [Fact]

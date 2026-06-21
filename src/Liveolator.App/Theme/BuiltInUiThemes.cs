@@ -123,17 +123,19 @@ public static class BuiltInUiThemes
                 ["KickColor"] = "#F05A3E",
                 ["WaveMidColor"] = "#7BD66F",
                 ["WaveHighColor"] = "#A0627DF8",
-                ["KnobArcColor"] = "#E2F05A",
-                ["KnobTrackColor"] = "#243236",
-                ["KnobCapColor"] = "#101315",
-                ["KnobPointerColor"] = "#FAFF9A",
+                // Knobs use the vintage cream-bakelite amp look (see KnobStyle): cream cap, sepia engraved
+                // ticks/numbers, tan dial plate, brass pointer — a warm contrast against the dark face.
+                ["KnobArcColor"] = "#8A7350",
+                ["KnobTrackColor"] = "#D7C7A2",
+                ["KnobCapColor"] = "#ECE2C8",
+                ["KnobPointerColor"] = "#B2935E",
                 ["FaderFillColor"] = "#E2F05A",
                 ["FaderTrackColor"] = "#243236",
                 ["FaderThumbColor"] = "#E8F4DF",
                 ["PanelRadius"] = "2",
                 ["ControlRadius"] = "0",
-                // Old-guitar-amp chicken-head pointer knobs, unique to this theme.
-                ["KnobStyle"] = "ChickenHead",
+                // Vintage cream-bakelite scalloped amp-dial knobs, unique to this theme.
+                ["KnobStyle"] = "ScallopedDial",
             }),
     ];
 

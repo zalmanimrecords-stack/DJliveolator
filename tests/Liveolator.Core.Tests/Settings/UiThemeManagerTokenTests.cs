@@ -63,7 +63,7 @@ public sealed class UiThemeManagerTokenTests
     {
         var result = new UiThemeManager().Validate(Theme(new Dictionary<string, string>
         {
-            ["KnobStyle"] = "ChickenHead",
+            ["KnobStyle"] = "ScallopedDial",
         }));
 
         Assert.True(result.IsValid, string.Join("; ", result.Errors));

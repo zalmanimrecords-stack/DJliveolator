@@ -77,9 +77,9 @@ public sealed class UiThemeApplierBackgroundTests
     {
         Application app = Application.Current!;
 
-        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ChickenHead")));
+        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ScallopedDial")));
 
-        Assert.Equal(Liveolator.App.Controls.KnobStyle.ChickenHead, Resource(app, "KnobStyle"));
+        Assert.Equal(Liveolator.App.Controls.KnobStyle.ScallopedDial, Resource(app, "KnobStyle"));
     }
 
     [AvaloniaFact]
@@ -87,8 +87,8 @@ public sealed class UiThemeApplierBackgroundTests
     {
         Application app = Application.Current!;
 
-        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ChickenHead")));
-        Assert.Equal(Liveolator.App.Controls.KnobStyle.ChickenHead, Resource(app, "KnobStyle"));
+        UiThemeApplier.Apply(app, Theme(("KnobStyle", "ScallopedDial")));
+        Assert.Equal(Liveolator.App.Controls.KnobStyle.ScallopedDial, Resource(app, "KnobStyle"));
 
         UiThemeApplier.Apply(app, Theme()); // no token -> back to the default rotary knob
         Assert.Equal(Liveolator.App.Controls.KnobStyle.Rotary, Resource(app, "KnobStyle"));

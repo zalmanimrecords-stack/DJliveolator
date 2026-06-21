@@ -132,9 +132,9 @@ public class Knob : Control
         double value = Math.Clamp(Value, 0, 1);
         var centre = new Point(bounds.Width / 2, bounds.Height / 2);
 
-        if (Variant == KnobStyle.ChickenHead)
+        if (Variant == KnobStyle.ScallopedDial)
         {
-            RenderChickenHead(context, centre, size, value, on);
+            RenderScallopedDial(context, centre, size, value, on);
             return;
         }
 
@@ -186,93 +186,104 @@ public class Knob : Control
             { LineCap = PenLineCap.Round }, tickInner, tickOuter);
     }
 
-    // Chicken-head amp knob (Retro Sci-Fi theme): a rooster-head pointer on a low skirt that rotates to
-    // aim its beak at the value, with faint min/max marks on the skirt. No domed cap — the pointer shape
-    // itself is the indicator. Uses the same StartAngle/SweepAngle sweep as the rotary look so the value
-    // reads identically; theme brushes (Cap = body, Pointer = beak tip, Arc = live ring) keep it themable.
-    private void RenderChickenHead(DrawingContext context, Point centre, double size, double value, bool on)
+    // Vintage cream-bakelite amp knob (Retro Sci-Fi theme), modelled on the owner's reference photo:
+    // a glossy scalloped (piecrust-edged) cap on a numbered dial plate with engraved sepia ticks/numbers
+    // and a brass pointer. Theme brushes drive every colour — Track = dial plate, Arc = engraved ink,
+    // Cap = bakelite cream, Pointer = brass — so it stays fully themable. Same StartAngle/SweepAngle sweep
+    // as the rotary look, so the value reads identically.
+    private const int ScallopBumps = 18;
+
+    private void RenderScallopedDial(DrawingContext context, Point centre, double size, double value, bool on)
     {
-        double r = size * 0.30;
-        double baseR = size * 0.42;
+        double plateR = (size / 2) - 1;
+        double capMid = size * 0.33;
+        double scallopAmp = size * 0.026;
         double angle = StartAngle + (SweepAngle * value);
 
-        DrawCastShadow(context, centre, baseR * 0.92, size);
+        IBrush plate = on ? TrackBrush : ControlBrush.Halo(TrackBrush, 0.5);
+        IBrush cap = on ? CapBrush : ControlBrush.Halo(CapBrush, 0.6);
+        IBrush ink = on ? ArcBrush : ControlBrush.Halo(ArcBrush, 0.5);
+        IBrush brass = on ? PointerBrush : ControlBrush.Halo(PointerBrush, 0.5);
 
-        // Low skirt foot (no dome): flat disc + ambient rim, so the knob reads as short, not bulbous.
-        context.DrawEllipse(on ? CapBrush : TrackBrush, null, centre, baseR, baseR);
-        context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x02, 0x06)),
-            Math.Max(1, size * 0.03)), centre, baseR, baseR);
+        DrawCastShadow(context, centre, plateR * 0.96, size);
 
-        // Faint min/max ticks on the skirt edge — the classic amp-dial end stops.
-        var tickPen = new Pen(ControlBrush.Halo(PointerBrush, 0.4), Math.Max(1, size * 0.025))
-            { LineCap = PenLineCap.Round };
-        foreach (double end in new[] { StartAngle, StartAngle + SweepAngle })
-            context.DrawLine(tickPen, PointOnCircle(centre, baseR + size * 0.02, end),
-                PointOnCircle(centre, baseR + size * 0.10, end));
+        // Dial plate: flat disc the engraved scale sits on, with a thin engraved rim.
+        context.DrawEllipse(plate, new Pen(ControlBrush.Halo(ink, 0.35), Math.Max(1, size * 0.012)),
+            centre, plateR, plateR);
+        DrawDialScale(context, centre, plateR, ink, size);
 
-        // Live accent ring ties the knob to the theme accent when enabled.
-        if (on)
-            context.DrawEllipse(null, new Pen(ControlBrush.Halo(ArcBrush, 0.35), Math.Max(1, size * 0.02)),
-                centre, baseR * 0.66, baseR * 0.66);
+        // Scalloped cap: a soft contact shadow, the cream body, then a glossy domed centre with a
+        // top-left highlight. The scallop is static; only the brass pointer rotates with the value.
+        StreamGeometry shadowEdge = ScallopedCircle(new Point(centre.X, centre.Y + size * 0.018), capMid, scallopAmp);
+        context.DrawGeometry(new SolidColorBrush(Color.FromArgb(0x55, 0x20, 0x18, 0x08)), null, shadowEdge);
 
-        double rad = angle * Math.PI / 180.0;
-        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+        StreamGeometry scallop = ScallopedCircle(centre, capMid, scallopAmp);
+        context.DrawGeometry(cap, new Pen(ControlBrush.Halo(ink, 0.30), Math.Max(1, size * 0.01)), scallop);
 
-        // Chicken-head silhouette in local space (+X = pointing toward the value), scaled by r.
-        (double X, double Y)[] outline =
-        [
-            (1.30, 0.00),   // beak tip
-            (0.45, -0.26),  // upper beak
-            (-0.10, -0.40), // head top
-            (-0.18, -0.72), // comb peak A
-            (-0.38, -0.48), // comb dip
-            (-0.62, -0.66), // comb peak B
-            (-0.86, -0.18), // upper back
-            (-0.74, 0.34),  // lower back
-            (-0.10, 0.46),  // jaw
-            (0.45, 0.26),   // lower beak
-        ];
-
-        StreamGeometry head = Polygon(centre, outline, r, cos, sin);
-        context.DrawGeometry(on ? CapBrush : TrackBrush, null, head);
-
-        // Fixed top-light sheen + bottom shade fake the molded-plastic 3D independent of rotation.
-        var sheen = new LinearGradientBrush
+        double domeR = capMid - scallopAmp - (size * 0.012);
+        var dome = new RadialGradientBrush
         {
-            StartPoint = new RelativePoint(0.5, 0, RelativeUnit.Relative),
-            EndPoint = new RelativePoint(0.5, 1, RelativeUnit.Relative),
+            Center = new RelativePoint(0.40, 0.34, RelativeUnit.Relative),
+            GradientOrigin = new RelativePoint(0.34, 0.26, RelativeUnit.Relative),
+            RadiusX = new RelativeScalar(0.72, RelativeUnit.Relative),
+            RadiusY = new RelativeScalar(0.72, RelativeUnit.Relative),
             GradientStops =
             {
-                new GradientStop(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF), 0),
-                new GradientStop(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 0.45),
-                new GradientStop(Color.FromArgb(0x00, 0x00, 0x00, 0x00), 0.55),
-                new GradientStop(Color.FromArgb(0x55, 0x00, 0x00, 0x00), 1),
+                new GradientStop(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF), 0),
+                new GradientStop(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF), 0.55),
+                new GradientStop(Color.FromArgb(0x30, 0x3A, 0x2C, 0x12), 1),
             },
         };
-        context.DrawGeometry(sheen, new Pen(new SolidColorBrush(Color.FromArgb(0xB0, 0x00, 0x02, 0x06)),
-            Math.Max(1.2, size * 0.03)), head);
+        context.DrawEllipse(cap, null, centre, domeR, domeR);
+        context.DrawEllipse(dome, null, centre, domeR, domeR);
 
-        // White beak tip = the indicator. A small triangle at the nose painted in the pointer brush.
-        StreamGeometry beak = Polygon(centre,
-            [(1.30, 0.00), (0.55, -0.20), (0.55, 0.20)], r, cos, sin);
-        context.DrawGeometry(on ? PointerBrush : TrackBrush, null, beak);
-
-        // Centre pivot screw.
-        context.DrawEllipse(new SolidColorBrush(Color.FromArgb(0xCC, 0x00, 0x02, 0x06)), null,
-            centre, size * 0.05, size * 0.05);
+        // Brass pointer: an engraved channel (dark) under a brass fill with a thin highlight, from just
+        // off-centre out to the cap edge at the value angle.
+        Point inner = PointOnCircle(centre, domeR * 0.08, angle);
+        Point tip = PointOnCircle(centre, capMid * 0.96, angle);
+        double pw = Math.Max(2.2, size * 0.05);
+        context.DrawLine(new Pen(new SolidColorBrush(Color.FromArgb(0x70, 0x3A, 0x2A, 0x0E)), pw + (size * 0.03))
+            { LineCap = PenLineCap.Round }, inner, tip);
+        context.DrawLine(new Pen(brass, pw) { LineCap = PenLineCap.Round }, inner, tip);
+        context.DrawLine(new Pen(ControlBrush.Halo(brass, 0.5), Math.Max(1, pw * 0.32))
+            { LineCap = PenLineCap.Round }, inner, tip);
     }
 
-    private static StreamGeometry Polygon(Point centre, (double X, double Y)[] local, double scale, double cos, double sin)
+    // Engraved scale on the dial plate: 11 major ticks across the sweep with a minor tick between each.
+    private void DrawDialScale(DrawingContext context, Point centre, double plateR, IBrush ink, double size)
     {
+        const int majors = 10;
+        var majorPen = new Pen(ink, Math.Max(1, size * 0.02)) { LineCap = PenLineCap.Round };
+        var minorPen = new Pen(ControlBrush.Halo(ink, 0.55), Math.Max(0.8, size * 0.012)) { LineCap = PenLineCap.Round };
+
+        for (int i = 0; i <= majors * 2; i++)
+        {
+            double a = StartAngle + (SweepAngle * i / (majors * 2));
+            bool major = i % 2 == 0;
+            double from = major ? plateR * 0.78 : plateR * 0.82;
+            context.DrawLine(major ? majorPen : minorPen,
+                PointOnCircle(centre, from, a), PointOnCircle(centre, plateR * 0.90, a));
+        }
+    }
+
+    // A closed scalloped (piecrust) outline: radius oscillates sinusoidally so the edge reads as soft
+    // rounded bumps, like the reference bakelite knob.
+    private static StreamGeometry ScallopedCircle(Point centre, double midRadius, double amplitude)
+    {
+        const int steps = 216;
         var geometry = new StreamGeometry();
         using (StreamGeometryContext ctx = geometry.Open())
         {
-            Point Map((double X, double Y) p)
-                => new(centre.X + (((p.X * cos) - (p.Y * sin)) * scale),
-                       centre.Y + (((p.X * sin) + (p.Y * cos)) * scale));
-            ctx.BeginFigure(Map(local[0]), isFilled: true);
-            for (int i = 1; i < local.Length; i++)
-                ctx.LineTo(Map(local[i]));
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps * 2 * Math.PI;
+                double rr = midRadius + (amplitude * Math.Cos(ScallopBumps * t));
+                var p = new Point(centre.X + (rr * Math.Cos(t)), centre.Y + (rr * Math.Sin(t)));
+                if (i == 0)
+                    ctx.BeginFigure(p, isFilled: true);
+                else
+                    ctx.LineTo(p);
+            }
             ctx.EndFigure(true);
         }
         return geometry;

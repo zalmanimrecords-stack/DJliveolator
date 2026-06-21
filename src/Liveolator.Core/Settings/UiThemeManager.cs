@@ -41,7 +41,7 @@ public sealed class UiThemeManager : IUiThemeManager
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> EnumTokens =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
         {
-            ["KnobStyle"] = new HashSet<string>(StringComparer.Ordinal) { "Rotary", "ChickenHead" },
+            ["KnobStyle"] = new HashSet<string>(StringComparer.Ordinal) { "Rotary", "ScallopedDial" },
         };
 
     private readonly object _gate = new();
