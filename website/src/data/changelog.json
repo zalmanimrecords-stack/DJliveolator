@@ -3,7 +3,11 @@
     "version": "0.1.3",
     "date": "2026-06-21",
     "notes": [
-      "Maintenance build: fixes and small improvements."
+      "First alpha build available to download from this site.",
+      "Library import from Rekordbox (XML) and Traktor (NML) - tracks, cues, grids, key and playlists.",
+      "Hot cue management across the libraries and the decks.",
+      "Beat-detection accuracy overhaul (kick-onset detection, downbeat estimation, beat grid).",
+      "Smart master limiter with adaptive, program-dependent release."
     ]
   },
   {
