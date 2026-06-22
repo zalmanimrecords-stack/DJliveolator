@@ -21,6 +21,10 @@ export const site = {
   contactEmail: "zalmanimrecords@gmail.com",
   // Bump when the user manual page (/manual) is revised.
   manualUpdated: "2026-06-21",
+  // Who operates the site / acts as data controller for the privacy policy.
+  operator: "Liveolator (Zalmanim Records)",
+  // Bump when the privacy policy (/privacy) is revised.
+  privacyUpdated: "2026-06-21",
 } as const;
 
 export type Feature = {

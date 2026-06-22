@@ -56,6 +56,10 @@ import { site } from "../data/site";
         <p class="fb-hint" data-hint aria-live="polite">
           Opens your email app with the message ready to send.
         </p>
+        <p class="fb-privacy">
+          Nothing is stored on this site — sending opens your own email app. See our
+          <a href="/privacy">privacy policy</a>.
+        </p>
       </form>
     </div>
   </div>
@@ -127,6 +131,12 @@ import { site } from "../data/site";
     text-align: center;
   }
   .fb-hint.error { color: var(--amber-bright); }
+  .fb-privacy {
+    font-size: 12.5px;
+    color: var(--text-mute);
+    text-align: center;
+    margin-top: 2px;
+  }
 
   @media (max-width: 820px) {
     .fb-grid { grid-template-columns: 1fr; gap: 32px; }
