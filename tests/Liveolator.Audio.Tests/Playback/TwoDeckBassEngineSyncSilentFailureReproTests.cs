@@ -32,7 +32,7 @@ namespace Liveolator.Audio.Tests.Playback;
 /// </summary>
 public class TwoDeckBassEngineSyncSilentFailureReproTests
 {
-    private const string SyncLogFragment = "one-shot synced to deck";
+    private const string SyncLogFragment = "one-shot synced to leader";
     private const string SkipLogFragment = "one-shot sync skipped";
 
     private static (TwoDeckBassEngine engine, FakeBassMixerBackend backend, ListLoggerFactory logs) NewEngine()
@@ -98,6 +98,34 @@ public class TwoDeckBassEngineSyncSilentFailureReproTests
         // Follower rate is matched to the leader (128/120), and the success line is logged.
         Assert.Equal(128.0 / 120.0, backend.Rate[101], precision: 6);
         Assert.Contains(logs.Messages, m => m.Contains(SyncLogFragment, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SyncOnce_RaisesDeckBpmFeedback_ThatUpdatesTheFollowersOnScreenBpm()
+    {
+        // The DJ deck's BPM readout binds to the DeckBpm FEEDBACK value. Pressing SYNC must therefore not
+        // only change the engine rate but emit a DeckBpm feedback whose Value equals the leader's tempo —
+        // otherwise the audible tempo matches yet the on-screen numbers still differ ("SYNC didn't match").
+        (TwoDeckBassEngine engine, _, _) = NewEngine();
+        var handler = new DeckActionHandler(engine);
+
+        LoadViaHandler(handler, slot: 0, @"\\share\a.flac", bpm: 128.0);
+        LoadViaHandler(handler, slot: 1, @"S:\b.flac", bpm: 120.0);
+
+        double followerBpmFeedback = double.NaN;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckBpm && e.Slot == 1)
+                followerBpmFeedback = e.State.Value;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: 1));
+
+        // The follower's reported BPM now equals the leader's — the number the deck shows after SYNC.
+        Assert.Equal(128.0, followerBpmFeedback, precision: 3);
+        // And GetFeedback (what a late UI subscriber reads) agrees.
+        Assert.Equal(128.0, handler.GetFeedback(PerformanceActionKind.DeckBpm, slot: 1).Value, precision: 3);
     }
 
     /// <summary>Minimal capturing logger factory so the test can assert on what SyncOnce logged (or didn't).</summary>

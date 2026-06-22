@@ -101,7 +101,8 @@ public sealed class MainWindowViewModelTests
         public Task DeleteAsync(string name, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    private static MainWindowViewModel BuildShell(AppSettings? appSettings = null)
+    private static MainWindowViewModel BuildShell(
+        AppSettings? appSettings = null, AudioEngineStatus? audioStatus = null)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
         var status = new ShellStatusViewModel(
@@ -119,7 +120,38 @@ public sealed class MainWindowViewModelTests
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
             studio, visualLibrary, addons, settings, midiLearn, status,
-            new SystemVolumeControlViewModel(), appSettings);
+            new SystemVolumeControlViewModel(), appSettings, audioStatus);
+    }
+
+    [Fact]
+    public void AudioEngineWarning_IsHidden_WhenTheEngineIsHealthy()
+    {
+        var vm = BuildShell(audioStatus: AudioEngineStatus.Healthy);
+
+        Assert.False(vm.HasAudioEngineWarning);
+        Assert.Null(vm.AudioEngineWarning);
+    }
+
+    [Fact]
+    public void AudioEngineWarning_IsHidden_WhenNoStatusIsProvided()
+    {
+        var vm = BuildShell();
+
+        Assert.False(vm.HasAudioEngineWarning);
+    }
+
+    [Fact]
+    public void AudioEngineWarning_IsShown_WhenTheEffectsLibraryIsMissing()
+    {
+        // The bass_fx-missing case: the engine exists but every track load would fail — the shell must
+        // state it up front so the dead decks aren't a mystery (the owner's silent-SYNC report).
+        var status = new AudioEngineStatus(
+            PlaybackAvailable: true, EffectsAvailable: false, Warning: "bass_fx is missing — tracks can't load.");
+
+        var vm = BuildShell(audioStatus: status);
+
+        Assert.True(vm.HasAudioEngineWarning);
+        Assert.Equal("bass_fx is missing — tracks can't load.", vm.AudioEngineWarning);
     }
 
     [Fact]

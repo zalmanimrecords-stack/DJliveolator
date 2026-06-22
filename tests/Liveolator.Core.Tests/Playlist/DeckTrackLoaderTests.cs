@@ -9,13 +9,28 @@ public sealed class DeckTrackLoaderTests
     private sealed class RecordingDispatcher : IPerformanceActionDispatcher
     {
         private readonly HashSet<int> _playingSlots = new();
+        private readonly HashSet<int> _loadFailSlots = new();
         public List<PerformanceAction> Dispatched { get; } = new();
         public void SetPlaying(int slot) => _playingSlots.Add(slot);
+        // Simulate the engine failing to open the file on a slot: the DeckActionHandler raises the
+        // DeckLoadTrack feedback as unavailable in that case (the real signal the loader now checks).
+        public void FailLoadOnSlot(int slot) => _loadFailSlots.Add(slot);
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
-            => kind == PerformanceActionKind.DeckPlayPause
-                ? new ActionFeedbackState(IsActive: _playingSlots.Contains(slot), IsAvailable: true, Value: 0)
-                : ActionFeedbackState.Unavailable;
+        {
+            if (kind == PerformanceActionKind.DeckPlayPause)
+                return new ActionFeedbackState(IsActive: _playingSlots.Contains(slot), IsAvailable: true, Value: 0);
+            if (kind == PerformanceActionKind.DeckLoadTrack)
+            {
+                // Mirror the handler: once a DeckLoadTrack was dispatched for this slot the load feedback is
+                // available, unless the slot was set to fail (engine could not open the file).
+                bool dispatched = Dispatched.Exists(
+                    a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Slot == slot);
+                bool available = dispatched && !_loadFailSlots.Contains(slot);
+                return new ActionFeedbackState(IsActive: available, IsAvailable: available, Value: 0);
+            }
+            return ActionFeedbackState.Unavailable;
+        }
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
         public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }
@@ -83,6 +98,27 @@ public sealed class DeckTrackLoaderTests
         Assert.Empty(dispatcher.Dispatched);
         Assert.Contains("missing", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(@"S:\offline\track.mp3", result.Message);
+    }
+
+    [Fact]
+    public void Load_WhenThePresentFileFailsToOpen_ReportsLoadFailed_AndSkipsTheDownbeatAnchor()
+    {
+        // The file passes the reachability probe, but the engine can't open it (corrupt/unsupported, or a
+        // missing native effects library). The handler reports the load as unavailable; the loader must
+        // surface that instead of a success message that contradicts the deck's "couldn't load" state.
+        var dispatcher = new RecordingDispatcher();
+        dispatcher.FailLoadOnSlot(0);
+        var loader = new DeckTrackLoader(dispatcher, _ => true);
+
+        DeckLoadResult result = loader.Load(0, @"C:\music\corrupt.flac", bpm: 128.0, firstBeatSeconds: 0.5);
+
+        Assert.Equal(DeckLoadOutcome.LoadFailed, result.Outcome);
+        // The load was attempted, but the downbeat anchor is NOT dispatched for a deck that never loaded.
+        PerformanceAction load = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, load.Kind);
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetFirstBeat);
+        Assert.Contains("Couldn't load", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(@"C:\music\corrupt.flac", result.Message);
     }
 
     [Fact]

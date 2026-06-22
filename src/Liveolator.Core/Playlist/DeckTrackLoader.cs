@@ -13,6 +13,10 @@ public enum DeckLoadOutcome
 
     /// <summary>The file could not be found (missing, or its drive/share is offline); nothing dispatched.</summary>
     FileMissing,
+
+    /// <summary>The file was present but the audio engine could not open it (corrupt/unsupported, or a
+    /// missing native effects library), so the deck reported the load as failed.</summary>
+    LoadFailed,
 }
 
 /// <summary>The resolved outcome plus the human-readable status message for the UI.</summary>
@@ -68,6 +72,18 @@ public sealed class DeckTrackLoader
 
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: bpm, Argument: trackPath));
+
+        // The handler raises DeckLoadTrack feedback synchronously during Dispatch, marking the load
+        // unavailable when the engine could not open the file (a deep BASS/decoder failure that the
+        // dispatcher swallows — it never surfaces as an exception here). Honour that instead of reporting a
+        // success that contradicts the deck's own "couldn't load" state (global #26).
+        if (!_dispatcher.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot).IsAvailable)
+        {
+            return new DeckLoadResult(
+                DeckLoadOutcome.LoadFailed,
+                $"Couldn't load \"{title}\" — the audio engine could not open it ({trackPath}).");
+        }
+
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat, Slot: slot, Value: firstBeatSeconds));
         return new DeckLoadResult(DeckLoadOutcome.Loaded, $"Loaded \"{title}\" → Deck {deck}");

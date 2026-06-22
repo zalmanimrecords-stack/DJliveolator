@@ -15,6 +15,14 @@ namespace Liveolator.Audio.Playback;
 /// </remarks>
 internal interface IBassMixerBackend : IDisposable
 {
+    /// <summary>
+    /// True when the BASS_FX (tempo/key-lock) native library can be loaded. Every plugged deck wraps its
+    /// stream in <c>BassFx.TempoCreate</c>, so a missing/incompatible bass_fx makes every track load throw.
+    /// This probes it once (reading the FX version — no device or stream needed) so the shell can warn the
+    /// user up front instead of letting loads silently fail. Must not throw — returns false on failure.
+    /// </summary>
+    bool IsEffectsLibraryAvailable();
+
     /// <summary>Create the master mix channel and report its output format. Throws on failure.</summary>
     MasterMixInfo CreateMaster();
 

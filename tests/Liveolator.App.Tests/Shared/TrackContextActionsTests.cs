@@ -23,9 +23,16 @@ public sealed class TrackContextActionsTests
         public List<PerformanceAction> Dispatched { get; } = new();
         public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
-            => kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount
-                ? new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)
-                : ActionFeedbackState.Unavailable;
+        {
+            if (kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount)
+                return new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0);
+            // Mirror the DeckActionHandler: a dispatched DeckLoadTrack reports the load as available, so the
+            // loader's post-load success check passes (the real handler raises this synchronously).
+            if (kind == PerformanceActionKind.DeckLoadTrack
+                && Dispatched.Exists(a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Slot == slot))
+                return new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0);
+            return ActionFeedbackState.Unavailable;
+        }
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
         public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
     }

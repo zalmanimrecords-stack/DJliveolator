@@ -36,6 +36,18 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void EffectsLibraryAvailable_ReflectsTheBackendProbe()
+    {
+        // The shell self-check (composition root) queries this once at startup so a missing bass_fx —
+        // which would otherwise make every track load fail silently — is shown as a banner up front.
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        Assert.True(engine.EffectsLibraryAvailable());
+
+        backend.EffectsLibraryAvailable = false;
+        Assert.False(engine.EffectsLibraryAvailable());
+    }
+
+    [Fact]
     public void Load_WhenTheNewTrackFailsToOpen_KeepsThePreviousTrackLoadedAndPlayable()
     {
         // Regression: a stale live-queue / restored entry pointing at a missing file must NOT wipe a deck

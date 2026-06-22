@@ -134,6 +134,18 @@
                  Text="{Binding MidiLearn.Status}" />
     </Border>
 
+    <!-- audio-engine warning: a missing native library (bass_fx / BASS) makes every track load fail, so
+         playback and SYNC silently do nothing. Surface it up front instead of leaving dead controls. -->
+    <Border DockPanel.Dock="Top"
+            Background="{DynamicResource Amber}"
+            Padding="14,8"
+            IsVisible="{Binding HasAudioEngineWarning}">
+      <TextBlock Foreground="{DynamicResource AccentInk}"
+                 HorizontalAlignment="Center"
+                 TextWrapping="Wrap"
+                 Text="{Binding AudioEngineWarning}" />
+    </Border>
+
     <!-- selected page (resolved by ViewLocator) -->
     <ContentControl Margin="16" Content="{Binding CurrentTab.Page}" />
 

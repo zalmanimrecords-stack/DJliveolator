@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
@@ -68,6 +69,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly IWaveformProvider? _waveformProvider;
     private readonly Func<string, DeckTrackInfo?>? _trackInfo;
     private readonly Func<string, BpmResult?>? _analysisInfo;
+    // Offline auto-cue placement for the AUTO-CUE button; null hides it. Set by the composition root.
+    private readonly IAutoCueService? _autoCueService;
+    // The currently-loaded track path (from DeckLoadTrack feedback) — the file AUTO-CUE analyzes.
+    private string? _loadedTrackPath;
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
@@ -104,6 +109,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private decimal _minimumBpm;
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
+    private bool _hasLoadedTrack;
     private bool _applyingBpmFeedback;
     private string _elapsedText = NoTime;
     private string _remainingText = NoTime;
@@ -126,13 +132,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Func<string, BpmResult?>? analysisInfo = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
-        bool deckTransportEnabled = true)
+        bool deckTransportEnabled = true,
+        IAutoCueService? autoCueService = null)
     {
         _slot = slot;
         _dispatcher = dispatcher;
         _waveformProvider = waveformProvider;
         _trackInfo = trackInfo;
         _analysisInfo = analysisInfo;
+        _autoCueService = autoCueService;
         _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
         _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
@@ -244,6 +252,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // so every stored cue is reachable live, not just the first four (audit finding #2).
         ToggleHotCueBankCommand = ReactiveCommand.Create(() => { IsHotCueBankB = !IsHotCueBankB; });
 
+        // AUTO-CUE: analyze the loaded track and apply its suggested hot cues live (doc 11/16). Available
+        // only when a decoder-backed auto-cue service is wired, the deck transport is live, AND a track is
+        // loaded — so the button isn't a dead control that silently no-ops on an empty deck (same gate the
+        // other transport controls use). The canExecute tracks HasLoadedTrack so it follows load/unload.
+        AutoCueCommand = ReactiveCommand.CreateFromTask(
+            RunAutoCueAsync,
+            this.WhenAnyValue(x => x.HasLoadedTrack)
+                .Select(loaded => loaded && _transportEnabled && _autoCueService is not null));
+
         // EQ/filter emit Mixer* actions, owned by the always-present MixerActionHandler — usable whenever a
         // dispatcher exists, even in catalog-browser mode (unlike the deck-transport controls above).
         EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, dispatcherPresent ? v => EmitEq("High", v) : null);
@@ -252,6 +269,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Filter = new ContinuousControlViewModel(
             "Flt", Seed(PerformanceActionKind.MixerFilter, FilterCentre),
             dispatcherPresent ? v => Emit(PerformanceActionKind.MixerFilter, v) : null);
+
+        // Channel-strip EQ RESET (the small button above the EQ knobs): snaps this channel's three tone
+        // bands back to flat. Gated on the same dispatcher presence as the EQ knobs themselves, so the
+        // button disables in catalog-browser mode exactly like the knobs it resets.
+        ResetEqCommand = ReactiveCommand.Create(ResetEq, Observable.Return(dispatcherPresent));
 
         // Pitch fader emits DeckPitch (deck-handler-owned), so it follows the transport gate, not the mixer one.
         Pitch = new ContinuousControlViewModel(
@@ -554,7 +576,38 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public bool IsBpmEnabled
     {
         get => _isBpmEnabled;
-        private set => this.RaiseAndSetIfChanged(ref _isBpmEnabled, value);
+        private set
+        {
+            if (_isBpmEnabled == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _isBpmEnabled, value);
+            // SYNC needs this deck's analyzed tempo to beatmatch against, so its availability tracks the
+            // BPM's: an empty / un-analyzed deck shows SYNC disabled instead of as a dead button (the
+            // owner's "SYNC does nothing" report — there was no base BPM to match).
+            this.RaisePropertyChanged(nameof(CanSync));
+        }
+    }
+
+    /// <summary>True once a track has successfully loaded onto this deck (from <see
+    /// cref="PerformanceActionKind.DeckLoadTrack"/> feedback, which the handler raises only after the
+    /// engine load succeeds). Gates the transport controls so they disable on an empty deck — and, crucially,
+    /// stay disabled when a load FAILED (a failed load never raises the feedback), instead of presenting
+    /// dead buttons that silently do nothing.</summary>
+    public bool HasLoadedTrack
+    {
+        get => _hasLoadedTrack;
+        private set
+        {
+            if (_hasLoadedTrack == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _hasLoadedTrack, value);
+            this.RaisePropertyChanged(nameof(CanCue));
+            this.RaisePropertyChanged(nameof(CanLoop));
+            this.RaisePropertyChanged(nameof(CanHotCue));
+            this.RaisePropertyChanged(nameof(CanNudgeSeek));
+            this.RaisePropertyChanged(nameof(CanPitchBend));
+            this.RaisePropertyChanged(nameof(CanAutoCue));
+        }
     }
 
     /// <summary>
@@ -711,6 +764,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+
+    /// <summary>Analyzes the loaded track and applies its auto hot cues live (the deck AUTO-CUE button).</summary>
+    public ReactiveCommand<Unit, Unit> AutoCueCommand { get; }
+
+    /// <summary>True when AUTO-CUE is available (a decoder-backed auto-cue service is wired, the deck
+    /// transport is live, AND a track is loaded); the view hides the button otherwise so it's never a dead
+    /// control on an empty deck.</summary>
+    public bool CanAutoCue => _autoCueService is not null && _transportEnabled && _hasLoadedTrack;
     /// <summary>Toggles key-lock (master tempo) for this deck via <see cref="PerformanceActionKind.DeckKeyLockToggle"/>.</summary>
     public ReactiveCommand<Unit, Unit> KeyLockCommand { get; }
     /// <summary>Nudges the deck BPM down by <see cref="NudgeBpmStep"/> — manual beat-sync fine-tuning.</summary>
@@ -734,8 +795,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>NUDGE ► — momentary pitch-bend UP: briefly speeds the deck so its beats drift forward.</summary>
     public ReactiveCommand<Unit, Unit> NudgeBendUpCommand { get; }
 
-    /// <summary>True when pitch-bend can be emitted (the realtime engine is wired).</summary>
-    public bool CanPitchBend => IsEnabled;
+    /// <summary>True when pitch-bend can be emitted (the realtime engine is wired and a track is loaded).</summary>
+    public bool CanPitchBend => IsEnabled && _hasLoadedTrack;
 
     /// <summary>Grid edit: lower the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible — does
     /// not move the pitch fader). For hand-correcting a mis-detected tempo so the grid sits on the kicks.</summary>
@@ -786,12 +847,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel Filter { get; }
     public ContinuousControlViewModel Pitch { get; }
 
-    /// <summary>Cue/Loop/Hot-cues/Sync are drivable whenever a deck engine backs this view (doc 11).</summary>
-    public bool CanCue => IsEnabled;
-    public bool CanLoop => IsEnabled;
-    public bool CanHotCue => IsEnabled;
-    public bool CanSync => IsEnabled;
-    public bool CanNudgeSeek => IsEnabled;
+    /// <summary>Resets this channel's three EQ bands (HI/MID/LOW) to flat — the RESET button seated above
+    /// the channel-strip EQ knobs. The filter knob is intentionally left untouched.</summary>
+    public ReactiveCommand<Unit, Unit> ResetEqCommand { get; }
+
+    /// <summary>Cue/Loop/Hot-cues/Nudge are drivable when a deck engine backs this view AND a track has
+    /// loaded (doc 11). Gating on the loaded track keeps these from being dead buttons on an empty or
+    /// failed-to-load deck — pressing them on nothing was the owner's "the button does nothing" report.</summary>
+    public bool CanCue => IsEnabled && _hasLoadedTrack;
+    public bool CanLoop => IsEnabled && _hasLoadedTrack;
+    public bool CanHotCue => IsEnabled && _hasLoadedTrack;
+    /// <summary>SYNC additionally needs this deck's analyzed tempo (<see cref="IsBpmEnabled"/>): with no
+    /// base BPM there is nothing to beatmatch, so SYNC stays disabled rather than silently no-op.</summary>
+    public bool CanSync => IsEnabled && IsBpmEnabled;
+    public bool CanNudgeSeek => IsEnabled && _hasLoadedTrack;
 
     public void Dispose()
     {
@@ -814,6 +883,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private void EmitEq(string band, double value)
         => _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, Value: value, Slot: _slot, Argument: band));
+
+    // Setting each knob's Value re-emits its MixerEqBand only when the band actually moved (the
+    // ContinuousControlViewModel emit guard), so a reset of an already-flat channel dispatches nothing.
+    private void ResetEq()
+    {
+        EqHigh.Value = EqBands_Unity;
+        EqMid.Value = EqBands_Unity;
+        EqLow.Value = EqBands_Unity;
+    }
 
     private void Emit(PerformanceActionKind kind, double value)
         => _dispatcher?.Dispatch(new PerformanceAction(kind, ActionInputMode.Absolute, Value: value, Slot: _slot));
@@ -839,6 +917,27 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             return;
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSeek, ActionInputMode.Relative, Value: seconds / _durationSeconds, Slot: _slot));
+    }
+
+    // Analyze the loaded track and apply its suggested hot cues live. Decode + structural analysis is
+    // CPU-bound, so it runs off the UI thread; it writes the cues to the store (preserving any manual
+    // cues), then dispatches DeckApplyAutoCues so the engine reloads this deck's bank and the pads light
+    // up without reloading the track. A no-op on an empty deck; a failure is logged, never thrown (#16/#26).
+    private async Task RunAutoCueAsync()
+    {
+        string? path = _loadedTrackPath;
+        if (_autoCueService is null || string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            await Task.Run(() => _autoCueService.RunAsync(new[] { path! })).ConfigureAwait(false);
+            _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckApplyAutoCues, Slot: _slot));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Auto-cue for deck {DeckId} failed: {ex.Message}");
+        }
     }
 
     private void OnFeedback(object? sender, ActionFeedbackChanged e)
@@ -876,8 +975,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 case PerformanceActionKind.DeckSeek when e.State.IsAvailable:
                     Progress = e.State.Value; // playhead follows seek/cue position
                     break;
-                case PerformanceActionKind.DeckLoadTrack when !string.IsNullOrEmpty(e.State.Argument):
+                case PerformanceActionKind.DeckLoadTrack
+                    when e.State.IsAvailable && !string.IsNullOrEmpty(e.State.Argument):
                     OnTrackLoaded(e.State.Argument!, e.State.Value);
+                    break;
+                case PerformanceActionKind.DeckLoadTrack
+                    when !e.State.IsAvailable && !string.IsNullOrEmpty(e.State.Argument):
+                    // The engine reported the load FAILED (missing/offline file, or the audio engine could
+                    // not create the deck stream). Show it instead of leaving a silently empty deck — and
+                    // keep transport disabled so SYNC/CUE can't read as dead buttons.
+                    OnTrackLoadFailed(e.State.Argument!);
                     break;
                 case PerformanceActionKind.DeckSetFirstBeat:
                     // The analyzed downbeat anchor (seconds), echoed right after the load — anchor the
@@ -979,8 +1086,35 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         HotCues[index].SetState(state.IsActive, info.Label, info.Color, info.IsAuto);
     }
 
+    // A load that the engine could not complete: present a clear failure on the deck and keep the
+    // transport disabled (no playable track), so the controls can't read as broken (global #26).
+    private void OnTrackLoadFailed(string trackPath)
+    {
+        _loadedTrackPath = null;
+        HasLoadedTrack = false;     // there is no playable track — transport stays disabled
+        IsBpmEnabled = false;       // and SYNC stays disabled (nothing to beatmatch)
+        Title = $"⚠ Couldn't load {Path.GetFileNameWithoutExtension(trackPath)}";
+        Meta = NoMeta;
+        this.RaisePropertyChanged(nameof(HasTrackMeta));
+        TrackKey = null;
+        Progress = 0;
+        Waveform = null;
+        KickPeaks = null;
+        MidPeaks = null;
+        HighPeaks = null;
+        BeatGrid = Array.Empty<double>();
+        _trackBpm = 0;
+        _durationSeconds = 0;
+        UpdateTimeTexts();
+        this.RaisePropertyChanged(nameof(KickAnchorFraction));
+        ClearHotCues();
+    }
+
     private void OnTrackLoaded(string trackPath, double bpm)
     {
+        _loadedTrackPath = trackPath; // the file the AUTO-CUE button analyzes
+        HasLoadedTrack = true;        // a successful load arrived — enable the transport controls
+
         DeckTrackInfo? info = _trackInfo?.Invoke(trackPath);
         Title = !string.IsNullOrWhiteSpace(info?.Title)
             ? info!.Title

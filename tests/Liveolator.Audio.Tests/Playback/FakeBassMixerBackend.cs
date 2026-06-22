@@ -23,6 +23,10 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
     public bool Disposed { get; private set; }
     public Func<string, int>? OpenOverride { get; set; }
 
+    /// <summary>Simulates whether bass_fx is present; defaults to available.</summary>
+    public bool EffectsLibraryAvailable { get; set; } = true;
+    public bool IsEffectsLibraryAvailable() => EffectsLibraryAvailable;
+
     public MasterMixInfo CreateMaster() => MasterInfo;
 
     public int OpenDeckStream(string filePath)

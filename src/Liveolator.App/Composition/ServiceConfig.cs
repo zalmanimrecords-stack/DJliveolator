@@ -300,13 +300,17 @@ public static class ServiceConfig
         // existing stores. Parsing is pure (Core seam); the file-probe is the only OS touch (StatImportFile).
         services.AddSingleton<ILibraryImporter, RekordboxXmlImporter>();
         services.AddSingleton<ILibraryImporter, TraktorNmlImporter>();
-        // Serato is folder-based (cues/grids in per-file GEOB tags + binary .crate playlists), so it
-        // implements the folder seam rather than the single-file one.
+        services.AddSingleton<ILibraryImporter, VirtualDjXmlImporter>();
+        // Serato + Mixxx + Engine DJ are folder-based (Serato: per-file GEOB tags + binary .crate; Mixxx:
+        // mixxxdb.sqlite; Engine: Database2/m.db), so they implement the folder seam, not the single-file one.
         services.AddSingleton<IFolderLibraryImporter, Liveolator.Media.Import.Serato.SeratoLibraryImporter>();
+        services.AddSingleton<IFolderLibraryImporter, Liveolator.Media.Import.Mixxx.MixxxLibraryImporter>();
+        services.AddSingleton<IFolderLibraryImporter, Liveolator.Media.Import.Engine.EngineLibraryImporter>();
         services.AddSingleton<LibraryImportService>(sp => new LibraryImportService(
             sp.GetRequiredService<IHotCueStore>(),
             sp.GetRequiredService<IPlaylistStore>(),
-            StatImportFile));
+            path => ImportFileProbe.Stat(
+                path, msg => sp.GetRequiredService<ILogger<LibraryImportService>>().LogWarning("{Warning}", msg))));
 
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
@@ -340,7 +344,7 @@ public static class ServiceConfig
         // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore);
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory);
         // The master-mix clock phase-locks its detected grid onto the audible kick (OnsetPhaseLock), so
         // when a deck is NOT the sync master — an un-analyzed track, or live input with no precomputed
         // grid — the shared clock still tracks the beat without drifting (doc 03 drift prevention).
@@ -348,6 +352,20 @@ public static class ServiceConfig
             ? null
             : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock, phaseLock: new OnsetPhaseLock());
         bool realtimeUp = deckEngine is not null;
+
+        // Audio-engine self-check (doc 11 / global #26): a missing native library is otherwise invisible —
+        // the decks render but every track load throws and is swallowed, so playback and SYNC silently do
+        // nothing. Probe it once now and register the result so the shell can show a banner up front.
+        AudioEngineStatus audioStatus = !realtimeUp
+            ? new AudioEngineStatus(
+                PlaybackAvailable: false, EffectsAvailable: false,
+                Warning: "Live audio engine unavailable — track playback and SYNC are off (native BASS not found).")
+            : deckEngine!.EffectsLibraryAvailable()
+                ? AudioEngineStatus.Healthy
+                : new AudioEngineStatus(
+                    PlaybackAvailable: true, EffectsAvailable: false,
+                    Warning: "Audio effects library (bass_fx) is missing — tracks can't load and SYNC won't work. Reinstall Liveolator.");
+        services.AddSingleton(audioStatus);
 
         // --- Visual engine (doc 08): the GL compositor binds to the live clock. Base source = the
         // audio-driven master-mix clock when realtime audio is up (visuals lock to the music), else the
@@ -559,7 +577,8 @@ public static class ServiceConfig
             appSettings.Visuals.NudgeSeconds,
             // Deck transport is handled only when the realtime engine is up; in catalog-browser mode the
             // decks disable Play/Cue/Sync/etc. instead of silently dropping those actions (QA finding S1).
-            deckTransportEnabled: realtimeUp));
+            deckTransportEnabled: realtimeUp,
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
 
         WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -756,27 +775,12 @@ public static class ServiceConfig
     // Builds the realtime two-deck BASS engine (registering its channels into the mixer), or null when
     // the native bass/bassmix libraries are absent (e.g. CI / a dev box without the per-platform
     // binaries). Never throws for that case — the app falls back to the catalog browser.
-    // File-probe for the library importer: the only OS touch in the import path. Returns the file's
-    // ScannedFile (size + mtime) when it exists, else null — a source path that doesn't resolve here is
-    // then remapped by filename against the catalog.
-    private static ScannedFile? StatImportFile(string path)
-    {
-        try
-        {
-            var info = new System.IO.FileInfo(path);
-            return info.Exists ? new ScannedFile(info.FullName, info.Length, info.LastWriteTimeUtc) : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static TwoDeckBassEngine? TryBuildDeckEngine(
         BassMixer mixer,
         AudioSettings audioSettings,
         IAudioEffectRackProvider effectRacks,
-        IHotCueStore hotCueStore)
+        IHotCueStore hotCueStore,
+        ILoggerFactory loggerFactory)
     {
         try
         {
@@ -784,9 +788,12 @@ public static class ServiceConfig
             // deck-to-deck phase (both decks share one output) but aligns the master-driven shared clock
             // (and the visuals) to what the listener actually hears.
             var phaseLock = new PhaseLockSettings(OutputLatencySeconds: audioSettings.BufferMilliseconds / 1000.0);
+            // Pass the app logger so the engine's diagnostics — including the SYNC engage/skip lines that
+            // explain a failed beatmatch — reach the rolling log file (global #26), instead of the default
+            // NullLogger silently dropping them.
             return new TwoDeckBassEngine(
-                mixer, audioSettings: audioSettings, effectRacks: effectRacks, hotCueStore: hotCueStore,
-                phaseLock: phaseLock);
+                mixer, loggerFactory: loggerFactory, audioSettings: audioSettings, effectRacks: effectRacks,
+                hotCueStore: hotCueStore, phaseLock: phaseLock);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
@@ -923,7 +930,8 @@ public static class ServiceConfig
             new VisualStage(
                 visible => visualEngine.Run("Liveolator Visuals", visible: visible),
                 () => visualEngine.RequestPresent(),
-                loggerFactory.CreateLogger<VisualStage>()));
+                loggerFactory.CreateLogger<VisualStage>(),
+                stop: () => visualEngine.RequestStop()));
 
         return (visualHandler, visualEngine);
     }

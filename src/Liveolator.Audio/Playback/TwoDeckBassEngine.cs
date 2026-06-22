@@ -161,6 +161,11 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
 
     public int DeckCount => Decks;
 
+    /// <summary>True when the BASS_FX (tempo/key-lock) native library can load. When false, every track
+    /// load fails (each deck wraps its stream in <c>BassFx.TempoCreate</c>), so the shell warns the user up
+    /// front instead of letting loads silently fail (doc 11 / global #26). Probed via the backend.</summary>
+    public bool EffectsLibraryAvailable() => _backend.IsEffectsLibraryAvailable();
+
     /// <summary>
     /// Re-open the output device / buffer at runtime from the user's settings (doc 12). Returns true if
     /// audio is now running on the requested (or fallback) device; false on failure so the caller (the

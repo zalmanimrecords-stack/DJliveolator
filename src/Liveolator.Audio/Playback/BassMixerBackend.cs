@@ -319,6 +319,26 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
             Bass.CurrentDevice = masterDevice;
     }
 
+    public bool IsEffectsLibraryAvailable()
+    {
+        try
+        {
+            // Reading the FX version P/Invokes BASS_FX_GetVersion — it loads bass_fx without needing a
+            // device or a stream. A non-zero version proves the library is present and ABI-compatible.
+            return BassFx.Version.Major > 0;
+        }
+        catch (DllNotFoundException ex)
+        {
+            _logger.LogError(ex, "BASS_FX native library is missing — every track load will fail.");
+            return false;
+        }
+        catch (BadImageFormatException ex)
+        {
+            _logger.LogError(ex, "BASS_FX native library is the wrong architecture — track loads will fail.");
+            return false;
+        }
+    }
+
     public MasterMixInfo CreateMaster()
     {
         // A mixer stream that does not auto-stop when all sources pause/end (decks come and go). The
@@ -396,7 +416,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
 
     public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
-        var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot));
+        var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot), _logger, slot);
 
         // Remember the deck's natural sample rate (read from the raw source) so SetDeckRate can express
         // vinyl pitch as a multiple of it.

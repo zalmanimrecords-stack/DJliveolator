@@ -10,6 +10,7 @@ using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.Studio;
 using Liveolator.App.Features.VisualLibrary;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
 using ReactiveUI;
 
@@ -35,7 +36,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         GlobalMidiLearnCoordinator midiLearn,
         ShellStatusViewModel status,
         SystemVolumeControlViewModel systemVolume,
-        AppSettings? appSettings = null)
+        AppSettings? appSettings = null,
+        AudioEngineStatus? audioStatus = null)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
@@ -51,6 +53,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Status = status;
         MidiLearn = midiLearn;
         SystemVolume = systemVolume;
+        AudioEngineWarning = audioStatus?.Warning;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
@@ -71,6 +74,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         _currentTab = Tabs.FirstOrDefault(
             tab => string.Equals(tab.Title, activeTabId, StringComparison.OrdinalIgnoreCase)) ?? Tabs[0];
     }
+
+    /// <summary>A startup warning about the realtime audio engine (e.g. a missing bass_fx that makes every
+    /// track load fail), or null when healthy. Shown as a shell banner so the failure is stated up front
+    /// instead of presenting decks where playback and SYNC silently do nothing.</summary>
+    public string? AudioEngineWarning { get; }
+
+    /// <summary>True when there is an audio-engine warning to show (drives the banner's visibility).</summary>
+    public bool HasAudioEngineWarning => !string.IsNullOrEmpty(AudioEngineWarning);
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
     public ShellStatusViewModel Status { get; }

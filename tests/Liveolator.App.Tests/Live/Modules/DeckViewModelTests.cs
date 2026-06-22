@@ -104,15 +104,111 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
-    public void DeckControls_AreEnabled_WhenAnEngineBacksTheDeck()
+    public async Task ResetEq_SnapsAllThreeBandsToFlat_AndReemitsForEachMovedBand()
     {
-        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        vm.EqHigh.Value = 0.9;
+        vm.EqMid.Value = 0.1;
+        vm.EqLow.Value = 0.3;
+        dispatcher.Dispatched.Clear();
+
+        await vm.ResetEqCommand.Execute().ToTask();
+
+        Assert.Equal(0.5, vm.EqHigh.Value);
+        Assert.Equal(0.5, vm.EqMid.Value);
+        Assert.Equal(0.5, vm.EqLow.Value);
+
+        Assert.Equal(3, dispatcher.Dispatched.Count);
+        Assert.All(dispatcher.Dispatched, action =>
+        {
+            Assert.Equal(PerformanceActionKind.MixerEqBand, action.Kind);
+            Assert.Equal(1, action.Slot);
+            Assert.Equal(0.5, action.Value);
+        });
+    }
+
+    [Fact]
+    public async Task ResetEq_LeavesTheFilterUntouched()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        vm.Filter.Value = 0.2;
+        dispatcher.Dispatched.Clear();
+
+        await vm.ResetEqCommand.Execute().ToTask();
+
+        Assert.Equal(0.2, vm.Filter.Value);
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.MixerFilter);
+    }
+
+    [Fact]
+    public void ResetEqCommand_IsDisabled_WithoutADispatcher()
+    {
+        var vm = new DeckViewModel(slot: 0); // catalog-browser mode: no mixer handler backs the EQ
+
+        bool canReset = true;
+        using (vm.ResetEqCommand.CanExecute.Subscribe(v => canReset = v)) { }
+        Assert.False(canReset);
+    }
+
+    [Fact]
+    public void DeckControls_AreEnabled_OnceATrackLoads_WhenAnEngineBacksTheDeck()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // Engine backs the deck, but nothing is loaded yet → the transport controls are disabled, not
+        // dead buttons that silently do nothing when pressed (the owner's SYNC report).
+        Assert.False(vm.CanCue);
+        Assert.False(vm.CanLoop);
+        Assert.False(vm.CanHotCue);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128, Argument: @"C:\song.flac"));
 
         Assert.True(vm.CanCue);
         Assert.True(vm.CanLoop);
         Assert.True(vm.CanHotCue);
-        Assert.True(vm.Pitch.IsEnabled);
+        Assert.True(vm.Pitch.IsEnabled); // the pitch control is engine-gated, not track-gated
         Assert.All(vm.HotCues, pad => Assert.True(pad.IsEnabled));
+    }
+
+    [Fact]
+    public void TransportControls_StayDisabled_WhenAnEngineBacksTheDeckButNoTrackLoads()
+    {
+        // Reproduces the dead-button half of the owner's report: a deck whose load FAILED (the engine
+        // never raised DeckLoadTrack feedback) must keep SYNC/CUE/LOOP/NUDGE disabled, so pressing them
+        // can't read as "the button is broken".
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.False(vm.CanCue);
+        Assert.False(vm.CanLoop);
+        Assert.False(vm.CanHotCue);
+        Assert.False(vm.CanSync);
+        Assert.False(vm.CanNudgeSeek);
+        Assert.False(vm.CanPitchBend);
+    }
+
+    [Fact]
+    public void CanSync_TracksTheDecksBpm_NotJustTheLoad()
+    {
+        // SYNC needs an analyzed tempo to beatmatch against. A track that loads WITHOUT a BPM (Value 0)
+        // must leave SYNC disabled — there is nothing to equalize — even though the deck now has a track.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        Assert.False(vm.CanSync);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\nobpm.flac"));
+        Assert.False(vm.CanSync); // loaded, but no BPM → still nothing to sync to
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128, Argument: "117.76|138.24"));
+        Assert.True(vm.CanSync); // BPM now known → SYNC becomes available
     }
 
     [Fact]
@@ -505,6 +601,9 @@ public sealed class DeckViewModelTests
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
 
+        // SYNC is available once the deck has an analyzed tempo to match against.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, slot,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128, Argument: "117.76|138.24"));
         Assert.True(vm.CanSync);
         await vm.SyncCommand.Execute().ToTask();
 
@@ -535,6 +634,34 @@ public sealed class DeckViewModelTests
         var vm = new DeckViewModel(slot: 0); // catalog-browser mode: no engine backs the deck
 
         Assert.False(vm.CanSync);
+    }
+
+    [Fact]
+    public void LoadFailedFeedback_ShowsTheFailure_AndKeepsTransportDisabled()
+    {
+        // The handler raises a load-FAILED feedback (IsAvailable:false) when the engine can't open the
+        // track. The deck must show the failure and keep SYNC/CUE/etc disabled — not a silently empty
+        // deck with dead buttons (the owner's report).
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // A prior successful load enabled the controls...
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128, Argument: @"C:\ok.flac"));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128, Argument: "117.76|138.24"));
+        Assert.True(vm.CanSync);
+
+        // ...then a later load fails.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: false, Value: 0, Argument: @"S:\offline.flac"));
+
+        Assert.False(vm.HasLoadedTrack);
+        Assert.False(vm.CanSync);
+        Assert.False(vm.CanCue);
+        Assert.False(vm.CanLoop);
+        Assert.Contains("offline", vm.Title, StringComparison.OrdinalIgnoreCase);
+        Assert.False(vm.HasTrackMeta);
     }
 
     [Fact]
@@ -1332,5 +1459,69 @@ public sealed class DeckViewModelTests
         double left = dispatcher.Dispatched[0].Value;
         double right = dispatcher.Dispatched[1].Value;
         Assert.Equal(-left, right, precision: 6);
+    }
+
+    private sealed class FakeAutoCueService : Liveolator.Core.Analysis.Cues.IAutoCueService
+    {
+        public List<string> Requested { get; } = new();
+
+        public Task<Liveolator.Core.Analysis.Cues.AutoCueOutcome> RunAsync(
+            IReadOnlyList<string> trackPaths,
+            IProgress<Liveolator.Core.Analysis.Cues.AutoCueProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Requested.AddRange(trackPaths);
+            return Task.FromResult(new Liveolator.Core.Analysis.Cues.AutoCueOutcome(trackPaths.Count, trackPaths.Count));
+        }
+    }
+
+    [Fact]
+    public void CanAutoCue_requires_a_wired_service_and_a_loaded_track()
+    {
+        // No service wired → never available, even with a track loaded.
+        Assert.False(new DeckViewModel(slot: 0, new FakeDispatcher()).CanAutoCue);
+
+        // Service wired but nothing loaded → still unavailable (no dead button on an empty deck).
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher, autoCueService: new FakeAutoCueService());
+        Assert.False(vm.CanAutoCue);
+
+        // A track loads → AUTO-CUE becomes available.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128, Argument: @"C:\song.flac"));
+        Assert.True(vm.CanAutoCue);
+    }
+
+    [Fact]
+    public async Task AutoCue_analyzesTheLoadedTrack_thenDispatchesDeckApplyAutoCues()
+    {
+        var dispatcher = new FakeDispatcher();
+        var service = new FakeAutoCueService();
+        var vm = new DeckViewModel(slot: 1, dispatcher, autoCueService: service);
+        // Simulate the engine echoing the loaded track so the deck knows which file to auto-cue.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: @"C:\music\track.mp3"));
+
+        await vm.AutoCueCommand.Execute().ToTask();
+
+        Assert.Equal(@"C:\music\track.mp3", Assert.Single(service.Requested));
+        Assert.Contains(dispatcher.Dispatched,
+            a => a.Kind == PerformanceActionKind.DeckApplyAutoCues && a.Slot == 1);
+    }
+
+    [Fact]
+    public void AutoCue_withNoLoadedTrack_cannotExecute()
+    {
+        // With no track loaded the command is disabled (the button is hidden via CanAutoCue), so it can
+        // never run as a silent no-op — the dead-button class the gating eliminates.
+        var dispatcher = new FakeDispatcher();
+        var service = new FakeAutoCueService();
+        var vm = new DeckViewModel(slot: 0, dispatcher, autoCueService: service);
+
+        bool canExecute = true;
+        using (vm.AutoCueCommand.CanExecute.Subscribe(v => canExecute = v)) { }
+
+        Assert.False(canExecute);
+        Assert.Empty(service.Requested);
     }
 }

@@ -78,14 +78,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckLoadTrack:
                 if (string.IsNullOrWhiteSpace(action.Argument))
                     throw new ArgumentException("DeckLoadTrack requires Argument set to the track path.", nameof(action));
-                LoadTrack(slot, action);
-                // Report the loaded path so a deck UI (waveform/title) can react — feedback is the only
-                // load-time signal back to subscribers, and it now carries the path via Argument and the
-                // analyzed BPM via Value (0 = unknown) so the deck can derive a beat-grid overlay.
-                RaiseFeedback(
-                    PerformanceActionKind.DeckLoadTrack, slot,
-                    _loadedTracks[slot] = new ActionFeedbackState(
-                        IsActive: true, IsAvailable: true, Value: action.Value, Argument: action.Argument));
+                LoadTrackOrSurfaceFailure(slot, action);
                 break;
             case PerformanceActionKind.DeckSetLoop:
                 SetLoop(slot, action);
@@ -182,6 +175,33 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
+    }
+
+    // Loads the track and reports the outcome as DeckLoadTrack feedback. On success the feedback carries
+    // the path (Argument) + analyzed BPM (Value, 0 = unknown) so the deck UI builds its waveform/grid. On
+    // FAILURE — the engine could not open the file (missing/offline drive) or the native audio engine
+    // could not create the deck stream — it raises a load-failed feedback (IsAvailable:false) so the deck
+    // UI shows a clear failure instead of a silently empty deck with dead transport buttons (global
+    // standards #16/#26), then rethrows so the dispatcher logs the full cause.
+    private void LoadTrackOrSurfaceFailure(int slot, PerformanceAction action)
+    {
+        try
+        {
+            LoadTrack(slot, action);
+        }
+        catch (Exception)
+        {
+            RaiseFeedback(
+                PerformanceActionKind.DeckLoadTrack, slot,
+                _loadedTracks[slot] = new ActionFeedbackState(
+                    IsActive: false, IsAvailable: false, Value: 0, Argument: action.Argument));
+            throw;
+        }
+
+        RaiseFeedback(
+            PerformanceActionKind.DeckLoadTrack, slot,
+            _loadedTracks[slot] = new ActionFeedbackState(
+                IsActive: true, IsAvailable: true, Value: action.Value, Argument: action.Argument));
     }
 
     private void LoadTrack(int slot, PerformanceAction action)

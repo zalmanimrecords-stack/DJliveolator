@@ -60,6 +60,9 @@
                     Padding="6,0" Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
                     ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />
           </Grid>
+          <Button Classes="key" Content="AUTO-CUE" Height="20" HorizontalAlignment="Stretch"
+                  Command="{Binding AutoCueCommand}" IsVisible="{Binding CanAutoCue}"
+                  ToolTip.Tip="Auto-place hot cues for the loaded track (drop, breakdown, build, phrases)" />
           <ItemsControl ItemsSource="{Binding VisibleHotCues}">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
@@ -168,19 +171,49 @@
                change only the GRID/sync tempo and phase, never the playing pitch. -->
           <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" IsEnabled="{Binding IsBpmEnabled}">
             <TextBlock Grid.Column="0" Classes="tick" VerticalAlignment="Center" Text="GRID" Margin="0,0,6,0" />
-            <Button Grid.Column="1" Classes="key" Content="−" Width="28" Height="22"
-                    Command="{Binding GridBpmDownCommand}" ToolTip.Tip="Grid tempo −1 BPM (does not change pitch)" />
-            <Button Grid.Column="2" Classes="key" Content="+" Width="28" Height="22" Margin="4,0,0,0"
-                    Command="{Binding GridBpmUpCommand}" ToolTip.Tip="Grid tempo +1 BPM (does not change pitch)" />
-            <Button Grid.Column="3" Classes="key" Content="½" Width="28" Height="22" Margin="4,0,0,0"
-                    Command="{Binding GridHalveCommand}" ToolTip.Tip="Halve the grid tempo (octave fix)" />
-            <Button Grid.Column="4" Classes="key" Content="×2" Width="28" Height="22" Margin="4,0,0,0"
-                    Command="{Binding GridDoubleCommand}" ToolTip.Tip="Double the grid tempo (octave fix)" />
-            <Button Grid.Column="6" Classes="key" Content="SET" Width="44" Height="22"
-                    Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead" />
-            <Button Grid.Column="7" Classes="key" Content="ONE" Width="44" Height="22" Margin="4,0,0,0"
+            <Button Grid.Column="1" Classes="key" Width="36" Height="38" Padding="0,2"
+                    Command="{Binding GridBpmDownCommand}" ToolTip.Tip="Grid tempo −1 BPM (does not change pitch)">
+              <StackPanel Spacing="0">
+                <TextBlock Text="−" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
+                <TextBlock Text="BPM" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
+                    Command="{Binding GridBpmUpCommand}" ToolTip.Tip="Grid tempo +1 BPM (does not change pitch)">
+              <StackPanel Spacing="0">
+                <TextBlock Text="+" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
+                <TextBlock Text="BPM" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="3" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
+                    Command="{Binding GridHalveCommand}" ToolTip.Tip="Halve the grid tempo (octave fix)">
+              <StackPanel Spacing="0">
+                <TextBlock Text="½" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
+                <TextBlock Text="OCT" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
+                    Command="{Binding GridDoubleCommand}" ToolTip.Tip="Double the grid tempo (octave fix)">
+              <StackPanel Spacing="0">
+                <TextBlock Text="×2" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
+                <TextBlock Text="OCT" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="6" Classes="key" Width="54" Height="38" Padding="0,2"
+                    Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead">
+              <StackPanel Spacing="0">
+                <TextBlock Text="SET" FontSize="11" LineHeight="13" HorizontalAlignment="Center" />
+                <TextBlock Text="PHASE" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="7" Classes="key" Width="54" Height="38" Padding="0,2" Margin="4,0,0,0"
                     Command="{Binding SetOneCommand}"
-                    ToolTip.Tip="Mark the beat under the playhead as the bar's downbeat (the &quot;one&quot;)" />
+                    ToolTip.Tip="Mark the beat under the playhead as the bar's downbeat (the &quot;one&quot;)">
+              <StackPanel Spacing="0">
+                <TextBlock Text="ONE" FontSize="11" LineHeight="13" HorizontalAlignment="Center" />
+                <TextBlock Text="BAR 1" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+              </StackPanel>
+            </Button>
           </Grid>
         </StackPanel>
       </Border>

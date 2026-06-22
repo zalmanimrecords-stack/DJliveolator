@@ -59,10 +59,14 @@ public sealed partial class TwoDeckBassEngine
             _backend.SetDeckRate(deck.Handle, targetRate);
             PhaseAlignToLeader(slot);
             _logger.LogInformation(
-                "Deck slot {Slot} one-shot synced to deck {Leader} at rate {Rate:F5}.",
+                "Deck slot {Slot} one-shot synced to leader {Leader}: follower base {FollowerBpm:F1}, " +
+                "leader effective {LeaderBpm:F1} -> follower rate {Rate:F5} (now {Effective:F1} BPM).",
                 slot,
                 leaderSlot,
-                targetRate);
+                s.BaseBpm,
+                leader.BaseBpm * leaderRate,
+                targetRate,
+                s.BaseBpm * targetRate);
         }
     }
 

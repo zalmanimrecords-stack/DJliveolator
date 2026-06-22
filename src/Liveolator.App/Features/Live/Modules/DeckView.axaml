@@ -66,9 +66,13 @@
            (ghosted) state for auto-placed cues. The A/B toggle swaps the visible 4 pads between bank A
            (slots 1-4) and bank B (slots 5-8) so every stored cue is reachable. -->
       <StackPanel Spacing="6">
-        <Grid ColumnDefinitions="*,Auto">
+        <Grid ColumnDefinitions="*,Auto,Auto">
           <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
-          <Button Grid.Column="1" Classes="key" Content="{Binding HotCueBankLabel}"
+          <Button Grid.Column="1" Classes="key" Content="AUTO" Margin="0,0,6,0"
+                  Command="{Binding AutoCueCommand}" IsVisible="{Binding CanAutoCue}"
+                  Padding="6,2"
+                  ToolTip.Tip="Auto-place hot cues for the loaded track (drop, breakdown, build, phrases)" />
+          <Button Grid.Column="2" Classes="key" Content="{Binding HotCueBankLabel}"
                   Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
                   MinWidth="36" Padding="6,2"
                   ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />

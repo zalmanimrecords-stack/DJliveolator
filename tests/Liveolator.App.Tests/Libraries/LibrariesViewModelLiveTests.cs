@@ -31,9 +31,16 @@ public sealed class LibrariesViewModelLiveTests
 
         // Mirrors DeckActionHandler.GetFeedback: a deck slot is available iff slot < DeckCount.
         public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
-            => kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount
-                ? new ActionFeedbackState(IsActive: PlayingSlots.Contains(slot), IsAvailable: true, Value: 0)
-                : ActionFeedbackState.Unavailable;
+        {
+            if (kind == PerformanceActionKind.DeckPlayPause && slot >= 0 && slot < DeckCount)
+                return new ActionFeedbackState(IsActive: PlayingSlots.Contains(slot), IsAvailable: true, Value: 0);
+            // Mirror the handler: a dispatched DeckLoadTrack reports the load as available, so the loader's
+            // post-load success check passes (the real handler raises this synchronously during Dispatch).
+            if (kind == PerformanceActionKind.DeckLoadTrack && slot >= 0 && slot < DeckCount
+                && Dispatched.Exists(a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Slot == slot))
+                return new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0);
+            return ActionFeedbackState.Unavailable;
+        }
 
         public event EventHandler<ActionFeedbackChanged>? FeedbackChanged { add { } remove { } }
         public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }

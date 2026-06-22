@@ -142,7 +142,15 @@ public class DeckActionHandlerTests
         public bool IsPlaying(int slot) => _playing[slot];
         public void SetPlaying(int slot, bool value) => _playing[slot] = value;
 
-        public void Load(int slot, string trackPath) => Loaded.Add((slot, trackPath));
+        /// <summary>When true, <see cref="Load"/> throws — simulates a missing/offline file or the native
+        /// audio engine failing to create the deck stream (the real bass_fx-missing failure).</summary>
+        public bool ThrowOnLoad { get; set; }
+        public void Load(int slot, string trackPath)
+        {
+            if (ThrowOnLoad)
+                throw new InvalidOperationException("native audio engine could not load the track");
+            Loaded.Add((slot, trackPath));
+        }
         public void PlayPause(int slot) => PlayPaused.Add(slot);
         public void Stop(int slot) => Stopped.Add(slot);
 
@@ -634,6 +642,34 @@ public class DeckActionHandlerTests
         Assert.Equal(128.0, feedback.Value, precision: 3);
         Assert.False(handler.GetFeedback(
             PerformanceActionKind.DeckLoadTrack, slot: 0).IsAvailable);
+    }
+
+    [Fact]
+    public void LoadTrack_WhenEngineLoadThrows_SurfacesAFailedFeedback_AndRethrows()
+    {
+        // The engine cannot open the track (missing/offline file, or the native audio engine fails to
+        // create the deck stream — the real bass_fx-missing case). The handler must surface a load-FAILED
+        // feedback (IsAvailable:false) so the deck UI shows the failure instead of staying silently empty,
+        // then rethrow so the dispatcher still logs the cause (global standards #16/#26).
+        var engine = new FakeMultiDeckEngine { ThrowOnLoad = true };
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackChanged? captured = null;
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckLoadTrack)
+                captured = e;
+        };
+
+        Assert.Throws<InvalidOperationException>(() => handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128.0, Slot: 1, Argument: @"S:\offline.flac")));
+
+        Assert.NotNull(captured);
+        Assert.Equal(1, captured!.Slot);
+        Assert.False(captured.State.IsAvailable);   // the UI's load-failed signal
+        Assert.Equal(@"S:\offline.flac", captured.State.Argument); // names the file that failed
+        // GetFeedback reflects the failure too, so a late UI subscriber (tab switch) sees it.
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot: 1).IsAvailable);
     }
 
     [Fact]

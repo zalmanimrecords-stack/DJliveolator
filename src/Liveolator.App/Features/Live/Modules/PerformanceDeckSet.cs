@@ -3,6 +3,7 @@ using System.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Settings;
@@ -38,11 +39,12 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         IDeckLevelMeter? levelMeter = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
-        bool deckTransportEnabled = true)
+        bool deckTransportEnabled = true,
+        IAutoCueService? autoCueService = null)
     {
         _library = library;
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService);
         // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
         Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);
