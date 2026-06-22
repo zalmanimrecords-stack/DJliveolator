@@ -659,7 +659,11 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                         : $"Re-mapping all tracks… {p.Done}/{p.Total}";
                     ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
                     // Surface freshly-mapped BPM/key periodically without thrashing the UI per track.
-                    if (p.Done >= p.Total || p.Done % 25 == 0)
+                    // The terminal refresh is owned solely by the post-await block below, so the final
+                    // tick does NOT refresh here — otherwise the two RefreshRows fire back-to-back on
+                    // different threads (Progress<T> posts to the thread pool with no sync context) and
+                    // race inside ApplyFilter's Tracks.Clear()/Add(), double-listing every row (doc 27 B0).
+                    if (p.Done < p.Total && p.Done % 25 == 0)
                         RefreshRows();
                 }));
 

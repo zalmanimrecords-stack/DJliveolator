@@ -2,9 +2,15 @@ using Liveolator.Audio;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
+using Liveolator.Core.Persistence;
 using Liveolator.Media;
+using Liveolator.Media.Import;
+using Liveolator.Media.Import.Engine;
+using Liveolator.Media.Import.Mixxx;
+using Liveolator.Media.Import.Serato;
 using Liveolator.Mcp.Session;
 using Liveolator.Online;
 using Liveolator.Visuals;
@@ -28,6 +34,27 @@ internal static class ServiceRegistration
             config.DataDirectory,
             onWarning: msg => sp.GetRequiredService<ILogger<JsonCatalogStore>>().LogWarning("{Warning}", msg)));
         services.AddSingleton<PlaylistWriter>();
+
+        // DJ-library import (doc: import) for agents: file-based (Rekordbox/Traktor/VirtualDJ) + folder-based
+        // (Serato/Mixxx) parsers feeding one mapping service. Imported cues/playlists persist via the same
+        // JSON stores under the data directory — no new on-disk format.
+        services.AddSingleton<IHotCueStore>(sp => new JsonHotCueStore(
+            config.DataDirectory,
+            onWarning: msg => sp.GetRequiredService<ILogger<JsonHotCueStore>>().LogWarning("{Warning}", msg)));
+        services.AddSingleton<IPlaylistStore>(sp => new JsonPlaylistStore(
+            config.DataDirectory,
+            onWarning: msg => sp.GetRequiredService<ILogger<JsonPlaylistStore>>().LogWarning("{Warning}", msg)));
+        services.AddSingleton<ILibraryImporter, RekordboxXmlImporter>();
+        services.AddSingleton<ILibraryImporter, TraktorNmlImporter>();
+        services.AddSingleton<ILibraryImporter, VirtualDjXmlImporter>();
+        services.AddSingleton<IFolderLibraryImporter, SeratoLibraryImporter>();
+        services.AddSingleton<IFolderLibraryImporter, MixxxLibraryImporter>();
+        services.AddSingleton<IFolderLibraryImporter, EngineLibraryImporter>();
+        services.AddSingleton(sp => new LibraryImportService(
+            sp.GetRequiredService<IHotCueStore>(), sp.GetRequiredService<IPlaylistStore>(),
+            path => ImportFileProbe.Stat(
+                path, msg => sp.GetRequiredService<ILogger<LibraryImportService>>().LogWarning("{Warning}", msg))));
+
         services.AddSingleton<LibrarySession>();
 
         // Visual-media catalog (doc 17 Phase 3): image dimensions are pure-managed; video duration

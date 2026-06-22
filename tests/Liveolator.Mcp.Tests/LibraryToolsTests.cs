@@ -2,8 +2,11 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Persistence;
 using Liveolator.Media;
+using Liveolator.Media.Import;
 using Liveolator.Mcp.Contracts;
 using Liveolator.Mcp.Session;
 using Liveolator.Mcp.Tools;
@@ -68,12 +71,17 @@ public sealed class LibraryToolsTests : IDisposable
     {
         var store = new JsonCatalogStore(_directory);
         await store.SaveMusicAsync(tracks);
+        var importService = new LibraryImportService(
+            new JsonHotCueStore(_directory), new JsonPlaylistStore(_directory), p => ImportFileProbe.Stat(p));
         return new LibrarySession(
             new EmptyEnumerator(),
             new EmptyDecoder(),
             new TrackAnalyzer(),
             NullTrackMetadataReader.Instance,
             store,
+            Array.Empty<ILibraryImporter>(),
+            Array.Empty<IFolderLibraryImporter>(),
+            importService,
             NullLogger<LibrarySession>.Instance);
     }
 

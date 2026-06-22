@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Mcp.Contracts;
 using Liveolator.Mcp.Session;
@@ -148,6 +149,23 @@ public sealed class LibraryTools
         LibrarySession session,
         CancellationToken cancellationToken = default)
         => session.ReanalyzePendingAsync(cancellationToken);
+
+    [McpServerTool(Name = "import_library")]
+    [Description("Import tracks, hot cues, beat grids, key, and playlists from another DJ app's library " +
+                 "into the catalog, then persist. Formats: Rekordbox, Traktor, VirtualDJ (pass the exported " +
+                 "library file) or Serato, Mixxx (pass the library folder). Non-destructive by default " +
+                 "(fills only missing analysis and keeps existing cues); set overwrite to let the source win.")]
+    public static Task<ImportSummaryDto> ImportLibrary(
+        LibrarySession session,
+        [Description("Source app: Rekordbox, Traktor, VirtualDJ, Serato, or Mixxx.")] string format,
+        [Description("The exported library file (Rekordbox/Traktor/VirtualDJ) or the library folder " +
+                     "(Serato library root / the folder holding mixxxdb.sqlite).")] string path,
+        [Description("Overwrite existing BPM/key/cues instead of only filling gaps.")] bool overwrite = false,
+        CancellationToken cancellationToken = default)
+        => session.ImportAsync(
+            format, path,
+            overwrite ? ImportMergePolicy.Overwrite : ImportMergePolicy.FillGaps,
+            cancellationToken);
 
     private static TEnum? ParseOptionalEnum<TEnum>(string? value, string name, string valid)
         where TEnum : struct, Enum

@@ -94,6 +94,9 @@ public partial class LibrariesView : UserControl
     private async void OnImportTraktor(object? sender, RoutedEventArgs e)
         => await ImportLibraryAsync("Traktor", "Traktor collection (NML)", "*.nml");
 
+    private async void OnImportVirtualDj(object? sender, RoutedEventArgs e)
+        => await ImportLibraryAsync("VirtualDJ", "VirtualDJ database (XML)", "*.xml");
+
     private async Task ImportLibraryAsync(string format, string description, string pattern)
     {
         if (DataContext is not LibrariesViewModel vm)
@@ -119,9 +122,19 @@ public partial class LibrariesView : UserControl
             await vm.ImportFromFileAsync(format, path);
     }
 
-    // Serato is folder-based: the DJ picks the library root (the folder containing the music + the
-    // _Serato_ data); the view-model reads the per-file cues/grids and the crate playlists from it.
+    // Folder-based imports: the DJ picks a folder. Serato = the library/drive root (per-file cues/grids +
+    // _Serato_ crates); Mixxx = the folder holding mixxxdb.sqlite. The view-model does the format-agnostic
+    // parse + merge UI-free.
     private async void OnImportSerato(object? sender, RoutedEventArgs e)
+        => await ImportFolderLibraryAsync("Serato", "Import Serato library — pick the library/drive root");
+
+    private async void OnImportMixxx(object? sender, RoutedEventArgs e)
+        => await ImportFolderLibraryAsync("Mixxx", "Import Mixxx library — pick the folder holding mixxxdb.sqlite");
+
+    private async void OnImportEngine(object? sender, RoutedEventArgs e)
+        => await ImportFolderLibraryAsync("Engine DJ", "Import Engine DJ library — pick the Engine Library folder");
+
+    private async Task ImportFolderLibraryAsync(string format, string title)
     {
         if (DataContext is not LibrariesViewModel vm)
             return;
@@ -131,11 +144,11 @@ public partial class LibrariesView : UserControl
             return;
 
         IReadOnlyList<IStorageFolder> picked = await top.StorageProvider.OpenFolderPickerAsync(
-            new FolderPickerOpenOptions { Title = "Import Serato library — pick the library/drive root", AllowMultiple = false });
+            new FolderPickerOpenOptions { Title = title, AllowMultiple = false });
 
         string? path = picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
         if (!string.IsNullOrEmpty(path))
-            await vm.ImportFromFolderAsync("Serato", path);
+            await vm.ImportFromFolderAsync(format, path);
     }
 
     private void OnOpenGetSongBpm(object? sender, RoutedEventArgs e)

@@ -11,6 +11,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Read-only reader for importing Mixxx/Engine-DJ SQLite libraries. Bundles cross-platform native
+         sqlite3 (SQLitePCLRaw); used only by the import readers, not for Liveolator's own storage. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The Serato binary readers are internal implementation detail; the test project verifies them directly. -->
     <InternalsVisibleTo Include="Liveolator.Media.Tests" />
   </ItemGroup>

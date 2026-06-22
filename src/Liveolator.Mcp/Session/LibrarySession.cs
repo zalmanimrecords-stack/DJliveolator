@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Media;
 using Liveolator.Mcp.Contracts;
@@ -18,6 +19,9 @@ public sealed class LibrarySession
     private readonly MusicLibrary _library;
     private readonly JsonCatalogStore _store;
     private readonly ILogger<LibrarySession> _logger;
+    private readonly IReadOnlyList<ILibraryImporter> _importers;
+    private readonly IReadOnlyList<IFolderLibraryImporter> _folderImporters;
+    private readonly LibraryImportService _importService;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SortedSet<string> _folders = new(StringComparer.OrdinalIgnoreCase);
     private bool _loaded;
@@ -28,10 +32,16 @@ public sealed class LibrarySession
         TrackAnalyzer analyzer,
         ITrackMetadataReader metadataReader,
         JsonCatalogStore store,
+        IEnumerable<ILibraryImporter> importers,
+        IEnumerable<IFolderLibraryImporter> folderImporters,
+        LibraryImportService importService,
         ILogger<LibrarySession> logger)
     {
         _library = new MusicLibrary(enumerator, decoder, analyzer, metadataReader);
         _store = store;
+        _importers = importers.ToList();
+        _folderImporters = folderImporters.ToList();
+        _importService = importService;
         _logger = logger;
     }
 
@@ -73,6 +83,52 @@ public sealed class LibrarySession
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Imports another DJ app's library: parses it with the named importer (a file for Rekordbox/Traktor/
+    /// VirtualDJ, a folder for Serato/Mixxx), maps tracks + cues + playlists into the catalog (remapping
+    /// paths against what's catalogued), merges, and persists. Returns a summary of what changed.
+    /// </summary>
+    public async Task<ImportSummaryDto> ImportAsync(
+        string format, string path, ImportMergePolicy policy, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(format);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+            LibraryImport parsed = ParseImport(format, path);
+            LibraryImportResult result = await _importService
+                .ImportAsync(parsed, _library.All, policy, cancellationToken).ConfigureAwait(false);
+
+            _library.Restore(_library.All.Concat(result.TracksToUpsert).ToList());
+            await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
+            return ImportSummaryDto.From(format, result.Summary);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private LibraryImport ParseImport(string format, string path)
+    {
+        ILibraryImporter? fileImporter = _importers
+            .FirstOrDefault(i => string.Equals(i.FormatName, format, StringComparison.OrdinalIgnoreCase));
+        if (fileImporter is not null)
+        {
+            using FileStream stream = File.OpenRead(path);
+            return fileImporter.Parse(stream);
+        }
+
+        IFolderLibraryImporter? folderImporter = _folderImporters
+            .FirstOrDefault(i => string.Equals(i.FormatName, format, StringComparison.OrdinalIgnoreCase));
+        if (folderImporter is not null)
+            return folderImporter.Parse(path);
+
+        string known = string.Join(
+            ", ", _importers.Select(i => i.FormatName).Concat(_folderImporters.Select(i => i.FormatName)));
+        throw new ArgumentException($"Unknown import format '{format}'. Known formats: {known}.");
     }
 
     /// <summary>Snapshot of all catalogued tracks.</summary>

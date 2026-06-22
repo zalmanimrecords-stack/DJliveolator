@@ -25,7 +25,10 @@
                       ToolTip.Tip="Import tracks, cues, beat grids and playlists from another DJ app">
               <MenuItem Header="From Rekordbox (XML)…" Click="OnImportRekordbox" />
               <MenuItem Header="From Traktor (NML)…" Click="OnImportTraktor" />
+              <MenuItem Header="From VirtualDJ (XML)…" Click="OnImportVirtualDj" />
               <MenuItem Header="From Serato (folder)…" Click="OnImportSerato" />
+              <MenuItem Header="From Mixxx (folder)…" Click="OnImportMixxx" />
+              <MenuItem Header="From Engine DJ (folder)…" Click="OnImportEngine" />
             </MenuItem>
           </MenuFlyout>
         </Button.Flyout>
