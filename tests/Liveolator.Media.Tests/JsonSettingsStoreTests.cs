@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Settings;
@@ -31,6 +32,44 @@ public sealed class JsonSettingsStoreTests : IDisposable
         AppSettings settings = await NewStore().LoadAsync();
 
         Assert.Equal(AppSettings.Default, settings);
+    }
+
+    [Fact]
+    public void SaveThenLoad_DoesNotDeadlock_WhenBlockedUnderASynchronizationContext()
+    {
+        var store = NewStore();
+        using var done = new ManualResetEventSlim(false);
+        Exception? failure = null;
+
+        // Reproduces window-close (SaveWindowLayout): a thread that OWNS a SynchronizationContext blocks
+        // on the async settings IO with GetResult(). If the store omits ConfigureAwait(false) on its
+        // stream dispose, that continuation is captured back onto this (blocked) context and never runs,
+        // so GetResult never returns — the app freezes on X. The fix keeps the IO off the captured context.
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext? prev = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(new BlockedContext());
+            try
+            {
+                store.SaveAsync(AppSettings.Default).GetAwaiter().GetResult();
+                _ = store.LoadAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { SynchronizationContext.SetSynchronizationContext(prev); done.Set(); }
+        }) { IsBackground = true };
+        thread.Start();
+
+        Assert.True(done.Wait(TimeSpan.FromSeconds(10)),
+            "settings save/load deadlocked when blocked under a SynchronizationContext (window-close freeze)");
+        Assert.Null(failure);
+    }
+
+    // A SynchronizationContext whose posted continuations never run — exactly the state of the UI thread
+    // while it is blocked in GetResult(). Send still runs inline so non-deadlocking paths behave normally.
+    private sealed class BlockedContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state) { /* never drained: blocked UI thread */ }
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
     }
 
     [Fact]

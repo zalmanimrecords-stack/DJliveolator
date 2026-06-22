@@ -63,10 +63,22 @@ public partial class App : Application
             // Restore the persisted window size/position + full-screen state so the app reopens where the
             // performer left it (the active tab is restored by the view-model from the same settings).
             ApplyWindowLayout(mainWindow, settings.WindowLayout.Normalized());
-            // Persist the layout on close. Reload the latest settings first so a device/theme change made
-            // during the session (saved from the Settings tab) is never clobbered by this layout write.
+            // Close handling. Window.Closing is the one event guaranteed to fire when the user clicks X
+            // (unlike desktop.ShutdownRequested, which the OnLastWindowClose path does not reliably
+            // raise). We ARM THE FORCED-EXIT WATCHDOG FIRST — before persisting the layout or any
+            // teardown — so that even if a step below wedges on a native lock, the process still dies
+            // within the grace window. The GL render loop (GLFW) and BASS run on native threads the CLR
+            // cannot abandon cleanly, so without deterministic teardown the process hangs after the
+            // window closes — catastrophic mid-performance (the user-reported "X freezes the app").
             mainWindow.Closing += (_, _) =>
+            {
+                ArmForcedExitWatchdog(ShutdownGrace);
                 SaveWindowLayout(services.GetRequiredService<ISettingsStore>(), mainWindow, mainWindowViewModel);
+                BeginShutdown(services);
+            };
+            // Defensive secondary trigger: dispose the rest of the container once the app is actually
+            // exiting. Idempotent with the Closing path; harmless if it never fires.
+            desktop.Exit += (_, _) => BeginShutdown(services);
             desktop.MainWindow = mainWindow;
 
             // Restore the persisted library state (scan folders + analyzed catalog) so the app opens
@@ -88,6 +100,87 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // The grace window the shutdown watchdog allows for a clean teardown before it force-terminates the
+    // process. Generous enough for the GL thread + BASS to stop normally, short enough that a wedged X
+    // click can never strand a performer for long.
+    private static readonly TimeSpan ShutdownGrace = TimeSpan.FromSeconds(5);
+
+    // Run-once guards: the close path (Window.Closing) and the defensive desktop.Exit path can both fire,
+    // so the watchdog is armed at most once and the teardown runs at most once.
+    private static int _watchdogArmed;
+    private static int _shutdownBegun;
+
+    // Tears down the native-owning subsystems on close. The GL render loop (GLFW) and BASS run on native
+    // threads; if either is mid-call the CLR cannot abandon it cleanly and the process hangs after the
+    // window closes. We stop the visuals, free the audio engine, then dispose the rest of the container.
+    // Arms the watchdog too (idempotent) so the Exit-only path is still covered. Runs at most once.
+    private static void BeginShutdown(IServiceProvider services)
+    {
+        ArmForcedExitWatchdog(ShutdownGrace);
+        if (System.Threading.Interlocked.Exchange(ref _shutdownBegun, 1) != 0)
+            return;
+
+        try
+        {
+            services.GetService<IVisualStage>()?.Stop(TimeSpan.FromSeconds(2));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Stopping the visual stage on shutdown failed: {ex.Message}.");
+        }
+
+        // BASS engines are registered as pre-built instances, which the DI container does NOT dispose, so
+        // free the realtime engine explicitly (Dispose -> Bass.Free) to stop the audio threads cleanly.
+        try
+        {
+            (services.GetService<Liveolator.Core.Audio.IMultiDeckPlaybackEngine>() as IDisposable)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Freeing the audio engine on shutdown failed: {ex.Message}.");
+        }
+
+        try
+        {
+            (services as IDisposable)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Disposing the service provider on shutdown failed: {ex.Message}.");
+        }
+    }
+
+    // Last-resort guarantee that the process exits. Runs on a background thread so it never blocks the
+    // normal shutdown path: if teardown completes and the process exits first, this thread is abandoned
+    // harmlessly; if anything wedges past the grace window, it kills the process so the X click always
+    // takes effect. Kill() is an OS-level termination that cannot itself hang (unlike Environment.Exit,
+    // which still runs finalizers that a stuck native lib could block). Armed at most once.
+    private static void ArmForcedExitWatchdog(TimeSpan grace)
+    {
+        if (System.Threading.Interlocked.Exchange(ref _watchdogArmed, 1) != 0)
+            return;
+
+        var watchdog = new System.Threading.Thread(() =>
+        {
+            System.Threading.Thread.Sleep(grace);
+            System.Diagnostics.Trace.TraceWarning(
+                "Shutdown exceeded its grace window; force-terminating the process.");
+            try
+            {
+                System.Diagnostics.Process.GetCurrentProcess().Kill();
+            }
+            catch
+            {
+                Environment.Exit(0);
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "Liveolator ForcedExit Watchdog",
+        };
+        watchdog.Start();
     }
 
     private static ControlSkinFile? ResolveSkin(IControlSkinCatalog catalog, string? skinId)

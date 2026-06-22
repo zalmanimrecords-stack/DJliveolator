@@ -75,6 +75,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     // window that was started hidden for the in-app preview.
     private volatile bool _presentRequested;
 
+    // Set from any thread (app shutdown) and read on the window thread to close the window and return
+    // from Run() — so the native GLFW render thread exits cleanly instead of wedging the process at exit.
+    private volatile bool _stopRequested;
+
     public event EventHandler<VisualPreviewFrame>? PreviewFrameReady;
 
     /// <summary>Single-bank engine (the original first-slice shape). Equivalent to one-element bank list.</summary>
@@ -340,6 +344,11 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
         if (!visible)
             _presentRequested = false;
 
+        // NOTE: _stopRequested is deliberately NOT reset here. It is a terminal shutdown signal set from
+        // another thread; resetting it at the top of Run() races with an early RequestStop() and could
+        // wipe it, leaving the loop running forever. The app only stops the loop at shutdown (never
+        // restarts it), so a "stale" request cannot occur in practice.
+
         var options = WindowOptions.Default with
         {
             Title = title,
@@ -415,10 +424,31 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
 
         window.FramebufferResize += SetViewport;
 
+        // Close the window on request (app shutdown) from the Update tick, which fires every loop
+        // iteration regardless of the window's visibility or whether a frame is drawn — so a hidden
+        // preview loop still observes the stop. Close() ends Run(), so the native render thread returns
+        // instead of being abandoned mid-call and wedging the process at exit. Touching IWindow here is
+        // safe (we are on the window thread).
+        window.Update += _ =>
+        {
+            if (_stopRequested && !window.IsClosing)
+            {
+                _logger.LogInformation("Visual compositor stop requested; closing the render window.");
+                window.Close();
+            }
+        };
+
         window.Render += _ =>
         {
             if (gl is null)
                 return;
+
+            // Belt-and-suspenders: also honour a stop request here in case a frame is in flight.
+            if (_stopRequested)
+            {
+                window.Close();
+                return;
+            }
 
             // Reveal a hidden preview window when the operator asks for the output screen (OPEN VISUAL
             // SCREEN). Checked on the window thread, where touching IWindow is safe.
@@ -468,6 +498,13 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     /// a no-op when the window is already visible or no render loop is running.
     /// </summary>
     public void RequestPresent() => _presentRequested = true;
+
+    /// <summary>
+    /// Requests that the render loop close its window on the next frame and return from <see cref="Run"/>.
+    /// Thread-safe; a no-op when no loop is running. Used at app shutdown so the native GLFW render thread
+    /// exits cleanly instead of being abandoned mid-call, which can wedge the process at exit.
+    /// </summary>
+    public void RequestStop() => _stopRequested = true;
 
     public void Dispose()
     {

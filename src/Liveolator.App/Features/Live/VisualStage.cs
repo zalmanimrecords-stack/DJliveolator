@@ -18,14 +18,18 @@ public sealed class VisualStage : IVisualStage
     private readonly Action<bool> _runWindow;
     // Reveals an already-running hidden window (thread-safe; no-op if already visible / not running).
     private readonly Action _present;
+    // Signals the running window loop to close on its next frame (thread-safe; no-op if not running).
+    private readonly Action _stop;
     private readonly ILogger _logger;
     private readonly object _gate = new();
     private Thread? _thread;
 
-    public VisualStage(Action<bool> runWindow, Action present, ILogger logger)
+    public VisualStage(Action<bool> runWindow, Action present, ILogger logger, Action? stop = null)
     {
         _runWindow = runWindow ?? throw new ArgumentNullException(nameof(runWindow));
         _present = present ?? throw new ArgumentNullException(nameof(present));
+        // No stop delegate => Stop() can only wait the thread out; production always supplies one.
+        _stop = stop ?? (() => { });
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -37,6 +41,36 @@ public sealed class VisualStage : IVisualStage
     public void Start() => EnsureRunning(visible: false);
 
     public void Show() => EnsureRunning(visible: true);
+
+    public void Stop(TimeSpan timeout)
+    {
+        Thread? thread;
+        lock (_gate)
+        {
+            thread = _thread;
+            if (thread is not { IsAlive: true })
+                return;
+        }
+
+        _logger.LogInformation("Stopping the visual compositor render loop.");
+        try
+        {
+            // Ask the loop to close its window on its own thread (touching the GL window off-thread is
+            // unsafe); the signal is a thread-safe flag the render callback observes.
+            _stop();
+        }
+        catch (Exception ex)
+        {
+            // The loop is a background thread, so even a failed signal can never block app shutdown
+            // (standards #16/#26) — the join below times out and the thread is abandoned.
+            _logger.LogError(ex, "Signalling the visual render loop to stop failed.");
+        }
+
+        if (!thread.Join(timeout))
+            _logger.LogWarning(
+                "Visual render thread did not exit within {TimeoutMs} ms; abandoning it (it is a background thread).",
+                timeout.TotalMilliseconds);
+    }
 
     // Starts the loop if it is not running. If it is already running and a visible loop is requested,
     // reveals the existing (possibly hidden) window instead of launching a second one.

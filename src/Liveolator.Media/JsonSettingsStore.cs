@@ -70,10 +70,17 @@ public sealed class JsonSettingsStore : ISettingsStore
         SettingsSnapshot? snapshot;
         try
         {
-            await using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read);
-            snapshot = await JsonSerializer
-                .DeserializeAsync<SettingsSnapshot>(stream, SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
+            // ConfigureAwait(false) on the stream dispose as well as the deserialize: a caller that blocks
+            // on this with GetResult() on a thread that has a SynchronizationContext (the UI thread, on
+            // window close) would otherwise deadlock when the implicit DisposeAsync resumes on the blocked
+            // context. See SaveAsync for the symptom this prevents.
+            var stream = new FileStream(_path, FileMode.Open, FileAccess.Read);
+            await using (stream.ConfigureAwait(false))
+            {
+                snapshot = await JsonSerializer
+                    .DeserializeAsync<SettingsSnapshot>(stream, SerializerOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -163,8 +170,16 @@ public sealed class JsonSettingsStore : ISettingsStore
             WindowY: normalized.WindowLayout.Y,
             WindowIsFullScreen: normalized.WindowLayout.IsFullScreen);
 
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+        // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
+        // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to
+        // resume on the captured SynchronizationContext — so SaveWindowLayout's GetResult() on the UI
+        // thread at window close DEADLOCKS the app ("X freezes, only killing the process stops it").
+        var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write);
+        await using (stream.ConfigureAwait(false))
+        {
+            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
         File.Move(tempPath, _path, overwrite: true);
     }
 }

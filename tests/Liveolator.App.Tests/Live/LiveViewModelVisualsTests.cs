@@ -24,6 +24,7 @@ public sealed class LiveViewModelVisualsTests
             ShowCount++;
             IsShown = true;
         }
+        public void Stop(System.TimeSpan timeout) => IsShown = false;
     }
 
     [Fact]

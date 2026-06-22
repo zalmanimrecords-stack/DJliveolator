@@ -88,6 +88,41 @@ public sealed class VisualStageTests
     }
 
     [Fact]
+    public void Stop_SignalsTheRunningLoop_AndJoinsTheThread()
+    {
+        using var entered = new ManualResetEventSlim(false);
+        using var stopSignalled = new ManualResetEventSlim(false);
+        var stage = new VisualStage(
+            // The loop blocks until the stop delegate releases it — mirrors the real GL loop closing
+            // its window on RequestStop and returning from Run().
+            visible => { entered.Set(); stopSignalled.Wait(TimeSpan.FromSeconds(5)); },
+            present: () => { },
+            NullLogger.Instance,
+            stop: () => stopSignalled.Set());
+
+        stage.Start();
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+
+        stage.Stop(TimeSpan.FromSeconds(5));
+
+        Assert.False(stage.IsShown); // the render thread joined and exited
+    }
+
+    [Fact]
+    public void Stop_WhenNothingIsRunning_IsANoOp_AndNeverSignals()
+    {
+        int stopCalls = 0;
+        var stage = new VisualStage(
+            _ => { }, present: () => { }, NullLogger.Instance, stop: () => Interlocked.Increment(ref stopCalls));
+
+        Exception? ex = Record.Exception(() => stage.Stop(TimeSpan.FromSeconds(1)));
+
+        Assert.Null(ex);
+        Assert.Equal(0, stopCalls); // no loop running => nothing to signal
+        Assert.False(stage.IsShown);
+    }
+
+    [Fact]
     public void Show_SwallowsRunWindowFailure_AndNeverThrows()
     {
         using var ran = new ManualResetEventSlim(false);

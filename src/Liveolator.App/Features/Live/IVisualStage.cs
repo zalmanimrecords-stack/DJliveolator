@@ -1,3 +1,5 @@
+using System;
+
 namespace Liveolator.App.Features.Live;
 
 /// <summary>
@@ -21,4 +23,12 @@ public interface IVisualStage
     /// visible if it is not running yet.
     /// </summary>
     void Show();
+
+    /// <summary>
+    /// Signal the render loop to close its window and wait up to <paramref name="timeout"/> for the
+    /// render thread to exit. Called at app shutdown: the GL loop runs native (GLFW) code on a dedicated
+    /// thread, which the CLR cannot abandon cleanly, so closing it deterministically stops the window
+    /// from wedging the process at exit. A no-op when no loop is running; never throws.
+    /// </summary>
+    void Stop(TimeSpan timeout);
 }
