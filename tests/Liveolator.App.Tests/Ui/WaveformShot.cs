@@ -64,7 +64,7 @@ public class WaveformShot
         for (int i = 0; i <= beats; i++)
             grid[i] = i / (double)beats;
 
-        var strip = new WaveformStrip
+        WaveformStrip Strip(bool combAtTop) => new()
         {
             Peaks = peaks,
             KickPeaks = kick,
@@ -72,6 +72,8 @@ public class WaveformShot
             HighPeaks = high,
             BeatGrid = grid,
             Progress = 0.45,
+            CombAtTop = combAtTop,
+            Folded = true,
             BarBrush = ahead,
             PlayedBrush = body,
             KickBrush = kickBrush,
@@ -82,12 +84,13 @@ public class WaveformShot
             DownbeatBrush = downbeatBrush,
         };
 
-        var window = new Window
-        {
-            Width = 720,
-            Height = 84,
-            Content = new Border { Background = well, Child = strip },
-        };
+        // The combined "butterfly": Deck A folds UP (comb at its bottom), Deck B folds DOWN (comb at its
+        // top); the two combs meet in the middle and the waves mirror outward.
+        var stack = new Avalonia.Controls.StackPanel { Orientation = Avalonia.Layout.Orientation.Vertical };
+        stack.Children.Add(new Border { Height = 84, Background = well, Child = Strip(combAtTop: false) });
+        stack.Children.Add(new Border { Height = 84, Background = well, Margin = new Avalonia.Thickness(0, 1, 0, 0), Child = Strip(combAtTop: true) });
+
+        var window = new Window { Width = 720, Height = 170, Content = stack };
 
         try
         {

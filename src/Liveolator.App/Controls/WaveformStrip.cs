@@ -81,6 +81,13 @@ public sealed class WaveformStrip : Control
     public static readonly StyledProperty<bool> CombAtTopProperty =
         AvaloniaProperty.Register<WaveformStrip, bool>(nameof(CombAtTop));
 
+    /// <summary>When <c>true</c>, the waveform is drawn FOLDED (single-sided) to a baseline at the comb edge
+    /// and grows AWAY from the comb, instead of the default centred (symmetric) bars. A stacked pair with
+    /// the lower deck's comb on top then forms the VirtualDJ combined "butterfly": the upper deck grows up,
+    /// the lower deck grows down, mirroring around the shared central comb.</summary>
+    public static readonly StyledProperty<bool> FoldedProperty =
+        AvaloniaProperty.Register<WaveformStrip, bool>(nameof(Folded));
+
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<float>?>(nameof(Peaks));
@@ -135,7 +142,7 @@ public sealed class WaveformStrip : Control
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
             MidBrushProperty, HighBrushProperty,
-            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty,
+            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty, FoldedProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
             BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty,
             ProgressProperty, ZoomWindowProperty);
@@ -157,6 +164,7 @@ public sealed class WaveformStrip : Control
     public IBrush BeatBrush { get => GetValue(BeatBrushProperty); set => SetValue(BeatBrushProperty, value); }
     public IBrush DownbeatBrush { get => GetValue(DownbeatBrushProperty); set => SetValue(DownbeatBrushProperty, value); }
     public bool CombAtTop { get => GetValue(CombAtTopProperty); set => SetValue(CombAtTopProperty, value); }
+    public bool Folded { get => GetValue(FoldedProperty); set => SetValue(FoldedProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<float>? MidPeaks { get => GetValue(MidPeaksProperty); set => SetValue(MidPeaksProperty, value); }
@@ -232,6 +240,10 @@ public sealed class WaveformStrip : Control
 
         // Shift the wave layers to the side of the comb so they never overlap it (the comb owns its band,
         // the wave owns the rest). A pure Y translation keeps the per-layer draw maths unchanged.
+        // Centred bars by default; folded (single-sided, growing away from the comb) for the combined
+        // butterfly view so a stacked A/B pair mirrors around the shared central comb.
+        WaveGeometry geometry = WaveGeometry.For(waveRect.Height, Folded, combAtTop);
+
         using (context.PushTransform(Matrix.CreateTranslation(0, waveTop)))
         {
             RenderKickAnchor(context, waveRect, start, span);
@@ -243,17 +255,17 @@ public sealed class WaveformStrip : Control
             IReadOnlyList<float>? high = HighPeaks;
             if (mid is { Count: > 0 } && high is { Count: > 0 })
             {
-                RenderBand(context, waveRect, high, HighBrush, start, span);
-                RenderBand(context, waveRect, mid, MidBrush, start, span);
+                RenderBand(context, waveRect, high, HighBrush, geometry, start, span);
+                RenderBand(context, waveRect, mid, MidBrush, geometry, start, span);
             }
             else
             {
-                RenderWaveform(context, waveRect, peaks, start, span);
+                RenderWaveform(context, waveRect, peaks, geometry, start, span);
             }
 
             IReadOnlyList<float>? kick = KickPeaks;
             if (kick is { Count: > 0 })
-                RenderKickBand(context, waveRect, kick, start, span);
+                RenderKickBand(context, waveRect, kick, geometry, start, span);
         }
 
         // The CBG comb (beat marking), then the playhead over everything so the current position is never
@@ -398,12 +410,28 @@ public sealed class WaveformStrip : Control
         return peak;
     }
 
-    // Broadband fallback (no band data): one mirrored bar per column, peak-held within the visible
-    // window; bars left of the playhead use the "played" brush.
-    private void RenderWaveform(DrawingContext context, Rect b, IReadOnlyList<float> peaks, double start, double span)
+    // How a column's amplitude maps to a vertical bar. Default: centred (symmetric) bars about the strip
+    // midline. Folded: a single-sided bar from a baseline at the comb edge growing AWAY from the comb — the
+    // building block of the combined "butterfly" view (upper deck grows up, lower deck grows down).
+    private readonly record struct WaveGeometry(double MaxAmp, double Center, double Baseline, double Direction, bool Folded)
     {
-        double cy = b.Height / 2;
-        double maxAmp = (b.Height / 2) - 2;
+        public static WaveGeometry For(double height, bool folded, bool combAtTop)
+            => !folded
+                ? new WaveGeometry(height / 2 - 2, height / 2, 0, 0, false)
+                : combAtTop
+                    ? new WaveGeometry(height - 2, 0, 0, +1, true)        // comb on top → bars grow down
+                    : new WaveGeometry(height - 2, 0, height, -1, true);  // comb on bottom → bars grow up
+
+        public (Point Top, Point Bottom) Bar(double x, double amp)
+            => Folded
+                ? (new Point(x, Baseline), new Point(x, Baseline + Direction * amp))
+                : (new Point(x, Center - amp), new Point(x, Center + amp));
+    }
+
+    // Broadband fallback (no band data): one bar per column, peak-held within the visible window.
+    private void RenderWaveform(
+        DrawingContext context, Rect b, IReadOnlyList<float> peaks, WaveGeometry geometry, double start, double span)
+    {
         const double step = 2.0;
 
         // Uniform full opacity (no played/ahead split) so the strip reads the same regardless of play
@@ -412,25 +440,21 @@ public sealed class WaveformStrip : Control
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
-            double amp = maxAmp * Math.Clamp(ColumnPeak(peaks, x, step, b.Width, start, span), 0f, 1f);
+            double amp = geometry.MaxAmp * Math.Clamp(ColumnPeak(peaks, x, step, b.Width, start, span), 0f, 1f);
             if (amp < 0.5) amp = 0.5; // keep a hairline so silent regions still read as a strip
-            context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
+            (Point top, Point bottom) = geometry.Bar(x, amp);
+            context.DrawLine(pen, top, bottom);
         }
     }
 
-    // One mirrored band layer (high caps / mid body): a bar per pixel column, peak-held. The part still
-    // ahead of the playhead is dimmed (same played/ahead split the broadband body uses), per band so the
-    // stack keeps its depth on both sides of the playhead.
+    // One band layer (high caps / mid body): a bar per pixel column, peak-held, at full opacity so the deck
+    // reads the same regardless of play position (the playhead line alone marks position).
     private void RenderBand(
-        DrawingContext context, Rect b, IReadOnlyList<float> band, IBrush brush, double start, double span)
+        DrawingContext context, Rect b, IReadOnlyList<float> band, IBrush brush, WaveGeometry geometry,
+        double start, double span)
     {
-        double cy = b.Height / 2;
-        double maxAmp = (b.Height / 2) - 2;
         const double step = 1.0;
 
-        // Full opacity across the whole track — the un-played (upcoming) part is NOT dimmed, so a deck cued
-        // at the start reads exactly as clearly as a deck mid-play (both decks always look identical). The
-        // playhead line alone marks the position; the wave brightness no longer depends on play progress.
         Color color = (brush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x3D, 0x5C, 0x8F);
         double opacity = (brush as ISolidColorBrush)?.Opacity ?? 1.0;
         var pen = new Pen(new ImmutableSolidColorBrush(color, opacity), 1.0);
@@ -440,8 +464,9 @@ public sealed class WaveformStrip : Control
             float v = ColumnPeak(band, x, step, b.Width, start, span);
             if (v <= 0.004f) // skip true silence — the broadband hairline already keeps the strip readable
                 continue;
-            double amp = maxAmp * Math.Clamp(v, 0f, 1f);
-            context.DrawLine(pen, new Point(x, cy - amp), new Point(x, cy + amp));
+            double amp = geometry.MaxAmp * Math.Clamp(v, 0f, 1f);
+            (Point top, Point bottom) = geometry.Bar(x, amp);
+            context.DrawLine(pen, top, bottom);
         }
     }
 
@@ -456,10 +481,9 @@ public sealed class WaveformStrip : Control
     // pixel column with peak-HOLD, so a kick never falls between samples and reads as a hard marker.
     // Only the low band above a floor draws, so quiet sections stay dark and the kicks stand out —
     // line them up on the blue downbeat to stack A over B.
-    private void RenderKickBand(DrawingContext context, Rect b, IReadOnlyList<float> kick, double start, double span)
+    private void RenderKickBand(
+        DrawingContext context, Rect b, IReadOnlyList<float> kick, WaveGeometry geometry, double start, double span)
     {
-        double cy = b.Height / 2;
-        double maxAmp = (b.Height / 2) - 2;
         const double step = 1.0;     // one bar per pixel column — no horizontal blur
         const float floor = 0.08f;   // suppress the low-band noise floor → only real kicks light up
 
@@ -477,9 +501,8 @@ public sealed class WaveformStrip : Control
             if (k < floor) continue;
 
             // Mild gamma so kicks read prominently; halo under a solid core gives glow + a hard edge.
-            double amp = maxAmp * Math.Pow(Math.Clamp(k, 0f, 1f), 0.8);
-            var top = new Point(x, cy - amp);
-            var bottom = new Point(x, cy + amp);
+            double amp = geometry.MaxAmp * Math.Pow(Math.Clamp(k, 0f, 1f), 0.8);
+            (Point top, Point bottom) = geometry.Bar(x, amp);
             context.DrawLine(haloPen, top, bottom);
             context.DrawLine(corePens[HotLevel(k)], top, bottom);
         }
