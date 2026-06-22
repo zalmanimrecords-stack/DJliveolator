@@ -118,6 +118,12 @@ public sealed partial class TwoDeckBassEngine
             double target = relative
                 ? Math.Clamp(_backend.GetDeckPositionFraction(deck.Handle) + position, 0.0, 1.0)
                 : Math.Clamp(position, 0.0, 1.0);
+            // DIAG (jog-audible-at-zero-volume investigation): capture the deck's play state on every seek
+            // so the log shows whether an audible scrub is happening on a deck the mixer should not be
+            // pulling (paused). Remove once the jog/volume report is resolved.
+            _logger.LogDebug(
+                "DIAG Seek slot {Slot} -> {Target:F4} (relative={Relative}, playing={Playing})",
+                slot, target, relative, deck.Playing);
             _backend.SetDeckPositionFraction(deck.Handle, target);
         }
     }
@@ -141,6 +147,10 @@ public sealed partial class TwoDeckBassEngine
                 _backend.GetDeckPositionSeconds(deck.Handle) + deltaSeconds,
                 0.0,
                 lengthSeconds);
+            // DIAG (jog-audible-at-zero-volume investigation): see the Seek diag note above.
+            _logger.LogDebug(
+                "DIAG Jog slot {Slot} delta={Delta:F3}s -> {Target:F4} (playing={Playing})",
+                slot, deltaSeconds, targetSeconds / lengthSeconds, deck.Playing);
             _backend.SetDeckPositionFraction(deck.Handle, targetSeconds / lengthSeconds);
         }
     }

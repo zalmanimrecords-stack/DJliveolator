@@ -83,8 +83,14 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
     {
         EnsureSlot(slot);
         _gains[slot] = linearGain; // Persist so SetChannel re-applies on the next track load
-        if (TryChannel(slot, nameof(SetDeckGain), out IBassMixerChannel channel))
+        bool routed = TryChannel(slot, nameof(SetDeckGain), out IBassMixerChannel channel);
+        if (routed)
             channel.SetVolume(linearGain);
+        // DIAG (jog-audible-at-zero-volume investigation): log every gain push at Information so a gain
+        // RE-PUSH during a jog (e.g. a controller/hardware-fader echo re-raising a zeroed channel) lands in
+        // the file. Pair it with the BassMixerChannel "mixer-leak" probe to tell a native leak (gain stays 0,
+        // probe fires) apart from a re-raise (this logs a non-zero gain mid-jog). Remove once resolved.
+        _logger.LogInformation("DIAG SetDeckGain slot {Slot} = {Gain:F4} (routed={Routed})", slot, linearGain, routed);
     }
 
     public void SetEqBand(int slot, EqBand band, BiquadCoefficients coefficients)
