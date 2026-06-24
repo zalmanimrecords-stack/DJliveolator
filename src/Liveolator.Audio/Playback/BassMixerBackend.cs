@@ -510,12 +510,37 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         if (length <= 0)
             return;
         long target = (long)(Math.Clamp(fraction, 0.0, 1.0) * length);
-        // MixerReset flushes this source's already-rendered audio out of the mixer buffer so the new
-        // position takes effect immediately. Without it a small *backward* nudge on a PLAYING deck is
-        // inaudible/invisible: the buffered forward audio plays out and playback advances past the tiny
-        // backward offset before it is ever heard, so only forward nudges appeared to move the track.
-        if (!BassMix.ChannelSetPosition(mixerHandle, target, PositionFlags.Bytes | PositionFlags.MixerReset))
+        // MixerReset flushes the mixer's playback buffer so the new position is heard immediately — without
+        // it a small *backward* nudge on a PLAYING deck is inaudible/invisible (the buffered forward audio
+        // plays out and playback advances past the tiny backward offset before it is ever heard). BUT BASSmix
+        // warns the flag "will cause a skip in the sound of the other sources" because the buffer is SHARED:
+        // flushing it on a seek of one deck audibly skips every OTHER playing deck and jumps its reported
+        // playhead — the "jog moves both channels" bug. So only request the flush when no other deck is
+        // playing; with two decks running the new position lands one buffer later, which is imperceptible
+        // (the DJ playback buffer is short) and never disturbs the other deck.
+        PositionFlags flags = PositionFlags.Bytes;
+        if (!AnyOtherDeckPlaying(deckHandle))
+            flags |= PositionFlags.MixerReset;
+        if (!BassMix.ChannelSetPosition(mixerHandle, target, flags))
             _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+    }
+
+    // True when a deck OTHER than the one being seeked is currently playing (its mixer-source pause flag is
+    // clear). Used to decide whether SetDeckPositionFraction may flush the shared mixer buffer: flushing is
+    // safe only when the seeked deck is the sole playing source, otherwise it skips the others (BASSmix
+    // BASS_POS_MIXER_RESET note). The seeked deck's own skip is the intended effect of its seek, so it is
+    // excluded from the check.
+    private bool AnyOtherDeckPlaying(int deckHandle)
+    {
+        foreach (DeckDsp deck in _decks.Values)
+        {
+            if (deck.SourceHandle == deckHandle)
+                continue;
+            BassFlags flags = BassMix.ChannelFlags(deck.MixerHandle, 0, 0); // mask 0 = read current flags
+            if (flags != unchecked((BassFlags)(-1)) && (flags & BassFlags.MixerChanPause) == 0)
+                return true;
+        }
+        return false;
     }
 
     public void SetDeckRate(int deckHandle, double rateMultiplier)
