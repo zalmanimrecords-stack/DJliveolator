@@ -1,8 +1,11 @@
+using System.Reactive.Concurrency;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
+using Liveolator.Core.Actions;
 using Liveolator.Core.Settings;
+using ReactiveUI;
 using Xunit;
 
 namespace Liveolator.App.Tests.Live.Modules;
@@ -119,5 +122,80 @@ public sealed class PerformanceDeckSetTests
         using var decks = new PerformanceDeckSet(waveformZoomSeconds: VisualsSettings.MinZoomSeconds);
 
         Assert.Equal(1.0, decks.WaveformZoom, precision: 6);
+    }
+
+    // --- Cross-deck beatmatch highlight (both decks light green when playing at the same tempo) ---
+
+    public PerformanceDeckSetTests()
+    {
+        // Feedback echoes apply synchronously so the cross-deck recompute runs within the test.
+        RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
+        RxApp.TaskpoolScheduler = ImmediateScheduler.Instance;
+    }
+
+    private static void PlayAt(FakeDispatcher dispatcher, int slot, double bpm)
+    {
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, slot,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: bpm, Argument: "60|200"));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, slot,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+    }
+
+    [Fact]
+    public void BothDecksMatched_WhenPlayingAtTheSameTempo()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 128.0);
+        PlayAt(dispatcher, slot: 1, bpm: 128.05); // within the 0.1 BPM beatmatch window
+
+        Assert.True(decks.DeckA.IsBpmMatched);
+        Assert.True(decks.DeckB.IsBpmMatched);
+    }
+
+    [Fact]
+    public void NotMatched_WhenTemposDiffer()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 128.0);
+        PlayAt(dispatcher, slot: 1, bpm: 130.0);
+
+        Assert.False(decks.DeckA.IsBpmMatched);
+        Assert.False(decks.DeckB.IsBpmMatched);
+    }
+
+    [Fact]
+    public void NotMatched_WhenOneDeckIsNotPlaying()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 128.0);
+        // Deck B has the same tempo but is only cued (not playing) — a parked deck is not a beatmatch.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 128.0, Argument: "60|200"));
+
+        Assert.False(decks.DeckA.IsBpmMatched);
+        Assert.False(decks.DeckB.IsBpmMatched);
+    }
+
+    [Fact]
+    public void Match_ClearsWhenADeckStops()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 128.0);
+        PlayAt(dispatcher, slot: 1, bpm: 128.0);
+        Assert.True(decks.DeckA.IsBpmMatched);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0));
+
+        Assert.False(decks.DeckA.IsBpmMatched);
+        Assert.False(decks.DeckB.IsBpmMatched);
     }
 }

@@ -65,6 +65,54 @@
           </StackPanel>
           <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
                   IsVisible="{Binding SystemVolume.IsAvailable}" />
+
+          <!-- Master "smart limiter", relocated from the DJ mixer frame to the global bar: CHARACTER knob,
+               the brain SMART toggle, CEILING knob. Bound to the DJ mixer VM (the only one with a limiter).
+               The brick-wall peak guarantee always holds; SMART only reshapes the release (doc 11). -->
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+            <StackPanel Spacing="1" VerticalAlignment="Center"
+                        ToolTip.Tip="Gentle ↔ Hard: how aggressively the smart release reacts">
+              <controls:Knob Width="26" Height="26" HorizontalAlignment="Center"
+                             Value="{Binding Limiter.LimiterCharacter.Value}"
+                             IsEnabled="{Binding Limiter.LimiterCharacter.IsEnabled}" />
+              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CHARACTER" />
+            </StackPanel>
+
+            <Button Classes="key mixer" Classes.on="{Binding Limiter.IsSmartLimiter}"
+                    VerticalAlignment="Center" Padding="8,6"
+                    Command="{Binding Limiter.LimiterSmartCommand}"
+                    ToolTip.Tip="SMART = release adapts to what is playing; SAFE = fixed brick-wall release">
+              <!-- Brain glyph: two lobes + central fissure + cortex folds. Stroke follows the button
+                   Foreground so it flips with the .on state (Dim when SAFE, AccentInk when SMART). -->
+              <Viewbox Width="20" Height="20">
+                <Canvas Width="24" Height="24">
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M12 20 C 8 22, 4 20, 5 16 C 2 15, 2 10, 5 9 C 4 5, 9 3, 12 6
+                              C 15 3, 20 5, 19 9 C 22 10, 22 15, 19 16 C 20 20, 16 22, 12 20 Z" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M12 6 L 12 20" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M8 9 C 10 10, 10 12, 8.5 13" />
+                  <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                        StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Data="M16 9 C 14 10, 14 12, 15.5 13" />
+                </Canvas>
+              </Viewbox>
+            </Button>
+
+            <StackPanel Spacing="1" VerticalAlignment="Center"
+                        ToolTip.Tip="True-peak output ceiling (low ↔ hot)">
+              <controls:Knob Width="26" Height="26" HorizontalAlignment="Center"
+                             Value="{Binding Limiter.LimiterCeiling.Value}"
+                             IsEnabled="{Binding Limiter.LimiterCeiling.IsEnabled}" />
+              <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
+            </StackPanel>
+          </StackPanel>
+
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center" />
           <TextBlock Classes="mono faint" Text="MIDI" />
           <Ellipse Width="8" Height="8" VerticalAlignment="Center"
                    Classes="led"

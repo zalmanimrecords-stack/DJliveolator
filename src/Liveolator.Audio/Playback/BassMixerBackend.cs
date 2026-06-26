@@ -560,26 +560,33 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         ApplyRate(deck);
     }
 
-    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % on the tempo
-    // stream) or vinyl-style (Frequency scaling on the raw source). The unused path is reset to neutral
-    // first so the two never stack. NATIVE — verified manually with bass_fx fetched + hardware (A1);
-    // not exercised in CI (tests drive the fake backend). See Liveolator.Audio/CLAUDE.md.
+    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % time-stretch) or
+    // vinyl-style (resampling the tempo stream). BOTH attributes live on the BASS_FX tempo stream
+    // (MixerHandle) — the stream actually plugged into the master mixer. The raw source decode stream is
+    // only the tempo stream's INPUT and is left at its natural rate: BASS_ATTRIB_FREQ on the source does
+    // NOT change the tempo stream's audible output rate (that is BASS_ATTRIB_TEMPO_FREQ on the tempo
+    // stream), so driving vinyl pitch through the source was silently inaudible — the pitch fader / BPM
+    // nudge moved the displayed BPM but never the sound. The unused path is reset to neutral first so the
+    // two never stack. NATIVE — not exercised in CI (tests drive the fake backend); verify by ear in the
+    // running app. See Liveolator.Audio/CLAUDE.md.
     private void ApplyRate(DeckDsp deck)
     {
         if (deck.OriginalFrequency <= 0)
             return;
         if (deck.KeyLocked)
         {
-            Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, deck.OriginalFrequency);
+            // Key-lock (master tempo): change speed, preserve pitch. Hold the resampling rate neutral.
+            Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.TempoFrequency, deck.OriginalFrequency);
             float tempoPercent = (float)((deck.CurrentRate - 1.0) * 100.0);
             if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, tempoPercent))
                 _logger.LogWarning("Set key-lock tempo on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
         }
         else
         {
+            // Vinyl (pitch follows speed): scale the tempo stream's sample rate. Hold the time-stretch neutral.
             Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, 0f);
             double frequency = deck.OriginalFrequency * deck.CurrentRate;
-            if (!Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, (float)frequency))
+            if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.TempoFrequency, (float)frequency))
                 _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
         }
     }

@@ -102,7 +102,7 @@ public sealed class MainWindowViewModelTests
     }
 
     private static MainWindowViewModel BuildShell(
-        AppSettings? appSettings = null, AudioEngineStatus? audioStatus = null)
+        AppSettings? appSettings = null, AudioEngineStatus? audioStatus = null, DjViewModel? dj = null)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
         var status = new ShellStatusViewModel(
@@ -118,7 +118,7 @@ public sealed class MainWindowViewModelTests
         var studio = new StudioViewModel(library, new FakeStudioProjectStore());
 
         return new MainWindowViewModel(
-            new LibrariesViewModel(library), new LiveViewModel(), new DjViewModel(),
+            new LibrariesViewModel(library), new LiveViewModel(), dj ?? new DjViewModel(),
             studio, visualLibrary, addons, settings, midiLearn, status,
             new SystemVolumeControlViewModel(), appSettings, audioStatus);
     }
@@ -152,6 +152,19 @@ public sealed class MainWindowViewModelTests
 
         Assert.True(vm.HasAudioEngineWarning);
         Assert.Equal("bass_fx is missing — tracks can't load.", vm.AudioEngineWarning);
+    }
+
+    [Fact]
+    public void Limiter_ExposesTheDjMixer_SoTheTopBarCanBindIt()
+    {
+        // The master smart-limiter controls were moved from the DJ mixer frame to the global top bar,
+        // which binds to MainWindowViewModel — so the shell must surface the DJ mixer (the only one with a
+        // limiter) as the binding source.
+        var dj = new DjViewModel();
+
+        var vm = BuildShell(dj: dj);
+
+        Assert.Same(dj.Mixer, vm.Limiter);
     }
 
     [Fact]

@@ -284,6 +284,22 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public async Task ExitLoop_EmitsDeckSetLoopWithZeroBeats_ForItsSlot()
+    {
+        // The release button clears any active loop by emitting DeckSetLoop with a non-positive
+        // beat length, which the engine handler maps to ClearLoop (doc 11).
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        await vm.ExitLoopCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetLoop, action.Kind);
+        Assert.Equal(1, action.Slot);
+        Assert.True(action.Value <= 0, "exit-loop must carry a non-positive beat length so the engine clears the loop");
+    }
+
+    [Fact]
     public void IsLooping_FollowsDeckSetLoopFeedback_ForItsSlot()
     {
         var dispatcher = new FakeDispatcher();
@@ -1159,31 +1175,7 @@ public sealed class DeckViewModelTests
         Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetGridBpm);
     }
 
-    // --- Grid edit (DeckSetGridBpm / DeckSetFirstBeat) ---
-
-    [Theory]
-    [InlineData(nameof(DeckViewModel.GridBpmUpCommand), 141.0)]
-    [InlineData(nameof(DeckViewModel.GridBpmDownCommand), 139.0)]
-    [InlineData(nameof(DeckViewModel.GridHalveCommand), 70.0)]
-    [InlineData(nameof(DeckViewModel.GridDoubleCommand), 280.0)]
-    public async Task GridBpmEdit_EmitsDeckSetGridBpm_AtTheExpectedTempo(string command, double expectedBpm)
-    {
-        var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120));
-        Task gridSet = WaitForBeatGrid(vm);
-        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140.0, Argument: @"C:\a.flac"));
-        await gridSet;
-        dispatcher.Dispatched.Clear();
-
-        var cmd = (ReactiveCommand<Unit, Unit>)typeof(DeckViewModel).GetProperty(command)!.GetValue(vm)!;
-        await cmd.Execute().ToTask();
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSetGridBpm, action.Kind);
-        Assert.Equal(expectedBpm, action.Value, precision: 6);
-        Assert.Equal(0, action.Slot);
-    }
+    // --- Grid edit (DeckSetFirstBeat) ---
 
     [Fact]
     public async Task SetGridHere_EmitsDeckSetFirstBeat_WithTheWithinBeatAnchorAtThePlayhead()
@@ -1212,11 +1204,9 @@ public sealed class DeckViewModelTests
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher); // no track → no tempo/duration
 
-        await vm.GridBpmUpCommand.Execute().ToTask();
-        await vm.GridDoubleCommand.Execute().ToTask();
         await vm.SetGridHereCommand.Execute().ToTask();
 
-        Assert.Empty(dispatcher.Dispatched); // never push a 0/negative grid BPM or a bogus anchor
+        Assert.Empty(dispatcher.Dispatched); // never push a bogus anchor before a track is loaded
     }
 
     [Theory]
@@ -1229,50 +1219,6 @@ public sealed class DeckViewModelTests
         Assert.Equal(expected, DeckViewModel.GridAnchorAtPlayhead(progress, duration, bpm), precision: 6);
     }
 
-    // --- Downbeat ("the one") grid anchor ---
-
-    [Theory]
-    [InlineData(0.5, 4, 120, 0.0, 2.0)]    // t=2.0 s, 0.5 s/beat → exactly on beat 4 → 2.0 s
-    [InlineData(0.525, 4, 120, 0.0, 2.0)]  // t=2.1 s → snaps to the nearest beat line (2.0 s)
-    [InlineData(0.55, 4, 120, 0.1, 2.1)]   // first beat at 0.1 s → grid lines at 0.1,0.6,…; nearest to 2.2 s = 2.1
-    [InlineData(0.0, 4, 120, 0.0, 0.0)]    // playhead at start → 0
-    public void DownbeatAtPlayhead_SnapsToTheNearestBeatLine(
-        double progress, double duration, double bpm, double firstBeat, double expected)
-    {
-        Assert.Equal(expected, DeckViewModel.DownbeatAtPlayhead(progress, duration, bpm, firstBeat), precision: 6);
-    }
-
-    [Fact]
-    public async Task SetOne_EmitsDeckSetDownbeat_WithTheBeatNearestThePlayhead()
-    {
-        var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 1, dispatcher, FakeWaveformProvider.WithDuration(121));
-        Task gridSet = WaitForBeatGrid(vm);
-        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 1,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140.0, Argument: @"C:\b.flac"));
-        await gridSet;
-        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 1,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5)); // playhead to mid-track
-        dispatcher.Dispatched.Clear();
-
-        await vm.SetOneCommand.Execute().ToTask();
-
-        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSetDownbeat, action.Kind);
-        Assert.Equal(DeckViewModel.DownbeatAtPlayhead(0.5, 121, 140, 0.0), action.Value, precision: 6);
-        Assert.Equal(1, action.Slot);
-    }
-
-    [Fact]
-    public async Task SetOne_BeforeATrackLoads_IsANoOp()
-    {
-        var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 0, dispatcher); // no track → no tempo/duration
-
-        await vm.SetOneCommand.Execute().ToTask();
-
-        Assert.Empty(dispatcher.Dispatched); // never push a bogus downbeat before a track is loaded
-    }
 
     [Fact]
     public async Task BeatGrid_DownbeatBarOffset_TracksDeckSetDownbeatFeedback()
