@@ -5,6 +5,7 @@ using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
@@ -53,6 +54,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Status = status;
         MidiLearn = midiLearn;
         SystemVolume = systemVolume;
+        Limiter = dj.Mixer;
         AudioEngineWarning = audioStatus?.Warning;
 
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
@@ -88,6 +90,11 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>The global OS master-volume knob shown in the top bar.</summary>
     public SystemVolumeControlViewModel SystemVolume { get; }
+
+    /// <summary>The DJ mixer, surfaced here so the master smart-limiter controls (CHARACTER · SMART ·
+    /// CEILING) can live in the global top bar next to the OS-volume knob rather than inside the DJ
+    /// mixer frame. Only the DJ mixer carries a limiter; it stays bound across every tab.</summary>
+    public MixerViewModel Limiter { get; }
 
     public GlobalMidiLearnCoordinator MidiLearn { get; }
 

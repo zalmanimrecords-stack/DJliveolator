@@ -1,8 +1,10 @@
 using System;
+using System.ComponentModel;
 using System.Linq;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Beat;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Mixer;
@@ -49,6 +51,28 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
         Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);
         _waveformZoom = ZoomKnobFromSeconds(waveformZoomSeconds); // reflect the initial zoom on the knob
+
+        // Cross-deck beatmatch highlight: when both decks are playing at the same audible tempo, light the
+        // BPM readout on BOTH. Computed here because this is the one place that sees both decks; the result
+        // is pushed into each deck VM so its own readout can bind a simple flag (no deck↔deck coupling).
+        DeckA.PropertyChanged += OnDeckPropertyChanged;
+        DeckB.PropertyChanged += OnDeckPropertyChanged;
+    }
+
+    private void OnDeckPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(DeckViewModel.Bpm) or nameof(DeckViewModel.IsPlaying))
+            RefreshBpmMatch();
+    }
+
+    // A beatmatch only counts while both decks are actually playing — two cued decks parked at the same
+    // tempo aren't "locked" in the mix yet, and a stopped deck must drop the highlight.
+    private void RefreshBpmMatch()
+    {
+        bool matched = DeckA.IsPlaying && DeckB.IsPlaying
+            && BpmMatch.AreMatched(decimal.ToDouble(DeckA.Bpm), decimal.ToDouble(DeckB.Bpm));
+        DeckA.SetBpmMatched(matched);
+        DeckB.SetBpmMatched(matched);
     }
 
     /// <summary>Applies a new track-nudge step (seconds per ◄/► press) to both decks at runtime — called
@@ -126,6 +150,8 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        DeckA.PropertyChanged -= OnDeckPropertyChanged;
+        DeckB.PropertyChanged -= OnDeckPropertyChanged;
         DeckA.Dispose();
         DeckB.Dispose();
         Mixer.Dispose();

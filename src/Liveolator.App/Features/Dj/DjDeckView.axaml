@@ -11,16 +11,21 @@
     <Style Selector="Button.cuepad.suggested">
       <Setter Property="Opacity" Value="0.6" />
     </Style>
+    <!-- BPM readout lights green while this deck is beatmatched to the other (both playing, tempos locked). -->
+    <Style Selector="TextBlock.bpm.matched">
+      <Setter Property="Foreground" Value="{DynamicResource Green}" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
   </UserControl.Styles>
 
   <!-- DJ-tab deck: the same DeckViewModel as the LIVE tab, but laid out jog-first (the platter is the
        hero, hot cues flank it) so the DJ screen reads like a hardware deck and fits one screen. Pitch
        stays hardware/MIDI-only (DeckPitch) — no on-screen pitch fader, matching the LIVE deck. -->
   <Border Classes="panel">
-    <!-- Cap + center the deck content so the controls cluster as one coherent column (the 176px jog plus
-         its 84px hot-cue/loop flanks ~= 360) instead of the platter floating alone in a wide deck column.
-         A plain MaxWidth keeps the square jog undistorted (no aspect-ratio binding). -->
-    <StackPanel Margin="14,10" Spacing="8" MaxWidth="360" HorizontalAlignment="Center">
+    <!-- Cap + center the deck content so the controls cluster as one coherent column (the responsive jog
+         plus its 84px hot-cue/loop flanks) instead of the platter floating alone in a wide deck column. The
+         cap is generous so the platter can grow with the window (see the Jog below) yet never sprawls. -->
+    <StackPanel Margin="14,10" Spacing="8" MaxWidth="460" HorizontalAlignment="Center">
 
       <!-- header: badge · title/meta · elapsed/remaining -->
       <Grid ColumnDefinitions="Auto,*,Auto">
@@ -87,7 +92,11 @@
           </ItemsControl>
         </StackPanel>
 
-        <controls:Jog Grid.Column="1" Width="144" Height="144" HorizontalAlignment="Center"
+        <!-- Responsive platter: it fills the centre column (so it grows with the deck/window) and stays
+             square by tying its height to its own measured width. Clamps keep it sane on tiny and huge
+             screens; the Jog draws off min(width,height), so a square box is all it needs. -->
+        <controls:Jog Grid.Column="1" HorizontalAlignment="Stretch"
+                      MinWidth="120" MaxWidth="288" Height="{Binding $self.Bounds.Width}"
                       ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
@@ -97,9 +106,16 @@
 
         <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
           <TextBlock Classes="section" Text="LOOP" />
-          <Button Classes="key" Classes.on="{Binding IsLooping}" Content="4" Height="34"
-                  Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
-                  ToolTip.Tip="Toggle a 1-bar loop" />
+          <!-- Arm a loop (4) beside its release (✕). The arm key only ever sets a loop, so the release is
+               the deck's loop-exit; it lights only while a loop is active. -->
+          <Grid ColumnDefinitions="*,*">
+            <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}" Content="4" Height="34"
+                    Margin="0,0,3,0" Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
+                    ToolTip.Tip="Arm a 1-bar loop" />
+            <Button Grid.Column="1" Classes="key" Content="✕" Height="34" Margin="3,0,0,0"
+                    Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
+                    ToolTip.Tip="Release the loop" />
+          </Grid>
           <TextBlock Classes="section" Text="NUDGE" Margin="0,4,0,0" />
           <Grid ColumnDefinitions="*,*">
             <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
@@ -148,10 +164,12 @@
         <StackPanel Spacing="6">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
-            <TextBlock Grid.Column="1" Classes="mono"
+            <TextBlock Grid.Column="1" Classes="mono bpm"
+                       Classes.matched="{Binding IsBpmMatched}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
-                       IsEnabled="{Binding IsBpmEnabled}" />
+                       IsEnabled="{Binding IsBpmEnabled}"
+                       ToolTip.Tip="Live BPM (analyzed tempo × pitch); green when matched to the other deck" />
             <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
           </Grid>
           <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
@@ -165,53 +183,17 @@
                     Command="{Binding NudgeRightCommand}"
                     ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
           </Grid>
-          <!-- GRID edit: hand-correct the analyzed beat grid so it lands on the kicks. Re-tempo (−/+, ½/×2),
-               SET (slide a beat line onto the kick under the playhead), or ONE (mark that beat as the bar's
-               downbeat, snapping the red bar markers onto it). Inaudible — unlike the BPM nudge above, these
-               change only the GRID/sync tempo and phase, never the playing pitch. -->
-          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" IsEnabled="{Binding IsBpmEnabled}">
+          <!-- GRID edit: slide a beat line onto the kick under the playhead so the grid (and SYNC) lock to
+               the real downbeat. Inaudible — unlike the BPM nudge above, it changes only the grid phase,
+               never the playing pitch. (Grid re-tempo ½/×2/±BPM were removed per owner request 2026-06-26;
+               the analyzer's tempo + the SYNC octave-fold handle octave errors.) -->
+          <Grid ColumnDefinitions="Auto,Auto,*" IsEnabled="{Binding IsBpmEnabled}">
             <TextBlock Grid.Column="0" Classes="tick" VerticalAlignment="Center" Text="GRID" Margin="0,0,6,0" />
-            <Button Grid.Column="1" Classes="key" Width="36" Height="38" Padding="0,2"
-                    Command="{Binding GridBpmDownCommand}" ToolTip.Tip="Grid tempo −1 BPM (does not change pitch)">
-              <StackPanel Spacing="0">
-                <TextBlock Text="−" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
-                <TextBlock Text="BPM" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="2" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
-                    Command="{Binding GridBpmUpCommand}" ToolTip.Tip="Grid tempo +1 BPM (does not change pitch)">
-              <StackPanel Spacing="0">
-                <TextBlock Text="+" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
-                <TextBlock Text="BPM" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="3" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
-                    Command="{Binding GridHalveCommand}" ToolTip.Tip="Halve the grid tempo (octave fix)">
-              <StackPanel Spacing="0">
-                <TextBlock Text="½" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
-                <TextBlock Text="OCT" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="4" Classes="key" Width="36" Height="38" Padding="0,2" Margin="4,0,0,0"
-                    Command="{Binding GridDoubleCommand}" ToolTip.Tip="Double the grid tempo (octave fix)">
-              <StackPanel Spacing="0">
-                <TextBlock Text="×2" FontSize="13" LineHeight="14" HorizontalAlignment="Center" />
-                <TextBlock Text="OCT" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="6" Classes="key" Width="54" Height="38" Padding="0,2"
+            <Button Grid.Column="1" Classes="key" Width="54" Height="38" Padding="0,2"
                     Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead">
               <StackPanel Spacing="0">
                 <TextBlock Text="SET" FontSize="11" LineHeight="13" HorizontalAlignment="Center" />
                 <TextBlock Text="PHASE" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
-              </StackPanel>
-            </Button>
-            <Button Grid.Column="7" Classes="key" Width="54" Height="38" Padding="0,2" Margin="4,0,0,0"
-                    Command="{Binding SetOneCommand}"
-                    ToolTip.Tip="Mark the beat under the playhead as the bar's downbeat (the &quot;one&quot;)">
-              <StackPanel Spacing="0">
-                <TextBlock Text="ONE" FontSize="11" LineHeight="13" HorizontalAlignment="Center" />
-                <TextBlock Text="BAR 1" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
               </StackPanel>
             </Button>
           </Grid>

@@ -57,10 +57,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double PitchBendFraction = 0.03;
     private static readonly TimeSpan PitchBendWindow = TimeSpan.FromMilliseconds(140);
 
-    /// <summary>BPM step per GRID-tempo edit press (±1 BPM — coarse hand-correction; the analyzer already
-    /// resolves sub-BPM, and half/double handles octave errors).</summary>
-    private const double GridBpmStep = 1.0;
-
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     // True when the deck-transport actions are actually handled (a deck engine backs this slot). Gates the
@@ -106,6 +102,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // Restores the deck's normal rate after a momentary NUDGE pitch-bend (see PitchBendTap).
     private readonly DispatcherTimer _pitchBendRestore;
     private decimal _bpm;
+    private bool _isBpmMatched;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
@@ -171,6 +168,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
+        // Loop release: emit DeckSetLoop with a non-positive beat length, which the engine handler maps
+        // to ClearLoop (doc 11). The on-screen LOOP key only ever arms a loop, so this is the deck's only
+        // way to exit one from the UI.
+        ExitLoopCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 0.0, Slot: slot)),
+            canEmit);
+
         // One-shot Sync: a single press beatmatches tempo + phase to the other deck, then leaves the
         // deck free for manual NUDGE. Momentary (no latch) — the UI and MIDI controller share it.
         SyncCommand = ReactiveCommand.Create(
@@ -226,15 +231,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         NudgeBendDownCommand = ReactiveCommand.Create(() => PitchBendTap(-PitchBendFraction), canEmit);
         NudgeBendUpCommand = ReactiveCommand.Create(() => PitchBendTap(+PitchBendFraction), canEmit);
 
-        // Grid edit (rekordbox/Serato "grid edit"): re-tempo / re-phase the BEAT GRID so it sits on the
-        // kicks, via DeckSetGridBpm + DeckSetFirstBeat. These change the analyzed grid/sync tempo and phase
-        // only — never the audible pitch — and are no-ops until the track's tempo/duration are known.
-        GridBpmDownCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm - GridBpmStep), canEmit);
-        GridBpmUpCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm + GridBpmStep), canEmit);
-        GridHalveCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 0.5), canEmit);
-        GridDoubleCommand = ReactiveCommand.Create(() => EmitGridBpm(_trackBpm * 2.0), canEmit);
+        // Grid edit (rekordbox/Serato "grid edit"): slide a beat line onto the kick under the playhead
+        // (re-phase the BEAT GRID) via DeckSetFirstBeat. Changes the analyzed grid/sync phase only — never
+        // the audible pitch — and is a no-op until the track's tempo/duration are known.
         SetGridHereCommand = ReactiveCommand.Create(EmitGridHere, canEmit);
-        SetOneCommand = ReactiveCommand.Create(EmitSetOne, canEmit);
 
         var hotCues = new HotCuePadViewModel[HotCueCount];
         for (int index = 0; index < HotCueCount; index++)
@@ -540,6 +540,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// True while this deck's audible BPM is beatmatched to the other deck's (both playing, within
+    /// <see cref="Liveolator.Core.Beat.BpmMatch.DefaultToleranceBpm"/>). Drives the green "matched"
+    /// highlight on the BPM readout. Set by <see cref="PerformanceDeckSet"/>, which owns both decks.
+    /// </summary>
+    public bool IsBpmMatched
+    {
+        get => _isBpmMatched;
+        private set => this.RaiseAndSetIfChanged(ref _isBpmMatched, value);
+    }
+
+    /// <summary>Applies the cross-deck beatmatch result computed by <see cref="PerformanceDeckSet"/>.</summary>
+    internal void SetBpmMatched(bool matched) => IsBpmMatched = matched;
+
+    /// <summary>
     /// BPM expressed as a 0..1 fader position (0 = MinimumBpm, 1 = MaximumBpm).
     /// Used by the horizontal <c>Fader</c> control; writing it back dispatches a
     /// <see cref="PerformanceActionKind.DeckBpm"/> action via the <see cref="Bpm"/> setter.
@@ -676,16 +690,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             : Array.Empty<double>();
     }
 
-    // Set the grid tempo (absolute BPM) — emits DeckSetGridBpm; a no-op when the new tempo is non-positive
-    // or no track tempo is known yet (so an edit press before a track loads can't push a 0/negative BPM).
-    private void EmitGridBpm(double bpm)
-    {
-        if (_trackBpm <= 0 || bpm <= 0)
-            return;
-        _dispatcher?.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: bpm, Slot: _slot));
-    }
-
     // Slide the grid so a beat line lands on the kick under the playhead: emit DeckSetFirstBeat with the
     // within-beat anchor derived from the current position. No-op until tempo + duration are known.
     private void EmitGridHere()
@@ -695,40 +699,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         double anchor = GridAnchorAtPlayhead(_progress, _durationSeconds, _trackBpm);
         _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
-    }
-
-    // Mark the beat under the playhead as the downbeat (the bar's "one"): emit DeckSetDownbeat with the
-    // absolute time of the grid line nearest the playhead. The DJ parks the playhead on the musical 1 (using
-    // the kick-forward waveform) and taps it; the red bars snap onto that beat. No-op until tempo + duration
-    // are known. Display/grid-only — unlike EmitGridHere it does not move the beats, only the bar emphasis.
-    private void EmitSetOne()
-    {
-        if (_trackBpm <= 0 || _durationSeconds <= 0)
-            return;
-        double downbeat = DownbeatAtPlayhead(_progress, _durationSeconds, _trackBpm, _firstBeatSeconds);
-        _dispatcher?.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: downbeat, Slot: _slot));
-    }
-
-    /// <summary>
-    /// The absolute time (seconds) of the beat-grid line nearest the playhead — the downbeat the DJ is
-    /// marking as the bar's "one". Snaps to the grid (anchored on <paramref name="firstBeatSeconds"/>) so the
-    /// chosen one always lands on a beat line, never between two. Pure so the "set one" math unit-tests
-    /// without a VM; returns 0 when tempo/duration are unusable.
-    /// </summary>
-    public static double DownbeatAtPlayhead(
-        double progress, double durationSeconds, double bpm, double firstBeatSeconds)
-    {
-        if (bpm <= 0 || durationSeconds <= 0 || double.IsNaN(progress) || double.IsNaN(firstBeatSeconds))
-            return 0.0;
-        double beatSeconds = 60.0 / bpm;
-        double t = Math.Clamp(progress, 0.0, 1.0) * durationSeconds;
-        long beat = (long)Math.Round((t - firstBeatSeconds) / beatSeconds);
-        double downbeat = firstBeatSeconds + beat * beatSeconds;
-        // Keep it on the grid and non-negative (the playhead can sit before the first-beat anchor).
-        while (downbeat < 0)
-            downbeat += beatSeconds;
-        return downbeat;
     }
 
     /// <summary>
@@ -763,6 +733,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
+
+    /// <summary>Releases (clears) any active loop on this deck — the flank's loop-exit key. Emits
+    /// <see cref="PerformanceActionKind.DeckSetLoop"/> with a non-positive beat length (engine → ClearLoop).</summary>
+    public ReactiveCommand<Unit, Unit> ExitLoopCommand { get; }
+
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
 
     /// <summary>Analyzes the loaded track and applies its auto hot cues live (the deck AUTO-CUE button).</summary>
@@ -798,22 +773,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>True when pitch-bend can be emitted (the realtime engine is wired and a track is loaded).</summary>
     public bool CanPitchBend => IsEnabled && _hasLoadedTrack;
 
-    /// <summary>Grid edit: lower the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible — does
-    /// not move the pitch fader). For hand-correcting a mis-detected tempo so the grid sits on the kicks.</summary>
-    public ReactiveCommand<Unit, Unit> GridBpmDownCommand { get; }
-    /// <summary>Grid edit: raise the analyzed GRID tempo by <see cref="GridBpmStep"/> BPM (inaudible).</summary>
-    public ReactiveCommand<Unit, Unit> GridBpmUpCommand { get; }
-    /// <summary>Grid edit: halve the GRID tempo (octave fix — e.g. a 140 detected as 280).</summary>
-    public ReactiveCommand<Unit, Unit> GridHalveCommand { get; }
-    /// <summary>Grid edit: double the GRID tempo (octave fix — e.g. a 140 detected as 70).</summary>
-    public ReactiveCommand<Unit, Unit> GridDoubleCommand { get; }
     /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
     /// within-beat first-beat anchor from the current position).</summary>
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
-    /// <summary>Grid edit: mark the beat under the playhead as the DOWNBEAT (the bar's "one"), so the red
-    /// bar markers snap onto it. The bar-level sibling of <see cref="SetGridHereCommand"/> — it moves only
-    /// the bar emphasis, never a beat line or the audible pitch.</summary>
-    public ReactiveCommand<Unit, Unit> SetOneCommand { get; }
 
     /// <summary>All eight hot-cue pads (two banks of four). Indexed by absolute cue index for feedback.</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }

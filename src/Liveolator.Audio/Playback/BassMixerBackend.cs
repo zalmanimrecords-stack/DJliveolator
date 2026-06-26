@@ -510,12 +510,37 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         if (length <= 0)
             return;
         long target = (long)(Math.Clamp(fraction, 0.0, 1.0) * length);
-        // MixerReset flushes this source's already-rendered audio out of the mixer buffer so the new
-        // position takes effect immediately. Without it a small *backward* nudge on a PLAYING deck is
-        // inaudible/invisible: the buffered forward audio plays out and playback advances past the tiny
-        // backward offset before it is ever heard, so only forward nudges appeared to move the track.
-        if (!BassMix.ChannelSetPosition(mixerHandle, target, PositionFlags.Bytes | PositionFlags.MixerReset))
+        // MixerReset flushes the mixer's playback buffer so the new position is heard immediately — without
+        // it a small *backward* nudge on a PLAYING deck is inaudible/invisible (the buffered forward audio
+        // plays out and playback advances past the tiny backward offset before it is ever heard). BUT BASSmix
+        // warns the flag "will cause a skip in the sound of the other sources" because the buffer is SHARED:
+        // flushing it on a seek of one deck audibly skips every OTHER playing deck and jumps its reported
+        // playhead — the "jog moves both channels" bug. So only request the flush when no other deck is
+        // playing; with two decks running the new position lands one buffer later, which is imperceptible
+        // (the DJ playback buffer is short) and never disturbs the other deck.
+        PositionFlags flags = PositionFlags.Bytes;
+        if (!AnyOtherDeckPlaying(deckHandle))
+            flags |= PositionFlags.MixerReset;
+        if (!BassMix.ChannelSetPosition(mixerHandle, target, flags))
             _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+    }
+
+    // True when a deck OTHER than the one being seeked is currently playing (its mixer-source pause flag is
+    // clear). Used to decide whether SetDeckPositionFraction may flush the shared mixer buffer: flushing is
+    // safe only when the seeked deck is the sole playing source, otherwise it skips the others (BASSmix
+    // BASS_POS_MIXER_RESET note). The seeked deck's own skip is the intended effect of its seek, so it is
+    // excluded from the check.
+    private bool AnyOtherDeckPlaying(int deckHandle)
+    {
+        foreach (DeckDsp deck in _decks.Values)
+        {
+            if (deck.SourceHandle == deckHandle)
+                continue;
+            BassFlags flags = BassMix.ChannelFlags(deck.MixerHandle, 0, 0); // mask 0 = read current flags
+            if (flags != unchecked((BassFlags)(-1)) && (flags & BassFlags.MixerChanPause) == 0)
+                return true;
+        }
+        return false;
     }
 
     public void SetDeckRate(int deckHandle, double rateMultiplier)
@@ -535,26 +560,33 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         ApplyRate(deck);
     }
 
-    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % on the tempo
-    // stream) or vinyl-style (Frequency scaling on the raw source). The unused path is reset to neutral
-    // first so the two never stack. NATIVE — verified manually with bass_fx fetched + hardware (A1);
-    // not exercised in CI (tests drive the fake backend). See Liveolator.Audio/CLAUDE.md.
+    // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % time-stretch) or
+    // vinyl-style (resampling the tempo stream). BOTH attributes live on the BASS_FX tempo stream
+    // (MixerHandle) — the stream actually plugged into the master mixer. The raw source decode stream is
+    // only the tempo stream's INPUT and is left at its natural rate: BASS_ATTRIB_FREQ on the source does
+    // NOT change the tempo stream's audible output rate (that is BASS_ATTRIB_TEMPO_FREQ on the tempo
+    // stream), so driving vinyl pitch through the source was silently inaudible — the pitch fader / BPM
+    // nudge moved the displayed BPM but never the sound. The unused path is reset to neutral first so the
+    // two never stack. NATIVE — not exercised in CI (tests drive the fake backend); verify by ear in the
+    // running app. See Liveolator.Audio/CLAUDE.md.
     private void ApplyRate(DeckDsp deck)
     {
         if (deck.OriginalFrequency <= 0)
             return;
         if (deck.KeyLocked)
         {
-            Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, deck.OriginalFrequency);
+            // Key-lock (master tempo): change speed, preserve pitch. Hold the resampling rate neutral.
+            Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.TempoFrequency, deck.OriginalFrequency);
             float tempoPercent = (float)((deck.CurrentRate - 1.0) * 100.0);
             if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, tempoPercent))
                 _logger.LogWarning("Set key-lock tempo on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
         }
         else
         {
+            // Vinyl (pitch follows speed): scale the tempo stream's sample rate. Hold the time-stretch neutral.
             Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.Tempo, 0f);
             double frequency = deck.OriginalFrequency * deck.CurrentRate;
-            if (!Bass.ChannelSetAttribute(deck.SourceHandle, ChannelAttribute.Frequency, (float)frequency))
+            if (!Bass.ChannelSetAttribute(deck.MixerHandle, ChannelAttribute.TempoFrequency, (float)frequency))
                 _logger.LogWarning("Set rate on deck {Handle} failed: {Error}", deck.SourceHandle, Bass.LastError);
         }
     }
