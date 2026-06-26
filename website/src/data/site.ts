@@ -15,7 +15,7 @@ export const site = {
   // scripts/publish-website-release.ps1 each time an installer is built.
   version: "0.1.3",
   downloadUrl: "/downloads/LiveolatorSetup-0.1.3.exe",
-  downloadSize: "37 MB",
+  downloadSize: "38 MB",
   repoUrl: "https://github.com/zalmanimrecords-stack/Liveolator",
   // Inquiries + efficiency suggestions land here (mailto, see Feedback form).
   contactEmail: "zalmanimrecords@gmail.com",
