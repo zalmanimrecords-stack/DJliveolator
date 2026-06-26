@@ -1,4 +1,6 @@
 ---
+import { site } from "../data/site";
+
 const perks = [
   "Both engines — DJ and VJ — fully unlocked",
   "Use it for real gigs, no watermark, no time limit",
@@ -21,7 +23,9 @@ const perks = [
         </p>
         <div class="price-actions">
           <a class="btn btn-primary" href="#download">Download for Windows</a>
-          <a class="btn btn-ghost" href="#feedback">Send a suggestion</a>
+          <a class="btn btn-ghost" href={site.donateUrl} target="_blank" rel="noopener">
+            Support the project
+          </a>
         </div>
       </div>
 

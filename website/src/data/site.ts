@@ -17,6 +17,9 @@ export const site = {
   downloadUrl: "/downloads/LiveolatorSetup-0.1.4.exe",
   downloadSize: "38 MB",
   repoUrl: "https://github.com/zalmanimrecords-stack/Liveolator",
+  // PayPal donate button (same one wired into the app's Donate action and the
+  // Zalmanolator site).
+  donateUrl: "https://www.paypal.com/donate/?hosted_button_id=APK7NELSVVMXL",
   // Inquiries + efficiency suggestions land here (mailto, see Feedback form).
   contactEmail: "zalmanimrecords@gmail.com",
   // Bump when the user manual page (/manual) is revised.
