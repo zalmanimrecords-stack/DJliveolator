@@ -40,7 +40,11 @@ param(
     [switch]$NoDeploy,
     [string]$VpsHost = 'root@<VPS_HOST>',
     [string]$VpsKey  = "$env:USERPROFILE\.ssh\<SSH_KEY>",
-    [string]$RemoteDir = '/docker/liveolator'
+    [string]$RemoteDir = '/docker/liveolator',
+    # How many recent installers to keep downloadable on the VPS (current build +
+    # rollback buffer). Older ones are pruned. Must match DOWNLOADABLE in
+    # website/src/pages/changelog.astro, which links the same count of versions.
+    [int]$KeepDownloads = 6
 )
 
 $ErrorActionPreference = 'Stop'
@@ -199,6 +203,14 @@ try {
         & scp @sshOpts (Split-Path -Leaf $SetupExe) "${VpsHost}:$RemoteDir/downloads/"
         Pop-Location
         if ($LASTEXITCODE -ne 0) { throw "scp installer failed ($LASTEXITCODE)." }
+
+        # Retention: keep only the newest $KeepDownloads installers for rollback;
+        # prune the rest. sort -V orders by version (oldest first); drop all but the
+        # last N. Non-fatal - a prune failure must not fail an otherwise-good deploy.
+        $prune = "cd $RemoteDir/downloads && ls -1 LiveolatorSetup-*.exe 2>/dev/null " +
+                 "| sort -V | head -n -$KeepDownloads | xargs -r rm -f"
+        & ssh @sshOpts $VpsHost $prune
+        if ($LASTEXITCODE -ne 0) { Write-Warning "Pruning old installers failed ($LASTEXITCODE) - leaving them in place." }
     }
     Push-Location $webData
     & scp @sshOpts 'site.ts'        "${VpsHost}:$RemoteDir/src/data/site.ts"

@@ -4,6 +4,11 @@ import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
 import { site } from "../data/site";
 import changelog from "../data/changelog.json";
+
+// How many recent builds are kept downloadable on the site (current + rollback
+// buffer). Must match KeepDownloads in scripts/publish-website-release.ps1, which
+// prunes the VPS /downloads dir to the same count. Older entries show notes only.
+const DOWNLOADABLE = 6;
 ---
 
 <Base
@@ -17,8 +22,9 @@ import changelog from "../data/changelog.json";
       <h1>What's new</h1>
       <p>
         Every {site.name} build, newest first. It's {site.stage.toLowerCase()} —
-        things move fast and occasionally break. Spotted something off?
-        <a href="/#feedback">Tell us</a>.
+        things move fast and occasionally break. The most recent builds stay
+        downloadable below, so you can roll back if a new one misbehaves. Spotted
+        something off? <a href="/#feedback">Tell us</a>.
       </p>
     </header>
 
@@ -30,6 +36,15 @@ import changelog from "../data/changelog.json";
               <span class="rel-ver">v{rel.version}</span>
               {i === 0 && <span class="rel-current">current</span>}
               <time class="rel-date">{rel.date}</time>
+              {i < DOWNLOADABLE && (
+                <a
+                  class="rel-dl"
+                  href={`/downloads/LiveolatorSetup-${rel.version}.exe`}
+                  download
+                >
+                  Download .exe
+                </a>
+              )}
             </div>
             <ul class="rel-notes">
               {rel.notes.map((n) => (
@@ -94,6 +109,22 @@ import changelog from "../data/changelog.json";
     font-size: 13px;
     color: var(--text-mute);
     margin-left: auto;
+  }
+  .rel-dl {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amber);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .rel-dl:hover {
+    border-color: var(--amber-dim);
+    background: rgba(232, 163, 61, 0.08);
   }
   .rel-notes {
     margin: 0;
