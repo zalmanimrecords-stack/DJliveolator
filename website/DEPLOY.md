@@ -45,7 +45,7 @@ From this `website/` folder, push the source to the VPS and rebuild:
 ```sh
 # stream source (excludes node_modules/dist/.git), then rebuild on the VPS
 tar czf - --exclude=node_modules --exclude=dist --exclude=.astro --exclude=.git \
-  Dockerfile nginx.conf .dockerignore package.json package-lock.json \
+  Dockerfile nginx.conf.template .dockerignore package.json package-lock.json \
   astro.config.mjs tsconfig.json src public \
 | ssh -i ~/.ssh/<SSH_KEY> root@<VPS_HOST> \
     'tar xzf - -C /docker/liveolator && cd /docker/liveolator && docker compose up -d --build'
@@ -70,10 +70,51 @@ scp -i ~/.ssh/<SSH_KEY> \
 
 # 2. point the site at it: bump version/downloadUrl/downloadSize in
 #    website/src/data/site.ts, then redeploy (see "Updating the site later")
+
+# 3. point WordPress at it too (see "Email-gated downloads" below) — the signed
+#    link is built from WP's own per-product setting, so it must match the new
+#    filename or the emailed link will 404.
 ```
 
-No rebuild is needed just to swap the file (it's a live mount) — only to update
-the version text shown on the page.
+A rebuild is needed after swapping the file so the version text updates — and,
+unlike before, the new file is **not** publicly downloadable until step 3 keeps
+the WordPress target in sync (downloads are now gated, see below).
+
+## Email-gated downloads
+
+Downloads are gated: visitors enter their email in the form on the home page and
+WordPress (`zalmanim.com`, the Zalmanim Newsletter plugin) emails back a signed
+link to `/downloads/...exe` that is valid for **24 hours**. nginx verifies that
+signature with its built-in `secure_link` module, so a direct hit on
+`/downloads/LiveolatorSetup-<ver>.exe` with no/expired/forged signature returns
+**403/410** — the email step cannot be bypassed.
+
+How it's wired:
+
+- **`nginx.conf.template`** (rendered by the nginx image's `envsubst` at start)
+  holds the `secure_link` check. The shared secret comes from the
+  `DOWNLOAD_LINK_SECRET` env var, never git. `NGINX_ENVSUBST_FILTER` limits
+  substitution to that one variable so nginx's own `$uri` etc. survive.
+- **One-time on the VPS:** create `/docker/liveolator/.env` with the secret,
+  identical to WordPress's `ZNL_DOWNLOAD_LINK_SECRET` (defined in `wp-config.php`):
+
+  ```sh
+  printf 'DOWNLOAD_LINK_SECRET=%s\n' '<the-shared-secret>' > /docker/liveolator/.env
+  chmod 600 /docker/liveolator/.env
+  cd /docker/liveolator && docker compose up -d --build
+  ```
+
+- **WordPress side:** in `wp-admin` → **Newsletter → Settings → Gated
+  downloads**, the *Liveolator* origin/installer-path/version must point at the
+  current file. Update it on each release (step 3 above). The signature is
+  computed as `base64url(md5("<expires><uri> <secret>"))`, matching the nginx
+  directive exactly — if links suddenly 403, the secret or the path is out of sync.
+
+The "join the mailing list" checkbox on the form is optional and unticked by
+default; ticking it starts a GDPR double opt-in (a separate confirmation email),
+and the subscriber is tagged source `liveolator-download` so you can see in the
+WordPress *Subscribers* screen where they came from. The download link is sent
+either way.
 
 ## Release hook (installer build -> website)
 
