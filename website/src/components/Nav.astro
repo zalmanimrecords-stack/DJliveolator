@@ -17,7 +17,10 @@ import { site } from "../data/site";
       <a href="/#feedback">Feedback</a>
     </nav>
 
-    <a class="btn btn-primary nav-cta" href="/#download">Get it free</a>
+    <div class="nav-actions">
+      <a class="btn btn-ghost nav-donate" href={site.donateUrl} target="_blank" rel="noopener">Donate</a>
+      <a class="btn btn-primary nav-cta" href="/#download">Get it free</a>
+    </div>
   </div>
 </header>
 
@@ -68,6 +71,12 @@ import { site } from "../data/site";
     color: var(--text-dim);
   }
   .nav-links a:hover { color: var(--amber-bright); }
+
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
 
   @media (max-width: 820px) {
     .nav-links { display: none; }
