@@ -11,6 +11,34 @@
 > pump, GL scene re-read, CI, fetch-bass FLAC parity) and verified eight new High bugs — read doc 27 §5
 > before opening the next branch.
 
+## Startup update check (2026-06-26)
+
+On launch the app checks the website for a newer build and, if one exists, shows a dialog
+(Download / Skip this version / Later). Layered per the seam rules and fully headless/offline-safe.
+
+- **Core (`Liveolator.Core/Update/`, pure + tested):** `UpdateManifest`, seams
+  `IUpdateManifestSource` + `IInstalledVersionProvider`, `UpdateCheckResult`, and the pure
+  `UpdateAvailabilityChecker` (strict `System.Version` compare, tolerant of a leading `v` / SemVer
+  suffix; honours a skipped version; conservative — any unparsable/null input → no prompt).
+- **Settings:** `UpdateSettings(CheckOnStartup, SkippedVersion)` on `AppSettings`, persisted through the
+  flat `SettingsSnapshot` (new optional fields, version stays 2 — older files load with defaults). A
+  "Check for a new version on startup" checkbox lives on the Settings → Diagnostics tab.
+- **Online:** `HttpUpdateManifestSource` GETs the site's static `version.json` (mirrors
+  `GetSongBpmClient` — injected `HttpClient`, every failure → null).
+- **App (`Features/Update/`):** `AssemblyInstalledVersionProvider` (over `AppVersionInfo`),
+  `StartupUpdateChecker` (orchestration, no Avalonia — fire-and-forget from `App.axaml.cs`, swallows all
+  failures), `IUpdatePrompt`/`AvaloniaUpdatePrompt` + `UpdateAvailableWindow`, and `IUrlOpener`/
+  `SystemUrlOpener` (cross-platform browser launch). Wired in `ServiceConfig.WireUpdateCheck`.
+- **Website:** `website/public/version.json` (served at `/version.json`) is regenerated + deployed by
+  `scripts/publish-website-release.ps1` from the same values it writes to `site.ts`, so the check stays
+  in step with every build.
+- **Tests:** Core checker (newer/older/equal/null/garbage/skip/`v`-prefix), `UpdateSettings`, Online
+  source (parse/404/garbage/missing fields), Media snapshot round-trip + legacy load, App coordinator
+  (disabled/up-to-date/download/skip/later/already-skipped/fetch-failure) — all green.
+- **Manual-verify (not in CI):** with a published `version.json` whose `version` exceeds the running
+  build, the dialog appears at launch; Download opens the installer URL in the browser; Skip suppresses
+  that version on the next launch; the Settings checkbox disables the check.
+
 ## STUDIO — basic-DAW timeline (2026-06-12, branch `feat/studio-tab`)
 
 A new top-level **STUDIO** tab: an arrangement timeline (dj.studio-inspired) that automates the

@@ -266,6 +266,9 @@
                   </StackPanel>
                 </StackPanel>
 
+                <CheckBox IsChecked="{Binding CheckForUpdatesOnStartup}"
+                          Content="Check for a new version on startup" />
+
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Log detail (applies after restart) — raise to Debug/Trace when reproducing a problem" />
                   <ComboBox ItemsSource="{Binding LogLevels}"

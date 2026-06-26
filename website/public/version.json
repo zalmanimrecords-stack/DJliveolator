@@ -1,0 +1,12 @@
+{
+  "version": "0.1.4",
+  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.1.4.exe",
+  "notes": [
+    "Top status bar reorganized: the master limiter is centred under a MASTER label, the computer volume is separated and relabelled SYS VOL, and the controls are one consistent size.",
+    "More DJ library imports: Serato, VirtualDJ, Mixxx and Engine DJ join Rekordbox and Traktor.",
+    "Set the downbeat: place bar \"one\" exactly on the grid and waveform.",
+    "Jog or seek on one deck no longer disturbs the other playing deck.",
+    "Each deck shows its live BPM, with a highlight when the two decks are matched.",
+    "Closing the window can no longer freeze the app on exit."
+  ]
+}

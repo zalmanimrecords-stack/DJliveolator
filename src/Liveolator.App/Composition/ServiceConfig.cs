@@ -8,6 +8,7 @@ using Liveolator.App.Features.Playlists;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.Studio;
+using Liveolator.App.Features.Update;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
@@ -37,6 +38,7 @@ using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using Liveolator.Core.Recording;
 using Liveolator.Core.Settings;
+using Liveolator.Core.Update;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 using Liveolator.Media;
@@ -249,6 +251,7 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>();
         services.AddSingleton<MusicLibrary>();
         WireOnlineEnrichment(services);
+        WireUpdateCheck(services, loggerFactory);
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
         // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
         // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
@@ -829,6 +832,25 @@ public static class ServiceConfig
 
         services.AddSingleton<IMetadataProvider>(
             new OnlineMetadataProvider(bpmClient, acoustId));
+    }
+
+    // The marketing site (liveolator.zalmanim.com) serves a static version.json kept in step with each
+    // build by scripts/publish-website-release.ps1. The same host distributes the installer, so it is the
+    // canonical, always-in-sync source for the startup "newer version available" check.
+    private const string UpdateManifestUrl = "https://liveolator.zalmanim.com/version.json";
+
+    // Wires the startup update check (doc 12): an HTTP manifest source + the running-version provider feed
+    // the pure decision, and the App-side prompt/url-opener act on the user's choice. All best-effort and
+    // headless-safe — the checker is only resolved by the real desktop lifetime (App.OnFramework...), and
+    // every leg degrades to "no update" on failure (global standards #16/#26).
+    private static void WireUpdateCheck(IServiceCollection services, ILoggerFactory loggerFactory)
+    {
+        services.AddSingleton<IUpdateManifestSource>(_ => new HttpUpdateManifestSource(
+            new HttpClient(), UpdateManifestUrl, loggerFactory.CreateLogger<HttpUpdateManifestSource>()));
+        services.AddSingleton<IInstalledVersionProvider, AssemblyInstalledVersionProvider>();
+        services.AddSingleton<IUrlOpener>(_ => new SystemUrlOpener(loggerFactory.CreateLogger<SystemUrlOpener>()));
+        services.AddSingleton<IUpdatePrompt, AvaloniaUpdatePrompt>();
+        services.AddSingleton<StartupUpdateChecker>();
     }
 
     // --- Live set restore + autosave (doc 09/13) --------------------------------------------------

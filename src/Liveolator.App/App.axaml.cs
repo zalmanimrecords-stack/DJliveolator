@@ -105,6 +105,11 @@ public partial class App : Application
             // window. Only here, in the real desktop lifetime — never during composition or headless
             // tests — so the app stays headless-safe; GL failures are logged and swallowed by the stage.
             services.GetService<IVisualStage>()?.Start();
+
+            // Check the website for a newer build and, if there is one, prompt the user (doc 12). Fire-and-
+            // forget: the fetch is async and the prompt waits for the network, so this never blocks window
+            // creation; the checker swallows every failure so a check can't crash or freeze startup.
+            _ = services.GetService<Features.Update.StartupUpdateChecker>()?.CheckAsync();
         }
 
         base.OnFrameworkInitializationCompleted();

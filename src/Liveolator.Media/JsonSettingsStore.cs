@@ -34,7 +34,9 @@ public sealed record SettingsSnapshot(
     double? WindowX = null,
     double? WindowY = null,
     bool? WindowIsFullScreen = null,
-    int? AcceptedTermsVersion = null)
+    int? AcceptedTermsVersion = null,
+    bool? CheckForUpdatesOnStartup = null,
+    string? SkippedUpdateVersion = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -141,6 +143,10 @@ public sealed class JsonSettingsStore : ISettingsStore
             // A file written before the terms field existed reads null -> 0 (not accepted), so the
             // first-launch acceptance gate prompts (back-compat, #20/#22).
             Legal = new LegalSettings(snapshot.AcceptedTermsVersion ?? 0),
+            // Written before the update fields existed read null → check enabled, nothing skipped.
+            Updates = new UpdateSettings(
+                snapshot.CheckForUpdatesOnStartup ?? UpdateSettings.Default.CheckOnStartup,
+                snapshot.SkippedUpdateVersion),
         }.Normalized();
     }
 
@@ -173,7 +179,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             WindowX: normalized.WindowLayout.X,
             WindowY: normalized.WindowLayout.Y,
             WindowIsFullScreen: normalized.WindowLayout.IsFullScreen,
-            AcceptedTermsVersion: normalized.Legal.AcceptedTermsVersion);
+            AcceptedTermsVersion: normalized.Legal.AcceptedTermsVersion,
+            CheckForUpdatesOnStartup: normalized.Updates.CheckOnStartup,
+            SkippedUpdateVersion: normalized.Updates.SkippedVersion);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to

@@ -169,6 +169,31 @@ if ($sizeText) {
 }
 Write-Utf8NoBom $siteTs $ts
 Write-Host "  site.ts updated (version $Version$(if($sizeText){", $sizeText"}))." -ForegroundColor Green
+# Downloads are email-gated: WordPress signs the link from its OWN per-product
+# setting, so it must be pointed at this new filename or emailed links will 404.
+Write-Host "  REMINDER: update WordPress -> Newsletter -> Settings -> Gated downloads (Liveolator path/version = $Version). See website/DEPLOY.md." -ForegroundColor Yellow
+
+# --- Update version.json (the app's machine-readable update manifest) ----------
+# The in-app startup update check (Liveolator.App.Features.Update) GETs this from the
+# site root and compares its "version" to the running build. Keep it in step with the
+# same values written above; the download URL is absolute so the app can open it directly.
+$siteOrigin     = 'https://liveolator.zalmanim.com'
+$versionJsonPath = Join-Path $repoRoot 'website/public/version.json'
+$downloadAbs    = "$siteOrigin/downloads/LiveolatorSetup-$Version.exe"
+$vjLines = New-Object System.Collections.Generic.List[string]
+$vjLines.Add('{')
+$vjLines.Add('  "version": ' + (ConvertTo-JsonString ([string]$Version)) + ',')
+$vjLines.Add('  "downloadUrl": ' + (ConvertTo-JsonString $downloadAbs) + ',')
+$vjLines.Add('  "notes": [')
+$vjNotes = @($Notes)
+for ($k = 0; $k -lt $vjNotes.Count; $k++) {
+    $vjComma = if ($k -lt ($vjNotes.Count - 1)) { ',' } else { '' }
+    $vjLines.Add('    ' + (ConvertTo-JsonString ([string]$vjNotes[$k])) + $vjComma)
+}
+$vjLines.Add('  ]')
+$vjLines.Add('}')
+Write-Utf8NoBom $versionJsonPath (($vjLines -join "`n") + "`n")
+Write-Host "  version.json updated (update manifest for v$Version)." -ForegroundColor Green
 
 # --- Refresh website screenshots from the latest UI-shot captures --------------
 # Keeps the site's screenshots in step with the app. -CaptureShots re-renders them
@@ -221,8 +246,11 @@ try {
 
     Push-Location (Join-Path $repoRoot 'website/public')
     & scp @sshOpts -r 'screenshots' "${VpsHost}:$RemoteDir/public/"
+    if ($LASTEXITCODE -ne 0) { Pop-Location; throw "scp screenshots failed ($LASTEXITCODE)." }
+    # The app's update manifest — must reach the live site so the startup check sees the new version.
+    & scp @sshOpts 'version.json' "${VpsHost}:$RemoteDir/public/version.json"
     Pop-Location
-    if ($LASTEXITCODE -ne 0) { throw "scp screenshots failed ($LASTEXITCODE)." }
+    if ($LASTEXITCODE -ne 0) { throw "scp version.json failed ($LASTEXITCODE)." }
 
     & ssh @sshOpts $VpsHost "cd $RemoteDir && docker compose up -d --build"
     if ($LASTEXITCODE -ne 0) { throw "remote rebuild failed ($LASTEXITCODE)." }

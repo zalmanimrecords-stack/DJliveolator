@@ -31,6 +31,9 @@ public sealed record AppSettings
     /// <summary>Which Terms of Use version the user has accepted (drives the first-launch acceptance gate).</summary>
     public LegalSettings Legal { get; init; } = LegalSettings.Default;
 
+    /// <summary>Startup update-check preferences (enabled flag + a skipped version).</summary>
+    public UpdateSettings Updates { get; init; } = UpdateSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -46,5 +49,6 @@ public sealed record AppSettings
             Addons = Addons.Normalized(),
             WindowLayout = WindowLayout.Normalized(),
             Legal = Legal.Normalized(),
+            Updates = Updates.Normalized(),
         };
 }

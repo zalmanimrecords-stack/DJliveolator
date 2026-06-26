@@ -91,6 +91,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
     private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
     private string _termsAcceptanceStatus = "Not yet accepted.";
+    private bool _checkForUpdatesOnStartup = UpdateSettings.Default.CheckOnStartup;
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
@@ -352,6 +353,14 @@ public sealed class SettingsViewModel : ViewModelBase
         private set => this.RaiseAndSetIfChanged(ref _termsAcceptanceStatus, value);
     }
 
+    /// <summary>When true, the app checks the website for a newer build at launch and prompts if one
+    /// exists. Persisted on Save; takes effect on the next launch.</summary>
+    public bool CheckForUpdatesOnStartup
+    {
+        get => _checkForUpdatesOnStartup;
+        set => this.RaiseAndSetIfChanged(ref _checkForUpdatesOnStartup, value);
+    }
+
     /// <summary>The MIDI mapping / learn surface, embedded in the MIDI settings tab (null in headless tests).</summary>
     public MappingsViewModel? Mappings { get; }
 
@@ -455,6 +464,8 @@ public sealed class SettingsViewModel : ViewModelBase
             },
             Visuals = new VisualsSettings(WaveformZoomSeconds, NudgeSeconds),
             Diagnostics = new DiagnosticsSettings(SelectedLogLevel),
+            // Keep any previously-skipped version; only the enabled flag is editable here.
+            Updates = _loadedSettings.Updates with { CheckOnStartup = CheckForUpdatesOnStartup },
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -548,6 +559,7 @@ public sealed class SettingsViewModel : ViewModelBase
         WaveformZoomSeconds = settings.Visuals.WaveformZoomSeconds;
         NudgeSeconds = settings.Visuals.NudgeSeconds;
         SelectedLogLevel = settings.Diagnostics.Normalized().MinimumLevel;
+        CheckForUpdatesOnStartup = settings.Updates.CheckOnStartup;
         TermsAcceptanceStatus = settings.Legal.HasAcceptedCurrentTerms
             ? $"Accepted (terms v{settings.Legal.AcceptedTermsVersion})."
             : "Not yet accepted.";
