@@ -286,6 +286,20 @@
         </ScrollViewer>
       </TabItem>
 
+      <TabItem Header="Legal">
+        <ScrollViewer>
+          <StackPanel Margin="14" Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Classes="section" Text="{Binding TermsTitle}" />
+            <Border Classes="panel">
+              <StackPanel Spacing="12" Margin="14">
+                <SelectableTextBlock Text="{Binding TermsText}" TextWrapping="Wrap" />
+                <TextBlock Classes="faint" Text="{Binding TermsAcceptanceStatus}" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
     </TabControl>
 
     <!-- Always-visible action bar: Save applies to every tab's settings at once. -->

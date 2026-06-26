@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Liveolator.App.Features.Legal.TermsOfUseWindow"
+        Width="640" Height="560"
+        MinWidth="480" MinHeight="380"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="Terms of Use">
+  <!-- First-launch acceptance gate: the performer must read and accept before using the app. The text is
+       scrollable so the action buttons stay visible regardless of window size. -->
+  <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+    <TextBlock x:Name="TitleText" Grid.Row="0" Classes="section" Margin="0,0,0,12" />
+
+    <Border Grid.Row="1" Classes="panel">
+      <ScrollViewer Padding="14">
+        <SelectableTextBlock x:Name="TermsText" TextWrapping="Wrap" />
+      </ScrollViewer>
+    </Border>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+      <Button x:Name="DeclineButton" Classes="spartan" Content="Decline and exit" Click="OnDecline" />
+      <Button x:Name="AcceptButton" Classes="accent" Content="I accept" Click="OnAccept" />
+    </StackPanel>
+  </Grid>
+</Window>

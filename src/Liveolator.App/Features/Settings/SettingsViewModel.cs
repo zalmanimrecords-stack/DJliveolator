@@ -9,6 +9,7 @@ using Liveolator.App.Skins;
 using Liveolator.App.Theme;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Extensions;
+using Liveolator.Core.Legal;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -89,6 +90,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private double _waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds;
     private double _nudgeSeconds = VisualsSettings.DefaultNudgeSeconds;
     private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
+    private string _termsAcceptanceStatus = "Not yet accepted.";
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
@@ -337,6 +339,19 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>The build identifier (git commit) of the running app, shown in the Diagnostics tab.</summary>
     public string BuildNumber => _version.Build;
 
+    /// <summary>Heading for the read-only Terms of Use shown in the Legal settings tab.</summary>
+    public string TermsTitle => $"{TermsOfUse.Title} (v{TermsOfUse.CurrentVersion})";
+
+    /// <summary>The full Terms of Use / liability disclaimer text, shown read-only in the Legal tab.</summary>
+    public string TermsText => TermsOfUse.Text;
+
+    /// <summary>Whether (and which version of) the terms the user has accepted, shown in the Legal tab.</summary>
+    public string TermsAcceptanceStatus
+    {
+        get => _termsAcceptanceStatus;
+        private set => this.RaiseAndSetIfChanged(ref _termsAcceptanceStatus, value);
+    }
+
     /// <summary>The MIDI mapping / learn surface, embedded in the MIDI settings tab (null in headless tests).</summary>
     public MappingsViewModel? Mappings { get; }
 
@@ -533,6 +548,9 @@ public sealed class SettingsViewModel : ViewModelBase
         WaveformZoomSeconds = settings.Visuals.WaveformZoomSeconds;
         NudgeSeconds = settings.Visuals.NudgeSeconds;
         SelectedLogLevel = settings.Diagnostics.Normalized().MinimumLevel;
+        TermsAcceptanceStatus = settings.Legal.HasAcceptedCurrentTerms
+            ? $"Accepted (terms v{settings.Legal.AcceptedTermsVersion})."
+            : "Not yet accepted.";
 
         UiThemeIds.Clear();
         UiThemeIds.Add("Spartan");

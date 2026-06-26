@@ -336,6 +336,35 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsAcceptedTermsVersion()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with { Legal = new LegalSettings(AcceptedTermsVersion: 3) };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(3, loaded.Legal.AcceptedTermsVersion);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutTermsAcceptance_ReadsNotAccepted()
+    {
+        // Back-compat + the first-launch gate: a file written before the terms field existed must read
+        // "not accepted" (version 0) so the acceptance prompt is shown, not silently skipped (#20/#22).
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":40,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(0, loaded.Legal.AcceptedTermsVersion);
+        Assert.False(loaded.Legal.HasAcceptedCurrentTerms);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

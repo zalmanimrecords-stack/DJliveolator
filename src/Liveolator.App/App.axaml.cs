@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Liveolator.App.Composition;
+using Liveolator.App.Features.Legal;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
@@ -80,6 +81,13 @@ public partial class App : Application
             // exiting. Idempotent with the Closing path; harmless if it never fires.
             desktop.Exit += (_, _) => BeginShutdown(services);
             desktop.MainWindow = mainWindow;
+
+            // First-launch Terms of Use gate (doc 12): if the user has not accepted the current terms,
+            // prompt as a modal over the main window the moment it opens. Accepting persists the
+            // acceptance; declining (or closing the dialog) exits the app, so it never runs unaccepted.
+            if (!settings.Legal.HasAcceptedCurrentTerms)
+                mainWindow.Opened += async (_, _) =>
+                    await EnforceTermsAcceptanceAsync(services.GetRequiredService<ISettingsStore>(), mainWindow);
 
             // Restore the persisted library state (scan folders + analyzed catalog) so the app opens
             // where the last run left off. The same Libraries singleton backs the open tab; the call
@@ -181,6 +189,43 @@ public partial class App : Application
             Name = "Liveolator ForcedExit Watchdog",
         };
         watchdog.Start();
+    }
+
+    // Shows the Terms of Use acceptance dialog modally over the main window. On accept, records the
+    // accepted terms version (re-reading the latest settings first so a concurrent change is preserved);
+    // on decline or any other close, exits the app by closing the main window (which runs the normal
+    // teardown). Tolerant: a failed persist is logged, never thrown, so it cannot wedge startup (#16/#26).
+    private static async Task EnforceTermsAcceptanceAsync(ISettingsStore store, MainWindow mainWindow)
+    {
+        bool accepted;
+        try
+        {
+            accepted = await new TermsOfUseWindow().ShowDialog<bool>(mainWindow);
+        }
+        catch (Exception ex)
+        {
+            // If the dialog itself fails we cannot confirm consent — fail closed by exiting.
+            System.Diagnostics.Trace.TraceWarning($"Terms-of-use dialog failed to show: {ex.Message}.");
+            mainWindow.Close();
+            return;
+        }
+
+        if (!accepted)
+        {
+            mainWindow.Close();
+            return;
+        }
+
+        try
+        {
+            AppSettings current = await store.LoadAsync();
+            await store.SaveAsync(current with { Legal = LegalSettings.AcceptedCurrent });
+        }
+        catch (Exception ex)
+        {
+            // Acceptance not persisted — the user re-accepts next launch; do not block this session.
+            System.Diagnostics.Trace.TraceWarning($"Could not persist terms acceptance: {ex.Message}.");
+        }
     }
 
     private static ControlSkinFile? ResolveSkin(IControlSkinCatalog catalog, string? skinId)

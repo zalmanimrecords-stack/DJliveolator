@@ -33,7 +33,8 @@ public sealed record SettingsSnapshot(
     double? WindowHeight = null,
     double? WindowX = null,
     double? WindowY = null,
-    bool? WindowIsFullScreen = null)
+    bool? WindowIsFullScreen = null,
+    int? AcceptedTermsVersion = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -137,6 +138,9 @@ public sealed class JsonSettingsStore : ISettingsStore
                 snapshot.WindowX,
                 snapshot.WindowY,
                 snapshot.WindowIsFullScreen ?? true),
+            // A file written before the terms field existed reads null -> 0 (not accepted), so the
+            // first-launch acceptance gate prompts (back-compat, #20/#22).
+            Legal = new LegalSettings(snapshot.AcceptedTermsVersion ?? 0),
         }.Normalized();
     }
 
@@ -168,7 +172,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             WindowHeight: normalized.WindowLayout.Height,
             WindowX: normalized.WindowLayout.X,
             WindowY: normalized.WindowLayout.Y,
-            WindowIsFullScreen: normalized.WindowLayout.IsFullScreen);
+            WindowIsFullScreen: normalized.WindowLayout.IsFullScreen,
+            AcceptedTermsVersion: normalized.Legal.AcceptedTermsVersion);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to

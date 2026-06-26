@@ -28,6 +28,9 @@ public sealed record AppSettings
     /// <summary>Main-window layout (active tab, size/position, full-screen) restored on the next launch.</summary>
     public WindowLayoutSettings WindowLayout { get; init; } = WindowLayoutSettings.Default;
 
+    /// <summary>Which Terms of Use version the user has accepted (drives the first-launch acceptance gate).</summary>
+    public LegalSettings Legal { get; init; } = LegalSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -42,5 +45,6 @@ public sealed record AppSettings
             Diagnostics = Diagnostics.Normalized(),
             Addons = Addons.Normalized(),
             WindowLayout = WindowLayout.Normalized(),
+            Legal = Legal.Normalized(),
         };
 }
