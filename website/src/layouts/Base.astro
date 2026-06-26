@@ -11,6 +11,31 @@ const {
   title = `${site.name} — Free DJ + VJ performance app`,
   description = site.description,
 } = Astro.props;
+
+// Absolute canonical for this page and absolute social image. Astro.site comes
+// from astro.config.mjs; the fallback keeps things working if it is ever unset.
+const origin = Astro.site ?? new URL(site.siteUrl);
+const canonical = new URL(Astro.url.pathname, origin).href;
+const ogImage = site.ogImage ? new URL(site.ogImage, origin).href : null;
+
+// SoftwareApplication structured data — makes the app eligible for rich results
+// in Google search. price "0" marks it as a free download.
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: site.name,
+  description: site.description,
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Windows",
+  url: origin.href,
+  softwareVersion: site.version,
+  ...(ogImage ? { image: ogImage } : {}),
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
 ---
 
 <!doctype html>
@@ -24,14 +49,26 @@ const {
 
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
 
     <!-- Open Graph / social -->
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content={canonical} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:image" content="/screenshots/live.png" />
-    <meta name="twitter:card" content="summary_large_image" />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+
     <meta name="theme-color" content="#0a0806" />
+
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </head>
   <body>
     <slot />

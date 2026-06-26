@@ -13,10 +13,42 @@ import { site } from "../data/site";
         controller you plug in. A macOS build is on the way.
       </p>
 
+      <form class="dl-gate" id="dl-gate" novalidate>
+        <div class="dl-gate-row">
+          <input
+            type="email"
+            name="email"
+            required
+            autocomplete="email"
+            placeholder="you@example.com"
+            aria-label="Your email address"
+          />
+          <button class="btn btn-primary" type="submit">Email me the download</button>
+        </div>
+        <label class="dl-optin">
+          <input type="checkbox" name="newsletter_opt_in" value="1" />
+          <span>
+            Keep me in the loop — join the Zalmanim mailing list for updates on
+            software, plugins, new music and everything new at Zalmanim. (Optional.)
+          </span>
+        </label>
+        <!-- Honeypot: hidden from people, tempting to bots. Leave empty. -->
+        <input
+          type="text"
+          name="company"
+          class="dl-hp"
+          tabindex="-1"
+          autocomplete="off"
+          aria-hidden="true"
+        />
+        <p class="dl-gate-msg" role="status" aria-live="polite" hidden></p>
+        <p class="dl-gate-fine">
+          We email you a secure download link that works for 24 hours. We don't
+          share your address.
+        </p>
+      </form>
+
       <div class="dl-actions">
-        <a class="btn btn-primary" href={site.downloadUrl} download>
-          Download for Windows
-        </a>
         <button class="btn btn-ghost" disabled aria-disabled="true">
           macOS — coming soon
         </button>
@@ -80,4 +112,122 @@ import { site } from "../data/site";
     color: var(--text-mute);
     font-size: 14.5px;
   }
+
+  .dl-gate {
+    margin: 32px auto 0;
+    max-width: 480px;
+    text-align: left;
+  }
+  .dl-gate-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .dl-gate input[type="email"] {
+    flex: 1 1 220px;
+    min-width: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    color: inherit;
+    font-size: 16px;
+  }
+  .dl-gate-row .btn {
+    flex: 0 0 auto;
+  }
+  .dl-optin {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-top: 14px;
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .dl-optin input {
+    margin-top: 3px;
+    flex: 0 0 auto;
+  }
+  /* Honeypot stays in the DOM for bots but never shown to people. */
+  .dl-hp {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+  .dl-gate-msg {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 14.5px;
+  }
+  .dl-gate-msg.is-ok {
+    background: rgba(46, 160, 67, 0.12);
+    color: #4ac26b;
+  }
+  .dl-gate-msg.is-err {
+    background: rgba(248, 81, 73, 0.12);
+    color: #ff7b72;
+  }
+  .dl-gate-fine {
+    margin-top: 14px;
+    color: var(--text-mute);
+    font-size: 13px;
+  }
 </style>
+
+<script define:vars={{ apiUrl: site.downloadApiUrl, product: site.productSlug }}>
+  // Email-gated download: POST the address to the WP backend, which emails a
+  // signed 24h link. Sent as form-urlencoded so the browser skips a CORS
+  // preflight; the backend returns an Access-Control-Allow-Origin for this site.
+  const form = document.getElementById("dl-gate");
+  if (form) {
+    const msg = form.querySelector(".dl-gate-msg");
+    const button = form.querySelector('button[type="submit"]');
+
+    const show = (text, ok) => {
+      msg.textContent = text;
+      msg.className = "dl-gate-msg " + (ok ? "is-ok" : "is-err");
+      msg.hidden = false;
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = form.email.value.trim();
+      if (!email || !email.includes("@")) {
+        show("Please enter a valid email address.", false);
+        form.email.focus();
+        return;
+      }
+
+      const body = new URLSearchParams();
+      body.set("email", email);
+      body.set("product", product);
+      body.set("newsletter_opt_in", form.newsletter_opt_in.checked ? "1" : "0");
+      body.set("company", form.company.value);
+
+      button.disabled = true;
+      msg.hidden = true;
+      try {
+        const res = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        const data = await res.json().catch(() => ({ success: false }));
+        if (res.ok && data.success) {
+          show(data.message || "Check your email for your download link.", true);
+          form.reset();
+        } else {
+          show(data.message || "Something went wrong. Please try again.", false);
+        }
+      } catch (err) {
+        show("Could not reach the server. Please try again in a moment.", false);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+</script>

@@ -13,7 +13,9 @@ RUN npm run build
 
 # Stage 2 — serve the static files. No Node at runtime.
 FROM nginx:1.27-alpine AS runtime
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Config is a template: the image's entrypoint runs envsubst on it at start so
+# the secure_link secret comes from the DOWNLOAD_LINK_SECRET env var, never git.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 

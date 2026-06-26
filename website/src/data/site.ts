@@ -8,6 +8,13 @@ export const site = {
   tagline: "Mix the music. Move the visuals. One beat.",
   description:
     "A cross-platform DJ + VJ performance app where the visuals are locked to the music on a single shared beat clock.",
+  // Public canonical origin. Used to build absolute canonical, og:url and
+  // og:image URLs for search engines and social crawlers. Must match astro
+  // config `site` and carry no trailing slash.
+  siteUrl: "https://liveolator.zalmanim.com",
+  // Social share image, resolved against siteUrl. A real screenshot reads best
+  // in link previews; 1200x630 is the recommended size.
+  ogImage: "/screenshots/live.png",
   // Development stage shown across the site. Currently an early alpha.
   stage: "Alpha",
   // Windows installer, served from the site's own /downloads (bind-mounted on
@@ -16,6 +23,11 @@ export const site = {
   version: "0.1.4",
   downloadUrl: "/downloads/LiveolatorSetup-0.1.4.exe",
   downloadSize: "38 MB",
+  // Email-gated download: the button posts the visitor's email here and the WP
+  // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
+  // `productSlug` must match a product key in the newsletter plugin settings.
+  downloadApiUrl: "https://zalmanim.com/wp-json/zalmanim/v1/request-download",
+  productSlug: "liveolator",
   repoUrl: "https://github.com/zalmanimrecords-stack/Liveolator",
   // PayPal donate button (same one wired into the app's Donate action and the
   // Zalmanolator site).
