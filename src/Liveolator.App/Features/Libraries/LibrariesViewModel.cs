@@ -7,7 +7,9 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Doctor;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Persistence;
 using ReactiveUI;
 
@@ -29,6 +31,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IBeatClock? _beatClock;
     private readonly IMusicCatalogStore? _store;
+    private readonly LibraryDoctor? _doctor;
+    private readonly IMediaIdentityStore? _identityStore;
+    private readonly VisualMediaLibrary? _visualLibrary;
+    private readonly IFileContentHasher? _contentHasher;
     private readonly Shared.TrackContextActions? _contextActions;
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
@@ -51,7 +57,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     // The folders the user has marked as sample sources (the classifier override, B2). Persisted.
     private HashSet<string> _sampleFolders = new(StringComparer.OrdinalIgnoreCase);
     private TrackRowViewModel? _selectedTrack;
+    private LibraryIssueViewModel? _selectedLibraryIssue;
     private string _scanStatus = "Add folders, then Scan.";
+    private string _doctorSummary = "Run Scan health to inspect the library.";
     private bool _isScanning;
     private bool _isAutoCueing;
     private double _scanProgressValue;
@@ -74,6 +82,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IPerformanceActionDispatcher? dispatcher = null,
         IBeatClock? beatClock = null,
         IMusicCatalogStore? store = null,
+        LibraryDoctor? doctor = null,
+        IMediaIdentityStore? identityStore = null,
+        VisualMediaLibrary? visualLibrary = null,
+        IFileContentHasher? contentHasher = null,
         Playlists.PlaylistBuilderViewModel? playlistBuilder = null,
         Shared.TrackContextActions? contextActions = null,
         Core.Playlist.DeckTrackLoader? deckLoader = null,
@@ -87,6 +99,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _dispatcher = dispatcher;
         _beatClock = beatClock;
         _store = store;
+        _doctor = doctor;
+        _identityStore = identityStore;
+        _visualLibrary = visualLibrary;
+        _contentHasher = contentHasher;
         _contextActions = contextActions;
         _autoCueService = autoCueService;
         _hotCueStore = hotCueStore;
@@ -122,6 +138,19 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             RunRescanAllAsync,
             this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
                 (scanning, cueing) => !scanning && !cueing));
+
+        ScanHealthCommand = ReactiveCommand.CreateFromTask(
+            RunScanHealthAsync,
+            this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
+                (scanning, cueing) => _doctor is not null && !scanning && !cueing));
+        RemoveIssueFromCatalogCommand = ReactiveCommand.CreateFromTask(
+            RemoveSelectedIssueFromCatalogAsync,
+            this.WhenAnyValue(x => x.SelectedLibraryIssue)
+                .Select(i => i?.Kind == LibraryIssueKind.MissingFile));
+        ReanalyzeIssueCommand = ReactiveCommand.CreateFromTask(
+            ReanalyzeSelectedIssueAsync,
+            this.WhenAnyValue(x => x.SelectedLibraryIssue)
+                .Select(i => i?.Kind is LibraryIssueKind.BrokenAnalysis or LibraryIssueKind.UnanalyzedTrack or LibraryIssueKind.LowConfidenceAnalysis));
 
         IObservable<bool> canPlay = this.WhenAnyValue(x => x.SelectedTrack)
             .Select(track => track is not null && _dispatcher is not null);
@@ -199,6 +228,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
     public ObservableCollection<FolderStatusViewModel> FolderStatuses { get; } = new();
 
+    /// <summary>Library Doctor findings from the latest non-mutating health scan.</summary>
+    public ObservableCollection<LibraryIssueViewModel> LibraryIssues { get; } = new();
+
     /// <summary>The playlist/set builder opened from the "Playlists" button; null disables the button.</summary>
     public Playlists.PlaylistBuilderViewModel? PlaylistBuilder { get; }
 
@@ -212,6 +244,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// skipping only tracks the user has manually corrected. Disabled while a scan or auto-cue runs.
     /// </summary>
     public ReactiveCommand<Unit, Unit> RescanAllCommand { get; }
+
+    public ReactiveCommand<Unit, Unit> ScanHealthCommand { get; }
+    public ReactiveCommand<Unit, Unit> RemoveIssueFromCatalogCommand { get; }
+    public ReactiveCommand<Unit, Unit> ReanalyzeIssueCommand { get; }
+
+    public bool CanUseLibraryDoctor => _doctor is not null;
 
     /// <summary>True when automatic hot-cue placement is available (a decoder + cue store were wired); the
     /// UI hides the Auto-cue button otherwise.</summary>
@@ -317,10 +355,22 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _selectedTrack, value);
     }
 
+    public LibraryIssueViewModel? SelectedLibraryIssue
+    {
+        get => _selectedLibraryIssue;
+        set => this.RaiseAndSetIfChanged(ref _selectedLibraryIssue, value);
+    }
+
     public string ScanStatus
     {
         get => _scanStatus;
         private set => this.RaiseAndSetIfChanged(ref _scanStatus, value);
+    }
+
+    public string DoctorSummary
+    {
+        get => _doctorSummary;
+        private set => this.RaiseAndSetIfChanged(ref _doctorSummary, value);
     }
 
     public bool IsScanning
@@ -477,6 +527,132 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         RebuildFacets();
         ApplyFilter();
         RefreshFolderStatuses();
+    }
+
+    private async Task RunScanHealthAsync()
+    {
+        if (_doctor is null)
+            return;
+
+        try
+        {
+            IReadOnlyList<MediaIdentity> saved = _identityStore is null
+                ? Array.Empty<MediaIdentity>()
+                : await _identityStore.LoadIdentitiesAsync(_lifetime.Token).ConfigureAwait(false);
+            Dictionary<string, string?> shaByPath = saved
+                .SelectMany(identity => identity.Paths.Select(path => (Path: path, identity.Sha256)))
+                .GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Last().Sha256, StringComparer.OrdinalIgnoreCase);
+
+            IReadOnlyCollection<MusicTrack> tracks = _library.All;
+            IReadOnlyCollection<VisualAsset> visuals = _visualLibrary?.All ?? Array.Empty<VisualAsset>();
+            if (_contentHasher is not null)
+                await FillDuplicateHashesAsync(
+                    tracks.Cast<IMediaEntry>().Concat(visuals),
+                    shaByPath,
+                    _lifetime.Token).ConfigureAwait(false);
+
+            IReadOnlyList<MediaIdentity> identities = MediaIdentityBuilder.FromCatalog(
+                tracks,
+                visuals,
+                DateTime.UtcNow,
+                shaByPath);
+            if (_identityStore is not null)
+                await _identityStore.SaveIdentitiesAsync(identities, _lifetime.Token).ConfigureAwait(false);
+
+            LibraryDoctorReport report = _doctor.Scan(
+                tracks,
+                visuals,
+                Folders.ToList(),
+                Array.Empty<string>(),
+                identities);
+
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                Replace(LibraryIssues, report.Issues.Select(i => new LibraryIssueViewModel(i)).ToList());
+                SelectedLibraryIssue = LibraryIssues.FirstOrDefault();
+                DoctorSummary =
+                    $"{report.Issues.Count} issues | {report.MissingCount} missing | " +
+                    $"{report.DuplicateCount} duplicate groups | {report.BrokenCount} analysis issues";
+                ScanStatus = $"Library Doctor: {DoctorSummary}";
+            });
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                DoctorSummary = $"Health scan failed: {ex.Message}";
+                ScanStatus = DoctorSummary;
+            });
+        }
+    }
+
+    private async Task FillDuplicateHashesAsync(
+        IEnumerable<IMediaEntry> entries,
+        Dictionary<string, string?> shaByPath,
+        CancellationToken cancellationToken)
+    {
+        foreach (IGrouping<long, IMediaEntry> group in entries
+                     .Where(e => e.File.SizeBytes > 0)
+                     .GroupBy(e => e.File.SizeBytes)
+                     .Where(g => g.Select(e => e.File.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+        {
+            foreach (IMediaEntry entry in group)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (shaByPath.TryGetValue(entry.File.Path, out string? existing)
+                    && !string.IsNullOrWhiteSpace(existing))
+                    continue;
+
+                shaByPath[entry.File.Path] = await _contentHasher!.ComputeSha256Async(entry.File.Path, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task RemoveSelectedIssueFromCatalogAsync()
+    {
+        if (SelectedLibraryIssue?.Issue is not { Kind: LibraryIssueKind.MissingFile } issue)
+            return;
+
+        if (!_library.Remove(issue.Path))
+            return;
+
+        RefreshRows();
+        LibraryIssues.Remove(SelectedLibraryIssue);
+        SelectedLibraryIssue = LibraryIssues.FirstOrDefault();
+        ScanStatus = $"Removed missing track from catalog: {issue.Title}";
+
+        if (_store is not null)
+        {
+            try
+            {
+                await _store.SaveMusicAsync(_library.All, _lifetime.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Removed from memory; save failed: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReanalyzeSelectedIssueAsync()
+    {
+        if (SelectedLibraryIssue?.Issue is not { } issue)
+            return;
+        if (issue.Kind is not (LibraryIssueKind.BrokenAnalysis or LibraryIssueKind.UnanalyzedTrack or LibraryIssueKind.LowConfidenceAnalysis))
+            return;
+
+        bool ok = await _library.ForceReanalyzeAsync(issue.Path, _lifetime.Token).ConfigureAwait(false);
+        if (_store is not null)
+            await _store.SaveMusicAsync(_library.All, _lifetime.Token).ConfigureAwait(false);
+
+        RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            RefreshRows();
+            ScanStatus = ok ? $"Re-analyzed \"{issue.Title}\"." : $"Re-analysis failed for \"{issue.Title}\".";
+        });
+        await RunScanHealthAsync().ConfigureAwait(false);
     }
 
     private void OnTrackChanged(object? sender, string trackPath)

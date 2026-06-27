@@ -28,6 +28,7 @@ using Liveolator.Core.Beat;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Library;
+using Liveolator.Core.Library.Doctor;
 using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
@@ -241,6 +242,8 @@ public static class ServiceConfig
         // --- Track-analysis / music-library module (doc 16) ---
         // Bindings come from the dedicated projects: Platform (filesystem) + Audio (WAV + FFmpeg).
         services.AddSingleton<IFileEnumerator, FileSystemEnumerator>();          // Liveolator.Platform
+        services.AddSingleton<IFileExistenceProbe, FileSystemExistenceProbe>();
+        services.AddSingleton<IFolderExistenceProbe, FileSystemFolderExistenceProbe>();
         services.AddSingleton<IAudioDecoder>(_ => new CompositeAudioDecoder());  // Liveolator.Audio
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();        // Liveolator.Audio (ATL.NET tags)
         // Deck waveform overview (doc 11): decodes the loaded track to peaks for the deck strip. Uses the
@@ -259,6 +262,16 @@ public static class ServiceConfig
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IMusicCatalogStore>(catalogStore);
         services.AddSingleton<IVisualCatalogStore>(catalogStore);
+        services.AddSingleton<IMediaIdentityStore>(
+            _ => new JsonMediaIdentityStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        services.AddSingleton<IFileContentHasher, Sha256FileContentHasher>();
+        services.AddSingleton<ISmartCollectionStore>(
+            _ => new JsonSmartCollectionStore(
+                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
+        services.AddSingleton<LibraryDoctor>(sp => new LibraryDoctor(
+            sp.GetRequiredService<IFileExistenceProbe>(),
+            sp.GetRequiredService<IFolderExistenceProbe>()));
         // Visual-media library (doc 08/13, Track C C1): the same Core library + composite probe the MCP
         // scan_visual_folders tool uses. The composite probe routes images to a pure header reader and
         // videos to ffprobe, so the common image case needs no external tool.
@@ -419,6 +432,15 @@ public static class ServiceConfig
             persistenceRoot,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w), fileName: "deck-b-set.json");
         RestoreAndPersistLiveSet(deckBPlaylist, deckBSetStore);
+
+        services.AddSingleton<LibraryReferenceRewriter>(sp => new LibraryReferenceRewriter(
+            new ILibraryReferenceRewriteStore[]
+            {
+                new PlaylistReferenceRewriteStore(sp.GetRequiredService<IPlaylistStore>()),
+                new LiveSetReferenceRewriteStore("deck A live set", liveSetStore),
+                new LiveSetReferenceRewriteStore("deck B live set", deckBSetStore),
+                new TrackVisualProgramReferenceRewriteStore(sp.GetRequiredService<ITrackVisualProgramStore>()),
+            }));
 
         var deckSessionStore = new JsonDeckSessionStore(
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
@@ -620,6 +642,10 @@ public static class ServiceConfig
             realtimeUp ? sp.GetService<IPerformanceActionDispatcher>() : null,
             sp.GetService<IBeatClock>(),
             sp.GetRequiredService<IMusicCatalogStore>(),
+            sp.GetService<LibraryDoctor>(),
+            sp.GetService<IMediaIdentityStore>(),
+            sp.GetService<VisualMediaLibrary>(),
+            sp.GetService<IFileContentHasher>(),
             sp.GetRequiredService<PlaylistBuilderViewModel>(),
             sp.GetRequiredService<TrackContextActions>(),
             autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),

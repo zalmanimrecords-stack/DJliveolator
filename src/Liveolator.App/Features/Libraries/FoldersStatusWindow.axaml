@@ -3,59 +3,100 @@
         xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
         x:Class="Liveolator.App.Features.Libraries.FoldersStatusWindow"
         x:DataType="lib:LibrariesViewModel"
-        Width="520" SizeToContent="Height"
-        MinWidth="420" MaxHeight="640"
-        Title="Folders — update status"
+        Width="760" Height="640"
+        MinWidth="620" MinHeight="480"
+        Title="Library Doctor"
         Background="{DynamicResource Bg}">
 
   <DockPanel Margin="16" LastChildFill="True">
-
-    <!-- header: overall scan status + progress -->
     <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,12">
-      <TextBlock Classes="section" Text="SCAN FOLDERS" />
+      <TextBlock Classes="section" Text="LIBRARY DOCTOR" />
       <TextBlock Classes="mono faint" Text="{Binding ScanStatus}" />
       <ProgressBar Minimum="0" Maximum="100" Height="3"
                    Value="{Binding ScanProgressValue}"
                    IsVisible="{Binding IsScanning}" />
     </StackPanel>
 
-    <!-- footer: actions -->
-    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,12,0,0">
+    <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" Margin="0,12,0,0">
       <Button Grid.Column="0" Classes="spartan" Content="Add folder"
               Click="OnAddFolder" HorizontalAlignment="Left" />
-      <Button Grid.Column="2" Classes="spartan" Content="Re-scan"
+      <Button Grid.Column="1" Classes="spartan" Content="Scan health"
+              Command="{Binding ScanHealthCommand}" Margin="8,0,0,0" />
+      <Button Grid.Column="3" Classes="spartan" Content="Re-scan"
               Command="{Binding ScanCommand}" Margin="0,0,8,0" />
-      <Button Grid.Column="3" Classes="spartan" Content="Close" Click="OnClose" />
+      <Button Grid.Column="4" Classes="spartan" Content="Reanalyze issue"
+              Command="{Binding ReanalyzeIssueCommand}" Margin="0,0,8,0" />
+      <Button Grid.Column="5" Classes="spartan" Content="Close" Click="OnClose" />
     </Grid>
 
-    <!-- folder rows -->
-    <Border Classes="panel">
-      <ScrollViewer>
-        <ItemsControl ItemsSource="{Binding FolderStatuses}" Margin="12">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="lib:FolderStatusViewModel">
-              <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,7"
-                    VerticalAlignment="Center">
-                <StackPanel Grid.Column="0" Spacing="2">
-                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Classes="mono faint" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-                <TextBlock Grid.Column="1" Classes="mono muted" VerticalAlignment="Center"
-                           Margin="12,0,0,0" Text="{Binding StatusText}" />
-                <CheckBox Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0"
-                          IsChecked="{Binding IsSampleFolder}"
-                          Content="Samples"
-                          ToolTip.Tip="Treat every file under this folder as a sample (not a full track)" />
-                <Button Grid.Column="3" Classes="spartan" Content="Remove"
-                        VerticalAlignment="Center" Margin="16,0,0,0"
-                        Command="{Binding RemoveCommand}"
-                        ToolTip.Tip="Stop scanning this folder and drop its tracks from the library" />
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
-    </Border>
+    <TabControl>
+      <TabItem Header="Overview">
+        <Border Classes="panel" Padding="16">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="section" Text="HEALTH SUMMARY" />
+            <TextBlock Classes="mono muted" Text="{Binding DoctorSummary}" />
+            <TextBlock Classes="mono faint"
+                       Text="Scan health checks missing files, offline folders, analysis issues, and duplicate candidates without changing files on disk." />
+          </StackPanel>
+        </Border>
+      </TabItem>
 
+      <TabItem Header="Issues">
+        <Border Classes="panel">
+          <DockPanel LastChildFill="True">
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8" Margin="12">
+              <Button Classes="spartan" Content="Remove missing from catalog"
+                      Command="{Binding RemoveIssueFromCatalogCommand}" />
+              <Button Classes="spartan" Content="Reanalyze selected"
+                      Command="{Binding ReanalyzeIssueCommand}" />
+            </StackPanel>
+            <DataGrid Margin="12"
+                      ItemsSource="{Binding LibraryIssues}"
+                      SelectedItem="{Binding SelectedLibraryIssue}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="150" />
+                <DataGridTextColumn Header="Confidence" Binding="{Binding Confidence}" Width="110" />
+                <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="180" />
+                <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="260" />
+              </DataGrid.Columns>
+            </DataGrid>
+          </DockPanel>
+        </Border>
+      </TabItem>
+
+      <TabItem Header="Folders">
+        <Border Classes="panel">
+          <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding FolderStatuses}" Margin="12">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="lib:FolderStatusViewModel">
+                  <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,7"
+                        VerticalAlignment="Center">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                      <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="mono faint" Text="{Binding Folder}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Classes="mono muted" VerticalAlignment="Center"
+                               Margin="12,0,0,0" Text="{Binding StatusText}" />
+                    <CheckBox Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0"
+                              IsChecked="{Binding IsSampleFolder}"
+                              Content="Samples"
+                              ToolTip.Tip="Treat every file under this folder as a sample (not a full track)" />
+                    <Button Grid.Column="3" Classes="spartan" Content="Remove"
+                            VerticalAlignment="Center" Margin="16,0,0,0"
+                            Command="{Binding RemoveCommand}"
+                            ToolTip.Tip="Stop scanning this folder and drop its tracks from the library" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </Border>
+      </TabItem>
+    </TabControl>
   </DockPanel>
 </Window>

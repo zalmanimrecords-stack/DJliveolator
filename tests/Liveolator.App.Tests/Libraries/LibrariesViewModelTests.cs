@@ -2,7 +2,13 @@ using System.Reactive.Concurrency;
 using System.Reactive.Threading.Tasks;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Tests.Fakes;
+using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Library;
+using Liveolator.Core.Library.Doctor;
 using Liveolator.Core.Library.Music;
+using Liveolator.Core.Persistence;
 using ReactiveUI;
 
 namespace Liveolator.App.Tests.Libraries;
@@ -179,5 +185,105 @@ public sealed class LibrariesViewModelTests
         // Matches depend on detected keys; the contract under test is "no throw, consistent count".
         Assert.True(vm.HarmonicMatches.Count >= 0);
         Assert.DoesNotContain(vm.HarmonicMatches, m => m.Title == vm.SelectedTrack!.Title);
+    }
+
+    [Fact]
+    public async Task ScanHealth_detects_exact_duplicates_and_persists_identities()
+    {
+        var tracks = new[]
+        {
+            AnalyzedTrack("/music/a/song.mp3", size: 500),
+            AnalyzedTrack("/music/b/song-copy.mp3", size: 500),
+            AnalyzedTrack("/music/solo.mp3", size: 700),
+        };
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        library.Restore(tracks);
+
+        var store = new FakeIdentityStore();
+        var hasher = new FakeHasher(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["/music/a/song.mp3"] = "samehash",
+            ["/music/b/song-copy.mp3"] = "samehash",
+            ["/music/solo.mp3"] = "solo",
+        });
+        var doctor = new LibraryDoctor(
+            new FakeFileProbe(tracks.Select(t => t.File.Path)),
+            new FakeFolderProbe("/music"));
+
+        using var vm = new LibrariesViewModel(
+            library,
+            doctor: doctor,
+            identityStore: store,
+            contentHasher: hasher);
+        vm.AddFolder("/music");
+
+        await vm.ScanHealthCommand.Execute().ToTask();
+
+        LibraryIssueViewModel issue = Assert.Single(vm.LibraryIssues);
+        Assert.Equal(LibraryIssueKind.DuplicateCandidate, issue.Kind);
+        Assert.Equal(LibraryRepairConfidence.High, issue.Confidence);
+        Assert.Equal(3, store.Saved.Count);
+        Assert.Equal(2, hasher.Hashed.Count);
+        Assert.DoesNotContain("/music/solo.mp3", hasher.Hashed);
+        Assert.Contains("1 issues", vm.DoctorSummary);
+    }
+
+    private static MusicTrack AnalyzedTrack(string path, long size)
+        => new(
+            new ScannedFile(path, size, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
+            new BpmResult(124, 0.9),
+            new MusicalKey(0, KeyMode.Major, "8B", 0.9),
+            TimeSpan.FromMinutes(4),
+            TrackCues.None,
+            MediaAnalysisStatus.Ok,
+            null);
+
+    private sealed class FakeFileProbe : IFileExistenceProbe
+    {
+        private readonly HashSet<string> _paths;
+
+        public FakeFileProbe(IEnumerable<string> paths)
+            => _paths = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+
+        public bool Exists(string path) => _paths.Contains(path);
+    }
+
+    private sealed class FakeFolderProbe : IFolderExistenceProbe
+    {
+        private readonly HashSet<string> _folders;
+
+        public FakeFolderProbe(params string[] folders)
+            => _folders = new HashSet<string>(folders, StringComparer.OrdinalIgnoreCase);
+
+        public bool Exists(string folder) => _folders.Contains(folder);
+    }
+
+    private sealed class FakeHasher : IFileContentHasher
+    {
+        private readonly IReadOnlyDictionary<string, string> _hashes;
+
+        public FakeHasher(IReadOnlyDictionary<string, string> hashes) => _hashes = hashes;
+
+        public List<string> Hashed { get; } = new();
+
+        public Task<string?> ComputeSha256Async(string path, CancellationToken cancellationToken = default)
+        {
+            Hashed.Add(path);
+            return Task.FromResult(_hashes.TryGetValue(path, out string? hash) ? hash : null);
+        }
+    }
+
+    private sealed class FakeIdentityStore : IMediaIdentityStore
+    {
+        public IReadOnlyList<MediaIdentity> Saved { get; private set; } = Array.Empty<MediaIdentity>();
+
+        public Task<IReadOnlyList<MediaIdentity>> LoadIdentitiesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<MediaIdentity>>(Array.Empty<MediaIdentity>());
+
+        public Task SaveIdentitiesAsync(IEnumerable<MediaIdentity> identities, CancellationToken cancellationToken = default)
+        {
+            Saved = identities.ToList();
+            return Task.CompletedTask;
+        }
     }
 }
