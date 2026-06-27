@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             x:Class="Liveolator.App.Features.Dj.DjBrowserView"
+             x:DataType="dj:DjBrowserViewModel">
+
+  <!-- DJ-tab track browser (the Rekordbox/Serato bottom half): search + BPM/KEY sort on top, a virtualized
+       track list below. Loads onto a deck through the shared load-or-queue policy (load != play). It is a
+       PERFORMANCE view of the catalog — no scan/import/auto-cue here (those live on the LIBRARIES tab). -->
+  <Border Classes="panel">
+    <Grid RowDefinitions="Auto,Auto,*" Margin="12,10">
+
+      <!-- header: search · sort · load status -->
+      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
+        <TextBox Grid.Column="0" Classes="spartan" MaxWidth="360" HorizontalAlignment="Left"
+                 Watermark="Search title, artist or key…" Text="{Binding SearchText}" />
+        <TextBlock Grid.Column="1" Classes="faint" VerticalAlignment="Center" Margin="12,0,6,0" Text="SORT" />
+        <Button Grid.Column="2" Classes="spartan" Content="BPM" Margin="0,0,6,0"
+                Command="{Binding SortByBpmCommand}" ToolTip.Tip="Sort by BPM (tap again to reverse)" />
+        <Button Grid.Column="3" Classes="spartan" Content="KEY"
+                Command="{Binding SortByKeyCommand}" ToolTip.Tip="Sort by musical key (tap again to reverse)" />
+      </Grid>
+
+      <!-- column header — matches the row template's columns -->
+      <Grid Grid.Row="1" ColumnDefinitions="12,64,52,*,1.4*,64,Auto" Margin="11,0,9,6">
+        <TextBlock Grid.Column="1" Classes="faint" Text="BPM" HorizontalAlignment="Right" Margin="0,0,10,0" />
+        <TextBlock Grid.Column="2" Classes="faint" Text="KEY" HorizontalAlignment="Right" Margin="0,0,10,0" />
+        <TextBlock Grid.Column="3" Classes="faint" Text="TITLE" />
+        <TextBlock Grid.Column="4" Classes="faint" Text="ARTIST" />
+        <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" Margin="0,0,10,0" />
+        <TextBlock Grid.Column="6" Classes="faint" Text="LOAD" HorizontalAlignment="Center" />
+      </Grid>
+
+      <ListBox Grid.Row="2" Classes="rows" Name="TrackList"
+               ItemsSource="{Binding Tracks}"
+               SelectedItem="{Binding SelectedTrack}"
+               DoubleTapped="OnRowDoubleTapped">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="lib:TrackRowViewModel">
+            <Grid ColumnDefinitions="12,64,52,*,1.4*,64,Auto" VerticalAlignment="Center">
+              <!-- status dot: a track with no grid (un-analyzed) won't sync cleanly — show it before loading -->
+              <Ellipse Grid.Column="0" Width="6" Height="6" VerticalAlignment="Center"
+                       Fill="{Binding Status, Converter={x:Static lib:StatusToBrushConverter.Instance}}" />
+              <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding Bpm}"
+                         HorizontalAlignment="Right" Margin="0,0,10,0" />
+              <TextBlock Grid.Column="2" Classes="mono" Text="{Binding Key}"
+                         HorizontalAlignment="Right" Margin="0,0,10,0" />
+              <TextBlock Grid.Column="3" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="4" Classes="muted" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}"
+                         HorizontalAlignment="Right" Margin="0,0,10,0" />
+              <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                <Button Classes="key" Content="A" Width="30" Height="24" Padding="0"
+                        CommandParameter="{Binding}"
+                        Command="{Binding $parent[ListBox].((dj:DjBrowserViewModel)DataContext).LoadRowToDeckACommand}"
+                        ToolTip.Tip="Load this track onto deck A (queues if A is playing)" />
+                <Button Classes="key" Content="B" Width="30" Height="24" Padding="0"
+                        CommandParameter="{Binding}"
+                        Command="{Binding $parent[ListBox].((dj:DjBrowserViewModel)DataContext).LoadRowToDeckBCommand}"
+                        ToolTip.Tip="Load this track onto deck B (queues if B is playing)" />
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Border>
+</UserControl>

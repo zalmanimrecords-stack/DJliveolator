@@ -9,6 +9,20 @@
        bound to the shared PerformanceDeckSet), so switching tabs never shows a different-looking DJ.
        NOTE: the SET (Now/Next/Later) bottom strip was removed temporarily — it crowded the deck layout.
        The backing view-model (Set/DeckBQueue/Played + commands in DjViewModel) is intact so the panel
-       can be rebuilt once the deck layout is finalised. -->
-  <dj:DjConsoleView DataContext="{Binding Decks}" />
+       can be rebuilt once the deck layout is finalised.
+
+       Below the console sits the DJ track browser (the Rekordbox/Serato bottom half). Its height is
+       tier-dependent (Theme/ResponsiveLayout.axaml via .dj-browser): collapsed on small/laptop screens
+       where the console needs all the height, and a generous band on wide/4K where it fills the space.
+       The console row is * with a MinHeight so the browser can never crush it. -->
+  <!-- Console over browser. The split is PROPORTIONAL (star rows set in code-behind from the window
+       size-class) so it always fits the actual screen height — a fixed browser band overflowed short
+       screens and crushed the console. The browser row collapses to 0 on small/laptop tiers (the console
+       needs the height) and opens to a generous share on wide/4K. -->
+  <Grid Name="RootGrid" RowDefinitions="*,0">
+    <dj:DjConsoleView Grid.Row="0" DataContext="{Binding Decks}" />
+    <Border Grid.Row="1" IsVisible="{Binding HasBrowser}" Margin="0,12,0,0" ClipToBounds="True">
+      <dj:DjBrowserView DataContext="{Binding Browser}" />
+    </Border>
+  </Grid>
 </UserControl>

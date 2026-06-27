@@ -62,6 +62,10 @@
     <Setter Property="MaxHeight" Value="680" />
   </Style>
 
+  <!-- (The DJ-tab console↔browser split is a PROPORTIONAL star split set in DjView code-behind from the
+       tier — DjBrowserLayout.RowShare — so it always fits the actual screen height; a fixed band overflowed
+       short wide screens and crushed the console.) -->
+
   <!-- DJ mixer cluster: was a fixed MaxWidth=270 inside a fixed 300px column (now a flexible Auto column). -->
   <Style Selector="Window.compact StackPanel.mixer-root">
     <Setter Property="MaxWidth" Value="270" />

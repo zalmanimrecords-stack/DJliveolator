@@ -132,4 +132,33 @@ public class LayoutSizeClassResolverTests
     {
         Assert.Equal(expected, LayoutSizeTokens.For(cls)["SizeFaderChannelHeight"]);
     }
+
+    [Theory]
+    [InlineData("compact", LayoutSizeClass.Compact)]
+    [InlineData("standard", LayoutSizeClass.Standard)]
+    [InlineData("wide", LayoutSizeClass.Wide)]
+    [InlineData("ultra", LayoutSizeClass.Ultra)]
+    [InlineData(null, LayoutSizeClass.Standard)]
+    [InlineData("bogus", LayoutSizeClass.Standard)]
+    public void FromStyleClass_inverts_the_tier_class_name(string? styleClass, LayoutSizeClass expected)
+    {
+        Assert.Equal(expected, LayoutScale.FromStyleClass(styleClass));
+    }
+
+    [Theory]
+    // Laptop tiers collapse the DJ browser (console keeps the height); wide/4K open a proportional band.
+    [InlineData(LayoutSizeClass.Compact, 0.0)]
+    [InlineData(LayoutSizeClass.Standard, 0.0)]
+    public void Browser_row_collapses_on_laptop_tiers(LayoutSizeClass cls, double expected)
+    {
+        Assert.Equal(expected, DjBrowserLayout.RowShare(cls));
+    }
+
+    [Theory]
+    [InlineData(LayoutSizeClass.Wide)]
+    [InlineData(LayoutSizeClass.Ultra)]
+    public void Browser_row_opens_a_proportional_band_on_big_screens(LayoutSizeClass cls)
+    {
+        Assert.True(DjBrowserLayout.RowShare(cls) > 0);
+    }
 }

@@ -60,11 +60,18 @@ public sealed class DjBrowserViewModel : ViewModelBase
         CanLoadToDeckB = DeckSlotAvailable(1);
 
         LoadToDeckACommand = ReactiveCommand.Create(
-            () => LoadToDeck(0),
+            () => LoadToDeck(SelectedTrack, 0),
             this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
-            () => LoadToDeck(1),
+            () => LoadToDeck(SelectedTrack, 1),
             this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && CanLoadToDeckB));
+
+        // Per-row load: a row's "-> A" / "-> B" button loads THAT row (no need to select it first), the
+        // unambiguous pro pattern. Gated only on the deck slot existing.
+        LoadRowToDeckACommand = ReactiveCommand.Create<TrackRowViewModel>(
+            row => LoadToDeck(row, 0), Observable.Return(CanLoadToDeckA));
+        LoadRowToDeckBCommand = ReactiveCommand.Create<TrackRowViewModel>(
+            row => LoadToDeck(row, 1), Observable.Return(CanLoadToDeckB));
 
         // Header sort taps: the two a DJ sorts by when digging for the next track. Tapping the active
         // key flips direction.
@@ -120,6 +127,8 @@ public sealed class DjBrowserViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
     public ReactiveCommand<Unit, Unit> LoadToDeckBCommand { get; }
+    public ReactiveCommand<TrackRowViewModel, Unit> LoadRowToDeckACommand { get; }
+    public ReactiveCommand<TrackRowViewModel, Unit> LoadRowToDeckBCommand { get; }
     public ReactiveCommand<Unit, Unit> SortByBpmCommand { get; }
     public ReactiveCommand<Unit, Unit> SortByKeyCommand { get; }
 
@@ -150,7 +159,7 @@ public sealed class DjBrowserViewModel : ViewModelBase
             return;
         int? slot = FreeDeckSlot(_decks.DeckA.IsPlaying, _decks.DeckB.IsPlaying);
         if (slot is { } s)
-            LoadToDeck(s);
+            LoadToDeck(SelectedTrack, s);
     }
 
     /// <summary>The unambiguous "free deck" for a double-click load: the not-playing deck when exactly one
@@ -181,18 +190,18 @@ public sealed class DjBrowserViewModel : ViewModelBase
             Tracks.Add(_rowByTrack[track]);
     }
 
-    // Stage the selected track on a deck slot via the shared load-or-queue policy — no auto-play (load ≠
-    // play). A playing deck queues it; an unreachable file dispatches nothing and reports why.
-    private void LoadToDeck(int slot)
+    // Stage a track on a deck slot via the shared load-or-queue policy — no auto-play (load ≠ play).
+    // A playing deck queues it; an unreachable file dispatches nothing and reports why.
+    private void LoadToDeck(TrackRowViewModel? track, int slot)
     {
-        if (_loader is null || _selectedTrack is null)
+        if (_loader is null || track is null)
             return;
 
         LoadStatus = _loader.Load(
             slot,
-            _selectedTrack.Track.File.Path,
-            bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0,
-            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0).Message;
+            track.Track.File.Path,
+            bpm: track.Track.Bpm?.Bpm ?? 0,
+            firstBeatSeconds: track.Track.Bpm?.FirstBeatSeconds ?? 0).Message;
     }
 
     // A deck slot is loadable only if the engine backs it (DeckPlayPause reports IsAvailable iff

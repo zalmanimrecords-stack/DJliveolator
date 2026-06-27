@@ -26,4 +26,14 @@ public static class LayoutScale
         LayoutSizeClass.Ultra => "ultra",
         _ => "standard",
     };
+
+    /// <summary>The tier for a style-class name (inverse of <see cref="StyleClass"/>); unknown/absent =
+    /// Standard. Lets a view read the active tier off the shell Window's classes.</summary>
+    public static LayoutSizeClass FromStyleClass(string? styleClass) => styleClass switch
+    {
+        "compact" => LayoutSizeClass.Compact,
+        "wide" => LayoutSizeClass.Wide,
+        "ultra" => LayoutSizeClass.Ultra,
+        _ => LayoutSizeClass.Standard,
+    };
 }
