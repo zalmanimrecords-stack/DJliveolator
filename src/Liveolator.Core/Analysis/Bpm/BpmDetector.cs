@@ -39,7 +39,7 @@ public sealed class BpmDetector
     private readonly OnsetEnvelope _onset;
     private readonly TempoEstimator _tempo;
     private readonly FirstBeatEstimator _firstBeat;
-    private readonly LowBandOnsetEnvelope _kickOnset;
+    private readonly IKickOnsetEnvelope _kickOnset;
     private readonly DownbeatEstimator _downbeat;
     private readonly GridRefiner _gridRefiner;
 
@@ -47,14 +47,17 @@ public sealed class BpmDetector
         OnsetEnvelope? onset = null,
         TempoEstimator? tempo = null,
         FirstBeatEstimator? firstBeat = null,
-        LowBandOnsetEnvelope? kickOnset = null,
+        IKickOnsetEnvelope? kickOnset = null,
         DownbeatEstimator? downbeat = null,
         GridRefiner? gridRefiner = null)
     {
         _onset = onset ?? new OnsetEnvelope();
         _tempo = tempo ?? new TempoEstimator();
         _firstBeat = firstBeat ?? new FirstBeatEstimator();
-        _kickOnset = kickOnset ?? new LowBandOnsetEnvelope();
+        // Default to percussive (HPSS) separation so a sustained in-band bass / sub / 808 on the off-beat
+        // cannot pollute the kick envelope (the band-only LowBandOnsetEnvelope remains as the simpler seam
+        // impl / fallback). The kick anchor drives tempo refinement, beat phase, and the downbeat.
+        _kickOnset = kickOnset ?? new PercussiveOnsetEnvelope();
         _downbeat = downbeat ?? new DownbeatEstimator();
         _gridRefiner = gridRefiner ?? new GridRefiner();
     }

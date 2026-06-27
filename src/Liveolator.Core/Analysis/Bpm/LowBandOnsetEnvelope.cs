@@ -15,7 +15,7 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// strip bands on, so the low band that draws as the on-screen "kick" layer and the band the beat grid
 /// locks to are one and the same — what the performer sees is what the clock follows.
 /// </remarks>
-public sealed class LowBandOnsetEnvelope
+public sealed class LowBandOnsetEnvelope : IKickOnsetEnvelope
 {
     /// <summary>Low-band crossover (Hz) — shared with the waveform strip's kick band.</summary>
     public const double CrossoverHz = WaveformBuilder.LowCrossoverHz;

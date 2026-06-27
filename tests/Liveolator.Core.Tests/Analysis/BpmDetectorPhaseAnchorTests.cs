@@ -42,12 +42,13 @@ public sealed class BpmDetectorPhaseAnchorTests
         Assert.True(toKick < toOffbeat, "anchor must be closer to the kick than to the off-beat");
     }
 
-    [Fact(Skip = "P1 (HPSS): a sustained off-beat bass INSIDE the kick band corrupts the kick onset " +
-                 "envelope itself (coherence collapses), so the phase-source fix alone cannot anchor to the " +
-                 "kick. Requires percussive/harmonic separation before the onset stage. Tracked in the " +
-                 "beat-sync-stems plan.")]
+    [Fact]
     public void Detect_KickWithOffbeatSubBassInKickBand_AnchorsPhaseToTheKick()
     {
+        // The off-beat bass now sits INSIDE the kick band (110 Hz): a band-only onset cannot tell it from
+        // the kick, so its coherence collapses and phase falls back to the polluted broadband. Percussive
+        // (HPSS) separation removes the sustained narrow-band bass before the onset stage, so the anchor
+        // locks to the kick. This is the regression guard for the secondary cause (P1 stems).
         const double bpm = 128.0;
         const double kickOffsetSeconds = 0.10;
         float[] signal = BeatMixSignals.KickBassHatsFourOnFloor(
@@ -55,8 +56,12 @@ public sealed class BpmDetectorPhaseAnchorTests
 
         BpmResult result = new BpmDetector().Detect(signal, SampleRate);
 
+        Assert.InRange(result.Bpm, bpm - 3.0, bpm + 3.0);
         double period = 60.0 / result.Bpm;
+        double offbeatSeconds = kickOffsetSeconds + period / 2.0;
         double toKick = BeatMixSignals.CircularDistanceSeconds(result.FirstBeatSeconds, kickOffsetSeconds, period);
-        Assert.True(toKick < 0.03, $"anchor distance-to-kick {toKick:F3}s");
+        double toOffbeat = BeatMixSignals.CircularDistanceSeconds(result.FirstBeatSeconds, offbeatSeconds, period);
+        Assert.True(toKick < 0.03, $"anchor distance-to-kick {toKick:F3}s (to off-beat {toOffbeat:F3}s)");
+        Assert.True(toKick < toOffbeat, "anchor must be closer to the kick than to the off-beat");
     }
 }

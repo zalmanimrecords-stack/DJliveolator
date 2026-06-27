@@ -44,14 +44,23 @@ internal static class BeatMixSignals
         return buffer;
     }
 
-    // A short, sharply-decaying low-frequency thump — concentrated kick-band energy with a clear transient.
+    // A real-kick shape: a short broadband attack CLICK plus a low-frequency BODY. The click deposits
+    // strike energy across the low spectrum (a vertical stroke), which is what lets percussive/HPSS
+    // separation tell a kick apart from a narrow-band sustained bass note; the body carries the thump.
     private static void AddKick(float[] buffer, int start, int sampleRate, double freqHz)
     {
+        int clickLen = (int)(0.004 * sampleRate);
+        for (int i = 0; i < clickLen && start + i < buffer.Length && start + i >= 0; i++)
+        {
+            double decay = (double)(clickLen - i) / clickLen; // sharp transient => broadband
+            buffer[start + i] += (float)(0.8 * decay);
+        }
+
         int len = (int)(0.06 * sampleRate);
         double w = 2.0 * Math.PI * freqHz / sampleRate;
-        double decay = 30.0 / sampleRate; // ~fast exponential thump
+        double bodyDecay = 30.0 / sampleRate; // ~fast exponential thump
         for (int i = 0; i < len && start + i < buffer.Length && start + i >= 0; i++)
-            buffer[start + i] += (float)(Math.Exp(-decay * i) * Math.Sin(w * i));
+            buffer[start + i] += (float)(Math.Exp(-bodyDecay * i) * Math.Sin(w * i));
     }
 
     // A sustained bass note filling most of the off-beat — sits in the kick band (<=200 Hz) but off the beat.
