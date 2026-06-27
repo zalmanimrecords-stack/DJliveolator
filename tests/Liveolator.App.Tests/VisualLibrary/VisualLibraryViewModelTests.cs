@@ -153,6 +153,21 @@ public sealed class VisualLibraryViewModelTests
     }
 
     [Fact]
+    public void RemoveFolder_drops_it_and_persists_the_remaining_set()
+    {
+        var store = new FakeVisualCatalogStore();
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store);
+        vm.AddFolder("/vis/one");
+        vm.AddFolder("/vis/two");
+
+        vm.RemoveFolderCommand.Execute("/vis/one").Subscribe();
+
+        Assert.DoesNotContain("/vis/one", vm.Folders);
+        Assert.Contains("/vis/two", vm.Folders);
+        Assert.DoesNotContain("/vis/one", store.SavedFolders);
+    }
+
+    [Fact]
     public async Task Delete_removes_file_from_disk_catalog_and_list()
     {
         var store = new FakeVisualCatalogStore(seedAssets: Catalog, seedFolders: new[] { "/vis" });
@@ -215,6 +230,51 @@ public sealed class VisualLibraryViewModelTests
         Assert.Null(vm.PreviewMessage);
     }
 
+    [Fact]
+    public async Task DeleteAsset_deletes_a_specific_row_without_selecting_it()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog, seedFolders: new[] { "/vis" });
+        var remover = new FakeFileRemover();
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, fileRemover: remover, confirmation: Confirm(true));
+        await vm.InitializeAsync();
+        VisualAssetRowViewModel target = vm.Assets.Single(a => a.Title == "grid");
+
+        await vm.DeleteAssetCommand.Execute(target).ToTask();
+
+        Assert.Contains("/vis/grid.png", remover.Deleted);
+        Assert.Equal(3, vm.Assets.Count);
+        Assert.DoesNotContain(vm.Assets, a => a.Title == "grid");
+    }
+
+    [AvaloniaFact]
+    public async Task EnsureThumbnail_fills_the_rows_thumbnail_once()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var thumbnails = new FakeThumbnailRenderer { Frame = new VisualPreviewFrame(2, 2, new byte[2 * 2 * 4]) };
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store, thumbnails: thumbnails);
+        await vm.InitializeAsync();
+        VisualAssetRowViewModel row = vm.Assets.Single(a => a.Title == "sunset");
+
+        await vm.EnsureThumbnailAsync(row);
+        await vm.EnsureThumbnailAsync(row); // idempotent — renders at most once
+
+        Assert.NotNull(row.Thumbnail);
+        Assert.Equal(1, thumbnails.Renders);
+    }
+
+    [AvaloniaFact]
+    public async Task EnsureThumbnail_without_a_renderer_is_a_noop()
+    {
+        var store = new FakeVisualCatalogStore(seedAssets: Catalog);
+        var vm = new VisualLibraryViewModel(EmptyLibrary(), store);
+        await vm.InitializeAsync();
+        VisualAssetRowViewModel row = vm.Assets.Single(a => a.Title == "sunset");
+
+        await vm.EnsureThumbnailAsync(row);
+
+        Assert.Null(row.Thumbnail);
+    }
+
     [AvaloniaFact]
     public async Task Unavailable_preview_shows_a_message_not_a_bitmap()
     {
@@ -255,10 +315,14 @@ public sealed class VisualLibraryViewModelTests
     private sealed class FakeThumbnailRenderer : IVisualThumbnailRenderer
     {
         public VisualPreviewFrame? Frame { get; init; }
+        public int Renders { get; private set; }
 
         public Task<VisualPreviewFrame?> RenderAsync(
             string filePath, VisualMediaKind kind, int maxEdge, CancellationToken cancellationToken = default)
-            => Task.FromResult(Frame);
+        {
+            Renders++;
+            return Task.FromResult(Frame);
+        }
     }
 
     [Fact]

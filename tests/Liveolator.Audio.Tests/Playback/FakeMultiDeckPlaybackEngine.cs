@@ -78,6 +78,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetDeckBpm(int slot, double bpm) { }
     public void PitchBend(int slot, double bendFraction) => Calls.Add($"PitchBend({slot},{bendFraction})");
     public void Cue(int slot) { }
+    public void CuePlay(int slot, bool isPressed) { }
     public double DeckBaseBpm(int slot) => _baseBpm[slot];
     public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
     public double DeckFirstBeat(int slot) => _firstBeat[slot];

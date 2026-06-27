@@ -217,4 +217,10 @@ public enum PerformanceActionKind
     /// to where it was. Slot = A/B, Argument = the band (Low/Mid/High). Uses the press/release seam
     /// (doc 31) — bind it with ReportRelease so the hold/restore both fire.</summary>
     MixerEqKill,
+
+    /// <summary>Cue-play preview (CDJ press-and-hold): press plays from the deck's cue point (setting it
+    /// at the current position when none is set); release returns to the cue and pauses. Slot = A/B. Uses
+    /// the press/release seam (doc 31) — bind with ReportRelease. Distinct from <see cref="DeckCue"/> so a
+    /// plain click (no release) keeps the back-to-cue behavior.</summary>
+    DeckCuePlay,
 }

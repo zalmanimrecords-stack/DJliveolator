@@ -29,6 +29,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckBpmNudge,
         PerformanceActionKind.DeckPitchBend,
         PerformanceActionKind.DeckCue,
+        PerformanceActionKind.DeckCuePlay,
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckSyncToggle,
         PerformanceActionKind.DeckQuantizeToggle,
@@ -157,6 +158,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 _engine.SetDeckBpm(slot, _engine.DeckBpm(slot) + action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
+                break;
+            case PerformanceActionKind.DeckCuePlay:
+                _engine.CuePlay(slot, action.IsPressed);
                 break;
             case PerformanceActionKind.DeckCue:
                 _engine.Cue(slot);

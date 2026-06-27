@@ -175,6 +175,34 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public void CuePlay(int slot, bool isPressed)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck)
+                return;
+
+            if (isPressed)
+            {
+                // Set the cue at the current position if none exists, then play from the cue while held —
+                // the CDJ cue-play preview.
+                s.TempCue ??= _backend.GetDeckPositionFraction(deck.Handle);
+                _backend.SetDeckPositionFraction(deck.Handle, s.TempCue.Value);
+                _backend.SetDeckPlaying(deck.Handle, true);
+                s.Deck = deck with { Playing = true };
+            }
+            else
+            {
+                // Release: snap back to the cue and pause (the preview never advances the cue point).
+                _backend.SetDeckPositionFraction(deck.Handle, s.TempCue ?? 0.0);
+                _backend.SetDeckPlaying(deck.Handle, false);
+                s.Deck = deck with { Playing = false };
+            }
+        }
+    }
+
     // Caller holds _gate. Unplugs and forgets any deck in the slot, clearing its mixer channel and the
     // track-specific state (a new track gets fresh cues / BPM / loop). Transport state that belongs to
     // the DJ rather than the track (pitch, sync/quantize toggles) is intentionally left in place.

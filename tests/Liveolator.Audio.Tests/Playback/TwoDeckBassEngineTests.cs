@@ -346,6 +346,24 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void CuePlay_PressPlaysFromTheCue_ReleaseReturnsAndPauses()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // paused after load
+        backend.PositionFraction[100] = 0.30;
+
+        engine.CuePlay(0, isPressed: true);   // set cue at 0.30 and play from it
+        Assert.True(engine.IsPlaying(0));
+        Assert.Equal(0.30, backend.PositionFraction[100], 6);
+
+        backend.PositionFraction[100] = 0.70; // preview advances
+        engine.CuePlay(0, isPressed: false);  // release: snap back to the cue, pause
+
+        Assert.False(engine.IsPlaying(0));
+        Assert.Equal(0.30, backend.PositionFraction[100], 6);
+    }
+
+    [Fact]
     public void Cue_AfterSetting_ReturnsToTheSetCue_NotTrackStart()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

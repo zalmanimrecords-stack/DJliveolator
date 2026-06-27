@@ -192,6 +192,9 @@ public class DeckActionHandlerTests
             _position[slot] = 0;
         }
 
+        public List<(int Slot, bool Pressed)> CuePlays { get; } = new();
+        public void CuePlay(int slot, bool isPressed) => CuePlays.Add((slot, isPressed));
+
         public double DeckBaseBpm(int slot) => _baseBpm[slot];
         public void SetDeckBaseBpm(int slot, double bpm)
         {
@@ -575,6 +578,19 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "3", Slot: 1));
 
         Assert.Equal((1, 3), Assert.Single(engine.HotCues));
+    }
+
+    [Fact]
+    public void CuePlay_RoutesPressAndReleaseToTheEngine()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        Assert.Contains(PerformanceActionKind.DeckCuePlay, handler.HandledKinds);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckCuePlay, Slot: 0, IsPressed: true));
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckCuePlay, Slot: 0, IsPressed: false));
+
+        Assert.Equal(new[] { (0, true), (0, false) }, engine.CuePlays);
     }
 
     [Fact]

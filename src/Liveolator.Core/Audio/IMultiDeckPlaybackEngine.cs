@@ -94,6 +94,13 @@ public interface IMultiDeckPlaybackEngine
     void Cue(int slot);
 
     /// <summary>
+    /// Cue-play preview (CDJ press-and-hold): <paramref name="isPressed"/> true plays from the deck's cue
+    /// point (setting the temp cue at the current position when none is set); false returns to the cue and
+    /// pauses. Distinct from <see cref="Cue"/> so a single click keeps the back-to-cue behavior.
+    /// </summary>
+    void CuePlay(int slot, bool isPressed);
+
+    /// <summary>
     /// The deck's analyzed natural tempo (BPM) used as the Sync reference; 0 when unknown. Set when a
     /// track with a known BPM loads so Sync Lock can beatmatch against it (doc 11).
     /// </summary>

@@ -71,6 +71,8 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void Cue(int slot) => EnsureSlot(slot);
 
+    public void CuePlay(int slot, bool isPressed) => EnsureSlot(slot);
+
     // The single-deck engine has no sync — there is no second deck to match against — so base BPM and
     // the first-beat anchor are neither stored nor used.
     public double DeckBaseBpm(int slot) { EnsureSlot(slot); return 0; }
