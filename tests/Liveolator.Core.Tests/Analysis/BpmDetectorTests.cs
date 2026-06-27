@@ -40,8 +40,13 @@ public class BpmDetectorTests
 
         BpmResult result = new BpmDetector().Detect(signal, sr);
 
-        // Clicks start at t=0, so the first-beat anchor lands within the first analysis frame.
-        Assert.InRange(result.FirstBeatSeconds, 0.0, 0.03);
+        // Clicks start at t=0, so the first-beat anchor lands on the beat. A beat phase is CIRCULAR (the
+        // kick-band anchor can report a hair before zero, i.e. just under one beat), so assert circular
+        // proximity to 0 rather than a one-sided sub-range — both are the same grid for sync (BeatDistance).
+        double period = 60.0 / result.Bpm;
+        Assert.True(
+            BeatMixSignals.CircularDistanceSeconds(result.FirstBeatSeconds, 0.0, period) < 0.03,
+            $"first beat should sit on the beat; was {result.FirstBeatSeconds:F4}s (period {period:F4}s)");
     }
 
     [Fact]
@@ -69,7 +74,12 @@ public class BpmDetectorTests
         BpmResult result = new BpmDetector().Detect(signal, sr);
 
         Assert.Equal(4, result.BeatsPerBar);
-        Assert.InRange(result.DownbeatSeconds, 0.0, 0.06);
+        // The downbeat is a CIRCULAR bar-phase anchor; the kick-band fit can land a hair before zero (i.e.
+        // just under one bar), so assert circular proximity to the bar origin rather than a one-sided range.
+        double barSeconds = result.BeatsPerBar * 60.0 / result.Bpm;
+        Assert.True(
+            BeatMixSignals.CircularDistanceSeconds(result.DownbeatSeconds, 0.0, barSeconds) < 0.06,
+            $"downbeat should sit on beat 1; was {result.DownbeatSeconds:F4}s (bar {barSeconds:F4}s)");
         Assert.True(result.DownbeatConfidence > 0.1, $"accented downbeat should be confident, was {result.DownbeatConfidence:F3}");
     }
 

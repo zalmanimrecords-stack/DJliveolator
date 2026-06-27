@@ -38,6 +38,15 @@ public sealed class LowBandOnsetEnvelope
     public double EnvelopeRateHz(int sampleRate) => (double)sampleRate / _hop;
 
     /// <summary>
+    /// The analysis latency (seconds) to ADD back to a time derived from this envelope so it lands on the
+    /// true onset. Each frame's energy represents audio centred ~frameSize/2 after the frame start, but a
+    /// consumer maps frame index <c>f</c> to time <c>f/rate</c> (the frame start), reporting onsets ~half a
+    /// frame early. Used by the beat-phase anchor so the grid lands ON the kick rather than a frame ahead of it.
+    /// </summary>
+    public double AnalysisLatencySeconds(int sampleRate) =>
+        sampleRate > 0 ? _frameSize / (2.0 * sampleRate) : 0.0;
+
+    /// <summary>
     /// Returns the low-band onset envelope (one value per analysis frame). Empty when the signal is
     /// shorter than one frame, or when the crossover doesn't sit under Nyquist (e.g. a very low decode
     /// rate) — the band degrades away rather than designing an unstable filter, mirroring the waveform
