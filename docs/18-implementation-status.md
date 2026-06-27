@@ -4,12 +4,17 @@
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
 > tracks reality. Update this file whenever a module lands. Last updated: **2026-06-12**.
 >
-> **See `docs/27-system-review-2026-06-10.md`** (latest) — a ten-expert full-system review with a
-> verified bug map and the recommended next 10 steps; **supersedes `docs/24-system-review-2026-06-07.md`**.
-> Where doc 27 and this file disagree on a code fact, doc 27 wins (measured against the working tree on
-> 2026-06-10). Doc 27 closed five of doc 24's headline holes (shared-clock pitch scaling, UI-thread sync
-> pump, GL scene re-read, CI, fetch-bass FLAC parity) and verified eight new High bugs — read doc 27 §5
-> before opening the next branch.
+> **See `docs/31-system-review-2026-06-27.md`** (latest) — a panel review **focused on the music
+> library**, with a verified bug map and the recommended next 10 steps; **supersedes
+> `docs/27-system-review-2026-06-10.md`** for the next wave. Baseline at that review:
+> **2784 tests passed / 2 skipped / 0 failed** (Core 1322 · App 798 · Audio 239 · Media 196 ·
+> Visuals 128 · Midi 44 · Online 31 · Integration 26); solution compiles clean. Verified High bugs:
+> `JsonLiveSetStore` non-atomic concurrent autosave race, Libraries silently hides <1 min tracks,
+> hot cues never play-on-jump (+ Medium: App↔MCP catalog cross-process race, MIDI-learn encoder
+> forced to TwosComplement). Where doc 31 and this file disagree on a code fact, doc 31 wins.
+>
+> Earlier: `docs/27-system-review-2026-06-10.md` (supersedes doc 24) closed five of doc 24's headline
+> holes and verified eight High bugs, of which seven were fixed in the same wave.
 
 ## Startup update check (2026-06-26)
 

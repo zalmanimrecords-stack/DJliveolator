@@ -16,6 +16,15 @@
 > **except controller mapping**, which follows the **Ableton control-surface model** (Track D), not
 > Mixxx's per-control mapping.
 >
+> **Update (2026-06-27):** a panel review **focused on the music library** landed in
+> **`docs/31-system-review-2026-06-27.md`**, which **supersedes doc 27 (and the priorities below) for
+> the next wave**. Baseline: **2784 tests pass / 0 fail**, solution compiles clean. Verified High bugs:
+> `JsonLiveSetStore` non-atomic concurrent autosave race (silent live-set loss), Libraries silently
+> hides every track under 1 min, hot cues never play-on-jump; plus Medium App↔MCP catalog cross-process
+> race and MIDI-learn encoder forced to TwosComplement. **Read doc 31 "next 10 steps" before opening the
+> next branch** — most are S-effort, parallel-safe quick wins. (Three lenses — testing-build-ci,
+> architecture, product-design-roadmap — under-ran this pass and should be re-run.)
+>
 > **Update (2026-06-10):** a fresh ten-expert review landed in **`docs/27-system-review-2026-06-10.md`**,
 > which **supersedes doc 24 (and the priorities below) for the next wave**. It confirmed the last wave
 > **closed five of doc 24's headline holes** (shared-clock pitch scaling, UI-thread sync pump, GL scene
