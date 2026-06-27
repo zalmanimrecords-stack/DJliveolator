@@ -11,14 +11,19 @@
   <Border Classes="panel">
     <Grid RowDefinitions="Auto,Auto,*" Margin="12,10">
 
-      <!-- header: search · sort · load status -->
-      <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
-        <TextBox Grid.Column="0" Classes="spartan" MaxWidth="360" HorizontalAlignment="Left"
+      <!-- header: search · load status · sort -->
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
+        <TextBox Grid.Column="0" Classes="spartan" Width="300" HorizontalAlignment="Left"
                  Watermark="Search title, artist or key…" Text="{Binding SearchText}" />
-        <TextBlock Grid.Column="1" Classes="faint" VerticalAlignment="Center" Margin="12,0,6,0" Text="SORT" />
-        <Button Grid.Column="2" Classes="spartan" Content="BPM" Margin="0,0,6,0"
+        <!-- Load result, e.g. "Queued on B" — so a load onto a playing deck (which queues rather than
+             cuts) is never silent on the floor. Hidden until a load is attempted. -->
+        <TextBlock Grid.Column="1" Classes="mono accent" VerticalAlignment="Center"
+                   HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"
+                   Text="{Binding LoadStatus}" />
+        <TextBlock Grid.Column="2" Classes="faint" VerticalAlignment="Center" Margin="12,0,6,0" Text="SORT" />
+        <Button Grid.Column="3" Classes="spartan" Content="BPM" Margin="0,0,6,0"
                 Command="{Binding SortByBpmCommand}" ToolTip.Tip="Sort by BPM (tap again to reverse)" />
-        <Button Grid.Column="3" Classes="spartan" Content="KEY"
+        <Button Grid.Column="4" Classes="spartan" Content="KEY"
                 Command="{Binding SortByKeyCommand}" ToolTip.Tip="Sort by musical key (tap again to reverse)" />
       </Grid>
 

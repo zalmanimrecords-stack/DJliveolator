@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reactive.Concurrency;
 using Liveolator.App.Features.Dj;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Fakes;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
@@ -128,6 +129,30 @@ public sealed class DjBrowserViewModelTests
     public void FreeDeckSlot_only_resolves_when_exactly_one_deck_plays(bool aPlaying, bool bPlaying, int? expected)
     {
         Assert.Equal(expected, DjBrowserViewModel.FreeDeckSlot(aPlaying, bPlaying));
+    }
+
+    [Fact]
+    public void Double_click_loads_the_free_deck_when_exactly_one_deck_plays()
+    {
+        var dispatcher = new FakeDispatcher();
+        var available = new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: null);
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckPlayPause, 0, available);
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckPlayPause, 1, available);
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        library.Restore(Catalog);
+        var loader = new DeckTrackLoader(dispatcher, _ => true);
+        var decks = new PerformanceDeckSet(dispatcher);
+        // Drive deck A into "playing" via the feedback seam (IsPlaying is engine-owned, set from feedback) →
+        // the free deck is B (slot 1).
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckPlayPause, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: null));
+        Assert.True(decks.DeckA.IsPlaying);
+
+        var browser = new DjBrowserViewModel(library, dispatcher, loader, decks: decks);
+        browser.SelectedTrack = browser.Tracks.First();
+        browser.LoadToFreeDeck();
+
+        Assert.Contains(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Slot == 1);
     }
 
     [Fact]
