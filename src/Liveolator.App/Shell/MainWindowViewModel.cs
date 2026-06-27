@@ -85,6 +85,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         string? activeTabId = appSettings?.WindowLayout.Normalized().ActiveTabId;
         _currentTab = Tabs.FirstOrDefault(
             tab => string.Equals(tab.Title, activeTabId, StringComparison.OrdinalIgnoreCase)) ?? Tabs[0];
+
+        // Re-read the catalog into the DJ-tab browser whenever the DJ tab is (re)entered, so tracks scanned
+        // in LIBRARIES show up there (MediaLibrary exposes no change event to subscribe to).
+        this.WhenAnyValue(x => x.CurrentTab)
+            .Subscribe(tab => (tab?.Page as DjViewModel)?.Browser?.Refresh());
     }
 
     /// <summary>A startup warning about the realtime audio engine (e.g. a missing bass_fx that makes every
