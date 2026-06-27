@@ -13,6 +13,12 @@ public sealed class MidiFeedbackPublisher : IDisposable
 {
     private const int FullOn = 127;
 
+    // Push-style colour feedback (doc 06): a pad's NoteOn velocity is a colour-palette index, not on/off.
+    // Active = a lit colour, available-but-inactive = dim, unset = off. The exact palette indices are
+    // device-tunable (Push 1's fixed 128-colour palette); these are sensible, clearly-non-binary defaults.
+    private const int LitColor = 122;
+    private const int DimColor = 1;
+
     private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly IMidiOutput _output;
     private readonly IControllerMapper _mapper;
@@ -41,7 +47,7 @@ public sealed class MidiFeedbackPublisher : IDisposable
             {
                 if (binding.Action != e.Kind || binding.Slot != e.Slot)
                     continue;
-                if (TryBuildFeedbackMessage(binding, e.State, out MidiMessage message))
+                if (TryBuildFeedbackMessage(binding, e.State, _mapper.ActiveProfile.UsesColorFeedback, out MidiMessage message))
                     _output.Send(message);
             }
         }
@@ -52,7 +58,7 @@ public sealed class MidiFeedbackPublisher : IDisposable
     }
 
     private static bool TryBuildFeedbackMessage(
-        ControllerBinding binding, ActionFeedbackState state, out MidiMessage message)
+        ControllerBinding binding, ActionFeedbackState state, bool usesColor, out MidiMessage message)
     {
         message = default!;
 
@@ -65,10 +71,13 @@ public sealed class MidiFeedbackPublisher : IDisposable
             ? MidiMessageType.NoteOn
             : binding.TriggerType;
 
-        // Knob-backed controls reflect their value; on/off controls reflect the active flag.
+        // Knob-backed controls reflect their value. On/off controls light their LED: a colour-addressed
+        // device (Push) shows lit/dim/off as a palette colour, others plain full-on/off.
         int value = binding.InputMode == ActionInputMode.Absolute
             ? (int)Math.Round(Math.Clamp(state.Value, 0, 1) * FullOn)
-            : state.IsActive ? FullOn : 0;
+            : usesColor
+                ? (state.IsActive ? LitColor : state.IsAvailable ? DimColor : 0)
+                : state.IsActive ? FullOn : 0;
 
         message = new MidiMessage(type, binding.Channel, binding.Data1, value);
         return true;

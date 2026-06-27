@@ -17,8 +17,35 @@ public class MidiFeedbackPublisherTests
         return new MidiFeedbackPublisher(_dispatcher, _output, mapper, new CapturingLogger<MidiFeedbackPublisher>());
     }
 
+    private MidiFeedbackPublisher BuildColor(params ControllerBinding[] bindings)
+    {
+        var profile = new ControllerMappingProfile("push", "Push", bindings) { UsesColorFeedback = true };
+        var mapper = new ControllerMapper(profile, _dispatcher, new CapturingLogger<ControllerMapper>());
+        return new MidiFeedbackPublisher(_dispatcher, _output, mapper, new CapturingLogger<MidiFeedbackPublisher>());
+    }
+
     private static ControllerBinding ToggleBinding => new(
         MidiMessageType.NoteOn, 0, 36, PerformanceActionKind.BeatLock, ActionInputMode.Toggle);
+
+    [Fact]
+    public void ColorFeedback_LightsPaletteColours_ForLitDimAndOff()
+    {
+        // A colour-addressed device (Push) sets the pad's velocity to a palette colour, not on/off.
+        using var publisher = BuildColor(ToggleBinding);
+
+        _dispatcher.RaiseFeedback(new ActionFeedbackChanged(
+            PerformanceActionKind.BeatLock, 0, new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0)));
+        Assert.Equal(122, _output.Sent[^1].Data2);  // lit colour, not the binary 127
+        Assert.NotEqual(127, _output.Sent[^1].Data2);
+
+        _dispatcher.RaiseFeedback(new ActionFeedbackChanged(
+            PerformanceActionKind.BeatLock, 0, new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)));
+        Assert.Equal(1, _output.Sent[^1].Data2);     // dim (available but inactive)
+
+        _dispatcher.RaiseFeedback(new ActionFeedbackChanged(
+            PerformanceActionKind.BeatLock, 0, new ActionFeedbackState(IsActive: false, IsAvailable: false, Value: 0)));
+        Assert.Equal(0, _output.Sent[^1].Data2);     // off
+    }
 
     [Fact]
     public void ActiveToggle_LightsTheBoundPadFullOn()

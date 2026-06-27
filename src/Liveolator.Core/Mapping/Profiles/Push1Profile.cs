@@ -104,6 +104,7 @@ public static class Push1Profile
         {
             ActivationSysEx = UserModeOn,
             DeactivationSysEx = LiveModeOn,
+            UsesColorFeedback = true, // Push pads are colour-addressed by NoteOn velocity (doc 06)
         };
     }
 

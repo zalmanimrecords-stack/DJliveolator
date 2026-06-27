@@ -22,6 +22,13 @@ public sealed record ControllerMappingProfile(
     /// <summary>Optional raw SysEx sent when the profile disconnects — e.g. returning the Push to Live mode.</summary>
     public IReadOnlyList<byte>? DeactivationSysEx { get; init; }
 
+    /// <summary>
+    /// When true, LED feedback uses a colour-palette index as the note velocity (active = lit colour,
+    /// available = dim, off = 0) instead of plain on/off — for devices whose pads are colour-addressed
+    /// by velocity, like the Ableton Push (doc 06). Off by default (single-colour button LEDs).
+    /// </summary>
+    public bool UsesColorFeedback { get; init; }
+
     /// <summary>An empty profile, useful as a starting point for learn mode.</summary>
     public static ControllerMappingProfile Empty(string name, string deviceHint)
         => new(name, deviceHint, Array.Empty<ControllerBinding>());
