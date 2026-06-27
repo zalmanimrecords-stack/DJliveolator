@@ -55,13 +55,48 @@ public sealed partial class TwoDeckBassEngine
             if (s.Quantize)
                 startSeconds = BeatLoopCalculator.SnapToBeat(startSeconds, s.FirstBeat, s.BaseBpm);
 
-            LoopRegion region = BeatLoopCalculator.Region(startSeconds, beats, s.BaseBpm);
-            _backend.SetDeckLoop(deck.Handle, region.StartSeconds, region.EndSeconds);
-            s.LoopBeats = beats;
-            _logger.LogInformation(
-                "Deck slot {Slot} loop: {Beats} beats -> [{Start:F3}s, {End:F3}s).",
-                slot, beats, region.StartSeconds, region.EndSeconds);
+            ApplyLoopLocked(slot, deck, startSeconds, beats);
         }
+    }
+
+    /// <summary>Halves the active loop length (down to the minimum), keeping the loop in-point fixed.</summary>
+    public void HalveLoop(int slot) => ResizeLoop(slot, 0.5);
+
+    /// <summary>Doubles the active loop length (up to the maximum), keeping the loop in-point fixed.</summary>
+    public void DoubleLoop(int slot) => ResizeLoop(slot, 2.0);
+
+    // Resize the active loop by a factor while pinning the in-point: halving brings the out-point in,
+    // doubling pushes it out — the standard loop halve/double a DJ expects. A no-op when nothing loops.
+    private void ResizeLoop(int slot, double factor)
+    {
+        ValidateSlot(slot);
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck || s.LoopBeats <= 0.0)
+                return; // nothing looping — nothing to resize
+
+            double beats = Math.Clamp(
+                s.LoopBeats * factor, BeatLoopCalculator.MinBeats, BeatLoopCalculator.MaxBeats);
+            if (Math.Abs(beats - s.LoopBeats) < 1e-9)
+                return; // already at the floor/ceiling — leave the region untouched
+
+            ApplyLoopLocked(slot, deck, s.LoopStartSeconds, beats);
+        }
+    }
+
+    // Caller holds _gate. Arms the backend loop region for <beats> beats from <startSeconds> and records
+    // the in-point so a later halve/double resizes from the same start.
+    private void ApplyLoopLocked(int slot, LoadedDeck deck, double startSeconds, double beats)
+    {
+        DeckSlot s = _slots[slot];
+        LoopRegion region = BeatLoopCalculator.Region(startSeconds, beats, s.BaseBpm);
+        _backend.SetDeckLoop(deck.Handle, region.StartSeconds, region.EndSeconds);
+        s.LoopBeats = beats;
+        s.LoopStartSeconds = region.StartSeconds;
+        _logger.LogInformation(
+            "Deck slot {Slot} loop: {Beats} beats -> [{Start:F3}s, {End:F3}s).",
+            slot, beats, region.StartSeconds, region.EndSeconds);
     }
 
     public void ClearLoop(int slot)

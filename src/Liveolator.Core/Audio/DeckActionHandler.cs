@@ -36,6 +36,8 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckHotCue,
         PerformanceActionKind.DeckApplyAutoCues,
         PerformanceActionKind.DeckSetLoop,
+        PerformanceActionKind.DeckLoopHalve,
+        PerformanceActionKind.DeckLoopDouble,
         PerformanceActionKind.DeckSetFirstBeat,
         PerformanceActionKind.DeckSetDownbeat,
         PerformanceActionKind.DeckSetGridBpm,
@@ -82,6 +84,14 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckSetLoop:
                 SetLoop(slot, action);
+                break;
+            case PerformanceActionKind.DeckLoopHalve:
+                _engine.HalveLoop(slot);
+                RaiseFeedback(PerformanceActionKind.DeckSetLoop, slot, LoopFeedback(slot));
+                break;
+            case PerformanceActionKind.DeckLoopDouble:
+                _engine.DoubleLoop(slot);
+                RaiseFeedback(PerformanceActionKind.DeckSetLoop, slot, LoopFeedback(slot));
                 break;
             case PerformanceActionKind.DeckSetFirstBeat:
                 // The analyzed first-beat (downbeat) anchor in seconds — feeds phase-match the same way

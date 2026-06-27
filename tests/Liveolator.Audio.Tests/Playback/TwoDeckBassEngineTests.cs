@@ -928,6 +928,54 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void HalveLoop_KeepsTheInPoint_AndHalvesTheBeatLength_EvenAfterThePlayheadMoves()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        backend.PositionFraction[100] = 0.1;  // 10 s
+        engine.SetLoop(0, 4.0);               // [10, 12]
+
+        backend.PositionFraction[100] = 0.5;  // playhead runs on inside the loop
+        engine.HalveLoop(0);                  // 2 beats, in-point pinned at 10 s
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(10.0, start, precision: 6);  // NOT the moved playhead
+        Assert.Equal(11.0, end, precision: 6);    // 10 + 2 beats * 0.5 s
+        Assert.Equal(2.0, engine.LoopBeats(0), precision: 6);
+    }
+
+    [Fact]
+    public void DoubleLoop_KeepsTheInPoint_AndDoublesTheBeatLength()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        backend.PositionFraction[100] = 0.1;  // 10 s
+        engine.SetLoop(0, 4.0);
+
+        engine.DoubleLoop(0);                 // 8 beats
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(10.0, start, precision: 6);
+        Assert.Equal(14.0, end, precision: 6); // 10 + 8 beats * 0.5 s
+        Assert.Equal(8.0, engine.LoopBeats(0), precision: 6);
+    }
+
+    [Fact]
+    public void HalveLoop_WhenNotLooping_IsNoOp()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+
+        engine.HalveLoop(0);
+
+        Assert.False(engine.IsLooping(0));
+        Assert.False(backend.Loops.ContainsKey(100));
+    }
+
+    [Fact]
     public void SetLoop_WithQuantizeArmed_SnapsTheInPointToTheBeatGrid()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

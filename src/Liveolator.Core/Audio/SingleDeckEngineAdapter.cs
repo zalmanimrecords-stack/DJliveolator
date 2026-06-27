@@ -121,6 +121,10 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void ClearLoop(int slot) => EnsureSlot(slot);
 
+    public void HalveLoop(int slot) => EnsureSlot(slot);
+
+    public void DoubleLoop(int slot) => EnsureSlot(slot);
+
     private void EnsureSlot(int slot)
     {
         if (slot != 0)

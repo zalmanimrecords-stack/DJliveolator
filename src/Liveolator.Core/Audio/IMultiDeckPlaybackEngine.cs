@@ -204,4 +204,10 @@ public interface IMultiDeckPlaybackEngine
 
     /// <summary>Clear the deck's active loop (playback continues past the former loop region).</summary>
     void ClearLoop(int slot);
+
+    /// <summary>Halve the active loop length, keeping the in-point fixed (down to the minimum). No-op when not looping.</summary>
+    void HalveLoop(int slot);
+
+    /// <summary>Double the active loop length, keeping the in-point fixed (up to the maximum). No-op when not looping.</summary>
+    void DoubleLoop(int slot);
 }

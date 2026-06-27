@@ -17,6 +17,9 @@ public static class BeatLoopCalculator
     /// <summary>The shortest loop allowed, in beats — a sane lower bound for the loop encoder.</summary>
     public const double MinBeats = 1.0 / 32.0;
 
+    /// <summary>The longest loop allowed, in beats (32 = eight bars in 4/4) — the ceiling for loop double.</summary>
+    public const double MaxBeats = 32.0;
+
     /// <summary>
     /// The loop length in seconds for <paramref name="beats"/> at <paramref name="bpm"/>.
     /// </summary>

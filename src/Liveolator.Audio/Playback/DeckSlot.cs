@@ -69,6 +69,10 @@ internal sealed class DeckSlot
     /// <summary>Active loop length in beats; 0 = no loop. Cleared on unload.</summary>
     public double LoopBeats;
 
+    /// <summary>Active loop in-point in seconds, so halve/double can resize from the fixed start rather
+    /// than the live playhead. Only meaningful while <see cref="LoopBeats"/> &gt; 0.</summary>
+    public double LoopStartSeconds;
+
     /// <summary>Hot-cue bank per pad (position + label/color/auto metadata); a null entry = unset.
     /// Cleared on unload.</summary>
     public readonly HotCueState?[] HotCues;

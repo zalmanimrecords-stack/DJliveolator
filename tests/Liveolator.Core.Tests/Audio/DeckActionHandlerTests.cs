@@ -264,6 +264,11 @@ public class DeckActionHandlerTests
             LoopsCleared.Add(slot);
             _loopBeats[slot] = 0;
         }
+
+        public List<int> LoopHalved { get; } = new();
+        public List<int> LoopDoubled { get; } = new();
+        public void HalveLoop(int slot) { LoopHalved.Add(slot); _loopBeats[slot] /= 2; }
+        public void DoubleLoop(int slot) { LoopDoubled.Add(slot); _loopBeats[slot] *= 2; }
     }
 
     [Fact]
@@ -776,6 +781,22 @@ public class DeckActionHandlerTests
 
         Assert.Equal((1, 4.0), Assert.Single(engine.Loops));
         Assert.True(engine.IsLooping(1));
+    }
+
+    [Fact]
+    public void LoopHalveAndDouble_ForwardToTheEngine_AndAreHandled()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        Assert.Contains(PerformanceActionKind.DeckLoopHalve, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.DeckLoopDouble, handler.HandledKinds);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSetLoop, Value: 4.0, Slot: 1));
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckLoopHalve, Slot: 1));
+        Assert.Equal(1, Assert.Single(engine.LoopHalved));
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckLoopDouble, Slot: 1));
+        Assert.Equal(1, Assert.Single(engine.LoopDoubled));
     }
 
     [Fact]

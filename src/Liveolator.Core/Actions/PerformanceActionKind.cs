@@ -200,4 +200,12 @@ public enum PerformanceActionKind
     /// drops on the next boundary, locking visuals to the audio grid (doc 08/31). Owned by the visual handler.
     /// </summary>
     VisualSetLaunchQuantize,
+
+    /// <summary>Halve the deck's active loop length, keeping the in-point fixed (Slot = A/B); a no-op when
+    /// the deck is not looping. The loop-creativity tool every DJ reaches for (doc 31 #9).</summary>
+    DeckLoopHalve,
+
+    /// <summary>Double the deck's active loop length, keeping the in-point fixed (Slot = A/B); a no-op when
+    /// the deck is not looping.</summary>
+    DeckLoopDouble,
 }

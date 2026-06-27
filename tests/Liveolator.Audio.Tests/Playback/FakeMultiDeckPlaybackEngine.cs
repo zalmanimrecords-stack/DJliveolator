@@ -100,4 +100,6 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public bool IsLooping(int slot) => false;
     public void SetLoop(int slot, double beats) { }
     public void ClearLoop(int slot) { }
+    public void HalveLoop(int slot) { }
+    public void DoubleLoop(int slot) { }
 }
