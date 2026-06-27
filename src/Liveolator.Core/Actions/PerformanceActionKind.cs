@@ -208,4 +208,8 @@ public enum PerformanceActionKind
     /// <summary>Double the deck's active loop length, keeping the in-point fixed (Slot = A/B); a no-op when
     /// the deck is not looping.</summary>
     DeckLoopDouble,
+
+    /// <summary>Clear (delete) a hot cue: Slot = A/B, Argument = the pad index. Lets a mis-placed cue be
+    /// removed (shift+pad on hardware) and the removal persists (doc 31 #9). A no-op on an empty pad.</summary>
+    DeckHotCueClear,
 }

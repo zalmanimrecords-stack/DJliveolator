@@ -34,6 +34,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckKeyLockToggle,
         PerformanceActionKind.DeckHotCue,
+        PerformanceActionKind.DeckHotCueClear,
         PerformanceActionKind.DeckApplyAutoCues,
         PerformanceActionKind.DeckSetLoop,
         PerformanceActionKind.DeckLoopHalve,
@@ -179,6 +180,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckHotCue:
                 TriggerHotCue(slot, action);
                 break;
+            case PerformanceActionKind.DeckHotCueClear:
+                TriggerHotCueClear(slot, action);
+                break;
             case PerformanceActionKind.DeckApplyAutoCues:
                 ApplyAutoCues(slot);
                 break;
@@ -281,6 +285,17 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             throw new ArgumentOutOfRangeException(nameof(action), cueIndex, "Hot-cue index is out of range.");
 
         _engine.HotCue(slot, cueIndex);
+        RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, HotCueFeedbackState(slot, cueIndex));
+    }
+
+    private void TriggerHotCueClear(int slot, PerformanceAction action)
+    {
+        if (!int.TryParse(action.Argument, out int cueIndex))
+            throw new ArgumentException("DeckHotCueClear requires Argument set to the hot-cue index.", nameof(action));
+        if (cueIndex < 0 || cueIndex >= _engine.HotCueCount)
+            throw new ArgumentOutOfRangeException(nameof(action), cueIndex, "Hot-cue index is out of range.");
+
+        _engine.ClearHotCue(slot, cueIndex);
         RaiseFeedback(PerformanceActionKind.DeckHotCue, slot, HotCueFeedbackState(slot, cueIndex));
     }
 

@@ -179,6 +179,10 @@ public interface IMultiDeckPlaybackEngine
     /// </summary>
     void HotCue(int slot, int cueIndex);
 
+    /// <summary>Clear (delete) the hot cue at <paramref name="cueIndex"/> on the deck and persist the
+    /// removal. A no-op when nothing is loaded or the pad is already empty.</summary>
+    void ClearHotCue(int slot, int cueIndex);
+
     /// <summary>
     /// Re-read the deck's hot-cue bank from persistent storage for its currently loaded track, replacing
     /// the in-memory bank. Used by auto-cue placement to surface freshly-written cues without reloading

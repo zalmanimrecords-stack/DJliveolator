@@ -687,6 +687,31 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void ClearHotCue_RemovesAStoredCue()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.PositionFraction[100] = 0.42;
+        engine.HotCue(0, 2);
+        Assert.True(engine.IsHotCueSet(0, 2));
+
+        engine.ClearHotCue(0, 2);
+
+        Assert.False(engine.IsHotCueSet(0, 2));
+    }
+
+    [Fact]
+    public void ClearHotCue_OnAnEmptyPad_IsNoOp()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+
+        engine.ClearHotCue(0, 5); // never set
+
+        Assert.False(engine.IsHotCueSet(0, 5));
+    }
+
+    [Fact]
     public void HotCue_IsPerSlotAndPerIndex()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

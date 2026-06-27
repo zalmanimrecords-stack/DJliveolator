@@ -74,6 +74,24 @@ public sealed partial class TwoDeckBassEngine
         }
     }
 
+    public void ClearHotCue(int slot, int cueIndex)
+    {
+        ValidateSlot(slot);
+        if (cueIndex < 0 || cueIndex >= HotCuesPerDeck)
+            throw new ArgumentOutOfRangeException(nameof(cueIndex), cueIndex, "Hot-cue index is out of range.");
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            if (s.Deck is not { } deck || s.HotCues[cueIndex] is null)
+                return; // nothing loaded, or the pad is already empty — nothing to clear
+
+            // Clear the pad and persist, so a mis-placed cue can be removed (shift+pad on hardware) and the
+            // removal survives the next load/restart instead of resurrecting from the store (doc 31 #9).
+            s.HotCues[cueIndex] = null;
+            SavePersistedHotCues(slot, deck.Handle);
+        }
+    }
+
     public void ReloadHotCues(int slot)
     {
         ValidateSlot(slot);

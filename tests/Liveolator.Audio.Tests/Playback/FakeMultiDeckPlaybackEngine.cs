@@ -95,6 +95,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public bool IsHotCueSet(int slot, int cueIndex) => false;
     public HotCueInfo GetHotCueInfo(int slot, int cueIndex) => HotCueInfo.Unset;
     public void HotCue(int slot, int cueIndex) { }
+    public void ClearHotCue(int slot, int cueIndex) { }
     public void ReloadHotCues(int slot) { }
     public double LoopBeats(int slot) => 0;
     public bool IsLooping(int slot) => false;

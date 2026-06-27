@@ -243,6 +243,13 @@ public class DeckActionHandlerTests
             _setCues.Add((slot, cueIndex));
         }
 
+        public List<(int Slot, int Index)> HotCuesCleared { get; } = new();
+        public void ClearHotCue(int slot, int cueIndex)
+        {
+            HotCuesCleared.Add((slot, cueIndex));
+            _setCues.Remove((slot, cueIndex));
+        }
+
         public List<int> Reloads { get; } = new();
         // Simulates the store delivering auto cues on reload: slots 0 and 1 become set for the deck.
         public void ReloadHotCues(int slot)
@@ -568,6 +575,27 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckHotCue, Argument: "3", Slot: 1));
 
         Assert.Equal((1, 3), Assert.Single(engine.HotCues));
+    }
+
+    [Fact]
+    public void HotCueClear_RoutesIndexToTheEngineClear()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        Assert.Contains(PerformanceActionKind.DeckHotCueClear, handler.HandledKinds);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckHotCueClear, Slot: 1, Argument: "3"));
+
+        Assert.Equal((1, 3), Assert.Single(engine.HotCuesCleared));
+    }
+
+    [Fact]
+    public void HotCueClear_OutOfRange_Throws()
+    {
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+        Assert.Throws<ArgumentOutOfRangeException>(() => handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckHotCueClear, Slot: 0, Argument: "99")));
     }
 
     [Fact]
