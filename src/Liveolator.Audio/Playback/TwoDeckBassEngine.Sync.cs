@@ -222,8 +222,10 @@ public sealed partial class TwoDeckBassEngine
             _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, leader.FirstBeat, leader.BaseBpm);
 
         double beatmatchedRate = SyncedRateFor(slot); // the tempo-matched base rate, before phase correction
+        // Pass the deck's prior lock state so the controller's lock-zone hysteresis can hold a settled deck
+        // Locked across the boundary instead of chattering Locked↔Active each tick.
         PhaseLockCorrection correction =
-            PhaseLockController.Correct(slavePhase, masterPhase, beatmatchedRate, _phaseLock);
+            PhaseLockController.Correct(slavePhase, masterPhase, beatmatchedRate, _phaseLock, s.SyncState);
 
         _backend.SetDeckRate(deck.Handle, correction.EffectiveRate);
 

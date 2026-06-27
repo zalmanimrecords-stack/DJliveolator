@@ -30,8 +30,15 @@ public static class PhaseLockController
     /// that makes the two decks the same tempo, before any phase correction.
     /// </param>
     /// <param name="settings">Loop gains and thresholds.</param>
+    /// <param name="previousState">
+    /// The deck's lock state from the previous tick. Drives the lock-zone hysteresis: an already-Locked
+    /// deck holds Locked out to the wider exit tolerance, while a not-yet-locked deck must reach the tight
+    /// enter tolerance — so a deck resting on the boundary cannot flip Locked↔Active every tick. Defaults
+    /// to <see cref="SyncLockState.Off"/> (use the tight enter tolerance), the safe first-tick behaviour.
+    /// </param>
     public static PhaseLockCorrection Correct(
-        DeckPhase slave, DeckPhase master, double beatmatchedRate, PhaseLockSettings settings)
+        DeckPhase slave, DeckPhase master, double beatmatchedRate, PhaseLockSettings settings,
+        SyncLockState previousState = SyncLockState.Off)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -42,10 +49,17 @@ public static class PhaseLockController
         double errorBeats = PhaseAlignmentCalculator.BeatPhaseError(slave, master);
         double absError = Math.Abs(errorBeats);
 
-        // PHASE LOCK TOLERANCE — inside the lock zone the decks are audibly in sync; applying micro
-        // corrections here would only jitter the pitch, so hold the beatmatched rate exactly and report
-        // Locked. This is the steady state of a good mix.
-        if (absError < settings.LockToleranceBeats)
+        // PHASE LOCK TOLERANCE (with HYSTERESIS) — inside the lock zone the decks are audibly in sync;
+        // applying micro corrections here would only jitter the pitch, so hold the beatmatched rate exactly
+        // and report Locked. Entering the zone needs the tight LockToleranceBeats, but once Locked the deck
+        // holds out to the wider ExitLockToleranceBeats: that dead-band stops a deck on the boundary from
+        // flipping Locked↔Active every tick and stepping the rate by the correction each time (audible
+        // chatter). The exit tolerance is clamped to be at least the enter tolerance so a misconfiguration
+        // can never invert the band.
+        double lockTolerance = previousState == SyncLockState.Locked
+            ? Math.Max(settings.ExitLockToleranceBeats, settings.LockToleranceBeats)
+            : settings.LockToleranceBeats;
+        if (absError < lockTolerance)
             return new PhaseLockCorrection(
                 beatmatchedRate, SyncLockState.Locked, errorBeats, RequiresReSnap: false, ReSnapSeconds: 0.0);
 

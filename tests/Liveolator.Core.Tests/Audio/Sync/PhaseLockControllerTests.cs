@@ -95,6 +95,55 @@ public class PhaseLockControllerTests
     }
 
     [Fact]
+    public void JustOutsideEnterZone_WhenAlreadyLocked_StaysLocked_NoCorrection()
+    {
+        // Error sits between the tight enter tolerance (0.02) and the wider exit tolerance: a deck that is
+        // ALREADY Locked must hold (hysteresis dead-band), not flip to Active and step the rate. This is the
+        // anti-chatter guarantee for a deck resting on the lock boundary.
+        double errorBeats = (Settings.LockToleranceBeats + Settings.ExitLockToleranceBeats) / 2.0;
+        DeckPhase master = At(errorBeats * BeatSeconds);
+        DeckPhase slave = At(0.0);
+
+        PhaseLockCorrection result = PhaseLockController.Correct(
+            slave, master, beatmatchedRate: 1.0, Settings, previousState: SyncLockState.Locked);
+
+        Assert.Equal(SyncLockState.Locked, result.State);
+        Assert.Equal(1.0, result.EffectiveRate, precision: 9);
+    }
+
+    [Fact]
+    public void JustOutsideEnterZone_WhenActive_StaysActive_AndCorrects()
+    {
+        // Same error, but the deck is NOT yet Locked: it must keep pulling in (use the tight enter
+        // tolerance), so it does not falsely report Locked before it has settled inside the enter zone.
+        double errorBeats = (Settings.LockToleranceBeats + Settings.ExitLockToleranceBeats) / 2.0;
+        DeckPhase master = At(errorBeats * BeatSeconds);
+        DeckPhase slave = At(0.0);
+
+        PhaseLockCorrection result = PhaseLockController.Correct(
+            slave, master, beatmatchedRate: 1.0, Settings, previousState: SyncLockState.Active);
+
+        Assert.Equal(SyncLockState.Active, result.State);
+        Assert.Equal(1.0 + (errorBeats * Settings.Gain), result.EffectiveRate, precision: 9);
+    }
+
+    [Fact]
+    public void BeyondExitZone_WhenAlreadyLocked_BreaksLockToActive()
+    {
+        // Past the exit tolerance even a Locked deck must release and correct — hysteresis widens the zone,
+        // it does not weld the deck Locked forever.
+        double errorBeats = Settings.ExitLockToleranceBeats + 0.01;
+        DeckPhase master = At(errorBeats * BeatSeconds);
+        DeckPhase slave = At(0.0);
+
+        PhaseLockCorrection result = PhaseLockController.Correct(
+            slave, master, beatmatchedRate: 1.0, Settings, previousState: SyncLockState.Locked);
+
+        Assert.Equal(SyncLockState.Active, result.State);
+        Assert.True(result.EffectiveRate > 1.0);
+    }
+
+    [Fact]
     public void ReportsSignedErrorInBeats()
     {
         DeckPhase master = At(0.1 * BeatSeconds);
