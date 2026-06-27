@@ -24,6 +24,7 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerCrossfade, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerChannelGain, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerEqBand, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.MixerEqKill, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerFilter, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueToggle, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerCueLevel, handler.HandledKinds);
@@ -32,7 +33,7 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerLimiterSmart, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerLimiterCharacter, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerLimiterCeiling, handler.HandledKinds);
-        Assert.Equal(11, handler.HandledKinds.Count);
+        Assert.Equal(12, handler.HandledKinds.Count);
     }
 
     // --- Smart limiter ------------------------------------------------------------------------------
@@ -264,6 +265,36 @@ public class MixerActionHandlerTests
             _ => handler.State.Channel(MixerState.DeckB).Eq.High,
         };
         Assert.Equal(0.9, bandValue, Tol);
+    }
+
+    [Fact]
+    public void EqKill_CutsTheBandWhileHeld_AndRestoresThePreKillValueOnRelease()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        int slot = MixerState.DeckA;
+        Assert.Contains(PerformanceActionKind.MixerEqKill, handler.HandledKinds);
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, Value: 0.8, Slot: slot, Argument: "Low"));
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqKill, Slot: slot, Argument: "Low", IsPressed: true));
+        Assert.Equal(0.0, handler.State.Channel(slot).Eq.Low, Tol);   // fully cut while held
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqKill, Slot: slot, Argument: "Low", IsPressed: false));
+        Assert.Equal(0.8, handler.State.Channel(slot).Eq.Low, Tol);   // restored on release
+    }
+
+    [Fact]
+    public void EqKill_ReleaseWithoutAPriorPress_IsANoOp()
+    {
+        MixerActionHandler handler = NewHandler(out _);
+        int slot = MixerState.DeckA;
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.MixerEqKill, Slot: slot, Argument: "Mid", IsPressed: false));
+
+        Assert.Equal(EqBands.Unity, handler.State.Channel(slot).Eq.Mid, Tol); // unchanged (still flat)
     }
 
     [Fact]

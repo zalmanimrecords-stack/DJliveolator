@@ -22,6 +22,7 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.MixerCrossfade,
         PerformanceActionKind.MixerChannelGain,
         PerformanceActionKind.MixerEqBand,
+        PerformanceActionKind.MixerEqKill,
         PerformanceActionKind.MixerFilter,
         PerformanceActionKind.MixerCueToggle,
         PerformanceActionKind.MixerCueLevel,
@@ -75,6 +76,9 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.MixerEqBand:
                 ApplyEqBand(action);
+                break;
+            case PerformanceActionKind.MixerEqKill:
+                ApplyEqKill(action);
                 break;
             case PerformanceActionKind.MixerFilter:
                 ApplyFilter(action);
@@ -133,21 +137,52 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             ValueFeedback(State.Channel(slot).Gain));
     }
 
+    // Per-(deck, band) value saved when an EQ-kill press cuts the band, so the release can restore it.
+    private readonly Dictionary<(int Slot, EqBand Band), double> _eqKillSaved = new();
+
     private void ApplyEqBand(PerformanceAction action)
     {
         int slot = ValidateSlot(action.Slot);
         EqBand band = ParseBand(action.Argument);
         lock (_gate)
         {
-            EqBands current = _state.Channel(slot).Eq;
-            double value = ResolveAbsoluteOrDelta(action, BandValue(current, band));
-            EqBands next = current.With(band, value);
-            _state = _state.WithChannel(slot, _state.Channel(slot) with { Eq = next });
-            _mixer.SetEqBand(slot, band, MixerMath.EqBandCoefficients(band, next, _sampleRate, _state.CutMode));
+            double value = ResolveAbsoluteOrDelta(action, BandValue(_state.Channel(slot).Eq, band));
+            SetBandLocked(slot, band, value);
         }
         RaiseFeedback(
             PerformanceActionKind.MixerEqBand, slot,
             ValueFeedback(BandValue(State.Channel(slot).Eq, band), band.ToString()));
+    }
+
+    // Momentary EQ kill (doc 31): press fully cuts the band (remembering where it was); release restores
+    // it. A second press before a release is idempotent (the kept value stays the pre-kill one).
+    private void ApplyEqKill(PerformanceAction action)
+    {
+        int slot = ValidateSlot(action.Slot);
+        EqBand band = ParseBand(action.Argument);
+        lock (_gate)
+        {
+            if (action.IsPressed)
+            {
+                _eqKillSaved.TryAdd((slot, band), BandValue(_state.Channel(slot).Eq, band));
+                SetBandLocked(slot, band, 0.0); // 0 = full cut
+            }
+            else if (_eqKillSaved.Remove((slot, band), out double saved))
+            {
+                SetBandLocked(slot, band, saved);
+            }
+        }
+        RaiseFeedback(
+            PerformanceActionKind.MixerEqBand, slot,
+            ValueFeedback(BandValue(State.Channel(slot).Eq, band), band.ToString()));
+    }
+
+    // Caller holds _gate. Set one band's normalized value into the state and push the coefficients.
+    private void SetBandLocked(int slot, EqBand band, double value)
+    {
+        EqBands next = _state.Channel(slot).Eq.With(band, value);
+        _state = _state.WithChannel(slot, _state.Channel(slot) with { Eq = next });
+        _mixer.SetEqBand(slot, band, MixerMath.EqBandCoefficients(band, next, _sampleRate, _state.CutMode));
     }
 
     private void ApplyFilter(PerformanceAction action)

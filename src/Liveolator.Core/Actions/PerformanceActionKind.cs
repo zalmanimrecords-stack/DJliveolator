@@ -212,4 +212,9 @@ public enum PerformanceActionKind
     /// <summary>Clear (delete) a hot cue: Slot = A/B, Argument = the pad index. Lets a mis-placed cue be
     /// removed (shift+pad on hardware) and the removal persists (doc 31 #9). A no-op on an empty pad.</summary>
     DeckHotCueClear,
+
+    /// <summary>Momentary EQ kill: while the button is held the band is fully cut; on release it restores
+    /// to where it was. Slot = A/B, Argument = the band (Low/Mid/High). Uses the press/release seam
+    /// (doc 31) — bind it with ReportRelease so the hold/restore both fire.</summary>
+    MixerEqKill,
 }
