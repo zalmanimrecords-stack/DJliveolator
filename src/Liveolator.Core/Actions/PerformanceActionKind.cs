@@ -193,4 +193,11 @@ public enum PerformanceActionKind
     /// never a beat line or the audible pitch. Echoed as feedback so a deck UI can re-anchor its bars.
     /// </summary>
     DeckSetDownbeat,
+
+    /// <summary>
+    /// Set how visual scene-pad launches snap to the shared beat clock: <see cref="PerformanceAction.Value"/>
+    /// selects the quantum — 0 = off (immediate), 1 = next beat, 2 = next bar. A pad pressed mid-phrase then
+    /// drops on the next boundary, locking visuals to the audio grid (doc 08/31). Owned by the visual handler.
+    /// </summary>
+    VisualSetLaunchQuantize,
 }

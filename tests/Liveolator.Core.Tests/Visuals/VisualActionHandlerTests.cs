@@ -36,11 +36,13 @@ public class VisualActionHandlerTests
     [Fact]
     public void HandledKinds_CoverTheWiredVisualActions()
     {
-        // Every declared Visual* kind has an owning handler (12 original + VisualLoadPreset, doc 28).
-        Assert.Equal(13, _handler.HandledKinds.Count);
+        // Every declared Visual* kind has an owning handler (12 original + VisualLoadPreset + the
+        // VisualSetLaunchQuantize launch-quantize mode, doc 28/31).
+        Assert.Equal(14, _handler.HandledKinds.Count);
         Assert.Contains(PerformanceActionKind.VisualLoadScene, _handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.VisualTransitionNextBar, _handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.VisualLoadPreset, _handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.VisualSetLaunchQuantize, _handler.HandledKinds);
     }
 
     [Fact]
@@ -264,4 +266,70 @@ public class VisualActionHandlerTests
     [Fact]
     public void Constructor_RejectsNullEngine()
         => Assert.Throws<ArgumentNullException>(() => new VisualActionHandler(null!));
+
+    [Fact]
+    public void LoadScene_WhenQuantized_DefersToTheSchedulerInsteadOfLoadingNow()
+    {
+        var scheduler = new CapturingBeatScheduler();
+        var handler = new VisualActionHandler(_engine, scheduler: scheduler) { LaunchQuantize = Quantize.NextBar };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.VisualLoadScene, Slot: 1));
+
+        Assert.Empty(_engine.LoadedScenes);            // not loaded yet — waiting for the boundary
+        Assert.Equal(Quantize.NextBar, scheduler.LastWhen);
+
+        scheduler.FireLast();                          // the bar boundary arrives
+        VisualScene loaded = Assert.Single(_engine.LoadedScenes).Scene;
+        Assert.Equal("Drop", loaded.Name);
+    }
+
+    [Fact]
+    public void LoadScene_WhenQuantizeIsOff_LoadsImmediately_EvenWithASchedulerWired()
+    {
+        var scheduler = new CapturingBeatScheduler();
+        var handler = new VisualActionHandler(_engine, scheduler: scheduler); // LaunchQuantize defaults to Immediate
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.VisualLoadScene, Slot: 1));
+
+        Assert.Single(_engine.LoadedScenes);
+        Assert.Null(scheduler.LastWhen);               // scheduler not used when off
+    }
+
+    [Fact]
+    public void VisualSetLaunchQuantize_SetsTheMode_SoLaterLaunchesDefer()
+    {
+        var scheduler = new CapturingBeatScheduler();
+        var handler = new VisualActionHandler(_engine, scheduler: scheduler);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.VisualSetLaunchQuantize, Value: 2)); // bar
+        Assert.Equal(Quantize.NextBar, handler.LaunchQuantize);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.VisualLoadScene, Slot: 0));
+        Assert.Empty(_engine.LoadedScenes);             // deferred, not immediate
+        Assert.Equal(Quantize.NextBar, scheduler.LastWhen);
+    }
+
+    [Fact]
+    public void VisualSetLaunchQuantize_Zero_TurnsQuantizeOff()
+    {
+        var handler = new VisualActionHandler(_engine) { LaunchQuantize = Quantize.NextBar };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.VisualSetLaunchQuantize, Value: 0));
+
+        Assert.Equal(Quantize.Immediate, handler.LaunchQuantize);
+    }
+
+    private sealed class CapturingBeatScheduler : IBeatScheduler
+    {
+        private Action? _last;
+        public Quantize? LastWhen { get; private set; }
+
+        public void Schedule(Quantize when, int everyN, Action onFire)
+        {
+            LastWhen = when;
+            _last = onFire;
+        }
+
+        public void FireLast() => _last?.Invoke();
+    }
 }

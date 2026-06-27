@@ -61,6 +61,19 @@
 > + MCP `ServiceRegistration` from `JsonCatalogStore` to `SqliteCatalogStore`. The store is not wired into
 > DI yet, so current runtime behavior is unchanged (zero risk until B–D land and are verified).
 
+> **Update (2026-06-27) — FEATURE: beat-quantized visual launch (the audio↔visual differentiator).**
+> The only missing infra was a real clock-driven scheduler; the math (`QuantizedLaunch`/`BeatQuantizer`)
+> and seam (`IBeatScheduler`) already existed. Landed TDD-first:
+> **(1)** `ClockBeatScheduler : IBeatScheduler` (Core) — defers an action to the next beat/bar on the one
+> shared `IBeatClock` via its `IsBeat`/`IsDownbeat` flags, with the low-confidence→immediate guard; replaced
+> the interim `ImmediateBeatScheduler` in DI, so **`PlaylistSkipOnNextBar` now genuinely quantizes** (was
+> immediate). **(2)** `VisualActionHandler` gained a `LaunchQuantize` mode (Off/NextBeat/NextBar, reusing
+> the `Quantize` enum) — a scene-pad launch defers through the scheduler so it drops on the boundary.
+> **(3)** `VisualSetLaunchQuantize` action kind (Value 0/1/2) makes the mode reachable through the dispatcher
+> (MIDI-mappable). 14 new tests; full Core 1336 green; App compiles clean. **Remaining (small, unverifiable
+> here):** a dedicated Live-tab Off/Beat/Bar toggle UI emitting the action (it's reachable via the dispatcher
+> today); and `engine.Transition` scene-crossfade is still a no-op (separate GL build-out, out of scope).
+
 ## Headline verdict
 
 The **music library is the most mature, end-to-end-wired subsystem in the app.** Core scan/catalog

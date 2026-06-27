@@ -394,6 +394,12 @@ public static class ServiceConfig
         var deckBeatClock = new DeckDrivenBeatClock(hostClock.TicksPerSecond);
         var sharedVisualClock = new SwitchingBeatClock(visualBaseClock);
 
+        // Clock-driven quantized-launch scheduler (doc 31): visual scene launches and playlist skips
+        // defer to the next beat/bar on the ONE shared clock, replacing the interim immediate scheduler.
+        // Registered so DI disposes its clock subscription at shutdown.
+        var beatScheduler = new ClockBeatScheduler(sharedVisualClock);
+        services.AddSingleton<IBeatScheduler>(beatScheduler);
+
         // The live master level feeding reactive shaders (doc 26). When realtime audio is up the meter
         // taps the same master-mix frames the beat clock reads; headless it rests at silence. Registered
         // as a singleton so DI disposes the frame subscription at shutdown.
@@ -404,19 +410,19 @@ public static class ServiceConfig
 
         (VisualActionHandler visualHandler, GlVisualPerformanceEngine visualEngine) =
             WireVisuals(services, sharedVisualClock, liveProfileStore, visualEffects, generatorPresets, audioLevel,
-                loggerFactory);
+                beatScheduler, loggerFactory);
 
         // --- Live playlist / set (doc 09): the performance-editable Now/Next/Later queue the DJ tab
-        // shows. Pure-managed. SkipOn(...) defers through IBeatScheduler — wired to an interim
-        // immediate scheduler until a clock-driven one lands (doc 03). The handler owns the playlist
+        // shows. Pure-managed. SkipOn(...) defers through the shared clock-driven IBeatScheduler so a
+        // skip-on-next-bar lands on the same grid as the audio (doc 03/31). The handler owns the playlist
         // edits (insert/move/remove/skip) so the UI drives them through the one dispatcher.
-        var livePlaylist = new LivePlaylist(new ImmediateBeatScheduler(), loggerFactory.CreateLogger<LivePlaylist>());
+        var livePlaylist = new LivePlaylist(beatScheduler, loggerFactory.CreateLogger<LivePlaylist>());
         services.AddSingleton<ILivePlaylist>(livePlaylist);
 
         // Deck B's own live queue (doc 09/11): loading onto a PLAYING deck appends here instead of
         // cutting the deck off (DeckTrackLoader policy); the queued track plays when the current one
         // ends via the slot-1 PlaylistAudioPlayer below. Persisted in its own file beside deck A's set.
-        var deckBPlaylist = new LivePlaylist(new ImmediateBeatScheduler(), loggerFactory.CreateLogger<LivePlaylist>());
+        var deckBPlaylist = new LivePlaylist(beatScheduler, loggerFactory.CreateLogger<LivePlaylist>());
 
         // Persist + restore the live set so the DJ tab opens where the last run left off (doc 13) instead
         // of an empty queue. Restore runs HERE — synchronously, before the queue's audio binding is wired
@@ -936,6 +942,7 @@ public static class ServiceConfig
         IVisualEffectRegistry effectRegistry,
         IGeneratorPresetRegistry presetRegistry,
         IVisualAudioLevelSource audioLevel,
+        IBeatScheduler beatScheduler,
         ILoggerFactory loggerFactory)
     {
         var brightnessMacro = new VisualMacro(
@@ -965,7 +972,7 @@ public static class ServiceConfig
             loggerFactory: loggerFactory);
         var visualHandler = new VisualActionHandler(
             visualEngine, loggerFactory.CreateLogger<VisualActionHandler>(),
-            presets: presetRegistry, effects: effectRegistry);
+            presets: presetRegistry, effects: effectRegistry, scheduler: beatScheduler);
 
         services.AddSingleton<IVisualPerformanceEngine>(visualEngine);
         services.AddSingleton(visualHandler);

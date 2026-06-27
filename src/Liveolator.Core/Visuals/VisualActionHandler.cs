@@ -36,6 +36,7 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.VisualTransitionNextBeat,
         PerformanceActionKind.VisualTransitionNextBar,
         PerformanceActionKind.VisualLoadPreset,
+        PerformanceActionKind.VisualSetLaunchQuantize,
     };
 
     /// <summary>The transition style this handler requests. A later increment can carry it on the action.</summary>
@@ -44,6 +45,7 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
     private readonly IVisualPerformanceEngine _engine;
     private readonly IGeneratorPresetRegistry? _presets;
     private readonly IVisualEffectRegistry? _effects;
+    private readonly IBeatScheduler? _scheduler;
     private readonly ILogger<VisualActionHandler> _logger;
 
     // Blackout/strobe are boolean on the engine but arrive as momentary/toggle actions, so the
@@ -60,13 +62,23 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
         IVisualPerformanceEngine engine,
         ILogger<VisualActionHandler>? logger = null,
         IGeneratorPresetRegistry? presets = null,
-        IVisualEffectRegistry? effects = null)
+        IVisualEffectRegistry? effects = null,
+        IBeatScheduler? scheduler = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _logger = logger ?? NullLogger<VisualActionHandler>.Instance;
         _presets = presets;
         _effects = effects;
+        _scheduler = scheduler;
     }
+
+    /// <summary>
+    /// How a scene-pad launch is quantized to the shared beat clock: <see cref="Quantize.Immediate"/>
+    /// (off) loads the scene at once; <see cref="Quantize.NextBeat"/>/<see cref="Quantize.NextBar"/>
+    /// snap it to the next boundary via the <see cref="IBeatScheduler"/> so a pad pressed mid-phrase
+    /// drops on the beat/bar — the audio↔visual lock (doc 08). Defaults to off; the Live UI sets it.
+    /// </summary>
+    public Quantize LaunchQuantize { get; set; } = Quantize.Immediate;
 
     /// <inheritdoc />
     public override IReadOnlySet<PerformanceActionKind> HandledKinds => Kinds;
@@ -118,6 +130,9 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.VisualLoadPreset:
                 LoadPreset(action);
                 break;
+            case PerformanceActionKind.VisualSetLaunchQuantize:
+                SetLaunchQuantize(action.Value);
+                break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
@@ -149,6 +164,17 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
             return;
         }
 
+        // Off (or no scheduler wired) loads now; otherwise defer the swap to the next beat/bar on the
+        // shared clock so the scene drops in time (doc 08). The scheduler falls back to immediate when
+        // the grid is not yet trustworthy, so a launch is never lost.
+        if (LaunchQuantize == Quantize.Immediate || _scheduler is null)
+            ApplyScene(scene, slot);
+        else
+            _scheduler.Schedule(LaunchQuantize, everyN: 1, () => ApplyScene(scene, slot));
+    }
+
+    private void ApplyScene(VisualScene scene, int slot)
+    {
         _engine.LoadScene(scene, Quantize.Immediate);
 
         int previous = _activeSceneSlot;
@@ -258,6 +284,24 @@ public sealed class VisualActionHandler : PerformanceActionHandlerBase
                 IsAvailable: true,
                 Value: 0,
                 Argument: action.Argument));
+    }
+
+    private void SetLaunchQuantize(double value)
+    {
+        // 0 = off (immediate), 1 = next beat, 2 = next bar (doc 31). Thresholds tolerate a knob/fader
+        // 0..1-ish source as well as discrete button values.
+        LaunchQuantize = value switch
+        {
+            >= 1.5 => Quantize.NextBar,
+            >= 0.5 => Quantize.NextBeat,
+            _ => Quantize.Immediate,
+        };
+        RaiseFeedback(
+            PerformanceActionKind.VisualSetLaunchQuantize, slot: 0,
+            new ActionFeedbackState(
+                IsActive: LaunchQuantize != Quantize.Immediate,
+                IsAvailable: true,
+                Value: (int)LaunchQuantize));
     }
 
     private void ToggleBlackout()
