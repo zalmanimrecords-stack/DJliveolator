@@ -22,7 +22,7 @@
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="A" />
-            <Border Grid.Column="1" Height="62" Background="{DynamicResource S2}"
+            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
                                       MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
@@ -42,7 +42,7 @@
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="B" />
-            <Border Grid.Column="1" Height="62" Background="{DynamicResource S2}"
+            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
               <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
                                       MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
@@ -64,7 +64,7 @@
         <StackPanel Grid.Column="1" Spacing="4" Margin="14,0,0,0"
                     VerticalAlignment="Center" HorizontalAlignment="Center">
           <TextBlock Classes="faint" HorizontalAlignment="Center" Text="ZOOM" />
-          <controls:Knob Width="40" Height="40" DefaultValue="0.55"
+          <controls:Knob Width="{DynamicResource SizeKnobZoom}" Height="{DynamicResource SizeKnobZoom}" DefaultValue="0.55"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding WaveformZoom}"
                          ToolTip.Tip="Zoom both waveforms — drag up to zoom in (see the kicks), down for the whole track" />
@@ -72,8 +72,11 @@
       </Grid>
     </Border>
 
-    <!-- DECK A · MIXER · DECK B — the decks are DJ-specific (jog-first); the mixer is the shared module. -->
-    <Grid Grid.Row="1" ColumnDefinitions="*,300,*" Margin="0,0,0,10">
+    <!-- DECK A · MIXER · DECK B — the decks are DJ-specific (jog-first); the mixer is the shared module.
+         The mixer column is Auto (sizes to the tier-capped cluster) rather than a fixed 300px, so the decks
+         take the rest of the width and the whole console scales with the window instead of leaving a fixed
+         gap on big screens. -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="0,0,0,10">
       <dj:DjDeckView Grid.Column="0" DataContext="{Binding DeckA}" Margin="0,0,16,0" />
       <dj:DjMixerView Grid.Column="1" DataContext="{Binding Mixer}" Margin="0,0,16,0" />
       <dj:DjDeckView Grid.Column="2" DataContext="{Binding DeckB}" />

@@ -24,6 +24,7 @@ namespace Liveolator.App.Shell;
 /// </summary>
 public sealed class MainWindowViewModel : ViewModelBase
 {
+    private readonly Features.Live.Modules.PerformanceDeckSet _decks;
     private TabItemViewModel _currentTab;
 
     public MainWindowViewModel(
@@ -57,6 +58,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         Limiter = dj.Mixer;
         AudioEngineWarning = audioStatus?.Warning;
 
+        // Surface live playback up to the shell so it can hold discrete responsive reflows while a deck plays
+        // (see MainWindow). Forward the deck-set's change as our own so the view can bind/observe one property.
+        _decks = dj.Decks;
+        _decks.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Features.Live.Modules.PerformanceDeckSet.AnyDeckPlaying))
+                this.RaisePropertyChanged(nameof(IsAnyDeckPlaying));
+        };
+
         // Tab labels are uppercase to match the mock (design/mockups/live-mode-clean.html), like the
         // other spartan micro-labels. The placeholder page headings keep their proper case.
         Tabs = new ObservableCollection<TabItemViewModel>
@@ -84,6 +94,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>True when there is an audio-engine warning to show (drives the banner's visibility).</summary>
     public bool HasAudioEngineWarning => !string.IsNullOrEmpty(AudioEngineWarning);
+
+    /// <summary>True while either deck is playing — the shell holds discrete responsive reflows until the
+    /// set is paused so a resize/projector change mid-mix never jumps the layout under the DJ's hands.</summary>
+    public bool IsAnyDeckPlaying => _decks.AnyDeckPlaying;
 
     /// <summary>Top-bar telemetry: audio routing + live MIDI connectivity/activity.</summary>
     public ShellStatusViewModel Status { get; }

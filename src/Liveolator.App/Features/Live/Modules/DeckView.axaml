@@ -31,9 +31,10 @@
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
         <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-          <!-- loaded: track title + Key · BPM · duration -->
+          <!-- loaded: track title + artist + Key · BPM · duration -->
           <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
             <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding Artist}" IsVisible="{Binding HasArtist}" TextTrimming="CharacterEllipsis" />
             <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
           </StackPanel>
           <!-- empty: deck id + placeholder -->
