@@ -30,12 +30,22 @@ public sealed class VisualLibraryViewModel : ViewModelBase
     // decode + bitmap cheap (and bounds memory) while staying crisp on hi-dpi displays.
     private const int PreviewMaxEdge = 480;
 
+    // Longest edge of a grid-view tile thumbnail (tiles are ~150px; this stays crisp on hi-dpi).
+    private const int ThumbnailMaxEdge = 240;
+
     private readonly VisualMediaLibrary _library;
     private readonly IVisualCatalogStore? _store;
     private readonly IVisualThumbnailRenderer? _thumbnails;
     private readonly IFileRemover? _fileRemover;
     private readonly IConfirmationService? _confirmation;
     private List<VisualAssetRowViewModel> _all = new();
+
+    // Caps concurrent grid-thumbnail renders so scrolling a large (possibly network-drive) catalog never
+    // fires hundreds of ffmpeg/decode jobs at once. ponytail: fixed cap; make it adaptive only if needed.
+    private readonly SemaphoreSlim _thumbnailGate = new(3);
+    // Paths already requested, so a row renders its thumbnail at most once even as it scrolls in and out.
+    private readonly HashSet<string> _thumbnailRequested = new(StringComparer.OrdinalIgnoreCase);
+    private bool _showThumbnails;
 
     private string? _searchText;
     private VisualMediaKind? _selectedKind;
@@ -77,9 +87,14 @@ public sealed class VisualLibraryViewModel : ViewModelBase
             RunScanAsync,
             this.WhenAnyValue(x => x.IsScanning, scanning => !scanning));
         ClearFiltersCommand = ReactiveCommand.Create(ClearFilters);
+        RemoveFolderCommand = ReactiveCommand.Create<string>(RemoveFolder);
         DeleteSelectedCommand = ReactiveCommand.CreateFromTask(
-            DeleteSelectedAsync,
+            () => DeleteAssetAsync(SelectedAsset),
             this.WhenAnyValue(x => x.SelectedAsset, asset => CanDelete(asset)));
+        // Row-level delete (list/grid context menu): always available when delete is wired — it carries
+        // its own target row, so it does not depend on the detail-panel selection.
+        DeleteAssetCommand = ReactiveCommand.CreateFromTask<VisualAssetRowViewModel>(
+            DeleteAssetAsync, Observable.Return(_fileRemover is not null && _confirmation is not null));
 
         Observable.Merge(
                 this.WhenAnyValue(x => x.SearchText).Select(_ => Unit.Default),
@@ -111,9 +126,24 @@ public sealed class VisualLibraryViewModel : ViewModelBase
     /// <summary>Resets the kind/status filter and the search box back to "show all".</summary>
     public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
 
+    /// <summary>Removes a scan folder (parameter) from the set and re-persists. Does not delete files;
+    /// the already-catalogued assets stay until the next scan re-derives the list.</summary>
+    public ReactiveCommand<string, Unit> RemoveFolderCommand { get; }
+
     /// <summary>Permanently deletes the selected asset's file from disk (after confirmation) and drops
     /// it from the catalog. Enabled only when an asset is selected and delete is wired.</summary>
     public ReactiveCommand<Unit, Unit> DeleteSelectedCommand { get; }
+
+    /// <summary>Permanently deletes a specific row's file (the list/grid context-menu delete). Carries
+    /// its own target, so it works without first selecting the row into the detail panel.</summary>
+    public ReactiveCommand<VisualAssetRowViewModel, Unit> DeleteAssetCommand { get; }
+
+    /// <summary>When true the assets show as a thumbnail grid; otherwise the text table.</summary>
+    public bool ShowThumbnails
+    {
+        get => _showThumbnails;
+        set => this.RaiseAndSetIfChanged(ref _showThumbnails, value);
+    }
 
     public string? SearchText
     {
@@ -234,6 +264,54 @@ public sealed class VisualLibraryViewModel : ViewModelBase
 
         Folders.Add(folder);
         _ = PersistFoldersAsync();
+    }
+
+    /// <summary>Removes a scan folder (no-op if absent), persisting the trimmed set.</summary>
+    public void RemoveFolder(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Folders.Remove(folder))
+            return;
+
+        _ = PersistFoldersAsync();
+    }
+
+    /// <summary>Lazily renders <paramref name="row"/>'s grid thumbnail once, off the UI thread and under a
+    /// concurrency cap, then marshals it back. Called as tiles scroll into view, so only visible assets
+    /// pay the decode. Best-effort: a missing renderer or an unproduceable preview just leaves the kind
+    /// glyph (never a failure path, #26).</summary>
+    public async Task EnsureThumbnailAsync(VisualAssetRowViewModel row)
+    {
+        if (row is null || _thumbnails is null)
+            return;
+
+        string path = row.Asset.File.Path;
+        lock (_thumbnailRequested)
+        {
+            if (!_thumbnailRequested.Add(path))
+                return;
+        }
+
+        await _thumbnailGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            VisualPreviewFrame? frame = await _thumbnails
+                .RenderAsync(path, row.Asset.Kind, ThumbnailMaxEdge)
+                .ConfigureAwait(false);
+            if (frame is null)
+                return;
+
+            RxApp.MainThreadScheduler.Schedule(() => row.Thumbnail = ToBitmap(frame));
+        }
+        catch
+        {
+            // Thumbnail is a convenience — on any decode failure the tile keeps its glyph; allow a retry.
+            lock (_thumbnailRequested)
+                _thumbnailRequested.Remove(path);
+        }
+        finally
+        {
+            _thumbnailGate.Release();
+        }
     }
 
     private async Task RunScanAsync()
@@ -425,9 +503,8 @@ public sealed class VisualLibraryViewModel : ViewModelBase
     // Confirms, then permanently deletes the file from disk and drops it from the catalog + persisted
     // store. A delete failure is surfaced on the status line and aborts before touching the catalog, so
     // the list never diverges from disk.
-    private async Task DeleteSelectedAsync()
+    private async Task DeleteAssetAsync(VisualAssetRowViewModel? row)
     {
-        VisualAssetRowViewModel? row = SelectedAsset;
         if (row is null || _fileRemover is null || _confirmation is null)
             return;
 
@@ -451,10 +528,13 @@ public sealed class VisualLibraryViewModel : ViewModelBase
 
         _library.Remove(path);
         _all = _all.Where(r => !string.Equals(r.Asset.File.Path, path, StringComparison.OrdinalIgnoreCase)).ToList();
+        lock (_thumbnailRequested)
+            _thumbnailRequested.Remove(path);
 
         RxApp.MainThreadScheduler.Schedule(() =>
         {
-            SelectedAsset = null;
+            if (ReferenceEquals(SelectedAsset, row))
+                SelectedAsset = null;
             ApplyFilter();
             ScanStatus = $"Deleted {row.FileName}";
         });

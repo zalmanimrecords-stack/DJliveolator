@@ -77,6 +77,14 @@
       </ItemsControl>
 
       <StackPanel Grid.Row="2" Spacing="10">
+        <!-- Off/Beat/Bar quantize for scene-pad launches: snaps the swap to the shared beat clock (doc 31). -->
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Classes="faint" VerticalAlignment="Center" Text="LAUNCH QUANTIZE" />
+          <ComboBox ItemsSource="{Binding LaunchQuantizeOptions}" SelectedIndex="{Binding LaunchQuantizeMode}"
+                    MinWidth="80"
+                    ToolTip.Tip="Snap scene launches to the next beat/bar on the shared clock" />
+        </StackPanel>
+
         <Button Classes="accent" Content="SHOW VISUAL SCREEN"
                 Command="{Binding ShowVisualsCommand}" />
 

@@ -36,6 +36,7 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
     private readonly int? _vuMeterLayerSlot;
     private VisualAddonViewModel? _selectedAddon;
     private bool _isVuMeterShown;
+    private int _launchQuantizeMode;
     private string _status = "Ready";
 
     public VisualControlViewModel(
@@ -107,6 +108,14 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
             ReloadPresetsAsync,
             Observable.Return(presetReloader is not null && presetRegistry is not null));
 
+        // Off/Beat/Bar quantize for scene-pad launches (doc 31): publishing the mode through the dispatcher
+        // (VisualSetLaunchQuantize, Value = 0/1/2) so the visual handler snaps launches to the shared clock.
+        // Skip the initial value — the handler already defaults to off, so only a user change emits.
+        this.WhenAnyValue(x => x.LaunchQuantizeMode)
+            .Skip(1)
+            .Subscribe(mode => _dispatcher?.Dispatch(
+                new PerformanceAction(PerformanceActionKind.VisualSetLaunchQuantize, Value: mode)));
+
         ReloadEffects();
         ReloadAddons();
         ReloadChannelSourcesAsync(_playlist?.Now?.TrackPath).GetAwaiter().GetResult();
@@ -127,6 +136,17 @@ public sealed class VisualControlViewModel : ViewModelBase, IDisposable
 
     /// <summary>Re-scans the user FRKTL preset folder and refreshes the picker (doc 29). Disabled when unwired.</summary>
     public ReactiveCommand<Unit, Unit> ReloadPresetsCommand { get; }
+
+    /// <summary>Scene-launch quantize options for the Off/Beat/Bar selector (index = the dispatched mode).</summary>
+    public IReadOnlyList<string> LaunchQuantizeOptions { get; } = new[] { "Off", "Beat", "Bar" };
+
+    /// <summary>Selected scene-launch quantize mode: 0 = off (immediate), 1 = next beat, 2 = next bar
+    /// (doc 31). Changing it publishes <see cref="PerformanceActionKind.VisualSetLaunchQuantize"/>.</summary>
+    public int LaunchQuantizeMode
+    {
+        get => _launchQuantizeMode;
+        set => this.RaiseAndSetIfChanged(ref _launchQuantizeMode, value);
+    }
 
     public ObservableCollection<string> LoadedEffects { get; } = new();
     public ObservableCollection<VisualChannelViewModel> Channels { get; }

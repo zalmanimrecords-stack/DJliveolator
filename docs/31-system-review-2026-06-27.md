@@ -74,6 +74,21 @@
 > here):** a dedicated Live-tab Off/Beat/Bar toggle UI emitting the action (it's reachable via the dispatcher
 > today); and `engine.Transition` scene-crossfade is still a no-op (separate GL build-out, out of scope).
 
+> **Update (2026-06-27) — feature wave (7 commits, TDD-first, each its own commit on master).**
+> Worked the review's missing-features list across the Core/Audio layers (App/Visuals/Mcp couldn't be
+> rebuilt — the app + MCP server were running and lock those outputs):
+> `b05211d` beat-quantized visual launch · `41bf980` soft-takeover on the CMD STUDIO 2A absolute controls ·
+> `4cda002` loop halve/double (in-point pinned) · `73b3b1b` hot-cue clear/delete · `a9a0409` **press/release
+> on the action seam** (opt-in `ControllerBinding.ReportRelease` + `PerformanceAction.IsPressed`; zero
+> behavior change until a binding opts in) · `5e0550c` momentary EQ kill · `dc18040` cue-play preview
+> (press-and-hold). The seam unlocked the last two. Core 1346 / Audio 247 green. Live feel of the deck/
+> mixer gestures (cue-play, EQ kill, loop resize) wants a real-hardware pass.
+>
+> **Still open** (need runtime verification or a decision): Push User-mode + colored LEDs (layering fork —
+> move `Push1Sysex` to Core vs a profile-activation seam); the Live-tab Off/Beat/Bar quantize toggle UI;
+> video/camera sources, VJ authoring, downbeat-anchored grid, Ableton Link (all L); the SQLite integration
+> Phases B–D.
+
 ## Headline verdict
 
 The **music library is the most mature, end-to-end-wired subsystem in the app.** Core scan/catalog

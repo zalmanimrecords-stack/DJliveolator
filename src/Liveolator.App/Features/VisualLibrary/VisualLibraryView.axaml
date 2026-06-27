@@ -5,7 +5,7 @@
              x:Class="Liveolator.App.Features.VisualLibrary.VisualLibraryView"
              x:DataType="vis:VisualLibraryViewModel">
 
-  <Grid RowDefinitions="Auto,Auto,*">
+  <Grid RowDefinitions="Auto,Auto,Auto,*">
 
     <!-- sub-bar -->
     <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
@@ -18,8 +18,34 @@
                  Text="{Binding ScanStatus}" />
     </Grid>
 
-    <!-- filter bar: kind + status + clear -->
-    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+    <!-- scan folders: each with a remove (✕) button -->
+    <ItemsControl Grid.Row="1" ItemsSource="{Binding Folders}" Margin="0,0,0,12"
+                  IsVisible="{Binding Folders.Count}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <WrapPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="x:String">
+          <Border Background="{DynamicResource S1}" BorderBrush="{DynamicResource Hair}"
+                  BorderThickness="1" CornerRadius="3" Padding="8,3" Margin="0,0,8,8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Classes="mono faint" VerticalAlignment="Center" Text="{Binding}"
+                         TextTrimming="CharacterEllipsis" MaxWidth="320" />
+              <Button Classes="spartan" Padding="4,0" FontSize="11" Content="✕"
+                      Foreground="{DynamicResource Red}"
+                      ToolTip.Tip="Remove this scan folder"
+                      Command="{Binding $parent[ItemsControl].((vis:VisualLibraryViewModel)DataContext).RemoveFolderCommand}"
+                      CommandParameter="{Binding}" />
+            </StackPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <!-- filter bar: kind + status + clear + view toggle -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
       <ComboBox ItemsSource="{Binding KindOptions}" SelectedItem="{Binding SelectedKind}"
                 MinWidth="110" ToolTip.Tip="Filter by kind">
         <ComboBox.ItemTemplate>
@@ -41,13 +67,18 @@
 
       <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
               ToolTip.Tip="Reset all filters" />
+
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
+
+      <ToggleButton Classes="spartan" Content="▦ Thumbnails" IsChecked="{Binding ShowThumbnails}"
+                    ToolTip.Tip="Toggle between the list and the thumbnail grid" />
     </StackPanel>
 
-    <!-- main: table | detail -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,320">
+    <!-- main: table/grid | detail -->
+    <Grid Grid.Row="3" ColumnDefinitions="*,320">
 
       <!-- asset table -->
-      <Border Grid.Column="0" Classes="panel">
+      <Border Grid.Column="0" Classes="panel" IsVisible="{Binding !ShowThumbnails}">
         <DockPanel Margin="12">
           <TextBlock DockPanel.Dock="Top" Classes="section" Text="Assets" Margin="0,0,0,10" />
           <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.4*,64,84,64,72" Margin="11,0,9,8">
@@ -74,6 +105,52 @@
                   <TextBlock Grid.Column="4" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" Margin="0,0,12,0" />
                   <TextBlock Grid.Column="5" Classes="muted" Text="{Binding StatusText}" />
                 </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <!-- thumbnail grid (lazy: each tile renders its preview when it scrolls in) -->
+      <Border Grid.Column="0" Classes="panel" IsVisible="{Binding ShowThumbnails}">
+        <DockPanel Margin="12">
+          <TextBlock DockPanel.Dock="Top" Classes="section" Text="Assets" Margin="0,0,0,10" />
+          <ListBox Classes="rows"
+                   ItemsSource="{Binding Assets}"
+                   SelectedItem="{Binding SelectedAsset}">
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vis:VisualAssetRowViewModel">
+                <Border Width="150" Height="132" Margin="4" Padding="6"
+                        Background="{DynamicResource S1}" BorderBrush="{DynamicResource Hair}"
+                        BorderThickness="1" CornerRadius="3"
+                        ToolTip.Tip="{Binding Title}"
+                        Loaded="OnThumbnailTileLoaded">
+                  <Grid RowDefinitions="*,Auto">
+                    <!-- preview, or the kind glyph until it loads / when none is available -->
+                    <Border Grid.Row="0" Background="{DynamicResource S2}" CornerRadius="2">
+                      <Grid>
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   FontSize="34" Classes="faint" Text="{Binding KindGlyph}"
+                                   IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                        <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                      </Grid>
+                    </Border>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="0,5,0,0">
+                      <TextBlock Grid.Column="0" FontSize="11" Text="{Binding Title}"
+                                 TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      <Button Grid.Column="1" Classes="spartan" Padding="4,0" FontSize="11" Content="✕"
+                              Foreground="{DynamicResource Red}"
+                              ToolTip.Tip="Delete this file from disk"
+                              Command="{Binding $parent[ListBox].((vis:VisualLibraryViewModel)DataContext).DeleteAssetCommand}"
+                              CommandParameter="{Binding}" />
+                    </Grid>
+                  </Grid>
+                </Border>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>

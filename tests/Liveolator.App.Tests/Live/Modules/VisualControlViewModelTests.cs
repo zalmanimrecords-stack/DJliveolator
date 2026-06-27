@@ -145,6 +145,32 @@ public sealed class VisualControlViewModelTests
         Assert.Equal(expected, Assert.Single(dispatcher.Dispatched).Kind);
     }
 
+    [Theory]
+    [InlineData(1)] // Beat
+    [InlineData(2)] // Bar
+    public void LaunchQuantizeMode_Change_EmitsVisualSetLaunchQuantizeWithTheMode(int mode)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new VisualControlViewModel(dispatcher);
+
+        vm.LaunchQuantizeMode = mode;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.VisualSetLaunchQuantize, action.Kind);
+        Assert.Equal(mode, action.Value);
+    }
+
+    [Fact]
+    public void LaunchQuantizeMode_DefaultsToOff_AndEmitsNothingOnConstruction()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new VisualControlViewModel(dispatcher);
+
+        Assert.Equal(0, vm.LaunchQuantizeMode); // Off
+        Assert.DoesNotContain(dispatcher.Dispatched,
+            a => a.Kind == PerformanceActionKind.VisualSetLaunchQuantize);
+    }
+
     [Fact]
     public async Task LayerCommand_EmitsSlotAddressedToggle()
     {
