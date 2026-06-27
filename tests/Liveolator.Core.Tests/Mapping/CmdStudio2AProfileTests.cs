@@ -19,6 +19,23 @@ public class CmdStudio2AProfileTests
     private static ControllerMappingProfile Profile => CmdStudio2AProfile.Default;
 
     [Fact]
+    public void EveryAbsoluteControl_EnablesSoftTakeover_SoFadersAndEqDoNotJump()
+    {
+        // The pickup engine is built + tested but was unreachable: no shipped binding enabled it, so
+        // absolute faders/EQ/filter still jumped on a profile/track change (doc 31 #17). Every absolute
+        // control on the shipped layout must opt in; relative/momentary controls must not (it is ignored
+        // there and would only confuse a future reader).
+        List<ControllerBinding> absolute = Profile.Bindings
+            .Where(b => b.InputMode == ActionInputMode.Absolute).ToList();
+
+        Assert.NotEmpty(absolute);
+        Assert.All(absolute, b => Assert.True(b.SoftTakeover, $"{b.Action} {b.Argument} should pick up"));
+        Assert.All(
+            Profile.Bindings.Where(b => b.InputMode != ActionInputMode.Absolute),
+            b => Assert.False(b.SoftTakeover));
+    }
+
+    [Fact]
     public void Default_HasDeviceHintThatAutoSelectsTheController()
     {
         // The hint must match the controller's USB name so MidiProfileSelector picks it on plug-in.

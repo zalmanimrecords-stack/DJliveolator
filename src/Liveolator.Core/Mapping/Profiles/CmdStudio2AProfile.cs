@@ -61,7 +61,8 @@ public static class CmdStudio2AProfile
         // applies it across both decks).
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, DeckAChannel, CrossfaderCc,
-            PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, DeckASlot));
+            PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute, DeckASlot,
+            SoftTakeover: true));
 
         AddDeck(bindings, DeckAChannel, DeckASlot);
         AddDeck(bindings, DeckBChannel, DeckBSlot);
@@ -88,23 +89,25 @@ public static class CmdStudio2AProfile
             MidiMessageType.NoteOn, channel, CueNote,
             PerformanceActionKind.DeckCue, ActionInputMode.Momentary, slot));
 
+        // Absolute mixer controls opt into soft-takeover (pickup) so a fader/knob whose physical
+        // position differs from the target after a profile/track change does not jump the value (doc 31).
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, ChannelFaderCc,
-            PerformanceActionKind.MixerChannelGain, ActionInputMode.Absolute, slot));
+            PerformanceActionKind.MixerChannelGain, ActionInputMode.Absolute, slot, SoftTakeover: true));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, EqHighCc,
-            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "High"));
+            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "High", SoftTakeover: true));
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, EqMidCc,
-            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "Mid"));
+            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "Mid", SoftTakeover: true));
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, EqLowCc,
-            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "Low"));
+            PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, slot, Argument: "Low", SoftTakeover: true));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, FilterCc,
-            PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, slot));
+            PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, slot, SoftTakeover: true));
 
         // The endless jog reports relative ticks. Conversion normalizes them to a fraction of a
         // wheel revolution; DeckActionHandler then applies DJ-appropriate playing/paused sensitivity.
