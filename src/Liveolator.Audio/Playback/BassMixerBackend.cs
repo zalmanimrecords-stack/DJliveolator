@@ -176,11 +176,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
     {
         foreach (string baseName in new[] { "bassflac", "bass_aac" })
         {
-            bool loaded = Bass.PluginLoad(baseName) != 0
-                || Bass.PluginLoad($"{baseName}.dll") != 0
-                || Bass.PluginLoad($"lib{baseName}.so") != 0
-                || Bass.PluginLoad($"lib{baseName}.dylib") != 0;
-            if (!loaded)
+            if (!BassPluginLoader.TryLoad(baseName))
                 _logger.LogInformation(
                     "BASS add-on '{Plugin}' not loaded; that format will not play (run scripts/fetch-bass to add it).",
                     baseName);

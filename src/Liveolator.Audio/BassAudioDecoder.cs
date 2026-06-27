@@ -132,9 +132,9 @@ public sealed class BassAudioDecoder : IAudioDecoder
 
                 if (_usable)
                 {
-                    if (TryLoadPlugin("bassflac"))
+                    if (BassPluginLoader.TryLoad("bassflac"))
                         supported.Add(".flac");
-                    if (TryLoadPlugin("bass_aac"))
+                    if (BassPluginLoader.TryLoad("bass_aac"))
                     {
                         supported.Add(".m4a");
                         supported.Add(".aac");
@@ -150,22 +150,6 @@ public sealed class BassAudioDecoder : IAudioDecoder
         }
     }
 
-    // PluginLoad probes the app directory for the add-on dll under its platform name; a 0 handle (not
-    // present) is fine — the format just stays unsupported and the composite decoder falls back.
-    private static bool TryLoadPlugin(string baseName)
-    {
-        try
-        {
-            return Bass.PluginLoad(baseName) != 0
-                || Bass.PluginLoad($"{baseName}.dll") != 0
-                || Bass.PluginLoad($"lib{baseName}.so") != 0
-                || Bass.PluginLoad($"lib{baseName}.dylib") != 0;
-        }
-        catch (DllNotFoundException)
-        {
-            return false;
-        }
-    }
 }
 
 /// <summary>Thrown when a BASS decode cannot start or read; the waveform/analysis caller degrades to empty.</summary>
