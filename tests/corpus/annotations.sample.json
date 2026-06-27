@@ -1,0 +1,4 @@
+[
+  { "file": "track-a.wav", "bpm": 128.0, "firstBeatSeconds": 0.043 },
+  { "file": "track-b.flac", "bpm": 174.0, "firstBeatSeconds": 0.210, "downbeatSeconds": 0.210 }
+]
