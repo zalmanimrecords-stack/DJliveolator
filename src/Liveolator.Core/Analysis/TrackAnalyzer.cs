@@ -16,8 +16,12 @@ public sealed class TrackAnalyzer
     /// <summary>Increment when analyzer output semantics change and cached tracks must be refreshed.</summary>
     /// <remarks>v2: added the kick-band downbeat anchor (<see cref="Bpm.BpmResult.DownbeatSeconds"/>).
     /// v3: sub-frame tempo/phase refinement so the grid lands on the kicks (<see cref="Bpm.GridRefiner"/>) —
-    /// fixes integer-lag drift (139.67→140) and octave/3:2 confusions; existing tracks re-grid in background.</remarks>
-    public const int CurrentVersion = 3;
+    /// fixes integer-lag drift (139.67→140) and octave/3:2 confusions.
+    /// v4: beat PHASE now anchors on the kick (not the broadband envelope) with frame-centre latency
+    /// compensation, and the kick onset uses percussive/HPSS separation (<see cref="Bpm.PercussiveOnsetEnvelope"/>)
+    /// so an in-band bassline no longer pulls the grid off the down-beat (system review 2026-06-27). Existing
+    /// tracks re-grid in the background on next scan.</remarks>
+    public const int CurrentVersion = 4;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;

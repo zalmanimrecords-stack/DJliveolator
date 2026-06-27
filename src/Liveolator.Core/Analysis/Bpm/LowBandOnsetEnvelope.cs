@@ -15,7 +15,7 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// strip bands on, so the low band that draws as the on-screen "kick" layer and the band the beat grid
 /// locks to are one and the same — what the performer sees is what the clock follows.
 /// </remarks>
-public sealed class LowBandOnsetEnvelope
+public sealed class LowBandOnsetEnvelope : IKickOnsetEnvelope
 {
     /// <summary>Low-band crossover (Hz) — shared with the waveform strip's kick band.</summary>
     public const double CrossoverHz = WaveformBuilder.LowCrossoverHz;
@@ -36,6 +36,15 @@ public sealed class LowBandOnsetEnvelope
 
     /// <summary>Envelope samples per second for a given audio sample rate (matches <see cref="OnsetEnvelope"/>).</summary>
     public double EnvelopeRateHz(int sampleRate) => (double)sampleRate / _hop;
+
+    /// <summary>
+    /// The analysis latency (seconds) to ADD back to a time derived from this envelope so it lands on the
+    /// true onset. Each frame's energy represents audio centred ~frameSize/2 after the frame start, but a
+    /// consumer maps frame index <c>f</c> to time <c>f/rate</c> (the frame start), reporting onsets ~half a
+    /// frame early. Used by the beat-phase anchor so the grid lands ON the kick rather than a frame ahead of it.
+    /// </summary>
+    public double AnalysisLatencySeconds(int sampleRate) =>
+        sampleRate > 0 ? _frameSize / (2.0 * sampleRate) : 0.0;
 
     /// <summary>
     /// Returns the low-band onset envelope (one value per analysis frame). Empty when the signal is

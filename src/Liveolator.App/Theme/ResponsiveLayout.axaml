@@ -1,0 +1,83 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Liveolator.App.Controls">
+
+  <!--
+    Responsive width caps, keyed on the shell Window's size-class (compact/standard/wide/ultra, set by
+    MainWindow from the live ClientSize). These REPLACE the former inline MaxWidth traps that pinned the UI
+    to the ~1280-1440 design baseline — the cause of "everything stays small in the middle on a 4K screen".
+    The skeuomorphic Knob/Jog/WaveformStrip controls redraw vector/peaks to their measured Bounds, so growing
+    a width cap scales them crisply (never a blurring render transform). Standard = the untouched baseline.
+
+    Selectors use the descendant combinator from the Window class down to a classed element inside a view's
+    UserControl; Avalonia re-evaluates these when the ancestor class changes, so a resize reflows the caps.
+  -->
+
+  <!-- LIVE page: the whole performance stack. Was a fixed MaxWidth=1440. -->
+  <Style Selector="Window.compact StackPanel.live-root">
+    <Setter Property="MaxWidth" Value="1180" />
+  </Style>
+  <Style Selector="Window.standard StackPanel.live-root">
+    <Setter Property="MaxWidth" Value="1440" />
+  </Style>
+  <Style Selector="Window.wide StackPanel.live-root">
+    <Setter Property="MaxWidth" Value="1900" />
+  </Style>
+  <Style Selector="Window.ultra StackPanel.live-root">
+    <Setter Property="MaxWidth" Value="2400" />
+  </Style>
+
+  <!-- Deck content (a fill Grid): a centered ~460 column on laptops (the untouched baseline), stretching to
+       fill the deck column on wide/4K so the platter + flanks use the whole screen (Rekordbox/Serato fill). -->
+  <Style Selector="Window.compact Grid.deck-root">
+    <Setter Property="MaxWidth" Value="460" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Window.standard Grid.deck-root">
+    <Setter Property="MaxWidth" Value="460" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Window.wide Grid.deck-root">
+    <Setter Property="MaxWidth" Value="900" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Window.ultra Grid.deck-root">
+    <Setter Property="MaxWidth" Value="1300" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+
+  <!-- Jog platter: height-driven (Width tracks its own measured height), so it fills the elastic jog row
+       vertically. The per-tier MaxHeight is the real size cap — it grows the platter on big screens and
+       keeps it sane on small ones. (No MaxWidth: the square width simply follows the capped height.) -->
+  <Style Selector="Window.compact controls|Jog.platter">
+    <Setter Property="MaxHeight" Value="300" />
+  </Style>
+  <Style Selector="Window.standard controls|Jog.platter">
+    <Setter Property="MaxHeight" Value="320" />
+  </Style>
+  <Style Selector="Window.wide controls|Jog.platter">
+    <Setter Property="MaxHeight" Value="520" />
+  </Style>
+  <Style Selector="Window.ultra controls|Jog.platter">
+    <Setter Property="MaxHeight" Value="680" />
+  </Style>
+
+  <!-- (The DJ-tab console↔browser split is a PROPORTIONAL star split set in DjView code-behind from the
+       tier — DjBrowserLayout.RowShare — so it always fits the actual screen height; a fixed band overflowed
+       short wide screens and crushed the console.) -->
+
+  <!-- DJ mixer cluster: was a fixed MaxWidth=270 inside a fixed 300px column (now a flexible Auto column). -->
+  <Style Selector="Window.compact StackPanel.mixer-root">
+    <Setter Property="MaxWidth" Value="270" />
+  </Style>
+  <Style Selector="Window.standard StackPanel.mixer-root">
+    <Setter Property="MaxWidth" Value="270" />
+  </Style>
+  <Style Selector="Window.wide StackPanel.mixer-root">
+    <Setter Property="MaxWidth" Value="320" />
+  </Style>
+  <Style Selector="Window.ultra StackPanel.mixer-root">
+    <Setter Property="MaxWidth" Value="360" />
+  </Style>
+
+</Styles>

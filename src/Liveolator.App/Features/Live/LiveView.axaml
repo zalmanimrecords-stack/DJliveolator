@@ -10,7 +10,9 @@
        active modules appear here; the on-screen Push macro-encoder strip was dropped (the Push encoders
        still drive visual macros through the controller mapping, not this panel). -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Spacing="16" MaxWidth="1440" Margin="0,0,0,8">
+    <!-- MaxWidth is tier-dependent (Theme/ResponsiveLayout.axaml via the .live-root class) so the page uses
+         the full width on large/4K screens instead of the old fixed 1440 cap. -->
+    <StackPanel Classes="live-root" Spacing="16" Margin="0,0,0,8">
 
       <!-- ── DJ ─────────────────────────────────────────────────────────────────────────────────────── -->
       <dj:DjConsoleView DataContext="{Binding Decks}" />

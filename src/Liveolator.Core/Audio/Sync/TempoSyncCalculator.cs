@@ -37,4 +37,31 @@ public static class TempoSyncCalculator
             ratio *= 2.0;
         return ratio;
     }
+
+    /// <summary>
+    /// The beatmatch rate subject to a maximum stretch ceiling. SYNC may pull a deck beyond the manual
+    /// pitch-fader range (key-lock preserves the pitch), but only so far: past <paramref name="maxStretch"/>
+    /// (a fraction, e.g. 0.15 = ±15%) the two tracks are too far apart to beatmatch cleanly. Rather than
+    /// command a wildly out-of-range rate (a chipmunk pitch jump), this reports <c>WithinRange=false</c> and
+    /// holds unity so the caller can surface a "can't sync" state instead of engaging a bad lock.
+    /// </summary>
+    /// <param name="leaderBpm">The sync leader's current tempo (BPM).</param>
+    /// <param name="followerBaseBpm">The follower's natural (un-pitched) tempo (BPM).</param>
+    /// <param name="maxStretch">Maximum |rate − 1| the sync is allowed to apply (e.g. 0.15 for ±15%).</param>
+    public static SyncRate RateWithin(double leaderBpm, double followerBaseBpm, double maxStretch)
+    {
+        if (leaderBpm <= 0.0 || followerBaseBpm <= 0.0)
+            return new SyncRate(1.0, WithinRange: true);
+
+        double rate = RateFor(leaderBpm, followerBaseBpm);
+        bool within = Math.Abs(rate - 1.0) <= Math.Abs(maxStretch) + 1e-9;
+        return within ? new SyncRate(rate, true) : new SyncRate(1.0, false);
+    }
 }
+
+/// <summary>
+/// A beatmatch rate decision: the rate to apply and whether the tempo gap was inside the allowed sync
+/// stretch. When <see cref="WithinRange"/> is false the gap was too wide to beatmatch and <see cref="Rate"/>
+/// is unity (no stretch applied) — the caller should report "can't sync" rather than lock.
+/// </summary>
+public readonly record struct SyncRate(double Rate, bool WithinRange);

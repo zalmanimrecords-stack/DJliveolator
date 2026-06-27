@@ -66,6 +66,53 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public void Load_SetsArtistFromCatalog_AndShowsTheArtistLine()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("Life System", "138.0", "8A", "7:12", Artist: "Astrix"));
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 138, Argument: @"C:\life.flac"));
+
+        Assert.Equal("Astrix", vm.Artist);
+        Assert.True(vm.HasArtist);
+    }
+
+    [Fact]
+    public void Load_WithNoCatalogArtist_LeavesTheArtistLineHidden()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("Untitled", "128.0", "—", "4:00")); // catalog has no artist
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128, Argument: @"C:\x.flac"));
+
+        Assert.Null(vm.Artist);
+        Assert.False(vm.HasArtist);
+    }
+
+    [Fact]
+    public void FailedLoad_ClearsTheArtist()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("Life System", "138.0", "8A", "7:12", Artist: "Astrix"));
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 138, Argument: @"C:\life.flac"));
+        Assert.True(vm.HasArtist);
+
+        // A later load the engine could not complete clears the artist line (no stale artist on an empty deck).
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: false, Value: 0, Argument: @"S:\gone.flac"));
+
+        Assert.Null(vm.Artist);
+        Assert.False(vm.HasArtist);
+    }
+
+    [Fact]
     public void Filter_EmitsMixerFilter_ForItsSlot()
     {
         var dispatcher = new FakeDispatcher();

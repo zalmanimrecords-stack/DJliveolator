@@ -54,6 +54,23 @@
     <CornerRadius x:Key="PanelRadius">16</CornerRadius>
     <CornerRadius x:Key="ControlRadius">3</CornerRadius>
 
+    <!-- Responsive size tokens (doubles): baseline (scale 1.0) values for knob/fader sizes and the readout
+         fonts the DJ reads across a booth. Controls reference these as DynamicResources; MainWindow rewrites
+         the values per size-class (LayoutSizeTokens) so they grow on Wide/4K and hold the live floor on
+         laptops. Defined here so they always resolve, including in control-only headless render tests. -->
+    <x:Double x:Key="UiScale">1.0</x:Double>
+    <x:Double x:Key="SizeKnobEq">24</x:Double>
+    <x:Double x:Key="SizeKnobCue">32</x:Double>
+    <x:Double x:Key="SizeKnobCut">34</x:Double>
+    <x:Double x:Key="SizeKnobZoom">40</x:Double>
+    <x:Double x:Key="SizeFaderChannelWidth">44</x:Double>
+    <x:Double x:Key="SizeFaderChannelHeight">108</x:Double>
+    <x:Double x:Key="SizeWaveformHeight">62</x:Double>
+    <x:Double x:Key="FontDeckTitle">14</x:Double>
+    <x:Double x:Key="FontBpmReadout">12</x:Double>
+    <x:Double x:Key="FontTimeReadout">12</x:Double>
+    <x:Double x:Key="FontTrackKey">14</x:Double>
+
     <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
     <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage
          (e.g. Analog chrome+wood) makes UiThemeApplier replace this with an ImageBrush at runtime. -->
@@ -109,6 +126,9 @@
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Liveolator.App/Theme/Spartan.axaml" />
+    <!-- Responsive width caps keyed on the shell Window size-class (compact/standard/wide/ultra). Must come
+         after Spartan so its tier selectors win over any baseline setters. -->
+    <StyleInclude Source="avares://Liveolator.App/Theme/ResponsiveLayout.axaml" />
   </Application.Styles>
 
 </Application>

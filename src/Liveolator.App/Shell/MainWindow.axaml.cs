@@ -1,11 +1,26 @@
+using System;
+using System.ComponentModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Liveolator.App.Layout;
 
 namespace Liveolator.App.Shell;
 
 public partial class MainWindow : Window
 {
+    // The four mutually-exclusive responsive style classes carried on the Window; descendant style
+    // selectors (Window.compact ..., Window.wide ...) react to whichever one is set.
+    private static readonly string[] SizeClassNames = { "compact", "standard", "wide", "ultra" };
+
+    private LayoutSizeClass _sizeClass = LayoutSizeClass.Standard;
+    private MainWindowViewModel? _observedViewModel;
+
+    /// <summary>Test seam: overrides the "is a deck playing" probe used by the reflow gate, so the
+    /// no-reflow-while-playing rule can be exercised without composing a full playing-deck view-model.</summary>
+    internal Func<bool>? PlayingProbeForTests { get; set; }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -13,6 +28,84 @@ public partial class MainWindow : Window
         // Tab cycles the app's screens (Shift+Tab goes back). Handle the tunnelling phase so the
         // window sees the key before the focused control's default Tab focus-traversal consumes it.
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
+
+        // Watch playback (via the shell VM) so a tier change deferred while a deck was playing is flushed
+        // the moment the set is paused.
+        DataContextChanged += OnDataContextChanged;
+
+        // Establish a self-consistent initial tier LAST (after InitializeComponent has wired ClientSize):
+        // pin the field + applied class to the design baseline, then resolve once from the real size so the
+        // field and the style class can never diverge (an early ClientSize change during init won't strand a
+        // stale class). Subsequent resizes flow through OnPropertyChanged.
+        _sizeClass = LayoutSizeClass.Standard;
+        ApplySizeClass(_sizeClass);
+        UpdateSizeClass(ClientSize.Width);
+    }
+
+    /// <summary>The active responsive tier (for tests/diagnostics).</summary>
+    internal LayoutSizeClass CurrentSizeClass => _sizeClass;
+
+    // React to window resizes (drag, maximize, move to a projector) by re-resolving the responsive tier.
+    // This only swaps a style class + a scale resource — it never touches audio, reloads tracks, or rebuilds
+    // view-models, so a resize mid-set cannot interrupt playback (a hard live-performance invariant).
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == ClientSizeProperty)
+            UpdateSizeClass(ClientSize.Width);
+    }
+
+    // Resolve the tier for the current width (with hysteresis) and, if it changed, apply it — UNLESS a deck
+    // is playing, in which case the discrete change is held until playback stops (OnPlaybackChanged flushes
+    // it). Continuous column flex (the * grid columns) is unaffected and keeps tracking the width meanwhile.
+    internal void UpdateSizeClass(double width)
+    {
+        var next = LayoutSizeClassResolver.Resolve(width, _sizeClass);
+        if (next == _sizeClass || IsDeckPlaying())
+            return;
+        _sizeClass = next;
+        ApplySizeClass(next);
+    }
+
+    private bool IsDeckPlaying()
+        => PlayingProbeForTests?.Invoke() ?? (DataContext as MainWindowViewModel)?.IsAnyDeckPlaying ?? false;
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_observedViewModel is not null)
+            _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _observedViewModel = DataContext as MainWindowViewModel;
+        if (_observedViewModel is not null)
+            _observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // When the last deck stops, re-resolve from the current width so any tier change deferred during
+        // playback now takes effect (no-op if the width never crossed a boundary).
+        if (e.PropertyName == nameof(MainWindowViewModel.IsAnyDeckPlaying) && !IsDeckPlaying())
+            UpdateSizeClass(ClientSize.Width);
+    }
+
+    private void ApplySizeClass(LayoutSizeClass cls)
+    {
+        string target = LayoutScale.StyleClass(cls);
+        foreach (var name in SizeClassNames)
+        {
+            bool wanted = name == target;
+            if (wanted && !Classes.Contains(name))
+                Classes.Add(name);
+            else if (!wanted && Classes.Contains(name))
+                Classes.Remove(name);
+        }
+
+        // Quantized scale multiplier for size-driven (never transform-driven) control/font scaling.
+        Resources["UiScale"] = LayoutScale.For(cls);
+
+        // Rewrite the size design tokens for this tier. Controls bind to these by key as DynamicResources,
+        // so knobs/faders/readouts grow on Wide/Ultra and stay at the baseline (live floor) on Compact/Standard.
+        foreach (var (key, value) in LayoutSizeTokens.For(cls))
+            Resources[key] = value;
     }
 
     private void OnPreviewKeyDown(object? sender, KeyEventArgs e)

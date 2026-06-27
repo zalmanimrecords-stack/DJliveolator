@@ -1,0 +1,12 @@
+# Real-audio corpus material is local-only — never commit tracks or personal annotations.
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.aac
+*.ogg
+annotations.json
+# …but keep the documentation and the example.
+!annotations.sample.json
+!README.md
+!.gitignore

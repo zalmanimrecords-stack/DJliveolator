@@ -153,15 +153,26 @@ public sealed partial class TwoDeckBassEngine
         return s.BaseBpm * rate;
     }
 
-    // Caller holds _gate. The rate Sync would apply to a follower deck (its leader's audible tempo folded
-    // to the nearest octave), or its manual pitch rate when no valid leader exists — mirrors ReapplyRate.
-    private double SyncedRateFor(int slot)
+    // Caller holds _gate. The sync rate decision for a follower deck: its leader's audible tempo folded to
+    // the nearest octave, capped to the sync stretch ceiling. WithinRange is false when the tempo gap is
+    // too wide to beatmatch (the caller surfaces "can't sync" instead of riding an out-of-range pitch).
+    // Returns the deck's own manual rate (WithinRange=true) when there is no valid leader — Sync armed but
+    // silent, never a wrong tempo. Single source of the sync rate for ReapplyRate / EffectiveBpm / the loop.
+    private SyncRate SyncRateFor(int slot)
     {
         DeckSlot s = _slots[slot];
         DeckSlot leader = _slots[slot == 0 ? 1 : 0];
         if (s.BaseBpm <= 0.0 || leader.Deck is null || leader.SyncLocked || leader.BaseBpm <= 0.0)
-            return s.PlaybackRate;
+            return new SyncRate(s.PlaybackRate, WithinRange: true);
         double leaderEffectiveBpm = leader.BaseBpm * leader.PlaybackRate;
-        return TempoSyncCalculator.RateFor(leaderEffectiveBpm, s.BaseBpm);
+        return TempoSyncCalculator.RateWithin(leaderEffectiveBpm, s.BaseBpm, SyncRangePercent);
+    }
+
+    // Caller holds _gate. The rate Sync would apply to a follower (capped to the ceiling), or its manual
+    // rate when out of range / no leader — so EffectiveBpm reports the deck's true audible tempo either way.
+    private double SyncedRateFor(int slot)
+    {
+        SyncRate sr = SyncRateFor(slot);
+        return sr.WithinRange ? sr.Rate : _slots[slot].PlaybackRate;
     }
 }

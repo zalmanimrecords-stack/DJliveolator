@@ -75,6 +75,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isKeyLock;
     private bool _isHotCueBankB;
     private string _title = "No track loaded";
+    private string? _artist;
     private string _meta = NoMeta;
     private IReadOnlyList<float>? _waveform;
     private IReadOnlyList<float>? _kickPeaks;
@@ -333,6 +334,21 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         get => _title;
         private set => this.RaiseAndSetIfChanged(ref _title, value);
     }
+
+    /// <summary>The loaded track's artist, from the catalog facts; null when unknown (or no track).
+    /// Shown under the title on both decks.</summary>
+    public string? Artist
+    {
+        get => _artist;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _artist, value);
+            this.RaisePropertyChanged(nameof(HasArtist));
+        }
+    }
+
+    /// <summary>True when an artist is known for the loaded track (drives the artist line's visibility).</summary>
+    public bool HasArtist => !string.IsNullOrWhiteSpace(_artist);
 
     /// <summary>Deck meta line — "Key · BPM · duration" from the catalog, or "—" before a track loads.</summary>
     public string Meta
@@ -1056,6 +1072,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         HasLoadedTrack = false;     // there is no playable track — transport stays disabled
         IsBpmEnabled = false;       // and SYNC stays disabled (nothing to beatmatch)
         Title = $"⚠ Couldn't load {Path.GetFileNameWithoutExtension(trackPath)}";
+        Artist = null;
         Meta = NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
         TrackKey = null;
@@ -1081,6 +1098,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         Title = !string.IsNullOrWhiteSpace(info?.Title)
             ? info!.Title
             : Path.GetFileNameWithoutExtension(trackPath);
+        // Artist comes only from the catalog facts (the load action carries no artist); null when the
+        // track isn't in the catalog so the line hides rather than showing a stale artist from a prior load.
+        Artist = string.IsNullOrWhiteSpace(info?.Artist) ? null : info!.Artist;
         // Prefer the full catalog facts (Key · BPM · duration); if the track isn't in the catalog, still
         // show at least the analyzed BPM that rides on the load action so a deck never hides its tempo.
         Meta = info is { } i
@@ -1184,5 +1204,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     }
 }
 
-/// <summary>Pre-formatted catalog facts for a deck's loaded track (title + BPM/key/duration strings).</summary>
-public sealed record DeckTrackInfo(string Title, string Bpm, string Key, string Duration);
+/// <summary>Pre-formatted catalog facts for a deck's loaded track (title, artist, and BPM/key/duration
+/// strings). <paramref name="Artist"/> is null when the catalog has no artist for the track.</summary>
+public sealed record DeckTrackInfo(string Title, string Bpm, string Key, string Duration, string? Artist = null);

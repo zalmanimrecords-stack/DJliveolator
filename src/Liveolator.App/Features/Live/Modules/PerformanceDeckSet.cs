@@ -63,7 +63,14 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     {
         if (e.PropertyName is nameof(DeckViewModel.Bpm) or nameof(DeckViewModel.IsPlaying))
             RefreshBpmMatch();
+        if (e.PropertyName is nameof(DeckViewModel.IsPlaying))
+            this.RaisePropertyChanged(nameof(AnyDeckPlaying));
     }
+
+    /// <summary>True while either deck is playing. The shell uses this to hold discrete responsive
+    /// reflows until the set is paused, so a window resize / move to a projector mid-mix never jumps the
+    /// layout under the DJ's hands (continuous column flex still applies).</summary>
+    public bool AnyDeckPlaying => DeckA.IsPlaying || DeckB.IsPlaying;
 
     // A beatmatch only counts while both decks are actually playing — two cued decks parked at the same
     // tempo aren't "locked" in the mix yet, and a stopped deck must drop the highlight.
@@ -167,7 +174,7 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         string bpm = track.Bpm is { } b ? b.Bpm.ToString("0.0") : "—";
         string key = track.Key?.Camelot ?? "—";
         string duration = track.Duration is { } d ? $"{(int)d.TotalMinutes}:{d.Seconds:00}" : "—";
-        return new DeckTrackInfo(track.Title, bpm, key, duration);
+        return new DeckTrackInfo(track.Title, bpm, key, duration, track.Artist);
     }
 
     // The track's analyzed beat grid (BPM + first-beat) from the catalog, the source of truth. Lets a deck

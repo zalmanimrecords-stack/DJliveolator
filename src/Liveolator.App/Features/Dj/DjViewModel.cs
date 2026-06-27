@@ -55,6 +55,11 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider, library);
+        // DJ-tab track browser (the Rekordbox-style bottom half): a focused view over the SAME catalog,
+        // independent of the LIBRARIES tab, with no scan/import surface. Only when a catalog is wired.
+        Browser = library is null
+            ? null
+            : new DjBrowserViewModel(library, dispatcher, loader: null, contextActions, _decks);
         Set = new ObservableCollection<SetEntryViewModel>();
         Played = new ObservableCollection<SetEntryViewModel>();
         DeckBQueue = new ObservableCollection<SetEntryViewModel>();
@@ -84,6 +89,12 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
     /// <summary>The shared deck set — exposes the waveform ZOOM knob (<see cref="PerformanceDeckSet.WaveformZoom"/>).</summary>
     public PerformanceDeckSet Decks => _decks;
+
+    /// <summary>The DJ-tab track browser (bottom half), or null when no catalog is wired (headless/tests).</summary>
+    public DjBrowserViewModel? Browser { get; }
+
+    /// <summary>True when a browser is available to show in the DJ console.</summary>
+    public bool HasBrowser => Browser is not null;
 
     /// <summary>The set: the Now entry first, then the upcoming queue, in play order.</summary>
     public ObservableCollection<SetEntryViewModel> Set { get; }

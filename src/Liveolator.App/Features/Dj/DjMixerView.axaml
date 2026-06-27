@@ -10,8 +10,10 @@
        MixerView keeps its taller, roomier layout. -->
   <Border Classes="panel">
     <!-- Cap the control cluster so the wells/faders gather at a sensible width instead of floating
-         across the fixed 300px DJ-mixer column. Column width itself is owned by the parent layout. -->
-    <StackPanel Margin="14,8" Spacing="6" MaxWidth="270" HorizontalAlignment="Center">
+         across the (now flexible) DJ-mixer column. The cap is tier-dependent (Theme/ResponsiveLayout.axaml
+         via .mixer-root) so the strip grows on wide/4K. Column width itself is owned by the parent layout. -->
+    <StackPanel Classes="mixer-root" Margin="14,8" Spacing="6"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
 
       <Border Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
@@ -46,25 +48,28 @@
                     HorizontalAlignment="Center" Margin="0,0,0,2"
                     Command="{Binding ChannelA.ResetEqCommand}"
                     ToolTip.Tip="Reset this channel's EQ (HI / MID / LOW) to flat" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqHigh.Value}" IsEnabled="{Binding ChannelA.EqHigh.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqMid.Value}" IsEnabled="{Binding ChannelA.EqMid.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqLow.Value}" IsEnabled="{Binding ChannelA.EqLow.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.Filter.Value}" IsEnabled="{Binding ChannelA.Filter.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
           </StackPanel>
 
-          <controls:Fader Grid.Row="1" Grid.Column="1" Width="44" Height="108" HorizontalAlignment="Center"
+          <controls:Fader Grid.Row="1" Grid.Column="1"
+                          Width="{DynamicResource SizeFaderChannelWidth}" Height="{DynamicResource SizeFaderChannelHeight}"
+                          HorizontalAlignment="Center"
                           Value="{Binding ChannelGainA.Value}" Level="{Binding LevelA}"
                           IsEnabled="{Binding ChannelGainA.IsEnabled}" />
 
-          <Grid Grid.Row="1" Grid.Column="2" Width="36" Height="108" RowDefinitions="*,*,*,*,*,*,*,*,*,*">
+          <Grid Grid.Row="1" Grid.Column="2" Width="36" Height="{DynamicResource SizeFaderChannelHeight}"
+                RowDefinitions="*,*,*,*,*,*,*,*,*,*">
             <TextBlock Grid.Row="0" Classes="tick" HorizontalAlignment="Center" Text="+6" />
             <TextBlock Grid.Row="1" Classes="tick" HorizontalAlignment="Center" Text="+3" />
             <TextBlock Grid.Row="2" Classes="tick" HorizontalAlignment="Center" Text="0" />
@@ -77,7 +82,9 @@
             <TextBlock Grid.Row="9" Classes="tick" HorizontalAlignment="Center" Text="-inf" />
           </Grid>
 
-          <controls:Fader Grid.Row="1" Grid.Column="3" Width="44" Height="108" HorizontalAlignment="Center"
+          <controls:Fader Grid.Row="1" Grid.Column="3"
+                          Width="{DynamicResource SizeFaderChannelWidth}" Height="{DynamicResource SizeFaderChannelHeight}"
+                          HorizontalAlignment="Center"
                           Value="{Binding ChannelGainB.Value}" Level="{Binding LevelB}"
                           IsEnabled="{Binding ChannelGainB.IsEnabled}" />
 
@@ -88,16 +95,16 @@
                     HorizontalAlignment="Center" Margin="0,0,0,2"
                     Command="{Binding ChannelB.ResetEqCommand}"
                     ToolTip.Tip="Reset this channel's EQ (HI / MID / LOW) to flat" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqHigh.Value}" IsEnabled="{Binding ChannelB.EqHigh.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqMid.Value}" IsEnabled="{Binding ChannelB.EqMid.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqLow.Value}" IsEnabled="{Binding ChannelB.EqLow.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
-            <controls:Knob Width="24" Height="24" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.Filter.Value}" IsEnabled="{Binding ChannelB.Filter.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
           </StackPanel>
@@ -111,7 +118,8 @@
                       VerticalAlignment="Top" HorizontalAlignment="Center"
                       ToolTip.Tip="EQ cut depth, all channels">
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUT" />
-            <controls:Knob Width="34" Height="34" Detents="3" DefaultValue="1" HorizontalAlignment="Center"
+            <controls:Knob Width="{DynamicResource SizeKnobCut}" Height="{DynamicResource SizeKnobCut}"
+                           Detents="3" DefaultValue="1" HorizontalAlignment="Center"
                            Value="{Binding EqCut.Value}" IsEnabled="{Binding EqCut.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding EqCut.ModeLabel}" />
           </StackPanel>
@@ -124,7 +132,7 @@
         <Grid ColumnDefinitions="*,14,*">
           <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center">
             <TextBlock Classes="section" FontSize="8" HorizontalAlignment="Center" Text="LEVEL" />
-            <controls:Knob Width="32" Height="32"
+            <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
                            Value="{Binding CueLevel.Value}"
                            IsEnabled="{Binding CueLevel.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MIN   MAX" />
@@ -132,7 +140,7 @@
 
           <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center">
             <TextBlock Classes="section" FontSize="8" HorizontalAlignment="Center" Text="MIX" />
-            <controls:Knob Width="32" Height="32"
+            <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
                            Value="{Binding CueMix.Value}"
                            IsEnabled="{Binding CueMix.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUE  MASTER" />

@@ -39,7 +39,7 @@ public sealed class BpmDetector
     private readonly OnsetEnvelope _onset;
     private readonly TempoEstimator _tempo;
     private readonly FirstBeatEstimator _firstBeat;
-    private readonly LowBandOnsetEnvelope _kickOnset;
+    private readonly IKickOnsetEnvelope _kickOnset;
     private readonly DownbeatEstimator _downbeat;
     private readonly GridRefiner _gridRefiner;
 
@@ -47,14 +47,17 @@ public sealed class BpmDetector
         OnsetEnvelope? onset = null,
         TempoEstimator? tempo = null,
         FirstBeatEstimator? firstBeat = null,
-        LowBandOnsetEnvelope? kickOnset = null,
+        IKickOnsetEnvelope? kickOnset = null,
         DownbeatEstimator? downbeat = null,
         GridRefiner? gridRefiner = null)
     {
         _onset = onset ?? new OnsetEnvelope();
         _tempo = tempo ?? new TempoEstimator();
         _firstBeat = firstBeat ?? new FirstBeatEstimator();
-        _kickOnset = kickOnset ?? new LowBandOnsetEnvelope();
+        // Default to percussive (HPSS) separation so a sustained in-band bass / sub / 808 on the off-beat
+        // cannot pollute the kick envelope (the band-only LowBandOnsetEnvelope remains as the simpler seam
+        // impl / fallback). The kick anchor drives tempo refinement, beat phase, and the downbeat.
+        _kickOnset = kickOnset ?? new PercussiveOnsetEnvelope();
         _downbeat = downbeat ?? new DownbeatEstimator();
         _gridRefiner = gridRefiner ?? new GridRefiner();
     }
@@ -73,25 +76,30 @@ public sealed class BpmDetector
         double bpm = estimate.Bpm;
         double confidence = estimate.Confidence;
 
-        // The kick band drives both the grid refinement (below) and the downbeat anchor.
+        // The kick band drives the grid refinement, the beat-phase anchor, and the downbeat.
         double[] kickEnvelope = _kickOnset.Compute(mono, sampleRate);
         double kickRateHz = _kickOnset.EnvelopeRateHz(sampleRate);
 
         // Refine the TEMPO to the kicks: the autocorrelation tempo is quantized to integer envelope lags
         // (e.g. 139.67 for a true 140), which drifts a uniform grid off the kicks over a long track. The
-        // refiner fits a sub-frame tempo by onset-phase coherence (and fixes octave/3:2 confusions); accept
-        // it only when the kick structure is strong (else the coarse tempo stands — ambient/no-kick material).
-        // Only the tempo is taken from the kick fit; the PHASE stays with the broadband estimator below, as
-        // the kick band's low-pass group delay would bias the first-beat anchor (and sync) late.
-        if (bpm > 0 && kickEnvelope.Length > 0)
-        {
-            GridFit fit = _gridRefiner.Refine(kickEnvelope, kickRateHz, bpm, 0.0);
-            if (fit.Coherence >= GridRefiner.AcceptCoherence && fit.Bpm > 0)
-                bpm = fit.Bpm; // tempo only; grid coherence stays separate from tempo-detection confidence
-        }
+        // refiner fits a sub-frame tempo + continuous phase by onset-phase coherence (and fixes octave/3:2
+        // confusions); trust it only when the kick structure is strong (else the coarse tempo stands —
+        // ambient/no-kick material).
+        GridFit kickFit = bpm > 0 && kickEnvelope.Length > 0
+            ? _gridRefiner.Refine(kickEnvelope, kickRateHz, bpm, 0.0)
+            : new GridFit(bpm, 0.0, 0.0);
+        bool kickTrusted = kickFit.Coherence >= GridRefiner.AcceptCoherence && kickFit.Bpm > 0;
+        if (kickTrusted)
+            bpm = kickFit.Bpm;
 
-        // Beat phase from the broadband envelope at the (refined) tempo — true-beat phase, no group delay.
-        double firstBeatSeconds = _firstBeat.Estimate(envelope, bpm, envelopeRateHz);
+        // Beat PHASE anchors on the KICK, not the broadband envelope: the kick is the beat anchor two-deck
+        // sync aligns to, so taking phase from broadband onsets (hats/vocals/stabs) pulls the grid off the
+        // down-beat on bass-heavy material — the dominant cause of unsatisfying sync (system review 2026-06-27).
+        // The kick fit's resultant phase is continuous (sub-frame). Fall back to the broadband estimator only
+        // when the kick band is too weak to fit, where the broadband onset is the only phase signal we have.
+        double firstBeatSeconds = kickTrusted
+            ? WrapToBeat(kickFit.FirstBeatSeconds + _kickOnset.AnalysisLatencySeconds(sampleRate), bpm)
+            : _firstBeat.Estimate(envelope, bpm, envelopeRateHz);
         bpm = Math.Round(bpm, 2);
         firstBeatSeconds = Math.Round(firstBeatSeconds, 4);
 
@@ -107,5 +115,16 @@ public sealed class BpmDetector
             BeatsPerBar = downbeat.BeatsPerBar,
             DownbeatConfidence = downbeat.Confidence,
         };
+    }
+
+    // Keep the first-beat anchor inside [0, 60/bpm): the kick fit's phase is taken modulo its own period,
+    // but rounding the tempo afterwards shifts the beat length a hair, so re-wrap against the final tempo.
+    private static double WrapToBeat(double offsetSeconds, double bpm)
+    {
+        if (bpm <= 0.0)
+            return 0.0;
+        double beatSeconds = 60.0 / bpm;
+        double wrapped = offsetSeconds % beatSeconds;
+        return wrapped < 0.0 ? wrapped + beatSeconds : wrapped;
     }
 }
