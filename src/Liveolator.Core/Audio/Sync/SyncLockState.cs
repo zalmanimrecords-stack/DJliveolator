@@ -19,4 +19,9 @@ public enum SyncLockState
 
     /// <summary>Engaged but the phase has slipped past the re-snap threshold; a one-shot beat-snap is recovering it.</summary>
     Drifting = 3,
+
+    /// <summary>Engaged but the two tracks' tempos are too far apart to beatmatch within the sync stretch
+    /// ceiling — no rate is applied (the deck holds its own tempo) and the UI shows "can't sync" rather
+    /// than riding a wildly out-of-range pitch.</summary>
+    OutOfRange = 4,
 }

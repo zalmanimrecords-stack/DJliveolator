@@ -51,9 +51,17 @@ public sealed partial class TwoDeckBassEngine
             }
 
             double leaderRate = leader.PlaybackRate;
-            double targetRate = TempoSyncCalculator.RateFor(
-                leader.BaseBpm * leaderRate,
-                s.BaseBpm);
+            SyncRate sync = TempoSyncCalculator.RateWithin(
+                leader.BaseBpm * leaderRate, s.BaseBpm, SyncRangePercent);
+            if (!sync.WithinRange)
+            {
+                _logger.LogInformation(
+                    "Deck slot {Slot} one-shot sync skipped: tempo gap to leader {Leader} exceeds ±{Pct:P0}.",
+                    slot, leaderSlot, SyncRangePercent);
+                return;
+            }
+
+            double targetRate = sync.Rate;
             s.PlaybackRate = targetRate;
             s.PitchPosition = PitchPositionFor(targetRate);
             _backend.SetDeckRate(deck.Handle, targetRate);
@@ -221,7 +229,17 @@ public sealed partial class TwoDeckBassEngine
         var masterPhase = new DeckPhase(
             _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat, leader.FirstBeat, leader.BaseBpm);
 
-        double beatmatchedRate = SyncedRateFor(slot); // the tempo-matched base rate, before phase correction
+        // Too wide a tempo gap to beatmatch: don't run the phase loop (it would chase an unreachable grid);
+        // hold the deck's own rate and report OutOfRange so the UI shows "can't sync".
+        SyncRate sr = SyncRateFor(slot);
+        if (!sr.WithinRange)
+        {
+            _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
+            SetSyncStateLocked(slot, SyncLockState.OutOfRange);
+            return;
+        }
+
+        double beatmatchedRate = sr.Rate; // the tempo-matched base rate, before phase correction
         // Pass the deck's prior lock state so the controller's lock-zone hysteresis can hold a settled deck
         // Locked across the boundary instead of chattering Locked↔Active each tick.
         PhaseLockCorrection correction =
@@ -280,10 +298,19 @@ public sealed partial class TwoDeckBassEngine
             return;
         }
 
-        // A prior one-shot sync can put the leader beyond the manual pitch fader's display range.
-        double leaderEffectiveBpm = leader.BaseBpm * leader.PlaybackRate;
-        double rate = TempoSyncCalculator.RateFor(leaderEffectiveBpm, s.BaseBpm);
-        _backend.SetDeckRate(deck.Handle, rate);
+        // Sync may stretch beyond the manual pitch fader (key-lock preserves pitch), but only to the sync
+        // ceiling. Too wide a gap reports OutOfRange and holds the deck's own rate rather than a chipmunk pitch.
+        SyncRate sr = SyncRateFor(slot);
+        if (!sr.WithinRange)
+        {
+            _logger.LogInformation(
+                "Deck slot {Slot} sync: tempo gap exceeds ±{Pct:P0}; holding own rate (OutOfRange).",
+                slot, SyncRangePercent);
+            _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
+            SetSyncStateLocked(slot, SyncLockState.OutOfRange);
+            return;
+        }
+        _backend.SetDeckRate(deck.Handle, sr.Rate);
     }
 
     // Caller holds _gate. A leader-tempo change (load / base BPM / pitch) must pull every synced deck.

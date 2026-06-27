@@ -61,4 +61,46 @@ public class TempoSyncCalculatorTests
             Assert.InRange(rate, System.Math.Sqrt(0.5), System.Math.Sqrt(2.0));
         }
     }
+
+    [Fact]
+    public void RateWithin_GapInsideCeiling_StretchesAndReportsWithinRange()
+    {
+        // 120 -> 128 is +6.7%, inside a 15% sync ceiling: apply the real beatmatch rate.
+        SyncRate result = TempoSyncCalculator.RateWithin(128.0, 120.0, maxStretch: 0.15);
+
+        Assert.True(result.WithinRange);
+        Assert.Equal(128.0 / 120.0, result.Rate, precision: 6);
+    }
+
+    [Fact]
+    public void RateWithin_GapBeyondCeiling_ReportsOutOfRange_AndDoesNotStretch()
+    {
+        // 100 -> 128 folds to +28% (1.28 < √2, so no octave fold helps): beyond a 15% ceiling. Sync must
+        // NOT command the out-of-range rate (the chipmunk bug); it reports out-of-range and holds unity.
+        SyncRate result = TempoSyncCalculator.RateWithin(128.0, 100.0, maxStretch: 0.15);
+
+        Assert.False(result.WithinRange);
+        Assert.Equal(1.0, result.Rate, precision: 9);
+    }
+
+    [Fact]
+    public void RateWithin_HalfTempoPartner_FoldsInsideCeiling()
+    {
+        // 70 follows 140: folds to ~1.0, trivially inside any sane ceiling.
+        SyncRate result = TempoSyncCalculator.RateWithin(140.0, 70.0, maxStretch: 0.15);
+
+        Assert.True(result.WithinRange);
+        Assert.Equal(1.0, result.Rate, precision: 6);
+    }
+
+    [Theory]
+    [InlineData(0.0, 120.0)]
+    [InlineData(128.0, 0.0)]
+    public void RateWithin_NonPositiveTempo_IsUnityAndWithinRange(double leaderBpm, double followerBpm)
+    {
+        SyncRate result = TempoSyncCalculator.RateWithin(leaderBpm, followerBpm, maxStretch: 0.15);
+
+        Assert.True(result.WithinRange);
+        Assert.Equal(1.0, result.Rate, precision: 9);
+    }
 }

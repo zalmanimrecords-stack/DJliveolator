@@ -43,6 +43,14 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     /// <summary>Pitch fader half-range: normalized position 0/1 maps to ∓8% of the original tempo.</summary>
     private const double PitchRangePercent = 0.08;
 
+    /// <summary>
+    /// Maximum tempo stretch SYNC may apply (±15%). Sync deliberately reaches beyond the manual pitch
+    /// fader (±<see cref="PitchRangePercent"/>) — key-lock preserves pitch over the stretch — so two tracks
+    /// with a moderate BPM gap still beatmatch like Rekordbox/Serato. Past this the gap is too wide to
+    /// beatmatch cleanly: sync reports OutOfRange instead of riding a chipmunk pitch. Tunable.
+    /// </summary>
+    private const double SyncRangePercent = 0.15;
+
     /// <summary>Normalized pitch position with no tempo change (the fader centre).</summary>
     private const double PitchCenter = 0.5;
 
