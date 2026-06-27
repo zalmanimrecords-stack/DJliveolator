@@ -42,6 +42,51 @@ public class ControllerMapperTests
     }
 
     [Fact]
+    public void Apply_MomentaryNote_DispatchesPressOnly_AndIsPressedTrue()
+    {
+        // A normal momentary button: NoteOn fires (pressed), NoteOff is dropped — unchanged behavior.
+        var mapper = Build(new ControllerBinding(
+            MidiMessageType.NoteOn, 0, 36, PerformanceActionKind.DeckCue, ActionInputMode.Momentary));
+
+        mapper.Apply(new MidiMessage(MidiMessageType.NoteOn, 0, 36, 127));
+        mapper.Apply(new MidiMessage(MidiMessageType.NoteOff, 0, 36, 0));
+
+        PerformanceAction action = Assert.Single(_dispatcher.Dispatched);
+        Assert.True(action.IsPressed);
+    }
+
+    [Fact]
+    public void Apply_ReportReleaseBinding_DispatchesBothEdges_WithIsPressedFlag()
+    {
+        // An opt-in press-and-hold binding fires on press (IsPressed=true) AND release (false).
+        var mapper = Build(new ControllerBinding(
+            MidiMessageType.NoteOn, 0, 36, PerformanceActionKind.DeckCue, ActionInputMode.Momentary,
+            ReportRelease: true));
+
+        mapper.Apply(new MidiMessage(MidiMessageType.NoteOn, 0, 36, 127));
+        mapper.Apply(new MidiMessage(MidiMessageType.NoteOff, 0, 36, 0));
+
+        Assert.Equal(2, _dispatcher.Dispatched.Count);
+        Assert.True(_dispatcher.Dispatched[0].IsPressed);
+        Assert.False(_dispatcher.Dispatched[1].IsPressed);
+    }
+
+    [Fact]
+    public void Apply_ReportReleaseCcButton_FiresPressAndReleaseFromData2()
+    {
+        var mapper = Build(new ControllerBinding(
+            MidiMessageType.ControlChange, 0, 20, PerformanceActionKind.DeckCue, ActionInputMode.Momentary,
+            ReportRelease: true));
+
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 20, 127)); // press
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 20, 0));   // release
+
+        Assert.Equal(2, _dispatcher.Dispatched.Count);
+        Assert.True(_dispatcher.Dispatched[0].IsPressed);
+        Assert.False(_dispatcher.Dispatched[1].IsPressed);
+    }
+
+    [Fact]
     public void Apply_DispatchThrows_IsCaughtAndLogged()
     {
         _dispatcher.ThrowOnDispatch = true;

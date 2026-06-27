@@ -18,6 +18,10 @@ namespace Liveolator.Core.Actions;
 /// <param name="Origin">Optional emitting-source tag (e.g. "automix"). Null = a human gesture
 /// (UI/controller). Automation stamps its origin so a human touching the same parameter can be
 /// detected and yielded to — automation must never fight the performer (doc 10/11).</param>
+/// <param name="IsPressed">For a momentary (button) action, whether this is the press (true) or the
+/// release (false). Defaults to true so non-button actions and existing serialized actions are
+/// unaffected; only a release-reporting binding emits a false, enabling press-and-hold gestures
+/// (cue-play preview, EQ kill) — doc 31. Ignored for non-momentary modes.</param>
 public sealed record PerformanceAction(
     PerformanceActionKind Kind,
     ActionInputMode InputMode = ActionInputMode.Momentary,
@@ -25,4 +29,5 @@ public sealed record PerformanceAction(
     int Slot = 0,
     string? Argument = null,
     string? Target = null,
-    string? Origin = null);
+    string? Origin = null,
+    bool IsPressed = true);

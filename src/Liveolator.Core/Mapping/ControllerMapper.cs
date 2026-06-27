@@ -72,8 +72,10 @@ public sealed class ControllerMapper : IControllerMapper
                 value = takeover.Value;
             }
 
+            bool isPressed = !BindingMatcher.IsRelease(binding, message);
             _dispatcher.Dispatch(new PerformanceAction(
-                binding.Action, binding.InputMode, value, binding.Slot, binding.Argument));
+                binding.Action, binding.InputMode, value, binding.Slot, binding.Argument,
+                IsPressed: isPressed));
         }
         catch (Exception ex)
         {

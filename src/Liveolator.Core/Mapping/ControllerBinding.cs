@@ -27,6 +27,11 @@ namespace Liveolator.Core.Mapping;
 /// position differs from the target (doc 27). Defaults to off for backward compatibility; ignored for
 /// non-absolute modes.
 /// </param>
+/// <param name="ReportRelease">
+/// When true, a momentary control also fires on release (carrying <c>IsPressed = false</c>), enabling
+/// press-and-hold gestures such as cue-play preview and EQ kill. Off by default, so a normal button
+/// still fires once on press only (doc 31); ignored for non-momentary modes.
+/// </param>
 public sealed record ControllerBinding(
     MidiMessageType TriggerType,
     int Channel,
@@ -39,4 +44,5 @@ public sealed record ControllerBinding(
     RelativeEncoding Relative = RelativeEncoding.TwosComplement,
     double RelativeTicksPerRevolution = 1.0,
     bool Invert = false,
-    bool SoftTakeover = false);
+    bool SoftTakeover = false,
+    bool ReportRelease = false);
