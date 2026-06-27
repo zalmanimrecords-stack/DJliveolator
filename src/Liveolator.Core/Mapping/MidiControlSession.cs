@@ -168,6 +168,24 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
         _feedback = new MidiFeedbackPublisher(_dispatcher, output, mapper, _loggerFactory.CreateLogger<MidiFeedbackPublisher>());
         OutputDeviceName = output.DeviceName;
         IsOutputConnected = true;
+
+        // Put the device into its working mode if the profile needs it (e.g. Push -> User mode, doc 06),
+        // now that the output is open. A send failure stays graceful — feedback must never block input.
+        SendProfileSysEx(mapper.ActiveProfile.ActivationSysEx, "activation");
+    }
+
+    private void SendProfileSysEx(IReadOnlyList<byte>? payload, string what)
+    {
+        if (_output is null || payload is null || payload.Count == 0)
+            return;
+        try
+        {
+            _output.SendSysEx(payload as byte[] ?? payload.ToArray());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not send profile {What} SysEx to '{Device}'.", what, OutputDeviceName);
+        }
     }
 
     private void OnActivityDetected(object? sender, EventArgs e) => ActivityDetected?.Invoke(this, EventArgs.Empty);
@@ -266,6 +284,10 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
             _input.Close();
             _input.Dispose();
         }
+
+        // Return the device to its idle mode (e.g. Push -> Live mode) before closing the output.
+        if (_mapper is not null)
+            SendProfileSysEx(_mapper.ActiveProfile.DeactivationSysEx, "deactivation");
         _output?.Dispose();
 
         _router = null;

@@ -83,6 +83,13 @@ public static class Push1Profile
     private const int TransitionNextBarCc = 63;
 
     /// <summary>The default Ableton Push 1 mapping profile.</summary>
+    // Ableton Push 1 set-mode SysEx (header F0 47 7F 15, command 62, len 00 01, mode byte, F7): the Push
+    // emits MIDI for its pads/encoders only in User mode, so the profile switches it on connect and back
+    // to Live mode on disconnect (doc 06). Bytes mirror Push1Sysex.SetUserMode (separate feedback adapter).
+    // Declared BEFORE Default so these initializers run before Build() reads them (textual static order).
+    private static readonly byte[] UserModeOn = { 0xF0, 0x47, 0x7F, 0x15, 0x62, 0x00, 0x01, 0x01, 0xF7 };
+    private static readonly byte[] LiveModeOn = { 0xF0, 0x47, 0x7F, 0x15, 0x62, 0x00, 0x01, 0x00, 0xF7 };
+
     public static ControllerMappingProfile Default { get; } = Build();
 
     private static ControllerMappingProfile Build()
@@ -93,7 +100,11 @@ public static class Push1Profile
         AddMacroEncoders(bindings);
         AddUtilityButtons(bindings);
 
-        return new ControllerMappingProfile(ProfileName, DeviceHint, bindings);
+        return new ControllerMappingProfile(ProfileName, DeviceHint, bindings)
+        {
+            ActivationSysEx = UserModeOn,
+            DeactivationSysEx = LiveModeOn,
+        };
     }
 
     // The 8x8 grid loads visual scenes: each pad press fires VisualLoadScene with the scene slot equal

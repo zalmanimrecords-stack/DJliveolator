@@ -192,6 +192,34 @@ public sealed class MidiControlSessionTests
     }
 
     [Fact]
+    public async Task Profile_WithActivationSysEx_SendsItOnConnect_AndDeactivationOnStop()
+    {
+        // The Push needs a User-mode SysEx on connect or its pads/encoders emit nothing (doc 06/31).
+        _provider.InputToReturn = new FakeMidiInput("Ableton Push");
+        _provider.OutputToReturn = new FakeMidiOutput("Ableton Push");
+        using var session = NewSession(new[] { Push1Profile.Default });
+
+        await session.StartAsync(new MidiSettings { ControllerInputName = "Push", FeedbackOutputName = "Push" });
+        Assert.Equal(Push1Profile.Default.ActivationSysEx!.ToArray(), _provider.OutputToReturn.SysEx.Single());
+
+        session.Stop();
+        Assert.Equal(2, _provider.OutputToReturn.SysEx.Count);
+        Assert.Equal(Push1Profile.Default.DeactivationSysEx!.ToArray(), _provider.OutputToReturn.SysEx[1]);
+    }
+
+    [Fact]
+    public async Task Profile_WithoutActivationSysEx_SendsNoSysExOnConnect()
+    {
+        _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");
+        _provider.OutputToReturn = new FakeMidiOutput("CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A", FeedbackOutputName = "CMD Studio 2A" });
+
+        Assert.Empty(_provider.OutputToReturn.SysEx);
+    }
+
+    [Fact]
     public async Task Stop_ClosesAndDisposesInput_AndStopsActivity()
     {
         using var session = NewSession();

@@ -12,6 +12,16 @@ public sealed record ControllerMappingProfile(
     string DeviceHint,
     IReadOnlyList<ControllerBinding> Bindings)
 {
+    /// <summary>
+    /// Optional raw SysEx sent to the device's output the moment this profile connects — e.g. switching
+    /// an Ableton Push into User mode so its pads/encoders emit MIDI at all (doc 06). Null/empty = nothing
+    /// sent. Requires the device's output to be open (the same device as a feedback output).
+    /// </summary>
+    public IReadOnlyList<byte>? ActivationSysEx { get; init; }
+
+    /// <summary>Optional raw SysEx sent when the profile disconnects — e.g. returning the Push to Live mode.</summary>
+    public IReadOnlyList<byte>? DeactivationSysEx { get; init; }
+
     /// <summary>An empty profile, useful as a starting point for learn mode.</summary>
     public static ControllerMappingProfile Empty(string name, string deviceHint)
         => new(name, deviceHint, Array.Empty<ControllerBinding>());

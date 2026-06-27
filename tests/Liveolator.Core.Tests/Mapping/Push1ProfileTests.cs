@@ -125,4 +125,16 @@ public class Push1ProfileTests
 
         Assert.All(padNotes, note => Assert.InRange(note, 36, 99));
     }
+
+    [Fact]
+    public void Default_SwitchesThePushIntoUserModeOnConnect_AndBackToLiveOnDisconnect()
+    {
+        // Without the User-mode SysEx the Push emits no MIDI for its pads/encoders (doc 06/31).
+        Assert.Equal(
+            new byte[] { 0xF0, 0x47, 0x7F, 0x15, 0x62, 0x00, 0x01, 0x01, 0xF7 },
+            Profile.ActivationSysEx);
+        Assert.Equal(
+            new byte[] { 0xF0, 0x47, 0x7F, 0x15, 0x62, 0x00, 0x01, 0x00, 0xF7 },
+            Profile.DeactivationSysEx);
+    }
 }
