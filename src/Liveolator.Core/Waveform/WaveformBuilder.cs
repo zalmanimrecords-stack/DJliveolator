@@ -12,7 +12,7 @@ public static class WaveformBuilder
 {
     /// <summary>
     /// Low/mid crossover (Hz). 200 Hz keeps the kick fundamental + punch in the low band while keeping
-    /// bass-line/tom bleed out of it (Mixxx bands at 600 Hz; tighter on purpose — the low band here is
+    /// bass-line/tom bleed out of it (tighter than a typical band split on purpose — the low band here is
     /// the beat-align anchor, so it must spike on kicks and stay quiet between them).
     /// </summary>
     public const double LowCrossoverHz = 200.0;

@@ -14,7 +14,7 @@
     </StackPanel>
 
     <Border Grid.Row="1" Classes="panel" Margin="0,16,0,16">
-      <Grid Margin="14" ColumnDefinitions="*,Auto,Auto">
+      <Grid Margin="14" ColumnDefinitions="*,Auto,Auto,Auto">
         <ComboBox ItemsSource="{Binding Targets}"
                   SelectedItem="{Binding SelectedTarget}">
           <ComboBox.ItemTemplate>
@@ -23,9 +23,15 @@
             </DataTemplate>
           </ComboBox.ItemTemplate>
         </ComboBox>
-        <Button Grid.Column="1" Classes="accent" Content="Learn" Margin="10,0,0,0"
+        <!-- Encoder encoding picker: only meaningful (and shown) for a relative target (doc 31 M2). -->
+        <ComboBox Grid.Column="1" Margin="10,0,0,0"
+                  IsVisible="{Binding SelectedTargetIsRelative}"
+                  ItemsSource="{Binding RelativeEncodingOptions}"
+                  SelectedItem="{Binding SelectedRelativeEncoding}"
+                  ToolTip.Tip="How the endless encoder encodes a step (most devices use TwosComplement)" />
+        <Button Grid.Column="2" Classes="accent" Content="Learn" Margin="10,0,0,0"
                 Command="{Binding LearnCommand}" />
-        <Button Grid.Column="2" Classes="spartan" Content="Cancel" Margin="10,0,0,0"
+        <Button Grid.Column="3" Classes="spartan" Content="Cancel" Margin="10,0,0,0"
                 Command="{Binding CancelLearnCommand}" />
       </Grid>
     </Border>

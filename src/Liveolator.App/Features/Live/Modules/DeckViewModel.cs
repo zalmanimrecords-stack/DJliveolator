@@ -232,7 +232,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         NudgeBendDownCommand = ReactiveCommand.Create(() => PitchBendTap(-PitchBendFraction), canEmit);
         NudgeBendUpCommand = ReactiveCommand.Create(() => PitchBendTap(+PitchBendFraction), canEmit);
 
-        // Grid edit (rekordbox/Serato "grid edit"): slide a beat line onto the kick under the playhead
+        // Grid edit: slide a beat line onto the kick under the playhead
         // (re-phase the BEAT GRID) via DeckSetFirstBeat. Changes the analyzed grid/sync phase only — never
         // the audible pitch — and is a no-op until the track's tempo/duration are known.
         SetGridHereCommand = ReactiveCommand.Create(EmitGridHere, canEmit);

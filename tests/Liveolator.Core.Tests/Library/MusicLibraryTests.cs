@@ -1,3 +1,4 @@
+using Liveolator.Core.Analysis;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Enrichment;
@@ -145,6 +146,56 @@ public class MusicLibraryTests
         Assert.True(updated);
         Assert.Equal("8A", track.Key!.Camelot);
         Assert.Equal("A Minor", track.Key.Name);
+    }
+
+    [Fact]
+    public void ApplyOnlineDetails_PreservesDownbeatAnchorOnCrossCheck()
+    {
+        // An already-analyzed track has a detected downbeat (analyzer v4). A cross-check keeps the local
+        // BPM, so re-running it must NOT discard the bar/downbeat anchor (doc 31 L1 — silent data loss).
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        var bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.9, FirstBeatSeconds: 0.1)
+        {
+            DownbeatSeconds = 0.5,
+            BeatsPerBar = 4,
+            DownbeatConfidence = 0.8,
+        };
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), bpm, null, TimeSpan.FromMinutes(5), TrackCues.None,
+                MediaAnalysisStatus.Ok, null, AnalyzerVersion: TrackAnalyzer.CurrentVersion),
+        });
+
+        bool updated = library.ApplyOnlineDetails(
+            "a.mp3", new OnlineTrackMetadata(128, "8A", null, null, "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.Equal(0.5, track.Bpm!.DownbeatSeconds);     // downbeat anchor survives
+        Assert.Equal(0.1, track.Bpm.FirstBeatSeconds);     // first-beat anchor survives
+        Assert.Equal(0.8, track.Bpm.DownbeatConfidence);
+    }
+
+    [Fact]
+    public void ApplyOnlineDetails_StampsAnalyzerVersion_SoEnrichedFailedTrackLeavesThePendingQueue()
+    {
+        // A track that Failed locally (no decoder) but got a usable BPM/key from online enrichment must
+        // stop being flagged for re-analysis, or a later pass re-decodes and overwrites it (doc 31 L2).
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), null, null, null, TrackCues.None,
+                MediaAnalysisStatus.Failed, "no decoder"), // AnalyzerVersion defaults to 0
+        });
+        Assert.Contains("a.mp3", library.PathsNeedingAnalysis());
+
+        bool updated = library.ApplyOnlineDetails(
+            "a.mp3", new OnlineTrackMetadata(140, "8A", null, null, "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.Equal(TrackAnalyzer.CurrentVersion, track.AnalyzerVersion);
+        Assert.DoesNotContain("a.mp3", library.PathsNeedingAnalysis());
     }
 
     [Fact]

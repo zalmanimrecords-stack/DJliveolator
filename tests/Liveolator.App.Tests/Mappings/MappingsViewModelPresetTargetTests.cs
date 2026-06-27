@@ -90,10 +90,25 @@ public sealed class MappingsViewModelPresetTargetTests
         Assert.Equal($"{PresetId}.glow", session.LearnedArgument);
     }
 
+    [Fact]
+    public async Task Learning_ARelativeTarget_ForwardsTheSelectedEncoding()
+    {
+        var session = new FakeMidiControlSession();
+        var vm = new MappingsViewModel(session);
+        vm.SelectedTarget = vm.Targets.First(t => t.PreferredInputMode == ActionInputMode.Relative);
+
+        Assert.True(vm.SelectedTargetIsRelative);
+        vm.SelectedRelativeEncoding = RelativeEncoding.OffsetBinary;
+        await vm.LearnCommand.Execute().ToTask();
+
+        Assert.Equal(RelativeEncoding.OffsetBinary, session.LearnedEncoding);
+    }
+
     private sealed class FakeMidiControlSession : IMidiControlSession
     {
         public PerformanceActionKind? LearnedAction { get; private set; }
         public string? LearnedArgument { get; private set; }
+        public RelativeEncoding LearnedEncoding { get; private set; }
 
         public ControllerMappingProfile? ActiveProfile => null;
         public bool IsLearnArmed { get; private set; }
@@ -116,10 +131,12 @@ public sealed class MappingsViewModelPresetTargetTests
             string? argument = null,
             ActionInputMode? preferredInputMode = null,
             double relativeTicksPerRevolution = 1.0,
-            bool invert = false)
+            bool invert = false,
+            RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
         {
             LearnedAction = action;
             LearnedArgument = argument;
+            LearnedEncoding = relativeEncoding;
             IsLearnArmed = true;
         }
 

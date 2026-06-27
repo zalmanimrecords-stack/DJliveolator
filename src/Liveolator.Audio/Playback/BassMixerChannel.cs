@@ -1,7 +1,5 @@
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Audio.Effects;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Liveolator.Audio.Playback;
 
@@ -25,16 +23,11 @@ internal sealed class BassMixerChannel : IBassMixerChannel
     private readonly StatefulBiquad _high;
     private readonly StatefulBiquad _filter;
     private readonly IAudioEffectRack? _effects;
-    private readonly ILogger _logger;
-    private readonly int _slot;
     private volatile float _gain = 1.0f;
     private volatile float _peak;
     private volatile float _rms;
-    // DIAG (jog-audible-at-zero-volume): throttle the muted-but-audible probe so a jog burst logs a few
-    // lines, not one per audio buffer. Counts qualifying buffers; see Process. Remove once resolved.
-    private int _leakLogCounter;
 
-    public BassMixerChannel(int channels, IAudioEffectRack? effects = null, ILogger? logger = null, int slot = -1)
+    public BassMixerChannel(int channels, IAudioEffectRack? effects = null)
     {
         if (channels < 1)
             throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be positive.");
@@ -44,8 +37,6 @@ internal sealed class BassMixerChannel : IBassMixerChannel
         _high = new StatefulBiquad(channels);
         _filter = new StatefulBiquad(channels);
         _effects = effects;
-        _logger = logger ?? NullLogger.Instance;
-        _slot = slot;
     }
 
     /// <summary>True while this deck is routed to the headphone cue (PFL) bus.</summary>
@@ -100,15 +91,6 @@ internal sealed class BassMixerChannel : IBassMixerChannel
         _rms = interleaved.Length == 0
             ? 0
             : (float)Math.Clamp(Math.Sqrt(sumSquares / interleaved.Length), 0.0, 1.0);
-
-        // DIAG (jog-audible-at-zero-volume): the channel fader is at/near zero (gain ~0) yet this channel
-        // is still emitting audio past the gain stage — the exact reported bug. Logs the live gain + peak so
-        // we can tell whether the gain is genuinely 0 (a native/state leak) or has been re-raised. Guarded so
-        // it stays silent in normal use, and throttled to ~1 line per 16 qualifying buffers. Remove once fixed.
-        if (gain < 1e-3f && _peak > 0.02f && (_leakLogCounter++ & 0xF) == 0)
-            _logger.LogInformation(
-                "DIAG mixer-leak slot {Slot}: gain={Gain:F5} but post-gain peak={Peak:F4} (muted channel still audible).",
-                _slot, gain, _peak);
     }
 
     private StatefulBiquad Band(EqBand band) => band switch

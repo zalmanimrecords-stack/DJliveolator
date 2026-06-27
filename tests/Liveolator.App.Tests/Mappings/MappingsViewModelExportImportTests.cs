@@ -147,7 +147,8 @@ public sealed class MappingsViewModelExportImportTests : IDisposable
         public void Stop() { }
         public void BeginLearn(
             PerformanceActionKind action, int slot = 0, string? argument = null,
-            ActionInputMode? preferredInputMode = null, double relativeTicksPerRevolution = 1.0, bool invert = false) { }
+            ActionInputMode? preferredInputMode = null, double relativeTicksPerRevolution = 1.0, bool invert = false,
+            RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement) { }
         public void CancelLearn() { }
         public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }

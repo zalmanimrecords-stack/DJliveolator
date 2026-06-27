@@ -79,7 +79,8 @@ public sealed class MainWindowViewModelTests
             string? argument = null,
             Liveolator.Core.Actions.ActionInputMode? preferredInputMode = null,
             double relativeTicksPerRevolution = 1.0,
-            bool invert = false) { }
+            bool invert = false,
+            Liveolator.Core.Mapping.RelativeEncoding relativeEncoding = Liveolator.Core.Mapping.RelativeEncoding.TwosComplement) { }
         public void CancelLearn() { }
         public Task RemoveBindingAsync(ControllerBinding binding, CancellationToken cancellationToken = default)
             => Task.CompletedTask;

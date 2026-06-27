@@ -652,6 +652,41 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void HotCue_JumpFromPausedDeck_StartsPlayback()
+    {
+        // Universal CDJ/Serato/Traktor behavior: pressing a hot cue on a paused deck jumps to the cue
+        // AND drops the track. Jump-only (silent seek) reads as broken to a working DJ (doc 31 H3).
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100, paused
+        backend.PositionFraction[100] = 0.42;
+        engine.HotCue(0, 2);          // set cue 2
+        Assert.False(engine.IsPlaying(0));
+
+        backend.PositionFraction[100] = 0.9;
+        engine.HotCue(0, 2);          // jump back AND play
+
+        Assert.Equal(0.42, backend.PositionFraction[100], 6);
+        Assert.True(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void HotCue_JumpWhilePlaying_KeepsPlaying()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.PositionFraction[100] = 0.42;
+        engine.HotCue(0, 2);
+        engine.PlayPause(0);          // now playing
+        Assert.True(engine.IsPlaying(0));
+
+        backend.PositionFraction[100] = 0.9;
+        engine.HotCue(0, 2);          // jump-and-continue
+
+        Assert.Equal(0.42, backend.PositionFraction[100], 6);
+        Assert.True(engine.IsPlaying(0));
+    }
+
+    [Fact]
     public void HotCue_IsPerSlotAndPerIndex()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

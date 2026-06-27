@@ -89,6 +89,7 @@ public sealed class GlobalMidiLearnCoordinatorTests
         public int LearnedSlot { get; private set; }
         public string? LearnedArgument { get; private set; }
         public ActionInputMode? LearnedInputMode { get; private set; }
+        public RelativeEncoding LearnedEncoding { get; private set; }
         public bool CancelCalled { get; private set; }
         public ControllerMappingProfile? ActiveProfile => null;
         public bool IsLearnArmed { get; private set; }
@@ -110,12 +111,14 @@ public sealed class GlobalMidiLearnCoordinatorTests
             string? argument = null,
             ActionInputMode? preferredInputMode = null,
             double relativeTicksPerRevolution = 1.0,
-            bool invert = false)
+            bool invert = false,
+            RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
         {
             LearnedAction = action;
             LearnedSlot = slot;
             LearnedArgument = argument;
             LearnedInputMode = preferredInputMode;
+            LearnedEncoding = relativeEncoding;
             IsLearnArmed = true;
         }
 

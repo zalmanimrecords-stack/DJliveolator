@@ -70,6 +70,10 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
 
+      <CheckBox IsChecked="{Binding ShowShortClips}" VerticalAlignment="Center"
+                Content="{Binding ShortClipCount, StringFormat='Short clips ({0})'}"
+                ToolTip.Tip="Show tracks under 1 minute (edits, stings, acapellas, loops)" />
+
       <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
 
       <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />

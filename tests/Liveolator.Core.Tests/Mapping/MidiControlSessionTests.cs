@@ -131,6 +131,27 @@ public sealed class MidiControlSessionTests
     }
 
     [Fact]
+    public async Task Learn_ForwardsRelativeEncoding_SoAnOffsetBinaryEncoderIsCaptured()
+    {
+        // The learn path used to always default to TwosComplement; an offset-binary encoder could only be
+        // fixed by hand-editing JSON (doc 31 M2). The encoding must reach the learned binding.
+        _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A" });
+
+        session.BeginLearn(
+            PerformanceActionKind.MixerCrossfade, slot: 0,
+            preferredInputMode: ActionInputMode.Relative,
+            relativeTicksPerRevolution: 64,
+            relativeEncoding: RelativeEncoding.OffsetBinary);
+        _provider.LastInput!.Emit(new MidiMessage(MidiMessageType.ControlChange, 1, 20, 65));
+
+        ControllerBinding learned = session.ActiveProfile!.Bindings.Single(b =>
+            b.Action == PerformanceActionKind.MixerCrossfade && b.InputMode == ActionInputMode.Relative);
+        Assert.Equal(RelativeEncoding.OffsetBinary, learned.Relative);
+    }
+
+    [Fact]
     public async Task RemoveBinding_UpdatesLiveProfileAndPersists()
     {
         _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");

@@ -24,7 +24,8 @@ public interface IMidiControlSession : IMidiControlStatus
         string? argument = null,
         ActionInputMode? preferredInputMode = null,
         double relativeTicksPerRevolution = 1.0,
-        bool invert = false);
+        bool invert = false,
+        RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement);
 
     void CancelLearn();
 

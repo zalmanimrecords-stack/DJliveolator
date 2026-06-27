@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Liveolator.Core.Persistence;
 
 namespace Liveolator.Media;
@@ -19,10 +18,10 @@ public sealed record LiveSetSnapshot(int Version, IReadOnlyList<string> TrackPat
 public sealed class JsonLiveSetStore : ILiveSetStore
 {
     private const string DefaultFileName = "current-set.json";
-    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
     private readonly string _path;
     private readonly Action<string>? _onWarning;
+    private readonly JsonFileSnapshotIo _io;
 
     public JsonLiveSetStore(
         string? rootDirectory = null, Action<string>? onWarning = null, string fileName = DefaultFileName)
@@ -30,6 +29,7 @@ public sealed class JsonLiveSetStore : ILiveSetStore
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         _path = System.IO.Path.Combine(rootDirectory ?? JsonCatalogStore.DefaultRoot(), "live", fileName);
         _onWarning = onWarning;
+        _io = new JsonFileSnapshotIo(onWarning);
     }
 
     /// <summary>The full path of the JSON file holding the set.</summary>
@@ -37,46 +37,26 @@ public sealed class JsonLiveSetStore : ILiveSetStore
 
     public async Task<IReadOnlyList<string>?> LoadAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(_path))
-            return null;
-
-        LiveSetSnapshot? snapshot;
-        try
-        {
-            await using var stream = new FileStream(_path, FileMode.Open, FileAccess.Read);
-            snapshot = await JsonSerializer.DeserializeAsync<LiveSetSnapshot>(
-                stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
-        {
-            _onWarning?.Invoke($"Live set file at '{_path}' is unreadable ({ex.Message}); ignoring.");
-            return null;
-        }
-
+        LiveSetSnapshot? snapshot = await _io.LoadAsync<LiveSetSnapshot>(_path, cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return null;
 
         if (snapshot.Version != LiveSetSnapshot.CurrentVersion)
         {
-            _onWarning?.Invoke(
-                $"Live set is version {snapshot.Version} (expected {LiveSetSnapshot.CurrentVersion}); ignoring.");
+            _io.WarnVersionMismatch(_path, snapshot.Version, LiveSetSnapshot.CurrentVersion);
             return null;
         }
 
         return snapshot.TrackPaths;
     }
 
-    public async Task SaveAsync(IReadOnlyList<string> trackPaths, CancellationToken cancellationToken = default)
+    public Task SaveAsync(IReadOnlyList<string> trackPaths, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(trackPaths);
 
-        string directory = System.IO.Path.GetDirectoryName(_path)!;
-        System.IO.Directory.CreateDirectory(directory);
-        string tempPath = _path + ".tmp";
+        // Atomic temp-then-move via the shared helper (unique temp name + SemaphoreSlim gate), so the
+        // fire-and-forget autosave on every queue edit can't race two writes onto one temp path (doc 31 H1).
         var snapshot = new LiveSetSnapshot(LiveSetSnapshot.CurrentVersion, trackPaths.ToList());
-
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, _path, overwrite: true);
+        return _io.SaveAsync(_path, snapshot, cancellationToken);
     }
 }

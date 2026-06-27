@@ -82,7 +82,8 @@ public sealed class MappingsViewModelLearnHintTests
             string? argument = null,
             ActionInputMode? preferredInputMode = null,
             double relativeTicksPerRevolution = 1.0,
-            bool invert = false)
+            bool invert = false,
+            RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
         { }
 
         public void CancelLearn() { }

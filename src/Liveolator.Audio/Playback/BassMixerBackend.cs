@@ -412,7 +412,7 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
 
     public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
-        var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot), _logger, slot);
+        var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot));
 
         // Remember the deck's natural sample rate (read from the raw source) so SetDeckRate can express
         // vinyl pitch as a multiple of it.

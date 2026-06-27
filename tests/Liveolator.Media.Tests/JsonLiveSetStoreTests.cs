@@ -90,4 +90,26 @@ public class JsonLiveSetStoreTests
         Assert.True(File.Exists(store.Path));
         Assert.False(File.Exists(store.Path + ".tmp"));
     }
+
+    [Fact]
+    public async Task ConcurrentSaves_DoNotRaceOrThrow_AndLeaveAValidFile()
+    {
+        // Mirrors the autosave-on-every-queue-edit call site (ServiceConfig): rapid edits fire
+        // overlapping SaveAsync calls. A fixed temp path + no gate races on the temp file; the
+        // gated, unique-temp path must serialize cleanly and never leave a corrupt or temp file.
+        using var dir = new TempDirectory();
+        var store = new JsonLiveSetStore(dir.Path);
+
+        var saves = Enumerable.Range(0, 40)
+            .Select(i => store.SaveAsync(new[] { $"/m/{i}.wav" }))
+            .ToArray();
+        await Task.WhenAll(saves);
+
+        IReadOnlyList<string>? loaded = await store.LoadAsync();
+        Assert.NotNull(loaded);
+        Assert.Single(loaded!);
+        Assert.False(File.Exists(store.Path + ".tmp"));
+        Assert.Empty(System.IO.Directory.GetFiles(
+            System.IO.Path.GetDirectoryName(store.Path)!, "*.tmp"));
+    }
 }

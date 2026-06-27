@@ -7,7 +7,7 @@ namespace Liveolator.App.Layout;
 /// overflowed short wide screens (e.g. 1920×1080) and crushed the console.
 ///
 /// Laptop tiers collapse the browser (the console needs the height to stay one-screen; digging happens on
-/// the LIBRARIES tab). Wide/Ultra open a generous Rekordbox-style bottom band that fills the otherwise-empty
+/// the LIBRARIES tab). Wide/Ultra open a generous bottom browser band that fills the otherwise-empty
 /// space on a big screen.
 /// </summary>
 public static class DjBrowserLayout

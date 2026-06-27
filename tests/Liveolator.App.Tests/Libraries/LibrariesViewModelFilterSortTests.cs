@@ -84,8 +84,31 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
         Assert.Contains("mp3", vm.FileTypes);
         // The "(All)" sentinels lead each list so a fresh tab shows everything.
         Assert.Null(vm.SelectedArtist);
+        // Short clips (<1 min) are now visible by default — the old hard floor hid them silently (doc 31 H2).
+        Assert.Equal(5, vm.Tracks.Count);
+        Assert.Contains(vm.Tracks, row => row.Track.File.Path.EndsWith("short.mp3"));
+    }
+
+    [Fact]
+    public async Task Short_clips_are_shown_by_default_and_counted()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        Assert.True(vm.ShowShortClips);
+        Assert.Equal(1, vm.ShortClipCount); // short.mp3 is the only sub-minute track
+        Assert.Contains(vm.Tracks, row => row.Track.File.Path.EndsWith("short.mp3"));
+    }
+
+    [Fact]
+    public async Task Hiding_short_clips_excludes_them_but_keeps_the_count_visible()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        vm.ShowShortClips = false;
+
         Assert.Equal(4, vm.Tracks.Count);
         Assert.DoesNotContain(vm.Tracks, row => row.Track.File.Path.EndsWith("short.mp3"));
+        Assert.Equal(1, vm.ShortClipCount); // still reported, so the exclusion is never silent
     }
 
     [Fact]
@@ -141,12 +164,13 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
 
         vm.SortKey = TrackSortKey.Bpm;
         vm.SortDescending = false;
-        Assert.Equal(new[] { 90.0, 122.0, 128.0 }, vm.Tracks.Where(t => t.Track.Bpm is not null).Select(t => t.Track.Bpm!.Bpm));
+        // short.mp3 (128) is now visible too (doc 31 H2), so 128 appears twice.
+        Assert.Equal(new[] { 90.0, 122.0, 128.0, 128.0 }, vm.Tracks.Where(t => t.Track.Bpm is not null).Select(t => t.Track.Bpm!.Bpm));
         // the keyless/BPM-less failed track sorts last
         Assert.Null(vm.Tracks[^1].Track.Bpm);
 
         vm.SortDescending = true;
-        Assert.Equal(new[] { 128.0, 122.0, 90.0 }, vm.Tracks.Where(t => t.Track.Bpm is not null).Select(t => t.Track.Bpm!.Bpm));
+        Assert.Equal(new[] { 128.0, 128.0, 122.0, 90.0 }, vm.Tracks.Where(t => t.Track.Bpm is not null).Select(t => t.Track.Bpm!.Bpm));
         Assert.Null(vm.Tracks[^1].Track.Bpm); // still last, even descending
     }
 
@@ -159,7 +183,7 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
         vm.SortDescending = false;
 
         Assert.Equal(
-            new[] { "/music/c.mp3", "/music/d.flac", "/music/b.wav", "/music/a.mp3" },
+            new[] { "/music/short.mp3", "/music/c.mp3", "/music/d.flac", "/music/b.wav", "/music/a.mp3" },
             vm.Tracks.Select(t => t.Track.File.Path));
     }
 
@@ -176,6 +200,6 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
         Assert.Null(vm.SelectedArtist);
         Assert.Null(vm.SelectedStatus);
         Assert.True(string.IsNullOrEmpty(vm.SearchText));
-        Assert.Equal(4, vm.Tracks.Count);
+        Assert.Equal(5, vm.Tracks.Count); // short clips visible by default (doc 31 H2)
     }
 }

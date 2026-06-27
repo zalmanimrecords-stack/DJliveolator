@@ -147,7 +147,7 @@ public enum PerformanceActionKind
     /// <summary>
     /// Set a deck's GRID tempo — the analyzed base BPM the beat grid is drawn from and Sync references
     /// (Slot = A/B, Value = BPM). Used to hand-correct an inaccurate auto-detected tempo so the grid lands
-    /// on the kicks (the rekordbox/Serato "grid edit"). Distinct from <see cref="DeckBpm"/>, which changes
+    /// on the kicks (a "grid edit"). Distinct from <see cref="DeckBpm"/>, which changes
     /// the AUDIBLE pitch: a grid edit must NOT alter the playing pitch. Pairs with <see cref="DeckSetFirstBeat"/>
     /// (slide the grid to the playhead) and is persisted to the catalog as a manual beat grid.
     /// </summary>
@@ -189,7 +189,7 @@ public enum PerformanceActionKind
     /// Set a deck's DOWNBEAT (the musical "one", beat 1 of the bar): Slot = A/B, Value = offset in seconds
     /// from track start. Where <see cref="DeckSetFirstBeat"/> fixes the BEAT phase (where beats land, mod one
     /// beat), this fixes the BAR phase (which beat is the bar start) so the waveform's red bar markers sit on
-    /// the one — the rekordbox/Serato "set the downbeat". Display/grid-level only: it moves the bar emphasis,
+    /// the one — a "set the downbeat". Display/grid-level only: it moves the bar emphasis,
     /// never a beat line or the audible pitch. Echoed as feedback so a deck UI can re-anchor its bars.
     /// </summary>
     DeckSetDownbeat,

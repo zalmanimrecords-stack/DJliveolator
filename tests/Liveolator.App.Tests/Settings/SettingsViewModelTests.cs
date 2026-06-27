@@ -131,7 +131,8 @@ public sealed class SettingsViewModelTests
             string? argument = null,
             ActionInputMode? preferredInputMode = null,
             double relativeTicksPerRevolution = 1.0,
-            bool invert = false)
+            bool invert = false,
+            RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
             => IsLearnArmed = true;
 
         public void CancelLearn() => IsLearnArmed = false;

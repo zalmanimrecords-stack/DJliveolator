@@ -2,8 +2,8 @@ namespace Liveolator.Core.Audio.Sync;
 
 /// <summary>
 /// The continuous phase-lock control law behind professional Sync (doc 11) — the piece that keeps a
-/// synced (slave) deck beat-locked to the master <em>over time</em>, the way Rekordbox/Traktor/Serato
-/// hold a mix. Tempo match (<see cref="TempoSyncCalculator"/>) makes the two decks the same speed and
+/// synced (slave) deck beat-locked to the master <em>over time</em>, the way a pro DJ rig holds a mix.
+/// Tempo match (<see cref="TempoSyncCalculator"/>) makes the two decks the same speed and
 /// the one-shot phase snap (<see cref="PhaseAlignmentCalculator.PhaseNudgeSeconds"/>) lands them in
 /// phase, but sample-rate resampling and floating-point arithmetic let them drift apart over minutes.
 /// This controller closes the loop: each tick it measures the residual beat-phase error and applies a

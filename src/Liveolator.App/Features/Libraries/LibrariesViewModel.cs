@@ -51,6 +51,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private int? _selectedYear;
     private string? _selectedFileType;
     private MediaAnalysisStatus? _selectedStatus;
+    private bool _showShortClips = true;
+    private int _shortClipCount;
     private TrackSortKey _sortKey = TrackSortKey.Title;
     private bool _sortDescending;
     private bool _suppressFilter;
@@ -187,6 +189,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 this.WhenAnyValue(x => x.SelectedYear).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedFileType).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedStatus).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.ShowShortClips).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SortKey).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SortDescending).Select(_ => Unit.Default))
             .Subscribe(_ => ApplyFilter());
@@ -333,6 +336,24 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get => _selectedStatus;
         set => this.RaiseAndSetIfChanged(ref _selectedStatus, value);
+    }
+
+    /// <summary>
+    /// Shows tracks under one minute (edits, stings, acapellas, loops). Default true — a hard floor used
+    /// to hide them with no affordance, so DJs couldn't find their short material (doc 31 H2). Unchecking
+    /// hides them; <see cref="ShortClipCount"/> reports how many so the exclusion is never silent.
+    /// </summary>
+    public bool ShowShortClips
+    {
+        get => _showShortClips;
+        set => this.RaiseAndSetIfChanged(ref _showShortClips, value);
+    }
+
+    /// <summary>How many catalogued tracks are under one minute — surfaced next to the toggle.</summary>
+    public int ShortClipCount
+    {
+        get => _shortClipCount;
+        private set => this.RaiseAndSetIfChanged(ref _shortClipCount, value);
     }
 
     /// <summary>The column the track list is ordered by.</summary>
@@ -1092,7 +1113,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             Year: SelectedYear,
             FileType: SelectedFileType,
             Status: SelectedStatus,
-            MinDuration: MinimumVisibleDuration);
+            MinDuration: ShowShortClips ? null : MinimumVisibleDuration);
 
         IReadOnlyList<MusicTrack> filtered = TrackQuery.Apply(rowByTrack.Keys, filter, TrackQuery.MaxResults);
         IReadOnlyList<MusicTrack> ordered = TrackSort.Apply(filtered, SortKey, SortDescending);
@@ -1107,6 +1128,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     // scheduler (mutates ObservableCollections); callers already marshal there.
     private void RebuildFacets()
     {
+        ShortClipCount = _all.Count(r => r.Track.Duration is { } d && d < MinimumVisibleDuration);
+
         TrackFacets facets = TrackFacets.Of(_all.Select(r => r.Track));
         Replace(Artists, facets.Artists);
         Replace(Genres, facets.Genres);

@@ -48,6 +48,13 @@ public sealed partial class TwoDeckBassEngine
             if (s.HotCues[cueIndex] is { } cue)
             {
                 _backend.SetDeckPositionFraction(deck.Handle, cue.Fraction); // jump to the stored cue
+                // Play-on-jump (doc 31 H3): the standard CDJ behaviour — hitting a hot cue on a paused
+                // deck jumps to the cue AND drops the track. A playing deck just continues from the cue.
+                if (!deck.Playing)
+                {
+                    _backend.SetDeckPlaying(deck.Handle, true);
+                    s.Deck = deck = deck with { Playing = true };
+                }
                 // Pressing a suggested (auto) cue commits it to a manual cue, keeping its position, label
                 // and color — the owner's "suggested → commit" rule (2026-06-19). Re-analysis then preserves
                 // it verbatim instead of overwriting it. Only persist when the commit actually changed it.

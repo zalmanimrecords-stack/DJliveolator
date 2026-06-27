@@ -31,6 +31,36 @@
 
 ---
 
+> **Update (2026-06-27, same day) — fix wave landed (TDD-first).** All three verified High bugs +
+> both verified Mediums + the cheap Lows + the dead-code cleanup are fixed and green:
+> **H1** `JsonLiveSetStore` now routes through `JsonFileSnapshotIo` (gated unique-temp; new overlapping-save
+> test); **H2** short clips show by default with a `ShowShortClips` toggle + `ShortClipCount`; **H3** hot
+> cues play-on-jump from a paused deck; **M2** `RelativeEncoding` threads through MIDI learn end-to-end
+> (seam + a Mappings encoding picker); **L1** `ApplyOnlineDetails` preserves `DownbeatSeconds`; **L2** it
+> stamps `AnalyzerVersion` so enriched tracks leave the pending queue; **L4** BPM editor clamped to 40–300;
+> **L5** MCP lookups use `TryGetByPathOrName`; **cleanup** removed the DIAG mixer-leak probe + `SetDeckGain`
+> DIAG log + the `[MIDI-RAW]` TEMP log. Suites green: Core 1324, Audio 241, Media 197, App 800 (Mcp build
+> blocked only by a running server lock; its change compiles + tests build clean). **Still open (need an
+> owner decision, coupled):** **M1** App↔MCP cross-process catalog race and **L3** resampler anti-alias,
+> both best resolved alongside the **SQLite catalog store** (step 10) — see "next 10 steps".
+
+> **Update (2026-06-27) — SQLite catalog store, Phase A landed (owner chose SQLite as the full fix for M1).**
+> `SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore` (`Liveolator.Media`, WAL mode, no new
+> dependency — `Microsoft.Data.Sqlite` already present). Tracks are stored one row per path as a JSON
+> blob tagged with the catalog schema version; **`SaveMusicAsync` is upsert-only in one transaction**, so
+> the App and MCP can share one `catalog.db` without last-writer-wins clobbering each other's rows — the
+> M1 race fix at the source, proved by a two-instances-on-one-DB test. Folder lists + visual assets also
+> covered. **9 tests green.** Schema design choice (per owner): blob-hybrid (not fully normalized) — zero
+> per-field migration when `MusicTrack` evolves; indexed query columns deferred until a SQL-query path exists.
+>
+> **Integration still to do (Phases B–D), needs runtime verification (app + MCP server) before going live:**
+> (B) add `DeleteTrackAsync` to the `IMusicCatalogStore` seam + wire every removal — incl. **scan-detected
+> removals, which `ScanAsync` does not surface** (compute removed = before−after in the App and delete
+> explicitly, since upsert-only no longer drops missing rows); (C) one-time JSON→SQLite migration on first
+> load so the existing ~1000-track catalog isn't lost; (D) swap the DI registration in App `ServiceConfig`
+> + MCP `ServiceRegistration` from `JsonCatalogStore` to `SqliteCatalogStore`. The store is not wired into
+> DI yet, so current runtime behavior is unchanged (zero risk until B–D land and are verified).
+
 ## Headline verdict
 
 The **music library is the most mature, end-to-end-wired subsystem in the app.** Core scan/catalog

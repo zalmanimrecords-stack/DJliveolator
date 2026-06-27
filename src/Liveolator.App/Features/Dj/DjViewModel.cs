@@ -55,7 +55,7 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
         _ownsDecks = decks is null;
         _decks = decks ?? new PerformanceDeckSet(dispatcher, waveformProvider, library);
-        // DJ-tab track browser (the Rekordbox-style bottom half): a focused view over the SAME catalog,
+        // DJ-tab track browser (the bottom-half browser): a focused view over the SAME catalog,
         // independent of the LIBRARIES tab, with no scan/import surface. Only when a catalog is wired.
         Browser = library is null
             ? null

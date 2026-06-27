@@ -11,7 +11,7 @@ using Avalonia.Media.Immutable;
 namespace Liveolator.App.Controls;
 
 /// <summary>
-/// The deck waveform strip — a VirtualDJ-style view: a layered, kick-forward 3-band waveform in the top
+/// The deck waveform strip — a layered, kick-forward 3-band waveform in the top
 /// region (blue/cyan high-band caps in back, the green mid band as the body, and the red low/kick band
 /// drawn LAST in a bright glow — the transient anchor a DJ beat-aligns by eye), over a dedicated CBG
 /// "comb" strip pinned to the bottom that carries the beat marking (short grey beat teeth + broad red
@@ -40,24 +40,24 @@ public sealed class WaveformStrip : Control
             nameof(GridBrush), new ImmutableSolidColorBrush(Color.FromArgb(0x40, 0xE8, 0xEE, 0xF6)));
 
     /// <summary>Brush for the low-frequency (kick/bass) band — the FRONT layer, drawn last as a bright
-    /// RED halo+core glow over the body (VirtualDJ's bass-is-red scheme), so the kick transients pop and
+    /// RED halo+core glow over the body (the bass-is-red scheme), so the kick transients pop and
     /// a DJ can align downbeats by eye for sync.</summary>
     public static readonly StyledProperty<IBrush> KickBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(KickBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE2, 0x3B, 0x2E)));
 
-    /// <summary>Brush for the mid band — the waveform body (VirtualDJ green), behind the kick layer.</summary>
+    /// <summary>Brush for the mid band — the waveform body (green), behind the kick layer.</summary>
     public static readonly StyledProperty<IBrush> MidBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(MidBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x39, 0xC2, 0x4A)));
 
     /// <summary>Brush for the high band — thin blue/cyan caps in the back layer ("air"/hat texture, the
-    /// VirtualDJ treble colour). The translucency rides in the colour's alpha so theme overrides keep it.</summary>
+    /// treble colour). The translucency rides in the colour's alpha so theme overrides keep it.</summary>
     public static readonly StyledProperty<IBrush> HighBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(HighBrush), new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x36, 0xA6, 0xE8)));
 
-    /// <summary>Brush for the playhead — a crisp near-white vertical line (VirtualDJ-style), drawn over
+    /// <summary>Brush for the playhead — a crisp near-white vertical line, drawn over
     /// the wave and the beat comb.</summary>
     public static readonly StyledProperty<IBrush> PlayheadBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
@@ -70,20 +70,20 @@ public sealed class WaveformStrip : Control
             nameof(BeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x8E, 0x9A, 0xA8)));
 
     /// <summary>Brush for the downbeat (bar-start) blocks in the bottom CBG comb — a broad red tooth
-    /// every fourth beat (VirtualDJ's "beginning of a measure" marker).</summary>
+    /// every fourth beat (the "beginning of a measure" marker).</summary>
     public static readonly StyledProperty<IBrush> DownbeatBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(DownbeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE5, 0x40, 0x3A)));
 
     /// <summary>When <c>true</c>, the CBG beat comb is drawn at the TOP of the strip instead of the bottom.
     /// The lower deck in a stacked pair sets this so the two decks' beat markers sit ADJACENT — meeting in
-    /// the middle between the strips (the VirtualDJ combined-waveform read), not split to the outer edges.</summary>
+    /// the middle between the strips (the combined-waveform read), not split to the outer edges.</summary>
     public static readonly StyledProperty<bool> CombAtTopProperty =
         AvaloniaProperty.Register<WaveformStrip, bool>(nameof(CombAtTop));
 
     /// <summary>When <c>true</c>, the waveform is drawn FOLDED (single-sided) to a baseline at the comb edge
     /// and grows AWAY from the comb, instead of the default centred (symmetric) bars. A stacked pair with
-    /// the lower deck's comb on top then forms the VirtualDJ combined "butterfly": the upper deck grows up,
+    /// the lower deck's comb on top then forms the combined "butterfly": the upper deck grows up,
     /// the lower deck grows down, mirroring around the shared central comb.</summary>
     public static readonly StyledProperty<bool> FoldedProperty =
         AvaloniaProperty.Register<WaveformStrip, bool>(nameof(Folded));
@@ -229,7 +229,7 @@ public sealed class WaveformStrip : Control
         // that scrolls as Progress advances (follow). All overlays use the same window so they stay aligned.
         (double start, double span) = VisibleWindow(Progress, ZoomWindow);
 
-        // VirtualDJ layout: the waveform body sits clean, and the beat marking lives in a dedicated CBG comb
+        // Combined-waveform layout: the waveform body sits clean, and the beat marking lives in a dedicated CBG comb
         // strip. The comb is normally pinned to the BOTTOM; the lower deck flips it to the TOP (CombAtTop) so
         // the two stacked decks' beat markers sit ADJACENT, meeting in the middle (the combined-view read).
         double combH = CombHeight(b.Height);
@@ -316,7 +316,7 @@ public sealed class WaveformStrip : Control
     /// fixed index 0 — so the red bars sit on the musical one rather than on whatever beat the grid starts on.</summary>
     private const int BeatsPerBar = 4;
 
-    // The CBG comb (VirtualDJ-style beat marking): a row of bottom-anchored teeth in the comb strip.
+    // The CBG comb (beat marking): a row of bottom-anchored teeth in the comb strip.
     // Regular beats are short faint grey blocks; every 4th (a bar downbeat) is a broad red block running
     // the full comb height, with a soft halo. Adaptive — teeth too dense to read are skipped, so the comb
     // is empty in the whole-track overview and resolves into downbeats, then every beat, as the strip

@@ -36,11 +36,9 @@ public partial class TrackEditorWindow : Window
 
     private void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (!double.TryParse(
-                BpmBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double bpm)
-            || bpm <= 0)
+        if (!BpmInput.TryParse(BpmBox.Text, out double bpm))
         {
-            ErrorText.Text = "Enter a positive BPM.";
+            ErrorText.Text = $"Enter a BPM between {BpmInput.Min:0} and {BpmInput.Max:0}.";
             return;
         }
 

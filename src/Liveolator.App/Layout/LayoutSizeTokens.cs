@@ -39,7 +39,7 @@ public static class LayoutSizeTokens
 
     /// <summary>
     /// Waveform strip height per tier. This uses a STEEPER curve than the uniform control scale: tall
-    /// full-width waveforms are the signature "pro DJ" filler (Rekordbox/Serato), so on big screens they
+    /// full-width waveforms are the signature "pro DJ" filler, so on big screens they
     /// grow much more than a knob does, which is what makes a 2-deck console read as full rather than sparse.
     /// </summary>
     private static double WaveformHeight(LayoutSizeClass cls) => cls switch

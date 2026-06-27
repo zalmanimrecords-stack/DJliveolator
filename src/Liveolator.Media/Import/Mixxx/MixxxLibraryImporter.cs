@@ -22,7 +22,7 @@ public sealed class MixxxLibraryImporter : IFolderLibraryImporter
     // Fallback sample rate for converting cue sample-offsets when a track row has no stored samplerate.
     private const int DefaultSampleRate = 44_100;
 
-    // Mixxx CueType (from cueinfo.h): 1 = HotCue, 2 = MainCue. Others (Loop/Intro/Outro/…) are skipped.
+    // CueType values stored in the DB: 1 = HotCue, 2 = MainCue. Others (Loop/Intro/Outro/…) are skipped.
     private const int CueTypeHotCue = 1;
     private const int CueTypeMainCue = 2;
 

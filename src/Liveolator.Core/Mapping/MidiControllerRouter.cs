@@ -35,11 +35,6 @@ public sealed class MidiControllerRouter : IDisposable
         if (message is null)
             return;
 
-        // TEMP (doc 27 jog diagnostic — REMOVE after capture): log every raw inbound MIDI message so we
-        // can see exactly what the CMD STUDIO 2A jog sends (CC#, data2 stream) and decode it correctly.
-        _logger.LogInformation("[MIDI-RAW] {Type} ch{Channel} d1={Data1} d2={Data2}",
-            message.Type, message.Channel, message.Data1, message.Data2);
-
         try
         {
             // During learn we capture the control rather than acting on it.

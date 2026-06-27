@@ -38,7 +38,7 @@ public static class BuiltInUiThemes
                 ["AmberColor"] = "#2F80F6",
                 ["VioletColor"] = "#2F80F6",
                 ["MidiActiveColor"] = "#29C467",
-                // Waveform = the VirtualDJ 3-band scheme (mirrors App.axaml; owner-requested, 2026-06-19):
+                // Waveform = the 3-band scheme (mirrors App.axaml; owner-requested, 2026-06-19):
                 // red low/kick, green mid, blue/cyan high. WaveformColor is only the broadband fallback body.
                 ["WaveformColor"] = "#2F80F6",
                 ["KickColor"] = "#E23B2E",
@@ -79,7 +79,7 @@ public static class BuiltInUiThemes
                 ["AmberColor"] = "#D78A16",
                 ["VioletColor"] = "#9E6A9A",
                 ["MidiActiveColor"] = "#78B34D",
-                // Waveform = the VirtualDJ 3-band scheme, consistent across themes (owner-requested,
+                // Waveform = the 3-band scheme, consistent across themes (owner-requested,
                 // 2026-06-19). WaveformColor (broadband fallback body) keeps the brass tint.
                 ["WaveformColor"] = "#E89A18",
                 ["KickColor"] = "#E23B2E",

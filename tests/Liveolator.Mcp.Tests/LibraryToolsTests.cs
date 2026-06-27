@@ -51,6 +51,18 @@ public sealed class LibraryToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task GetTrack_FindsCatalogedTrack_ByFileName_WhenPathFormDiffers()
+    {
+        // An agent often has a differently-spelled path (mapped drive S:\ vs the UNC share). The exact
+        // path misses, but a file-name fallback recovers the catalogued track (doc 31 L5).
+        LibrarySession session = await CreateSessionAsync(Track("a.mp3", "Alpha", "DJ One", 120));
+
+        TrackInfo info = await LibraryTools.GetTrack(session, @"\\server\share\a.mp3");
+
+        Assert.Equal("Alpha", info.Title);
+    }
+
+    [Fact]
     public async Task ReanalyzeTrack_RejectsUnknownCatalogPath()
     {
         LibrarySession session = await CreateSessionAsync();

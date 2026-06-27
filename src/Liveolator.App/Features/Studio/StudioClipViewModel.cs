@@ -105,7 +105,7 @@ public sealed class StudioClipViewModel : ViewModelBase
     /// <summary>
     /// Drag the clip's left (head) edge by <paramref name="timelineDeltaSeconds"/>: trims the source-in and
     /// shifts the start by the same amount of time so the rest of the clip stays anchored where it sits
-    /// (rekordbox/Ableton head-trim). The source moves by the warp factor (source seconds per timeline
+    /// (a clip head-trim). The source moves by the warp factor (source seconds per timeline
     /// second). Clamped so the head can't pass the tail or go before the file start. VM-driven (one undo
     /// snapshot is taken at the drag's start), so it writes fields directly.
     /// </summary>

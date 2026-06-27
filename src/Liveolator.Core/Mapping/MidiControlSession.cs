@@ -178,12 +178,15 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
         string? argument = null,
         ActionInputMode? preferredInputMode = null,
         double relativeTicksPerRevolution = 1.0,
-        bool invert = false)
+        bool invert = false,
+        RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
     {
         if (!IsInputConnected)
             throw new InvalidOperationException("A MIDI input must be connected before learning a control.");
 
-        _learn.Begin(action, slot, argument, preferredInputMode, relativeTicksPerRevolution, invert);
+        // Forward the encoder encoding so a learned endless encoder using offset-binary / sign-magnitude
+        // is captured correctly instead of always defaulting to two's-complement (doc 31 M2).
+        _learn.Begin(action, slot, argument, preferredInputMode, relativeTicksPerRevolution, invert, relativeEncoding);
     }
 
     public void CancelLearn() => _learn.Cancel();

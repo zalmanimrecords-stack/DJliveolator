@@ -6,8 +6,8 @@ namespace Liveolator.Core.Waveform;
 /// A stateful biquad section over the shared RBJ designs in <see cref="MixerMath"/> (Butterworth Q),
 /// used to split the waveform overview into low/mid/high bands. A time-domain filter — not an FFT —
 /// on purpose: it runs sample-serially with no window, so a kick's attack lands in exactly the right
-/// bucket instead of being smeared across an analysis window (the same reason Mixxx/Serato band their
-/// waveforms with filters). One instance per band per build, never shared. The realtime EQ keeps its
+/// bucket instead of being smeared across an analysis window (the reason time-aligned waveforms are
+/// banded with filters rather than an FFT). One instance per band per build, never shared. The realtime EQ keeps its
 /// own per-channel state in the audio binding (<c>StatefulBiquad</c>) — this one is offline/analysis.
 /// </summary>
 public sealed class BiquadFilter

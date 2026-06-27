@@ -51,8 +51,31 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     public MappingTargetViewModel? SelectedTarget
     {
         get => _selectedTarget;
-        set => this.RaiseAndSetIfChanged(ref _selectedTarget, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedTarget, value);
+            this.RaisePropertyChanged(nameof(SelectedTargetIsRelative));
+        }
     }
+
+    /// <summary>The encoder encodings a relative target can be learned with (the View shows this picker
+    /// only for a relative target). Most devices use two's-complement; offset-binary / sign-magnitude
+    /// must be selectable so a learned encoder scrubs the right way (doc 31 M2).</summary>
+    public IReadOnlyList<RelativeEncoding> RelativeEncodingOptions { get; } =
+        Enum.GetValues<RelativeEncoding>();
+
+    private RelativeEncoding _selectedRelativeEncoding = RelativeEncoding.TwosComplement;
+
+    /// <summary>The encoding applied when learning the selected relative target.</summary>
+    public RelativeEncoding SelectedRelativeEncoding
+    {
+        get => _selectedRelativeEncoding;
+        set => this.RaiseAndSetIfChanged(ref _selectedRelativeEncoding, value);
+    }
+
+    /// <summary>True when the selected target is a relative encoder, so the View can reveal the encoding picker.</summary>
+    public bool SelectedTargetIsRelative =>
+        SelectedTarget?.PreferredInputMode == ActionInputMode.Relative;
 
     public MappingBindingViewModel? SelectedBinding
     {
@@ -109,7 +132,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
                 argument: SelectedTarget.Argument,
                 preferredInputMode: SelectedTarget.PreferredInputMode,
                 relativeTicksPerRevolution: SelectedTarget.RelativeTicksPerRevolution,
-                invert: SelectedTarget.Invert);
+                invert: SelectedTarget.Invert,
+                relativeEncoding: SelectedRelativeEncoding);
             Status = $"Learning {SelectedTarget.Label}: move or press the control now.";
         }
         catch (InvalidOperationException ex)

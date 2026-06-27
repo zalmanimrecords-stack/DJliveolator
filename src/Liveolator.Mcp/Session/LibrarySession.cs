@@ -143,14 +143,18 @@ public sealed class LibrarySession
         finally { _gate.Release(); }
     }
 
-    /// <summary>Looks up one track by exact path (case-insensitive).</summary>
+    /// <summary>
+    /// Looks up one track by exact path, falling back to a file-name match — so an agent that passes a
+    /// differently-spelled path (mapped drive S:\ vs the UNC share) still finds a catalogued track, the
+    /// same resilience the App's UI uses (doc 31 L5).
+    /// </summary>
     public async Task<MusicTrack?> GetAsync(string path, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            return _library.TryGet(path);
+            return _library.TryGetByPathOrName(path);
         }
         finally { _gate.Release(); }
     }
@@ -163,16 +167,19 @@ public sealed class LibrarySession
         try
         {
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            if (_library.TryGet(path) is null)
+            // Resolve the agent's path to the catalogued track first (path-or-name), then re-analyze by
+            // its canonical path so the inner exact-path lookup hits (doc 31 L5).
+            if (_library.TryGetByPathOrName(path) is not { } track)
                 return null;
+            string canonical = track.File.Path;
 
             if (force)
-                await _library.ForceReanalyzeAsync(path, cancellationToken).ConfigureAwait(false);
+                await _library.ForceReanalyzeAsync(canonical, cancellationToken).ConfigureAwait(false);
             else
-                await _library.ReanalyzeAsync(path, cancellationToken).ConfigureAwait(false);
+                await _library.ReanalyzeAsync(canonical, cancellationToken).ConfigureAwait(false);
 
             await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
-            return _library.TryGet(path);
+            return _library.TryGet(canonical);
         }
         finally { _gate.Release(); }
     }
@@ -207,7 +214,7 @@ public sealed class LibrarySession
         try
         {
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-            MusicTrack? seed = _library.TryGet(path);
+            MusicTrack? seed = _library.TryGetByPathOrName(path); // path-or-name resilience (doc 31 L5)
             return seed is null ? null : (seed, _library.HarmonicMatches(seed));
         }
         finally { _gate.Release(); }

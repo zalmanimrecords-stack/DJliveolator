@@ -248,11 +248,13 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
 
         EnrichedBpm enriched =
             MetadataMergePolicy.MergeBpm(existing.Bpm, online.Bpm, existing.Status);
+        // Preserve the existing analysis record (FirstBeatSeconds, DownbeatSeconds, BeatsPerBar, …) and
+        // only override the value/confidence — rebuilding from the positional ctor silently dropped the
+        // v4 downbeat anchor on a cross-check of an already-analyzed track (doc 31 L1).
         Liveolator.Core.Analysis.Bpm.BpmResult? bpm = enriched.Bpm is { } value
-            ? new Liveolator.Core.Analysis.Bpm.BpmResult(
-                value,
-                enriched.Confidence,
-                existing.Bpm?.FirstBeatSeconds ?? 0)
+            ? (existing.Bpm is { } prior
+                ? prior with { Bpm = value, Confidence = enriched.Confidence }
+                : new Liveolator.Core.Analysis.Bpm.BpmResult(value, enriched.Confidence))
             : existing.Bpm;
 
         // Fill/replace a missing-or-weak key from the online result. Prefer an explicit Camelot code;
@@ -267,11 +269,18 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                 key = fromName;
         }
 
+        // When enrichment produced a usable tempo and lifted the track off Failed, stamp the current
+        // analyzer version so NeedsAnalysis stops flagging it — otherwise an enriched previously-Failed
+        // track churns in the pending queue forever and a later re-analysis overwrites the online data
+        // (doc 31 L2). A still-Failed/tempo-less result is left eligible.
+        bool enrichmentIsUsable = bpm is not null && enriched.Status != MediaAnalysisStatus.Failed;
+
         Upsert(existing with
         {
             Bpm = bpm,
             Key = key,
             Status = enriched.Status,
+            AnalyzerVersion = enrichmentIsUsable ? TrackAnalyzer.CurrentVersion : existing.AnalyzerVersion,
             Metadata = string.IsNullOrWhiteSpace(online.Genre)
                 ? existing.Metadata
                 : (existing.Metadata ?? TrackMetadata.Empty) with { Genre = online.Genre.Trim() },
