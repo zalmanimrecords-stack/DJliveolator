@@ -89,10 +89,12 @@
 > Online); only Mcp unverified (its `--stdio` servers lock its bin). Live feel of the deck/mixer gestures
 > (cue-play, EQ kill, loop resize) wants a real-hardware pass.
 >
-> **Still open** (need runtime verification or a decision): Push User-mode + colored LEDs (layering fork —
-> move `Push1Sysex` to Core vs a profile-activation seam); the Live-tab Off/Beat/Bar quantize toggle UI;
-> video/camera sources, VJ authoring, downbeat-anchored grid, Ableton Link (all L); the SQLite integration
-> Phases B–D.
+> **Push 1 is now complete** — `6d66945` User-mode on connect + `23c48fa` colored-LED feedback (which
+> turned out NOT to need a Core/Midi move: Push pads are colour-addressed by NoteOn velocity, so it's just
+> a `UsesColorFeedback` profile flag + lit/dim/off palette index in `MidiFeedbackPublisher`).
+> **Still open** (need a decision, hardware, or are L): multi-select + bulk library actions; video/camera
+> sources, VJ authoring, downbeat-anchored grid, Ableton Link (all L/GL); the SQLite integration Phases B–D;
+> a live-feel hardware pass of the deck/mixer gestures.
 
 ## Headline verdict
 
