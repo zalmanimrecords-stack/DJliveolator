@@ -81,8 +81,13 @@
 > `4cda002` loop halve/double (in-point pinned) · `73b3b1b` hot-cue clear/delete · `a9a0409` **press/release
 > on the action seam** (opt-in `ControllerBinding.ReportRelease` + `PerformanceAction.IsPressed`; zero
 > behavior change until a binding opts in) · `5e0550c` momentary EQ kill · `dc18040` cue-play preview
-> (press-and-hold). The seam unlocked the last two. Core 1346 / Audio 247 green. Live feel of the deck/
-> mixer gestures (cue-play, EQ kill, loop resize) wants a real-hardware pass.
+> (press-and-hold). The seam unlocked the last two. Then (app closed → full build verified): `b2e5ff0`
+> Live-tab Off/Beat/Bar launch-quantize toggle (beat-quantized visuals now complete end-to-end); `6d66945`
+> Push 1 User-mode on connect via a new profile-activation SysEx seam (`ControllerMappingProfile.ActivationSysEx`/
+> `DeactivationSysEx`, sent by `MidiControlSession`) so the Push's pads/encoders actually emit MIDI.
+> **Full build green: Core 1349 · Audio 247 · App 819 · Visuals 128 · Midi 44 · Integration 26** (+ Media/
+> Online); only Mcp unverified (its `--stdio` servers lock its bin). Live feel of the deck/mixer gestures
+> (cue-play, EQ kill, loop resize) wants a real-hardware pass.
 >
 > **Still open** (need runtime verification or a decision): Push User-mode + colored LEDs (layering fork —
 > move `Push1Sysex` to Core vs a profile-activation seam); the Live-tab Off/Beat/Bar quantize toggle UI;
