@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace Liveolator.App.Controls;
 
@@ -73,18 +74,27 @@ public class Jog : Control
     public static readonly StyledProperty<IBrush> BassTintBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(BassTintBrush), new SolidColorBrush(Color.FromRgb(0xE5, 0x54, 0x4A)));
 
+    /// <summary>When true (deck playing), the centre medusa turns like a record on a turntable.</summary>
+    public static readonly StyledProperty<bool> IsSpinningProperty =
+        AvaloniaProperty.Register<Jog, bool>(nameof(IsSpinning));
+
+    /// <summary>Spin tick interval — ~60 fps, smooth enough for the platter without churning the UI thread.</summary>
+    private static readonly TimeSpan SpinInterval = TimeSpan.FromMilliseconds(1000.0 / 60.0);
+
     private bool _dragging;
     private double _lastAngleRadians;
     private double _baseFraction;
     private double _accumulatedRadians;
     private double _scrubFraction;
+    private double _spinRadians;
+    private DispatcherTimer? _spinTimer;
 
     static Jog()
     {
         AffectsRender<Jog>(ProgressProperty, ArcBrushProperty, TrackBrushProperty,
             PlatterBrushProperty, MarkerBrushProperty, IsEnabledProperty,
             KickPeaksProperty, IsKickActiveProperty, GlowBrushProperty,
-            CenterImageProperty, BassTintBrushProperty);
+            CenterImageProperty, BassTintBrushProperty, IsSpinningProperty);
     }
 
     public Jog()
@@ -110,9 +120,60 @@ public class Jog : Control
     public IBrush GlowBrush { get => GetValue(GlowBrushProperty); set => SetValue(GlowBrushProperty, value); }
     public IImage? CenterImage { get => GetValue(CenterImageProperty); set => SetValue(CenterImageProperty, value); }
     public IBrush BassTintBrush { get => GetValue(BassTintBrushProperty); set => SetValue(BassTintBrushProperty, value); }
+    public bool IsSpinning { get => GetValue(IsSpinningProperty); set => SetValue(IsSpinningProperty, value); }
 
     private static double CoerceUnit(AvaloniaObject _, double value)
         => double.IsNaN(value) ? 0 : Math.Clamp(value, 0.0, 1.0);
+
+    private bool _attached;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _attached = true;
+        UpdateSpinTimer();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _attached = false;
+        UpdateSpinTimer();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsSpinningProperty || change.Property == IsEnabledProperty)
+            UpdateSpinTimer();
+    }
+
+    /// <summary>Runs the spin ticker only while the platter is on screen and the deck is playing, so a paused
+    /// or off-screen deck costs nothing on the UI thread.</summary>
+    private void UpdateSpinTimer()
+    {
+        bool shouldSpin = _attached && IsSpinning && IsEnabled;
+        if (shouldSpin)
+        {
+            _spinTimer ??= CreateSpinTimer();
+            _spinTimer.Start();
+        }
+        else
+        {
+            _spinTimer?.Stop();
+        }
+    }
+
+    private DispatcherTimer CreateSpinTimer()
+    {
+        var timer = new DispatcherTimer { Interval = SpinInterval };
+        timer.Tick += (_, _) =>
+        {
+            _spinRadians = AdvanceSpin(_spinRadians, SpinInterval.TotalSeconds);
+            InvalidateVisual();
+        };
+        return timer;
+    }
 
     /// <summary>Maps a drag (accumulated signed rotation, radians) onto an absolute 0..1 track fraction,
     /// relative to where the drag started. Clockwise (positive) advances; the result is clamped to the track.</summary>
@@ -120,6 +181,24 @@ public class Jog : Control
     {
         double turns = accumulatedRadians / (2.0 * Math.PI);
         return Math.Clamp(baseFraction + (turns * SeekTrackFractionPerTurn), 0.0, 1.0);
+    }
+
+    /// <summary>A 12" record spins at 33 1/3 RPM; the centre medusa turns at that real vinyl speed so the
+    /// platter reads like a turntable when the deck plays.</summary>
+    internal const double RecordRevolutionsPerSecond = 100.0 / 3.0 / 60.0;
+
+    /// <summary>Advances the medusa's spin angle (radians) by <paramref name="deltaSeconds"/> of playback at
+    /// record speed, wrapped into one revolution so it never grows without bound. Invalid input holds steady.</summary>
+    internal static double AdvanceSpin(double radians, double deltaSeconds)
+    {
+        if (double.IsNaN(radians))
+            radians = 0.0;
+        if (double.IsNaN(deltaSeconds) || deltaSeconds <= 0.0)
+            deltaSeconds = 0.0;
+
+        double turn = 2.0 * Math.PI;
+        double advanced = radians + (deltaSeconds * RecordRevolutionsPerSecond * turn);
+        return advanced % turn;
     }
 
     public override void Render(DrawingContext context)
@@ -234,10 +313,18 @@ public class Jog : Control
         var disc = new Rect(centre.X - radius, centre.Y - radius, radius * 2, radius * 2);
         using (context.PushGeometryClip(new EllipseGeometry(disc)))
         {
-            if (CenterImage is { } image)
-                context.DrawImage(image, disc);
-            else
-                DrawVectorMedusa(context, centre, radius, tint);
+            // While the deck plays the artwork turns about the disc centre like a record; the circular clip
+            // and bass wash are rotation-invariant, so only the medusa itself spins.
+            Matrix rotation = Matrix.CreateTranslation(-centre.X, -centre.Y)
+                * Matrix.CreateRotation(_spinRadians)
+                * Matrix.CreateTranslation(centre.X, centre.Y);
+            using (context.PushTransform(rotation))
+            {
+                if (CenterImage is { } image)
+                    context.DrawImage(image, disc);
+                else
+                    DrawVectorMedusa(context, centre, radius, tint);
+            }
 
             // Red wash on the bass — drawn over the artwork, clamped to the disc by the clip.
             if (tint > 0.001 && BassTintBrush is SolidColorBrush red)

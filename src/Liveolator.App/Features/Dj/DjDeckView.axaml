@@ -110,6 +110,7 @@
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       IsEnabled="{Binding IsEnabled}"
                       KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
+                      IsSpinning="{Binding IsPlaying}"
                       ToolTip.Tip="Drag the platter to seek — clockwise advances, counter-clockwise rewinds" />
 
         <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
