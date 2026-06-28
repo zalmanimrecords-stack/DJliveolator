@@ -182,6 +182,38 @@
         </UniformGrid>
       </StackPanel>
 
+      <!-- Manual beatgrid edit (commercial-parity kick-on-kick): re-phase / re-tempo the ANALYZED grid by
+           hand when auto-detection is imperfect. None of these change the audible pitch — only where the
+           grid (and therefore sync's phase target) sits. -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="GRID" />
+          <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="EDIT" />
+        </Grid>
+        <UniformGrid Columns="2">
+          <Button Classes="key" Margin="0,0,4,0" Content="◄ BEAT"
+                  Command="{Binding NudgeGridBackCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Nudge the beat grid earlier (fine) — slide a beat line onto the kick to lock kick-on-kick." />
+          <Button Classes="key" Content="BEAT ►"
+                  Command="{Binding NudgeGridForwardCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Nudge the beat grid later (fine) — slide a beat line onto the kick to lock kick-on-kick." />
+        </UniformGrid>
+        <UniformGrid Columns="4">
+          <Button Classes="key" Margin="0,0,4,0" Content="½"
+                  Command="{Binding HalveGridBpmCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Halve the detected grid tempo (audible pitch unchanged)." />
+          <Button Classes="key" Margin="0,0,4,0" Content="×2"
+                  Command="{Binding DoubleGridBpmCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Double the detected grid tempo (audible pitch unchanged)." />
+          <Button Classes="key" Margin="0,0,4,0" Content="SET"
+                  Command="{Binding SetGridHereCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Put a beat line on the playhead." />
+          <Button Classes="key" Content="1"
+                  Command="{Binding SetDownbeatHereCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Mark the down-beat (bar 1) at the playhead." />
+        </UniformGrid>
+      </StackPanel>
+
       <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
       <UniformGrid Columns="4">
         <StackPanel Spacing="6" HorizontalAlignment="Center">

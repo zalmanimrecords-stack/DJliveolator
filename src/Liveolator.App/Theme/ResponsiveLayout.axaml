@@ -50,16 +50,16 @@
        vertically. The per-tier MaxHeight is the real size cap — it grows the platter on big screens and
        keeps it sane on small ones. (No MaxWidth: the square width simply follows the capped height.) -->
   <Style Selector="Window.compact controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="260" />
+    <Setter Property="MaxHeight" Value="230" />
   </Style>
   <Style Selector="Window.standard controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="280" />
+    <Setter Property="MaxHeight" Value="240" />
   </Style>
   <Style Selector="Window.wide controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="450" />
+    <Setter Property="MaxHeight" Value="330" />
   </Style>
   <Style Selector="Window.ultra controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="580" />
+    <Setter Property="MaxHeight" Value="430" />
   </Style>
 
   <!-- (The DJ-tab console↔browser split is a PROPORTIONAL star split set in DjView code-behind from the

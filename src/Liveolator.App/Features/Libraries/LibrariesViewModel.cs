@@ -689,6 +689,11 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private void OnTrackStatusChanged(object? sender, string message)
         => ScanStatus = message;
 
+    /// <summary>Surfaces a picked folder the OS won't resolve to a local path (a virtual location, or
+    /// a network share that isn't mounted) instead of dropping it silently (global #26).</summary>
+    public void ReportFolderUnavailable(string name)
+        => ScanStatus = $"Couldn't add \"{name}\" — not a reachable local/network path. Map it to a drive letter, then add that.";
+
     /// <summary>Adds a folder root to scan (no-op if blank or already present), persisting the
     /// updated set so it survives a restart even before the next scan.</summary>
     public void AddFolder(string folder)

@@ -32,9 +32,15 @@ public partial class LibrariesView : UserControl
 
         foreach (IStorageFolder folder in picked)
         {
-            string? path = folder.TryGetLocalPath();
+            // TryGetLocalPath returns null for some network/virtual picks; fall back to the file URI
+            // (covers UNC \\server\share paths). If still unresolved, surface it instead of dropping
+            // the folder silently (global #26) — a network folder that "won't add" was the symptom.
+            string? path = folder.TryGetLocalPath()
+                ?? (folder.Path is { IsAbsoluteUri: true, IsFile: true } uri ? uri.LocalPath : null);
             if (!string.IsNullOrEmpty(path))
                 vm.AddFolder(path);
+            else
+                vm.ReportFolderUnavailable(folder.Name);
         }
     }
 

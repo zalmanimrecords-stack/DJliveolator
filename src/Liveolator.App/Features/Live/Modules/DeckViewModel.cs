@@ -55,6 +55,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // then restores — sliding the phase to manually beat-match without a position skip. Rapid taps re-arm
     // the window so a press-and-tap holds the bend. ±3% sits well inside the deck's pitch range.
     private const double PitchBendFraction = 0.03;
+
+    // Fine grid-phase step per tap for manual kick-on-kick alignment (seconds); coarse alignment is the
+    // waveform drag. Re-phases the analyzed grid only — never the audible pitch.
+    private const double GridNudgeStep = 0.004;
     private static readonly TimeSpan PitchBendWindow = TimeSpan.FromMilliseconds(140);
 
 
@@ -236,6 +240,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // (re-phase the BEAT GRID) via DeckSetFirstBeat. Changes the analyzed grid/sync phase only — never
         // the audible pitch — and is a no-op until the track's tempo/duration are known.
         SetGridHereCommand = ReactiveCommand.Create(EmitGridHere, canEmit);
+        // Manual beatgrid edit (commercial-parity kick-on-kick): every command reuses an existing grid
+        // action and never touches the audible pitch. Nudge re-phases the first beat in fine steps; ½/×2
+        // correct a wrong DETECTED tempo; SET-1 marks the down-beat at the playhead.
+        NudgeGridBackCommand = ReactiveCommand.Create(() => EmitFirstBeat(-GridNudgeStep), canEmit);
+        NudgeGridForwardCommand = ReactiveCommand.Create(() => EmitFirstBeat(+GridNudgeStep), canEmit);
+        HalveGridBpmCommand = ReactiveCommand.Create(() => EmitGridBpm(0.5), canEmit);
+        DoubleGridBpmCommand = ReactiveCommand.Create(() => EmitGridBpm(2.0), canEmit);
+        SetDownbeatHereCommand = ReactiveCommand.Create(EmitDownbeatHere, canEmit);
 
         var hotCues = new HotCuePadViewModel[HotCueCount];
         for (int index = 0; index < HotCueCount; index++)
@@ -615,6 +627,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             // BPM's: an empty / un-analyzed deck shows SYNC disabled instead of as a dead button (the
             // owner's "SYNC does nothing" report — there was no base BPM to match).
             this.RaisePropertyChanged(nameof(CanSync));
+            this.RaisePropertyChanged(nameof(CanGridEdit));
         }
     }
 
@@ -717,6 +730,48 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
     }
 
+    // Re-phase the grid by a small +/- step (reuses DeckSetFirstBeat). No-op before a track's tempo is known.
+    private void EmitFirstBeat(double deltaSeconds)
+    {
+        if (_trackBpm <= 0 || _durationSeconds <= 0)
+            return;
+        double anchor = NudgedFirstBeat(_firstBeatSeconds, deltaSeconds, _trackBpm);
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
+    }
+
+    // Halve/double the GRID tempo (reuses DeckSetGridBpm) for a wrong detected octave — pitch is untouched.
+    private void EmitGridBpm(double factor)
+    {
+        if (_trackBpm <= 0)
+            return;
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: _trackBpm * factor, Slot: _slot));
+    }
+
+    // Mark the down-beat (bar 1) at the current playhead (reuses DeckSetDownbeat). Display/grid-only.
+    private void EmitDownbeatHere()
+    {
+        if (_trackBpm <= 0 || _durationSeconds <= 0)
+            return;
+        double t = Math.Clamp(_progress, 0.0, 1.0) * _durationSeconds;
+        _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: t, Slot: _slot));
+    }
+
+    /// <summary>
+    /// The first-beat anchor after shifting it by <paramref name="deltaSeconds"/>, folded back into
+    /// [0, 60/bpm). Pure so the nudge math unit-tests without a VM.
+    /// </summary>
+    public static double NudgedFirstBeat(double currentFirstBeat, double deltaSeconds, double bpm)
+    {
+        if (bpm <= 0)
+            return currentFirstBeat;
+        double beat = 60.0 / bpm;
+        double v = (currentFirstBeat + deltaSeconds) % beat;
+        return v < 0 ? v + beat : v;
+    }
+
     /// <summary>
     /// The within-beat first-beat anchor (seconds, in [0, 60/bpm)) that puts a beat line on the playhead:
     /// the playhead time folded into one beat. Pure so the "set grid here" math unit-tests without a VM.
@@ -792,6 +847,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
     /// within-beat first-beat anchor from the current position).</summary>
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
+    public ReactiveCommand<Unit, Unit> NudgeGridBackCommand { get; }
+    public ReactiveCommand<Unit, Unit> NudgeGridForwardCommand { get; }
+    public ReactiveCommand<Unit, Unit> HalveGridBpmCommand { get; }
+    public ReactiveCommand<Unit, Unit> DoubleGridBpmCommand { get; }
+    public ReactiveCommand<Unit, Unit> SetDownbeatHereCommand { get; }
 
     /// <summary>All eight hot-cue pads (two banks of four). Indexed by absolute cue index for feedback.</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
@@ -838,6 +898,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>SYNC additionally needs this deck's analyzed tempo (<see cref="IsBpmEnabled"/>): with no
     /// base BPM there is nothing to beatmatch, so SYNC stays disabled rather than silently no-op.</summary>
     public bool CanSync => IsEnabled && IsBpmEnabled;
+    /// <summary>Manual grid edit needs a loaded, analyzed track (a tempo to re-phase), same gate as SYNC.</summary>
+    public bool CanGridEdit => IsEnabled && IsBpmEnabled;
     public bool CanNudgeSeek => IsEnabled && _hasLoadedTrack;
 
     public void Dispose()
