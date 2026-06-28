@@ -1266,6 +1266,97 @@ public sealed class DeckViewModelTests
         Assert.Equal(expected, DeckViewModel.GridAnchorAtPlayhead(progress, duration, bpm), precision: 6);
     }
 
+    // --- Manual beatgrid edit toolkit (kick-on-kick) ---
+
+    private static async Task<DeckViewModel> LoadedDeck(FakeDispatcher dispatcher, double bpm = 140.0)
+    {
+        var vm = new DeckViewModel(slot: 0, dispatcher, FakeWaveformProvider.WithDuration(121));
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: bpm, Argument: @"C:\b.flac"));
+        await gridSet;
+        dispatcher.Dispatched.Clear();
+        return vm;
+    }
+
+    [Fact]
+    public async Task NudgeGridForward_EmitsDeckSetFirstBeat_ShiftedBackByOneStep()
+    {
+        var dispatcher = new FakeDispatcher();
+        DeckViewModel vm = await LoadedDeck(dispatcher); // first-beat starts at 0, grid bpm 140
+
+        await vm.NudgeGridForwardCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, action.Kind);
+        Assert.Equal(DeckViewModel.NudgedFirstBeat(0.0, 0.004, 140.0), action.Value, precision: 6);
+    }
+
+    [Fact]
+    public async Task NudgeGridBack_WrapsBelowZeroIntoTheBeat()
+    {
+        var dispatcher = new FakeDispatcher();
+        DeckViewModel vm = await LoadedDeck(dispatcher);
+
+        await vm.NudgeGridBackCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, action.Kind);
+        Assert.Equal(60.0 / 140.0 - 0.004, action.Value, precision: 6); // 0 - step, folded into one beat
+    }
+
+    [Theory]
+    [InlineData(0.5, 70.0)]
+    [InlineData(2.0, 280.0)]
+    public async Task HalveOrDoubleGridBpm_EmitsDeckSetGridBpm(double factor, double expected)
+    {
+        var dispatcher = new FakeDispatcher();
+        DeckViewModel vm = await LoadedDeck(dispatcher); // grid bpm 140
+
+        ReactiveCommand<Unit, Unit> command = factor < 1 ? vm.HalveGridBpmCommand : vm.DoubleGridBpmCommand;
+        await command.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetGridBpm, action.Kind);
+        Assert.Equal(expected, action.Value, precision: 6);
+    }
+
+    [Fact]
+    public async Task SetDownbeatHere_EmitsDeckSetDownbeat_AtThePlayheadSeconds()
+    {
+        var dispatcher = new FakeDispatcher();
+        DeckViewModel vm = await LoadedDeck(dispatcher);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSeek, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5)); // playhead to mid-track
+        dispatcher.Dispatched.Clear();
+
+        await vm.SetDownbeatHereCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetDownbeat, action.Kind);
+        Assert.Equal(0.5 * 121, action.Value, precision: 6);
+    }
+
+    [Fact]
+    public async Task GridNudge_BeforeATrackLoads_IsANoOp()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        await vm.NudgeGridForwardCommand.Execute().ToTask();
+
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Theory]
+    [InlineData(0.0, 0.004, 140.0, 0.004)]                 // forward from 0
+    [InlineData(0.0, -0.004, 140.0, 60.0 / 140.0 - 0.004)] // back from 0 wraps near one beat
+    [InlineData(0.30, 0.004, 60.0, 0.304)]                 // mid-beat, no wrap (beat = 1.0 s)
+    public void NudgedFirstBeat_FoldsIntoOneBeat(double current, double delta, double bpm, double expected)
+    {
+        Assert.Equal(expected, DeckViewModel.NudgedFirstBeat(current, delta, bpm), precision: 6);
+    }
+
 
     [Fact]
     public async Task BeatGrid_DownbeatBarOffset_TracksDeckSetDownbeatFeedback()
