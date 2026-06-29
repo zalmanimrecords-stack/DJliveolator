@@ -169,8 +169,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // engine reports a loop is active. Value carries a default loop length in beats (doc 11).
         LoopCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: DefaultLoopBeats, Slot: slot)),
+                PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: _loopBeats, Slot: slot)),
             canEmit);
+        // Loop-length selector: −/+ step the armed length through LoopLengthsBeats (1/64 … 8 bars). Pure
+        // state — the next LOOP press arms the chosen length; an active loop is not resized underfoot.
+        LoopShorterCommand = ReactiveCommand.Create(() => StepLoopLength(-1), canEmit);
+        LoopLongerCommand = ReactiveCommand.Create(() => StepLoopLength(+1), canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
         // Loop release: emit DeckSetLoop with a non-positive beat length, which the engine handler maps
@@ -336,6 +340,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Default loop length emitted by the LOOP button, in beats (a 1-bar loop in 4/4).</summary>
     private const double DefaultLoopBeats = 4.0;
+
+    // Selectable auto-loop lengths in BEATS: 1/64 up to 32 (= 8 bars in 4/4). LOOP arms the selected one.
+    private static readonly double[] LoopLengthsBeats =
+        { 1 / 64.0, 1 / 32.0, 1 / 16.0, 1 / 8.0, 1 / 4.0, 1 / 2.0, 1, 2, 4, 8, 16, 32 };
+    private double _loopBeats = DefaultLoopBeats;
 
     /// <summary>Deck label, "A" or "B".</summary>
     public string DeckId { get; }
@@ -730,6 +739,40 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
     }
 
+    // Step the armed loop length to the next/previous entry in LoopLengthsBeats (−1 shorter, +1 longer).
+    private void StepLoopLength(int direction)
+    {
+        int i = Math.Clamp(ClosestLoopIndex(_loopBeats) + direction, 0, LoopLengthsBeats.Length - 1);
+        if (LoopLengthsBeats[i] == _loopBeats)
+            return;
+        _loopBeats = LoopLengthsBeats[i];
+        this.RaisePropertyChanged(nameof(LoopLengthLabel));
+    }
+
+    private static int ClosestLoopIndex(double beats)
+    {
+        int best = 0;
+        double bestDist = double.MaxValue;
+        for (int i = 0; i < LoopLengthsBeats.Length; i++)
+        {
+            double d = Math.Abs(LoopLengthsBeats[i] - beats);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        return best;
+    }
+
+    /// <summary>A loop length (beats) as a deck label: "1/8", "2", "1 BAR", "8 BAR" (4 beats = 1 bar). Pure.</summary>
+    public static string FormatLoopLength(double beats)
+    {
+        if (beats <= 0)
+            return "—";
+        if (beats < 1)
+            return $"1/{(int)Math.Round(1.0 / beats)}";
+        if (beats < 4)
+            return ((int)beats).ToString();
+        return $"{(int)Math.Round(beats / 4.0)} BAR";
+    }
+
     // Re-phase the grid by a small +/- step (reuses DeckSetFirstBeat). No-op before a track's tempo is known.
     private void EmitFirstBeat(double deltaSeconds)
     {
@@ -846,6 +889,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
     /// within-beat first-beat anchor from the current position).</summary>
+    /// <summary>The armed loop length as a deck label (e.g. "1/8", "1 BAR", "8 BAR"); shown on the LOOP key.</summary>
+    public string LoopLengthLabel => FormatLoopLength(_loopBeats);
+    public ReactiveCommand<Unit, Unit> LoopShorterCommand { get; }
+    public ReactiveCommand<Unit, Unit> LoopLongerCommand { get; }
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
     public ReactiveCommand<Unit, Unit> NudgeGridBackCommand { get; }
     public ReactiveCommand<Unit, Unit> NudgeGridForwardCommand { get; }

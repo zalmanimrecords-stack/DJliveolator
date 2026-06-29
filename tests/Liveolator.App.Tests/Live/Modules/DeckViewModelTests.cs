@@ -1357,6 +1357,61 @@ public sealed class DeckViewModelTests
         Assert.Equal(expected, DeckViewModel.NudgedFirstBeat(current, delta, bpm), precision: 6);
     }
 
+    // --- Loop-length selector (1/64 … 8 bars) ---
+
+    [Theory]
+    [InlineData(1 / 64.0, "1/64")]
+    [InlineData(1 / 8.0, "1/8")]
+    [InlineData(1 / 2.0, "1/2")]
+    [InlineData(1.0, "1")]
+    [InlineData(2.0, "2")]
+    [InlineData(4.0, "1 BAR")]
+    [InlineData(8.0, "2 BAR")]
+    [InlineData(32.0, "8 BAR")]
+    public void FormatLoopLength_LabelsBeatsAndBars(double beats, string expected)
+    {
+        Assert.Equal(expected, DeckViewModel.FormatLoopLength(beats));
+    }
+
+    [Fact]
+    public void LoopLength_DefaultsToOneBar_AndSteps()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+        Assert.Equal("1 BAR", vm.LoopLengthLabel); // default 4 beats
+
+        vm.LoopLongerCommand.Execute().Subscribe();
+        Assert.Equal("2 BAR", vm.LoopLengthLabel); // 8 beats
+
+        vm.LoopShorterCommand.Execute().Subscribe();
+        vm.LoopShorterCommand.Execute().Subscribe();
+        Assert.Equal("2", vm.LoopLengthLabel); // 4 → 2 beats
+    }
+
+    [Fact]
+    public void LoopLength_ClampsAtTheEnds()
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
+        for (int i = 0; i < 20; i++) vm.LoopShorterCommand.Execute().Subscribe();
+        Assert.Equal("1/64", vm.LoopLengthLabel);
+        for (int i = 0; i < 40; i++) vm.LoopLongerCommand.Execute().Subscribe();
+        Assert.Equal("8 BAR", vm.LoopLengthLabel);
+    }
+
+    [Fact]
+    public void LoopCommand_ArmsTheSelectedLength()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        vm.LoopLongerCommand.Execute().Subscribe(); // 4 → 8 beats
+        dispatcher.Dispatched.Clear();
+
+        vm.LoopCommand.Execute().Subscribe();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckSetLoop, action.Kind);
+        Assert.Equal(8.0, action.Value, precision: 6);
+    }
+
 
     [Fact]
     public async Task BeatGrid_DownbeatBarOffset_TracksDeckSetDownbeatFeedback()

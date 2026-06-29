@@ -115,12 +115,23 @@
 
         <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
           <TextBlock Classes="section" Text="LOOP" />
-          <!-- Arm a loop (4) beside its release (✕). The arm key only ever sets a loop, so the release is
-               the deck's loop-exit; it lights only while a loop is active. -->
+          <!-- Loop length selector (1/64 … 8 bars): −/+ step the armed length; the value shows on the LOOP
+               key, which arms a loop of that length. -->
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Grid.Column="0" Classes="key" Content="−" Width="22" Height="26" Margin="0,0,3,0"
+                    Command="{Binding LoopShorterCommand}" ToolTip.Tip="Shorter loop length (÷2, down to 1/64 beat)" />
+            <TextBlock Grid.Column="1" Classes="mono accent" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Text="{Binding LoopLengthLabel}" />
+            <Button Grid.Column="2" Classes="key" Content="+" Width="22" Height="26" Margin="3,0,0,0"
+                    Command="{Binding LoopLongerCommand}" ToolTip.Tip="Longer loop length (×2, up to 8 bars)" />
+          </Grid>
+          <!-- Arm a loop of the selected length beside its release (✕). The arm key only ever sets a loop,
+               so the release is the deck's loop-exit; it lights only while a loop is active. -->
           <Grid ColumnDefinitions="*,*">
-            <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}" Content="4" Height="34"
+            <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}"
+                    Content="{Binding LoopLengthLabel}" Height="34"
                     Margin="0,0,3,0" Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
-                    ToolTip.Tip="Arm a 1-bar loop" />
+                    ToolTip.Tip="Arm a loop of the selected length" />
             <Button Grid.Column="1" Classes="key" Content="✕" Height="34" Margin="3,0,0,0"
                     Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
                     ToolTip.Tip="Release the loop" />
