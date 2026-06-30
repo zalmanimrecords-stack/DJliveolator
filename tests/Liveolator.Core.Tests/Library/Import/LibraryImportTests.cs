@@ -203,6 +203,9 @@ public class LibraryImportServiceTests
             Records.Remove(trackPath);
             return Task.CompletedTask;
         }
+        public Task<IReadOnlyCollection<string>> ListPathsWithCuesAsync(CancellationToken ct = default)
+            => Task.FromResult((IReadOnlyCollection<string>)Records
+                .Where(kv => kv.Value.HotCues.Count > 0).Select(kv => kv.Key).ToList());
     }
 
     private sealed class FakePlaylistStore : IPlaylistStore

@@ -10,9 +10,10 @@ public sealed class TrackRowViewModel
 {
     private const string None = "—";
 
-    public TrackRowViewModel(MusicTrack track, TrackContextActions? contextActions = null)
+    public TrackRowViewModel(MusicTrack track, TrackContextActions? contextActions = null, bool hasCues = false)
     {
         Track = track ?? throw new ArgumentNullException(nameof(track));
+        HasCues = hasCues;
         Menu = contextActions is null
             ? null
             : new TrackMenuViewModel(
@@ -20,6 +21,23 @@ public sealed class TrackRowViewModel
     }
 
     public MusicTrack Track { get; }
+
+    // --- per-component analysis presence (drives the row status badges) ---
+
+    /// <summary>True when a tempo was detected (analyzed BPM &gt; 0).</summary>
+    public bool HasBpm => Track.Bpm is { } bpm && bpm.Bpm > 0;
+
+    /// <summary>True when a musical key was detected.</summary>
+    public bool HasKey => Track.Key is not null;
+
+    /// <summary>True when the file's tag metadata carries a genre.</summary>
+    public bool HasGenre => !string.IsNullOrWhiteSpace(Track.Metadata?.Genre);
+
+    /// <summary>True when offline song-structure segmentation is present (doc 32).</summary>
+    public bool HasStructure => Track.Structure is not null;
+
+    /// <summary>True when the track has at least one stored hot cue (read in batch from the cue store).</summary>
+    public bool HasCues { get; }
 
     /// <summary>Right-click menu (Add to Deck A/B, Add to playlist); null when context actions weren't supplied.</summary>
     public TrackMenuViewModel? Menu { get; }

@@ -94,6 +94,12 @@ public sealed class JsonHotCueStore : IHotCueStore
         }
     }
 
+    public async Task<IReadOnlyCollection<string>> ListPathsWithCuesAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyDictionary<string, TrackCueRecord> all = await LoadAllAsync(cancellationToken).ConfigureAwait(false);
+        return all.Where(kv => kv.Value.HotCues.Count > 0).Select(kv => kv.Key).ToList();
+    }
+
     private async Task<IReadOnlyDictionary<string, TrackCueRecord>> LoadAllAsync(CancellationToken cancellationToken)
     {
         if (!File.Exists(CuesPath))

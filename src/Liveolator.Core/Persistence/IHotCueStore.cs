@@ -28,4 +28,11 @@ public interface IHotCueStore
 
     /// <summary>Removes any stored cues for a track path. A no-op when the track has none.</summary>
     Task DeleteAsync(string trackPath, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The track paths that have at least one stored hot cue. One batch read (the JSON store reads its
+    /// single file once) so the library list can show a per-track cue badge without an N-load storm.
+    /// An unreadable store yields an empty set, never an exception (global #16/#26).
+    /// </summary>
+    Task<IReadOnlyCollection<string>> ListPathsWithCuesAsync(CancellationToken cancellationToken = default);
 }

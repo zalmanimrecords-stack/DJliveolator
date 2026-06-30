@@ -33,13 +33,18 @@ public sealed class LibrariesViewModelAutoCueTests
         }
     }
 
-    private static LibrariesViewModel BuildViewModel(IAutoCueService? service, params string[] files)
+    private static LibrariesViewModel BuildViewModel(
+        IAutoCueService? service, Func<string, bool>? isLocallyDecodable = null, params string[] files)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(files), new FakeAudioDecoder());
-        var vm = new LibrariesViewModel(library, autoCueService: service);
+        var vm = new LibrariesViewModel(
+            library, autoCueService: service, isLocallyDecodable: isLocallyDecodable ?? (_ => true));
         vm.AddFolder("/music");
         return vm;
     }
+
+    private static LibrariesViewModel BuildViewModel(IAutoCueService? service, params string[] files)
+        => BuildViewModel(service, isLocallyDecodable: null, files);
 
     [Fact]
     public void CanAutoCueLibrary_reflects_whether_a_service_was_wired()
@@ -76,10 +81,10 @@ public sealed class LibrariesViewModelAutoCueTests
         Assert.Contains("No tracks", vm.ScanStatus);
     }
 
-    // The single LIBRARIES "Scan" button (owner request, 2026-06-30): one click discovers files,
-    // force re-maps the catalog, then places auto cues.
+    // The single LIBRARIES "Scan" button (owner request, 2026-06-30): one click scans new/changed files
+    // (which analyzes them) then places auto cues — WITHOUT a force re-decode of the whole catalog.
     [Fact]
-    public async Task ScanAll_scans_remaps_and_autoCues_in_one_command()
+    public async Task ScanAll_scans_and_autoCues_in_one_command()
     {
         var service = new FakeAutoCueService(cued: 2);
         LibrariesViewModel vm = BuildViewModel(service, "/music/A.wav", "/music/B.wav");
@@ -87,7 +92,7 @@ public sealed class LibrariesViewModelAutoCueTests
         await vm.ScanAllCommand.Execute().ToTask();
 
         Assert.Equal(2, vm.Tracks.Count);                         // folders were scanned
-        Assert.All(vm.Tracks, t => Assert.NotNull(t.Track.Bpm));  // re-map produced fresh analysis
+        Assert.All(vm.Tracks, t => Assert.NotNull(t.Track.Bpm));  // scan produced fresh analysis
         Assert.Equal(2, service.Requested.Count);                 // auto-cue ran over the catalog
         Assert.False(vm.IsScanning);
         Assert.False(vm.IsAutoCueing);
@@ -104,5 +109,40 @@ public sealed class LibrariesViewModelAutoCueTests
         Assert.Single(vm.Tracks);
         Assert.False(vm.IsScanning);
         Assert.False(vm.IsAutoCueing);
+    }
+
+    // The bug: the one-click flow used to force-re-decode the whole catalog, which hangs on un-downloaded
+    // OneDrive/online-only placeholders, so it never reached auto-cue. Now unreachable files are skipped
+    // before the decode and the pass finishes, cueing only the reachable tracks (and reporting the skip).
+    [Fact]
+    public async Task ScanAll_skips_unreachable_tracks_before_autoCue()
+    {
+        var service = new FakeAutoCueService(cued: 1);
+        LibrariesViewModel vm = BuildViewModel(
+            service,
+            isLocallyDecodable: path => path != "/music/Offline.wav", // simulate an online-only placeholder
+            "/music/Local.wav", "/music/Offline.wav");
+
+        await vm.ScanAllCommand.Execute().ToTask();
+
+        Assert.Single(service.Requested);                              // only the reachable track was cued
+        Assert.Contains("/music/Local.wav", service.Requested);
+        Assert.DoesNotContain("/music/Offline.wav", service.Requested);
+        Assert.False(vm.IsAutoCueing);
+        Assert.Contains("skipped", vm.ScanStatus, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AutoCue_withAllTracksUnreachable_reportsAndDoesNotCallService()
+    {
+        var service = new FakeAutoCueService(cued: 0);
+        LibrariesViewModel vm = BuildViewModel(
+            service, isLocallyDecodable: _ => false, "/music/A.wav", "/music/B.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        await vm.AutoCueLibraryCommand.Execute().ToTask();
+
+        Assert.Empty(service.Requested);
+        Assert.Contains("No reachable tracks", vm.ScanStatus);
     }
 }

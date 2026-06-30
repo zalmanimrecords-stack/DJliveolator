@@ -95,20 +95,20 @@
       <Border Grid.Column="0" Classes="panel">
         <DockPanel Margin="12">
           <TextBlock DockPanel.Dock="Top" Classes="section" Text="Tracks" Margin="0,0,0,10" />
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,72" Margin="11,0,9,8">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" Margin="11,0,9,8">
             <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
             <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
             <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
             <TextBlock Grid.Column="4" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
             <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" Margin="0,0,12,0" />
-            <TextBlock Grid.Column="6" Classes="faint" Text="STATUS" />
+            <TextBlock Grid.Column="6" Classes="faint" Text="ANALYSIS" />
           </Grid>
           <ListBox Classes="rows"
                    ItemsSource="{Binding Tracks}"
                    SelectedItem="{Binding SelectedTrack}">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
-                <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,72" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" VerticalAlignment="Center">
                   <Grid.ContextFlyout>
                     <MenuFlyout>
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
@@ -141,7 +141,20 @@
                   <TextBlock Grid.Column="3" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="4" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" Margin="0,0,12,0" />
-                  <TextBlock Grid.Column="6" Classes="muted" Text="{Binding StatusText}" />
+                  <!-- Per-component analysis badges: lit when present, dim when absent (theme tokens only). -->
+                  <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                              ToolTip.Tip="What's analyzed: BPM, key, hot cues, genre, structure">
+                    <TextBlock Classes="mono" FontSize="9" Text="BPM"
+                               Foreground="{Binding HasBpm, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="KEY"
+                               Foreground="{Binding HasKey, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="CUE"
+                               Foreground="{Binding HasCues, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Green}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="GEN"
+                               Foreground="{Binding HasGenre, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Amber}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="STR"
+                               Foreground="{Binding HasStructure, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Violet}" />
+                  </StackPanel>
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

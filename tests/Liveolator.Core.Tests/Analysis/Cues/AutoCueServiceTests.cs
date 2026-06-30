@@ -126,5 +126,9 @@ public class AutoCueServiceTests
             Records.Remove(trackPath);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyCollection<string>> ListPathsWithCuesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult((IReadOnlyCollection<string>)Records
+                .Where(kv => kv.Value.HotCues.Count > 0).Select(kv => kv.Key).ToList());
     }
 }

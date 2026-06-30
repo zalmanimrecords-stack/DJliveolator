@@ -35,6 +35,15 @@ public sealed class FakeHotCueStore : IHotCueStore
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyCollection<string>> ListPathsWithCuesAsync(CancellationToken cancellationToken = default)
+    {
+        if (ThrowOnLoad)
+            throw new InvalidOperationException("Simulated cue-store load failure.");
+        IReadOnlyCollection<string> paths = _byPath
+            .Where(kv => kv.Value.HotCues.Count > 0).Select(kv => kv.Key).ToList();
+        return Task.FromResult(paths);
+    }
+
     /// <summary>The last-saved (or seeded) record for a path, or null when none — for test assertions.</summary>
     public TrackCueRecord? Get(string trackPath) => _byPath.TryGetValue(trackPath, out TrackCueRecord? r) ? r : null;
 }

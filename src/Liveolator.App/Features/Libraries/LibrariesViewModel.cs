@@ -39,6 +39,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
     private readonly IHotCueStore? _hotCueStore;
+    // Reachability probe used to skip unreachable / online-only cloud placeholders before a decode so a
+    // single un-downloaded OneDrive file can't hang the auto-cue pass. Injected so tests stay pure.
+    private readonly Func<string, bool> _isLocallyDecodable;
+    // Track paths that have at least one stored hot cue, read once per row rebuild (one batch store read,
+    // not an N-load storm) to light each row's CUE badge.
+    private HashSet<string> _pathsWithCues = new(StringComparer.OrdinalIgnoreCase);
     private readonly Core.Library.Import.LibraryImportService? _importService;
     private readonly IReadOnlyList<Core.Library.Import.ILibraryImporter> _importers;
     private readonly IReadOnlyList<Core.Library.Import.IFolderLibraryImporter> _folderImporters;
@@ -95,7 +101,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IHotCueStore? hotCueStore = null,
         Core.Library.Import.LibraryImportService? importService = null,
         IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null,
-        IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null)
+        IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null,
+        Func<string, bool>? isLocallyDecodable = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
@@ -111,6 +118,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _importService = importService;
         _importers = importers ?? Array.Empty<Core.Library.Import.ILibraryImporter>();
         _folderImporters = folderImporters ?? Array.Empty<Core.Library.Import.IFolderLibraryImporter>();
+        _isLocallyDecodable = isLocallyDecodable ?? Core.Library.Music.TrackFileReachability.IsLocallyDecodable;
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -474,6 +482,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 }
 
                 RefreshFolderStatuses();
+                _ = RefreshCuePresenceAsync();
             });
 
             // The catalog may hold tracks that were never analyzed (e.g. scanned before a working decoder
@@ -564,6 +573,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         RebuildFacets();
         ApplyFilter();
         RefreshFolderStatuses();
+        // Re-read cue presence (one batch store call) so the row CUE badges reflect the latest cues.
+        _ = RefreshCuePresenceAsync();
     }
 
     private async Task RunScanHealthAsync()
@@ -764,8 +775,39 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private List<TrackRowViewModel> BuildRows()
         => _library.All
             .OrderBy(t => t.Title, StringComparer.OrdinalIgnoreCase)
-            .Select(t => new TrackRowViewModel(t, _contextActions))
+            .Select(t => new TrackRowViewModel(
+                t, _contextActions, hasCues: _pathsWithCues.Contains(t.File.Path)))
             .ToList();
+
+    // Reads the set of track paths that have stored hot cues in ONE batch store call (not a per-row load
+    // storm), caches it, and re-projects the rows so the CUE badge lights up. Fire-and-forget from row
+    // rebuilds; guarded so a store failure surfaces on the status line but never crashes the tab.
+    private async Task RefreshCuePresenceAsync()
+    {
+        if (_hotCueStore is null)
+            return;
+
+        try
+        {
+            IReadOnlyCollection<string> paths =
+                await _hotCueStore.ListPathsWithCuesAsync(_lifetime.Token).ConfigureAwait(false);
+            var updated = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                _pathsWithCues = updated;
+                _all = BuildRows();
+                ApplyFilter();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-read — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not read cue badges: {ex.Message}");
+        }
+    }
 
     // The user toggled a folder's "samples" designation in the Folders window (B2). Update the
     // override set, reclassify the catalog in place (no re-decode), refresh the visible rows + facets,
@@ -801,14 +843,16 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // The LIBRARIES tab's single "Scan" action (owner request, 2026-06-30): run the three library
-    // passes back-to-back — discover files, force re-map every track, then place automatic hot cues.
-    // Each step owns its own busy state, status text, and error guard, so a failure in one surfaces
-    // without aborting the others; auto-cue is skipped when no service was wired.
+    // The LIBRARIES tab's single "Scan" action (owner request, 2026-06-30): one click does the whole
+    // pass — (1) scan, which analyzes only NEW/CHANGED files (BPM/key/structure/silence cues) and leaves
+    // already-analyzed tracks alone, then (2) place automatic hot cues. It deliberately does NOT force a
+    // full re-decode of the whole catalog (the old RunRescanAllAsync): force-decoding every track stalls
+    // on un-downloaded OneDrive/online-only placeholders and never reached the auto-cue step (the reported
+    // hang). The standalone Rescan-all command stays available for a deliberate full re-map. Each step owns
+    // its own busy state, status text, and error guard, so a failure in one surfaces without aborting it.
     private async Task RunScanAllAsync()
     {
         await RunScanAsync().ConfigureAwait(false);
-        await RunRescanAllAsync().ConfigureAwait(false);
         if (_autoCueService is not null)
             await RunAutoCueLibraryAsync().ConfigureAwait(false);
     }
@@ -864,6 +908,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                       $"{string.Join("; ", offlineFolders)}. Reconnect the drive/share, then Scan again.";
                 ScanProgressValue = 100;
                 RefreshFolderStatuses();
+                _ = RefreshCuePresenceAsync();
             });
         }
         catch (Exception ex)
@@ -942,14 +987,25 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         if (_autoCueService is null)
             return;
 
-        List<string> paths = _library.All
+        List<string> allPaths = _library.All
             .Select(t => t.File.Path)
             .Where(p => !string.IsNullOrWhiteSpace(p))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (paths.Count == 0)
+        if (allPaths.Count == 0)
         {
             ScanStatus = "No tracks to auto-cue — scan folders first.";
+            return;
+        }
+
+        // Skip unreachable files and un-downloaded OneDrive/online-only placeholders BEFORE auto-cue: a
+        // single placeholder decode would block the worker thread (a synchronous cloud fetch) and hang the
+        // whole pass. Probing existence/attributes is cheap and never downloads. Reported, never silent.
+        List<string> paths = allPaths.Where(_isLocallyDecodable).ToList();
+        int skipped = allPaths.Count - paths.Count;
+        if (paths.Count == 0)
+        {
+            ScanStatus = $"No reachable tracks to auto-cue — {skipped} skipped (offline / online-only).";
             return;
         }
 
@@ -958,11 +1014,15 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         try
         {
+            // The skipped suffix is shared by the progress-completion and the final messages so the
+            // reported count is the same whichever marshals last (Progress<T> posts with no ordering
+            // guarantee relative to the post-await block).
+            string skippedSuffix = skipped == 0 ? string.Empty : $", {skipped} skipped (offline / online-only)";
             var progress = new Progress<AutoCueProgress>(p =>
                 RxApp.MainThreadScheduler.Schedule(() =>
                 {
                     ScanStatus = p.Done >= p.Total
-                        ? $"Auto-cue complete — {p.Cued} of {p.Total} tracks cued"
+                        ? $"Auto-cue complete — {p.Cued} of {p.Total} tracks cued{skippedSuffix}"
                         : $"Placing auto cues… {p.Done}/{p.Total}";
                     ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
                 }));
@@ -973,8 +1033,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
             RxApp.MainThreadScheduler.Schedule(() =>
             {
-                ScanStatus = $"Auto-cue complete — {outcome.Cued} of {outcome.Considered} tracks cued";
+                ScanStatus = $"Auto-cue complete — {outcome.Cued} of {outcome.Considered} tracks cued{skippedSuffix}";
                 ScanProgressValue = 100;
+                // Cues changed — re-read the cue-presence set so the row CUE badges light up.
+                RefreshRows();
             });
         }
         catch (OperationCanceledException)
