@@ -151,6 +151,28 @@
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
               ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
 
+      <!-- LOOP: a beat-length loop knob (1/64 … 8 bars) feeds the LOOP arm; ✕ releases. Reuses the same
+           deck commands as the DJ tab, so loops are available on the LIVE performance surface too. -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="LOOP" />
+          <TextBlock Grid.Column="2" Classes="mono accent" VerticalAlignment="Center"
+                     Text="{Binding LoopLengthLabel}" />
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <controls:Knob Grid.Column="0" Width="40" Height="40" Detents="12"
+                         Value="{Binding LoopLengthKnob, Mode=TwoWay}"
+                         ToolTip.Tip="Loop length — turn to set 1/64 beat up to 8 bars" />
+          <Button Grid.Column="1" Classes="key" Classes.on="{Binding IsLooping}" Content="LOOP" Margin="6,0,3,0"
+                  Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
+                  HorizontalContentAlignment="Center" VerticalAlignment="Center"
+                  ToolTip.Tip="Arm a loop of the selected length at the playhead" />
+          <Button Grid.Column="2" Classes="key" Content="✕" Width="34" VerticalAlignment="Center"
+                  Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
+                  ToolTip.Tip="Release the loop" />
+        </Grid>
+      </StackPanel>
+
       <!-- Track nudge: shift the waveform a small step (relative seek) for fine cueing / lining the track
            up. Direction follows the waveform-move convention (NOT an inverted binding): the arrow points the
            way the waveform slides, so ◄ slides the wave left = SeekForward, ► slides it right = SeekBack. The

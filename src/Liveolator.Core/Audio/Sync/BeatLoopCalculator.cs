@@ -14,8 +14,9 @@ namespace Liveolator.Core.Audio.Sync;
 /// </remarks>
 public static class BeatLoopCalculator
 {
-    /// <summary>The shortest loop allowed, in beats — a sane lower bound for the loop encoder.</summary>
-    public const double MinBeats = 1.0 / 32.0;
+    /// <summary>The shortest loop allowed, in beats — 1/64 supports a beat-roll/stutter and matches the
+    /// deck loop-length knob's floor; below this a loop request is treated as "clear".</summary>
+    public const double MinBeats = 1.0 / 64.0;
 
     /// <summary>The longest loop allowed, in beats (32 = eight bars in 4/4) — the ceiling for loop double.</summary>
     public const double MaxBeats = 32.0;
