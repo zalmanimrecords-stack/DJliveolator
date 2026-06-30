@@ -44,3 +44,7 @@ Thumbs.db
 smoke*.jsonl
 smoke*.out
 smoke*.err
+
+# Python bytecode cache (analysis scripts)
+__pycache__/
+*.pyc

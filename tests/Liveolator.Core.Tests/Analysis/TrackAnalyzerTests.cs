@@ -1,12 +1,70 @@
 using System.Runtime.CompilerServices;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
 using Xunit;
 
 namespace Liveolator.Core.Tests.Analysis;
 
 public class TrackAnalyzerTests
 {
+    [Fact]
+    public async Task AnalyzeAsync_NoStructureAnalyzer_StructureIsNull()
+    {
+        var decoder = new FakeAudioDecoder(TestSignals.ClickTrain(120, 44100, seconds: 10));
+        TrackAnalysisResult result = await new TrackAnalyzer().AnalyzeAsync(decoder, "song.wav");
+        Assert.Null(result.Structure);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WithStructureAnalyzer_AttachesStructure()
+    {
+        var decoder = new FakeAudioDecoder(TestSignals.ClickTrain(120, 44100, seconds: 10));
+        var structure = new SongStructure(new[] { new SongSection(0.0, SongSectionLabel.Intro) }, "fake 1.0");
+        var analyzer = new TrackAnalyzer(structureAnalyzer: new FakeStructureAnalyzer(structure));
+
+        TrackAnalysisResult result = await analyzer.AnalyzeAsync(decoder, "song.wav");
+
+        Assert.Same(structure, result.Structure);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_StructureAnalyzerReturnsNull_StructureIsNull()
+    {
+        var decoder = new FakeAudioDecoder(TestSignals.ClickTrain(120, 44100, seconds: 10));
+        var analyzer = new TrackAnalyzer(structureAnalyzer: new FakeStructureAnalyzer(null));
+
+        TrackAnalysisResult result = await analyzer.AnalyzeAsync(decoder, "song.wav");
+
+        Assert.Null(result.Structure);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_StructureAnalyzerThrows_CoreAnalysisStillSucceeds()
+    {
+        var decoder = new FakeAudioDecoder(TestSignals.ClickTrain(120, 44100, seconds: 10));
+        var analyzer = new TrackAnalyzer(structureAnalyzer: new ThrowingStructureAnalyzer());
+
+        TrackAnalysisResult result = await analyzer.AnalyzeAsync(decoder, "song.wav");
+
+        Assert.Null(result.Structure);
+        Assert.InRange(result.Bpm.Bpm, 117.0, 123.0);
+    }
+
+    private sealed class FakeStructureAnalyzer : ISongStructureAnalyzer
+    {
+        private readonly SongStructure? _result;
+        public FakeStructureAnalyzer(SongStructure? result) => _result = result;
+        public Task<SongStructure?> AnalyzeAsync(IAudioDecoder decoder, string filePath, CancellationToken ct = default)
+            => Task.FromResult(_result);
+    }
+
+    private sealed class ThrowingStructureAnalyzer : ISongStructureAnalyzer
+    {
+        public Task<SongStructure?> AnalyzeAsync(IAudioDecoder decoder, string filePath, CancellationToken ct = default)
+            => throw new InvalidOperationException("boom");
+    }
+
     [Fact]
     public void AnalyzePcm_CMajorTriad_DetectsCMajor()
     {

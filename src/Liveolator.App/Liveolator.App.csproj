@@ -10,7 +10,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Distribution identity: the installer (installer/windows) reads Version from here,
          so the exe metadata, setup filename, and Add/Remove Programs entry always agree. -->
-    <Version>0.1.6</Version>
+    <Version>0.1.8</Version>
     <ApplicationIcon>Liveolator.ico</ApplicationIcon>
     <Product>Liveolator</Product>
     <Company>Zalman Im Records</Company>
@@ -55,6 +55,12 @@
   <!-- UI skin assets (doc 30): filmstrip PNGs for skinnable knobs/faders, loaded via avares://. -->
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Ship the third-party license notices next to the exe (and into the publish folder the
+       installer copies wholesale), so the MIT/BSD/OFL attribution requirements are met. -->
+  <ItemGroup>
+    <Content Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

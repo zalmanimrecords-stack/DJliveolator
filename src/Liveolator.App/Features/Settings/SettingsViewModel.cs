@@ -7,6 +7,7 @@ using Liveolator.App.Features.Mappings;
 using Liveolator.App.Shell;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Extensions;
 using Liveolator.Core.Legal;
@@ -70,6 +71,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private readonly IControlSkinCatalog? _controlSkins;
     private readonly IControlSkinApplier? _controlSkinApplier;
     private readonly IUiThemeLiveApplier? _uiThemeLiveApplier;
+    private readonly IAdvancedAnalysisInstaller? _advancedInstaller;
     private AppSettings _loadedSettings = AppSettings.Default;
 
     private AudioOutputDevice? _selectedOutputDevice;
@@ -110,7 +112,8 @@ public sealed class SettingsViewModel : ViewModelBase
         IControlSkinCatalog? controlSkins = null,
         IControlSkinApplier? controlSkinApplier = null,
         IUiThemeLiveApplier? uiThemeLiveApplier = null,
-        MappingsViewModel? mappings = null)
+        MappingsViewModel? mappings = null,
+        IAdvancedAnalysisInstaller? advancedAnalysisInstaller = null)
     {
         _outputs = outputs ?? throw new ArgumentNullException(nameof(outputs));
         _captures = captures ?? throw new ArgumentNullException(nameof(captures));
@@ -128,6 +131,7 @@ public sealed class SettingsViewModel : ViewModelBase
         _controlSkins = controlSkins;
         _controlSkinApplier = controlSkinApplier;
         _uiThemeLiveApplier = uiThemeLiveApplier;
+        _advancedInstaller = advancedAnalysisInstaller;
         Mappings = mappings;
 
         foreach (int ms in BufferPresets)
@@ -145,6 +149,9 @@ public sealed class SettingsViewModel : ViewModelBase
         OpenLogsFolderCommand = ReactiveCommand.Create(
             () => _logLocator?.RevealInFileManager(),
             Observable.Return(_logLocator is not null));
+        EnableAdvancedAnalysisCommand = ReactiveCommand.CreateFromTask(
+            EnableAdvancedAnalysisAsync,
+            Observable.Return(_advancedInstaller is not null));
 
         RefreshDevices();
     }
@@ -332,6 +339,19 @@ public sealed class SettingsViewModel : ViewModelBase
     /// <summary>True when a log file exists to open (false in headless/test composition).</summary>
     public bool CanOpenLogs => _logLocator is not null;
 
+    /// <summary>True when advanced (Python) analysis can be installed in this build.</summary>
+    public bool CanEnableAdvancedAnalysis => _advancedInstaller is not null;
+
+    private string _advancedAnalysisStatus =
+        "Song-structure detection (intro / drop / outro). Enabling downloads Python + librosa (~80 MB).";
+
+    /// <summary>Performer-facing status of the advanced-analysis runtime install.</summary>
+    public string AdvancedAnalysisStatus
+    {
+        get => _advancedAnalysisStatus;
+        private set => this.RaiseAndSetIfChanged(ref _advancedAnalysisStatus, value);
+    }
+
     private readonly AppVersionInfo _version = AppVersionInfo.FromEntryAssembly();
 
     /// <summary>The running app's release version (e.g. <c>0.1.1</c>), shown in the Diagnostics tab.</summary>
@@ -369,6 +389,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenLogsFolderCommand { get; }
+    public ReactiveCommand<Unit, Unit> EnableAdvancedAnalysisCommand { get; }
     public ReactiveCommand<Unit, Unit> PreviewPackageCommand { get; }
     public ReactiveCommand<Unit, Unit> InstallPackageCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleExtensionCommand { get; }
@@ -742,6 +763,25 @@ public sealed class SettingsViewModel : ViewModelBase
             await _contentReloader.ReloadAsync();
         await RefreshExtensionsAsync();
         Status = "Extension uninstalled.";
+    }
+
+    // Downloads + installs the offline analysis runtime (doc 32 §2.1) on demand, reporting progress to
+    // AdvancedAnalysisStatus. The installer is graceful — any failure returns false (logged), never throws.
+    private async Task EnableAdvancedAnalysisAsync()
+    {
+        if (_advancedInstaller is null)
+        {
+            AdvancedAnalysisStatus = "Advanced analysis is unavailable in this build.";
+            return;
+        }
+
+        var progress = new Progress<InstallProgress>(p =>
+            AdvancedAnalysisStatus = $"{p.Message} ({p.Fraction:P0})");
+        AdvancedAnalysisStatus = "Starting download...";
+        bool ok = await _advancedInstaller.InstallAsync(progress).ConfigureAwait(false);
+        AdvancedAnalysisStatus = ok
+            ? "Advanced analysis enabled. Re-scan your library to detect song structure."
+            : "Could not enable advanced analysis - check your connection and the log.";
     }
 
     private async Task RefreshExtensionsAsync(CancellationToken cancellationToken = default)

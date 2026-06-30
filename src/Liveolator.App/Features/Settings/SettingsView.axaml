@@ -245,6 +245,16 @@
                 </StackPanel>
               </StackPanel>
             </Border>
+
+            <TextBlock Classes="section" Text="ADVANCED ANALYSIS" />
+            <Border Classes="panel">
+              <StackPanel Spacing="10" Margin="14">
+                <Button Classes="accent" Content="Enable advanced analysis"
+                        Command="{Binding EnableAdvancedAnalysisCommand}"
+                        IsEnabled="{Binding CanEnableAdvancedAnalysis}" />
+                <TextBlock Classes="faint" TextWrapping="Wrap" Text="{Binding AdvancedAnalysisStatus}" />
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

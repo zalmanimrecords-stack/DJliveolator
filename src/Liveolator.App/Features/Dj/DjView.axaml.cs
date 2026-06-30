@@ -15,9 +15,10 @@ public partial class DjView : UserControl
 
     public DjView() => InitializeComponent();
 
-    // The console↔browser split tracks the shell Window's responsive tier (a style class). We read it off
-    // the TopLevel's classes and re-apply on every class change (i.e. on resize), so the proportional split
-    // always matches the current screen — without coupling this view to the size-class engine.
+    // The browser band tracks the shell Window's responsive tier (a style class). The console row is
+    // Auto (content-sized, so the deck stays compact like the LIVE tab); this sets the elastic browser
+    // row — 0 on small/laptop tiers, a star band on wide/4K — re-applied on every class change (resize),
+    // without coupling this view to the size-class engine.
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);

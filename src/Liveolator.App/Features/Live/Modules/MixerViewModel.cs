@@ -25,6 +25,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private const double DefaultLimiterCharacter = 0.5;
     private const double DefaultLimiterCeilingDbTp = -1.0;
 
+    // GR meter: full deflection at 12 dB of reduction (a master brick wall rarely pulls more on a mix).
+    // The held value attacks instantly to a new peak and decays a fixed fraction per poll, giving a short
+    // peak-hold so a brief kick-driven dip stays readable instead of flickering at the UI poll rate.
+    private const double GrFullScaleDb = 12.0;
+    private const double GrReleasePerPoll = 0.2;
+
     // Smart-limiter ceiling knob ↔ dBTP mapping: knob 0 = quietest allowed ceiling, knob 1 = hottest
     // (mirrors the handler's clamp range). The knob stays a normalized 0..1 control; the action carries dBTP.
     private const double CeilingHottestDbTp = -0.3;
@@ -32,11 +38,13 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     private readonly IDeckLevelMeter? _levelMeter;
+    private readonly ILimiterMeter? _limiterMeter;
     private bool _isCueA;
     private bool _isCueB;
     private bool _isSmartLimiter;
     private double _levelA;
     private double _levelB;
+    private double _limiterGrHeldDb;
     private bool _disposed;
 
     /// <param name="channelA">Deck A, exposed as the mixer's A channel so the channel-strip EQ/filter knobs
@@ -47,10 +55,12 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         IPerformanceActionDispatcher? dispatcher = null,
         IDeckLevelMeter? levelMeter = null,
         DeckViewModel? channelA = null,
-        DeckViewModel? channelB = null)
+        DeckViewModel? channelB = null,
+        ILimiterMeter? limiterMeter = null)
     {
         _dispatcher = dispatcher;
         _levelMeter = levelMeter;
+        _limiterMeter = limiterMeter;
         ChannelA = channelA;
         ChannelB = channelB;
         bool enabled = dispatcher is not null;
@@ -131,11 +141,38 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
 
     public void UpdateLevels(bool deckAPlaying, bool deckBPlaying)
     {
-        if (_levelMeter is null)
-            return;
-        LevelA = deckAPlaying ? _levelMeter.GetLevel(0).Peak : 0;
-        LevelB = deckBPlaying ? _levelMeter.GetLevel(1).Peak : 0;
+        if (_levelMeter is not null)
+        {
+            LevelA = deckAPlaying ? _levelMeter.GetLevel(0).Peak : 0;
+            LevelB = deckBPlaying ? _levelMeter.GetLevel(1).Peak : 0;
+        }
+        UpdateLimiterGr();
     }
+
+    // Poll the master limiter's live gain reduction (independent of which deck plays — it reflects the
+    // summed master). Attack to a new peak instantly, then decay a fixed fraction per poll for a short hold.
+    private void UpdateLimiterGr()
+    {
+        if (_limiterMeter is null)
+            return;
+        double instant = _limiterMeter.CurrentGainReductionDb;
+        if (double.IsNaN(instant) || instant < 0.0)
+            instant = 0.0;
+        LimiterGainReductionDb = instant > _limiterGrHeldDb
+            ? instant
+            : _limiterGrHeldDb + (instant - _limiterGrHeldDb) * GrReleasePerPoll;
+    }
+
+    /// <summary>Master-limiter gain reduction shown on the GR meter, in dB (0 = not limiting), with a short
+    /// peak-hold so the meter reads steadily under kick-driven dips. Drives the MASTER-cluster GR meter.</summary>
+    public double LimiterGainReductionDb
+    {
+        get => _limiterGrHeldDb;
+        private set => this.RaiseAndSetIfChanged(ref _limiterGrHeldDb, value);
+    }
+
+    /// <summary>Full-scale dB of the GR meter (its 100% deflection), so the view need not hardcode the range.</summary>
+    public double LimiterGainReductionFullScaleDb => GrFullScaleDb;
 
     /// <summary>Headphone-cue (PFL) bus output level (MixerCueLevel).</summary>
     public ContinuousControlViewModel CueLevel { get; }

@@ -155,6 +155,21 @@ public sealed class MasterLimiter
     /// <summary>The current applied gain multiplier (1.0 = no reduction). Exposed for tests/metering.</summary>
     public double CurrentGain => _gain;
 
+    /// <summary>
+    /// How much the limiter is pulling the master down right now, in dB (0 = transparent / not limiting;
+    /// positive = active reduction). Drives the UI gain-reduction meter so the DJ can SEE when — and how
+    /// hard — the brick wall is working (it is otherwise inaudible by design). Derived from
+    /// <see cref="CurrentGain"/>; a non-finite or non-positive gain reads as 0 (no meaningful reduction).
+    /// </summary>
+    public double CurrentGainReductionDb
+    {
+        get
+        {
+            double g = _gain;
+            return g >= 1.0 || g <= 0.0 || !double.IsFinite(g) ? 0.0 : -20.0 * Math.Log10(g);
+        }
+    }
+
     /// <summary>The latency in samples (per channel) the look-ahead adds to the master signal.</summary>
     public int LatencySamples => _lookahead;
 

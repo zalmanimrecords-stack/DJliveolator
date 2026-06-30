@@ -44,7 +44,7 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         MusicMediaKind kind = SampleClassifier.Classify(file.Path, result.Duration, _sampleFolders);
         return new MusicTrack(
             file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind,
-            TrackAnalyzer.CurrentVersion);
+            TrackAnalyzer.CurrentVersion) with { Structure = result.Structure };
     }
 
     // A track that fails to decode can still have readable tags, so capture metadata here too. With no
@@ -186,6 +186,7 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                 Key = result.Key,
                 Duration = result.Duration,
                 Cues = result.Cues,
+                Structure = result.Structure,
                 Status = TrackStatusPolicy.For(result),
                 Error = null,
                 AnalyzerVersion = TrackAnalyzer.CurrentVersion,

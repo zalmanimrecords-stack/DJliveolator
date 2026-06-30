@@ -1,6 +1,7 @@
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
@@ -76,6 +77,67 @@ public class JsonCatalogStoreTests
 
         Assert.Equal(MusicMediaKind.Sample, loaded.Single(t => t.File.Path == "loop.wav").Kind);
         Assert.Equal(MusicMediaKind.Track, loaded.Single(t => t.File.Path == "song.wav").Kind);
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsSongStructure()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        var structure = new SongStructure(
+            new[]
+            {
+                new SongSection(0.0, SongSectionLabel.Intro),
+                new SongSection(32.0, SongSectionLabel.Drop),
+                new SongSection(96.0, SongSectionLabel.Outro),
+            },
+            "librosa 0.10.2");
+        MusicTrack track = TestTracks.Analyzed("s.wav", 128.0, tonic: 0, mode: KeyMode.Major) with
+        {
+            Structure = structure,
+        };
+
+        await store.SaveMusicAsync(new[] { track });
+        MusicTrack loaded = (await store.LoadMusicAsync()).Single();
+
+        // SongStructure.Sections is IReadOnlyList (reference equality), so compare element-wise.
+        Assert.NotNull(loaded.Structure);
+        Assert.Equal("librosa 0.10.2", loaded.Structure!.AnalyzedWith);
+        Assert.Equal(structure.Sections, loaded.Structure.Sections);
+    }
+
+    [Fact]
+    public async Task Load_CatalogWithoutStructureField_Succeeds_WithNullStructure()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+        // A pre-structure catalog at the CURRENT version (3): the new Structure property is absent,
+        // and must deserialize to null rather than fail the load (backward-compatible contract).
+        const string json = """
+            {
+              "Version": 3,
+              "Tracks": [
+                {
+                  "File": { "Path": "old.wav", "SizeBytes": 4096, "LastModifiedUtc": "2024-01-01T12:00:00Z" },
+                  "Bpm": { "Bpm": 124.0, "Confidence": 0.9 },
+                  "Key": null,
+                  "Duration": "00:04:00",
+                  "Cues": { "IntroStart": "00:00:02", "TrackEnd": "00:03:30" },
+                  "Status": "Ok",
+                  "Error": null,
+                  "Kind": "Track",
+                  "AnalyzerVersion": 1
+                }
+              ]
+            }
+            """;
+        await File.WriteAllTextAsync(store.MusicCatalogPath, json);
+
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+
+        MusicTrack track = Assert.Single(loaded);
+        Assert.Equal("old.wav", track.File.Path);
+        Assert.Null(track.Structure);
     }
 
     [Fact]

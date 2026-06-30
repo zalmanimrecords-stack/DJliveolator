@@ -21,4 +21,10 @@
     <InternalsVisibleTo Include="Liveolator.Media.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Python analysis script (doc 32): shipped alongside the binary; the Python runtime that runs it is
+         downloaded on demand into the per-user dir, not bundled. -->
+    <None Include="scripts\**\*.py" CopyToOutputDirectory="PreserveNewest" LinkBase="scripts" />
+  </ItemGroup>
+
 </Project>

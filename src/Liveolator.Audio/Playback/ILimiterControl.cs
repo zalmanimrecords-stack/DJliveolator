@@ -18,4 +18,8 @@ internal interface ILimiterControl
 {
     /// <summary>Apply the master limiter controls to the running limiter on the realtime path.</summary>
     void ApplyLimiterSettings(LimiterSettings settings);
+
+    /// <summary>Gain reduction the running limiter is applying right now, in dB (0 = not limiting); read
+    /// by the UI GR meter (<see cref="Liveolator.Core.Mixer.ILimiterMeter"/>).</summary>
+    double CurrentGainReductionDb { get; }
 }

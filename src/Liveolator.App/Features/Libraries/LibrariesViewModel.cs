@@ -792,12 +792,24 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         // Snapshot the folder set on the calling thread so the persisted copy matches what was scanned
         // and we never read the UI-owned ObservableCollection off-thread.
         List<string> folders = Folders.ToList();
+        // A configured folder whose drive/share is offline (a disconnected mapped network drive, an
+        // unlinked OneDrive root) is silently skipped by the enumerator, so a scan over it reports
+        // "0 tracks" with no clue why. Detect it up front and warn instead (global #26 — no silent skip).
+        List<string> offlineFolders = folders
+            .Where(f => !string.IsNullOrWhiteSpace(f) && !System.IO.Directory.Exists(f))
+            .ToList();
         try
         {
             var progress = new Progress<ScanProgress>(p =>
             {
                 ScanStatus = p.Total == 0 ? "No new files." : $"Analyzing {p.Done} / {p.Total}…";
                 ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
+                // Reveal already-scanned tracks as they come in, instead of waiting for the whole
+                // folder. Batched every 25 so the list isn't rebuilt per file (O(n^2) thrash). The
+                // final tick is left to the post-await block so the two refreshes never race inside
+                // ApplyFilter's Clear()/Add() (doc 27 B0) — same guard as RunRescanAllAsync.
+                if (p.Done < p.Total && p.Done % 25 == 0)
+                    RxApp.MainThreadScheduler.Schedule(RefreshRows);
             });
 
             await _library.ScanAsync(folders, progress).ConfigureAwait(false);
@@ -818,7 +830,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 _all = rows;
                 RebuildFacets();
                 ApplyFilter();
-                ScanStatus = $"{rows.Count} tracks";
+                ScanStatus = offlineFolders.Count == 0
+                    ? $"{rows.Count} tracks"
+                    : $"{rows.Count} tracks — {offlineFolders.Count} folder(s) OFFLINE, skipped: " +
+                      $"{string.Join("; ", offlineFolders)}. Reconnect the drive/share, then Scan again.";
                 ScanProgressValue = 100;
                 RefreshFolderStatuses();
             });

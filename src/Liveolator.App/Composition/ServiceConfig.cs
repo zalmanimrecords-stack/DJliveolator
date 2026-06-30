@@ -21,6 +21,7 @@ using Liveolator.Audio.Waveform;
 using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
@@ -43,6 +44,7 @@ using Liveolator.Core.Update;
 using Liveolator.Core.Visuals;
 using Liveolator.Core.Waveform;
 using Liveolator.Media;
+using Liveolator.Media.Analysis;
 using Liveolator.Media.Extensions;
 using Liveolator.Media.Import;
 using Liveolator.Midi;
@@ -251,7 +253,18 @@ public static class ServiceConfig
         services.AddSingleton<IWaveformProvider>(sp => new DecodedWaveformProvider(
             sp.GetRequiredService<IAudioDecoder>(),
             logger: loggerFactory.CreateLogger<DecodedWaveformProvider>()));
-        services.AddSingleton<TrackAnalyzer>();
+        // Advanced offline analysis (doc 32): Python+librosa song-structure segmentation, behind a
+        // download-on-demand runtime. Everything is graceful-null when the runtime is absent, so a
+        // library scan behaves exactly as before until the user enables advanced analysis in Settings.
+        services.AddSingleton<PythonRuntime>();
+        services.AddSingleton<ISongStructureAnalyzer>(sp => new PythonSongStructureAnalyzer(
+            sp.GetRequiredService<PythonRuntime>(),
+            logger: loggerFactory.CreateLogger<PythonSongStructureAnalyzer>()));
+        services.AddSingleton<IAdvancedAnalysisInstaller>(sp => new PythonRuntimeInstaller(
+            sp.GetRequiredService<PythonRuntime>(),
+            loggerFactory.CreateLogger<PythonRuntimeInstaller>()));
+        services.AddSingleton<TrackAnalyzer>(sp => new TrackAnalyzer(
+            structureAnalyzer: sp.GetService<ISongStructureAnalyzer>()));
         services.AddSingleton<MusicLibrary>();
         WireOnlineEnrichment(services);
         WireUpdateCheck(services, loggerFactory);
@@ -342,6 +355,7 @@ public static class ServiceConfig
         var mixer = new BassMixer();
         services.AddSingleton<IMixer>(mixer);
         services.AddSingleton<IDeckLevelMeter>(mixer);
+        services.AddSingleton<ILimiterMeter>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
 
         // --- Global OS volume (the computer's master output level, not the app's mix): the per-OS
@@ -604,6 +618,7 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetService<IDeckLevelMeter>(),
+            sp.GetService<ILimiterMeter>(),
             appSettings.Visuals.WaveformZoomSeconds,
             appSettings.Visuals.NudgeSeconds,
             // Deck transport is handled only when the realtime engine is up; in catalog-browser mode the
@@ -738,7 +753,10 @@ public static class ServiceConfig
             sp.GetRequiredService<IControlSkinCatalog>(),
             sp.GetRequiredService<IControlSkinApplier>(),
             sp.GetRequiredService<IUiThemeLiveApplier>(),
-            sp.GetRequiredService<MappingsViewModel>()));
+            sp.GetRequiredService<MappingsViewModel>(),
+            // Advanced offline analysis runtime installer (doc 32): drives the Settings "Enable advanced
+            // analysis" button. Optional — null leaves the button disabled in headless/limited builds.
+            sp.GetService<IAdvancedAnalysisInstaller>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the
