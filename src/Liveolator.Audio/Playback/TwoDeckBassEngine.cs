@@ -1,3 +1,4 @@
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Audio.Effects;
@@ -71,6 +72,12 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     // present, a track's saved cue set is loaded on Load and re-saved on set/clear, keyed by file path.
     private readonly IHotCueStore? _hotCueStore;
 
+    // Stem-deck support (doc 32 §Phase 2b). The local stem cache lookup (null = no cache wired) and the
+    // default-off gate. A Load attempts a 4-stem submix deck ONLY when the gate is on AND a complete local
+    // stem set is cached for the track; otherwise the single-file path is taken, byte-unchanged.
+    private readonly IStemCache? _stemCache;
+    private readonly bool _stemsEnabled;
+
     // The sample rate the persisted cue offsets are mapped against — the master mix rate. Cue positions
     // are stored as fractions here but persisted as samples, so the store record is self-describing.
     private readonly int _sampleRate;
@@ -98,14 +105,16 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
         ILoggerFactory? loggerFactory = null, AudioSettings? audioSettings = null,
         IAudioEffectRackProvider? effectRacks = null,
         IHotCueStore? hotCueStore = null,
-        PhaseLockSettings? phaseLock = null)
+        PhaseLockSettings? phaseLock = null,
+        IStemCache? stemCache = null,
+        bool stemsEnabled = false)
         : this(
             new BassMixerBackend(
                 sampleRate, channels,
                 (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<BassMixerBackend>(),
                 audioSettings,
                 effectRacks),
-            mixer, loggerFactory, hotCueStore, phaseLock)
+            mixer, loggerFactory, hotCueStore, phaseLock, stemCache, stemsEnabled)
     {
     }
 
@@ -115,12 +124,15 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     /// </summary>
     internal TwoDeckBassEngine(
         IBassMixerBackend backend, BassMixer mixer, ILoggerFactory? loggerFactory = null,
-        IHotCueStore? hotCueStore = null, PhaseLockSettings? phaseLock = null)
+        IHotCueStore? hotCueStore = null, PhaseLockSettings? phaseLock = null,
+        IStemCache? stemCache = null, bool stemsEnabled = false)
     {
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _mixer = mixer ?? throw new ArgumentNullException(nameof(mixer));
         _hotCueStore = hotCueStore;
         _phaseLock = phaseLock ?? PhaseLockSettings.Default;
+        _stemCache = stemCache;
+        _stemsEnabled = stemsEnabled;
         if (mixer.DeckCount < Decks)
             throw new ArgumentException(
                 $"Mixer addresses {mixer.DeckCount} deck(s); the two-deck engine needs {Decks}.", nameof(mixer));

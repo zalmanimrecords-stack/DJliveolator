@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Dsp;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Audio.Effects;
@@ -133,7 +134,17 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         // BASS). 0 sync handle = no end callback armed.
         public int EndSync { get; set; }
         public SyncProcedure? EndProcedure { get; set; }
+
+        // Stem deck (doc 32 §Phase 2b, Option C): when this deck IS a stem submix, the four inner FLAC
+        // decode streams summed into SourceHandle (the submix). Empty for a normal single-file deck. Seek
+        // and loop-wrap reposition these in lockstep with the submix; UnplugDeck frees them all.
+        public int[] StemDecoders { get; set; } = Array.Empty<int>();
     }
+
+    // Inner stem decoders created by OpenStemDeck, awaiting their DeckDsp (built in PlugDeck), keyed by the
+    // submix handle. PlugDeck consumes the entry so the decoders are tracked for seek/loop-wrap/free. A
+    // submix that is never plugged (a failed load) is freed by OpenStemDeck's own error path.
+    private readonly Dictionary<int, int[]> _pendingStemDecoders = new();
 
     public BassMixerBackend(
         int sampleRate = 48_000, int channels = 2, ILogger? logger = null,
@@ -410,6 +421,49 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         return handle;
     }
 
+    public int OpenStemDeck(StemSet stems)
+    {
+        ArgumentNullException.ThrowIfNull(stems);
+
+        // Option C: four FLAC decoders summed by one decode-flagged BASS_Mixer "stem submix". The submix is
+        // a NORMAL decoding source as far as the master is concerned, so PlugDeck wraps it in BASS_FX and
+        // plugs it into the master exactly like a single file. NOT MixerNonStop: the submix ends when its
+        // sources end, so the BASS_SYNC_END armed on the wrapping tempo stream still fires at track end.
+        int submix = BassMix.CreateMixerStream(_sampleRate, _channels, BassFlags.Decode | BassFlags.Float);
+        if (submix == 0)
+            throw new BassPlaybackException($"Stem submix CreateMixerStream failed: {Bass.LastError}");
+
+        var decoders = new List<int>(StemSet.RequiredStems.Count);
+        try
+        {
+            foreach (StemKind kind in StemSet.RequiredStems)
+            {
+                string path = stems.StemPaths[kind]; // caller guaranteed IsComplete
+                int decoder = Bass.CreateStream(path, 0, 0, BassFlags.Decode | BassFlags.Float);
+                if (decoder == 0)
+                    throw new BassPlaybackException($"Stem '{kind}' CreateStream('{path}') failed: {Bass.LastError}");
+                // The submix pulls each decoder; no per-stem pause — all four play locked together.
+                if (!BassMix.MixerAddChannel(submix, decoder, BassFlags.Default))
+                {
+                    Bass.StreamFree(decoder);
+                    throw new BassPlaybackException($"Adding stem '{kind}' to the submix failed: {Bass.LastError}");
+                }
+                decoders.Add(decoder);
+            }
+        }
+        catch
+        {
+            foreach (int d in decoders)
+                Bass.StreamFree(d);
+            Bass.StreamFree(submix); // also drops any added decoders
+            throw;
+        }
+
+        // Hand the decoders to PlugDeck, keyed by the submix handle it will receive as the deck handle.
+        _pendingStemDecoders[submix] = decoders.ToArray();
+        return submix;
+    }
+
     public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
         var channel = new BassMixerChannel(_channels, _effectRacks?.GetRack(slot));
@@ -437,6 +491,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         // The DeckDsp is built first so the DSP callback can read its per-deck cue-push handle (set just
         // below) without a race — the callback only fires once the deck is unpaused by the engine.
         var deck = new DeckDsp(channel, deckHandle, tempoHandle, originalFrequency);
+
+        // A stem deck's submix handle carries its four inner decoders (set by OpenStemDeck) so seek and
+        // loop-wrap reposition them in lockstep and UnplugDeck frees them. Empty for a single-file deck.
+        if (_pendingStemDecoders.Remove(deckHandle, out int[]? stemDecoders))
+            deck.StemDecoders = stemDecoders;
 
         // Per-deck DSP applies gain/EQ/filter to the deck's samples before the mixer sums them; it also
         // taps the PRE-FADE samples into the headphone-cue mixer when the deck is cue-enabled (A2). It runs
@@ -519,6 +578,29 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
             flags |= PositionFlags.MixerReset;
         if (!BassMix.ChannelSetPosition(mixerHandle, target, flags))
             _logger.LogWarning("Seek deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+
+        // A stem deck must reposition its four inner decoders to the SAME fraction so they stay sample-
+        // locked — repositioning only the submix would leave the decoders where they were (the submix
+        // reads from their current decode position, not vice-versa).
+        if (_decks.TryGetValue(deckHandle, out DeckDsp? deck) && deck.StemDecoders.Length > 0)
+            SeekStemDecodersToFraction(deck, fraction);
+    }
+
+    // Reposition every inner stem decoder to <fraction> of its own length (same fraction → same byte
+    // offset → still sample-locked, since all four stems are the same track length). Used by both seek and
+    // loop-wrap. Each decoder is a mixer-source channel of the stem submix, so addressed via BassMix.
+    private void SeekStemDecodersToFraction(DeckDsp deck, double fraction)
+    {
+        double clamped = Math.Clamp(fraction, 0.0, 1.0);
+        foreach (int decoder in deck.StemDecoders)
+        {
+            long length = Bass.ChannelGetLength(decoder);
+            if (length <= 0)
+                continue;
+            long offset = (long)(clamped * length);
+            if (!BassMix.ChannelSetPosition(decoder, offset, PositionFlags.Bytes))
+                _logger.LogWarning("Stem decoder {Decoder} reposition failed: {Error}", decoder, Bass.LastError);
+        }
     }
 
     // True when a deck OTHER than the one being seeked is currently playing (its mixer-source pause flag is
@@ -641,6 +723,15 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         {
             if (!BassMix.ChannelSetPosition(mixerHandle, deck.LoopStartBytes))
                 _logger.LogWarning("Loop wrap seek on deck {Handle} failed: {Error}", deckHandle, Bass.LastError);
+
+            // A stem deck must also wrap its four inner decoders back to the loop in-point in lockstep,
+            // or only the submix would jump and the stems would drift out of sync at every loop boundary.
+            if (deck.StemDecoders.Length > 0)
+            {
+                long mixerLength = Bass.ChannelGetLength(mixerHandle);
+                if (mixerLength > 0)
+                    SeekStemDecodersToFraction(deck, (double)deck.LoopStartBytes / mixerLength);
+            }
         };
         deck.LoopSync = BassMix.ChannelSetSync(
             mixerHandle, SyncFlags.Position | SyncFlags.Mixtime, endBytes, deck.LoopProcedure);
@@ -716,14 +807,30 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
 
     public void UnplugDeck(int deckHandle)
     {
-        if (_decks.TryGetValue(deckHandle, out DeckDsp? deck) && deck.CuePush != 0)
+        if (_decks.TryGetValue(deckHandle, out DeckDsp? deck))
         {
-            BassMix.MixerRemoveChannel(deck.CuePush); // detach the deck's PFL leg from the cue mixer
-            Bass.StreamFree(deck.CuePush);
+            if (deck.CuePush != 0)
+            {
+                BassMix.MixerRemoveChannel(deck.CuePush); // detach the deck's PFL leg from the cue mixer
+                Bass.StreamFree(deck.CuePush);
+            }
+            FreeStemDecoders(deck); // a stem deck owns 4 inner decoders the submix free does NOT drop
         }
+        _pendingStemDecoders.Remove(deckHandle); // a stem deck unplugged before PlugDeck (defensive)
         _decks.Remove(deckHandle);
         BassMix.MixerRemoveChannel(deckHandle);
         Bass.StreamFree(deckHandle);
+    }
+
+    // Free a stem deck's four inner decoders. The submix is its own decode stream (freed by the caller via
+    // the deck handle); freeing the submix does NOT free the decode streams added as its sources, so they
+    // are freed explicitly here. A no-op for a single-file deck (StemDecoders empty).
+    private static void FreeStemDecoders(DeckDsp deck)
+    {
+        foreach (int decoder in deck.StemDecoders)
+            if (decoder != 0)
+                Bass.StreamFree(decoder);
+        deck.StemDecoders = Array.Empty<int>();
     }
 
     public void StartMaster(Action<float[]> onMasterSamples)
@@ -904,10 +1011,16 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         {
             if (entry.Value.CuePush != 0)
                 Bass.StreamFree(entry.Value.CuePush); // the cue mixer's free below would also drop it
+            FreeStemDecoders(entry.Value); // free a stem deck's inner decoders (submix free won't)
             BassMix.MixerRemoveChannel(entry.Key);
             Bass.StreamFree(entry.Key);
         }
         _decks.Clear();
+        foreach (int[] pending in _pendingStemDecoders.Values) // submixes opened but never plugged
+            foreach (int decoder in pending)
+                if (decoder != 0)
+                    Bass.StreamFree(decoder);
+        _pendingStemDecoders.Clear();
         if (_cueMixer != 0)
             Bass.StreamFree(_cueMixer); // frees the plugged push source with it
         if (_mixer != 0)

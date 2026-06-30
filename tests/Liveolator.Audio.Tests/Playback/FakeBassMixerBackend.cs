@@ -35,6 +35,21 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         return OpenOverride?.Invoke(filePath) ?? _nextHandle++;
     }
 
+    /// <summary>Stem decks opened via <see cref="OpenStemDeck"/>, by returned submix handle.</summary>
+    public Dictionary<int, Liveolator.Core.Analysis.Stems.StemSet> StemDecks { get; } = new();
+
+    /// <summary>When set, <see cref="OpenStemDeck"/> throws to simulate a corrupt/unopenable stem.</summary>
+    public bool FailStemOpen { get; set; }
+
+    public int OpenStemDeck(Liveolator.Core.Analysis.Stems.StemSet stems)
+    {
+        if (FailStemOpen)
+            throw new BassPlaybackException("simulated stem open failure");
+        int handle = _nextHandle++;
+        StemDecks[handle] = stems;
+        return handle;
+    }
+
     public IBassMixerChannel PlugDeck(int deckHandle, int slot)
     {
         var channel = new FakeBassMixerChannel(deckHandle);

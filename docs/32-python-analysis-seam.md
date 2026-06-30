@@ -92,6 +92,37 @@ parse failure → log + return null (graceful, never throws on the analysis path
 - `PerformanceAction`s for per-stem mute/isolate; map to Push pads / CMD knobs.
 - Bonus: feed the drums stem into `TrackAnalyzer` for a cleaner onset envelope on busy mixes.
 
+### Phase 2 status & 2b design (chosen 2026-06-30, dj-software-advisor over the real BASS code)
+- **2a (offline separation) — DONE** on branch `feat/stems` (commit e751e76): `IStemSeparator` +
+  `StemSet`/`StemKind` (Core), `OpenUnmixStemSeparator` + `StemStore` (local FLAC cache, SHA-256 key) +
+  `separate_stems.py` (Open-Unmix umxhq), installer provisions openunmix+soundfile. Core 1371 + Media 244 green.
+- **2b (realtime playback) — DESIGN APPROVED, build pending.** Architecture = **Option C: a per-deck
+  "stem submix"** — 4 FLAC decoders → one decode `BASS_Mixer` → wrapped in the existing BASS_FX tempo
+  stream → plugged into the master mixer exactly where the single file stream is today. Stems are
+  sample-locked BY CONSTRUCTION (one clock); the whole transport/EQ/filter/crossfader/cue/limiter surface
+  is inherited unchanged. Only **seek** and **loop-wrap** must additionally reposition the 4 inner stems
+  (same fraction → same byte offset). Per-stem mute/isolate = `MixerStemEnable` PerformanceAction →
+  `IMixer.SetStemEnabled` → `Bass.ChannelSetAttribute(Volume)` on the control thread (BASS-ramped, zero
+  audio-thread work). DSP does NOT multiply (runs once post-sum). Default-off "Stems" gate; single mixed
+  file fallback when stems absent/incomplete/not-cached. Build sub-slices, ranked:
+  1. **Native spike** (`OpenStemDeck`, no UI/actions) — prove mixer-in-mixer reports position through
+     BASS_FX, inner-stem seek stays locked, END fires. **HARDWARE-VERIFIED BY OWNER** (no BASS in CI).
+     **BUILT 2026-06-30** behind default-off env gate `LIVEOLATOR_STEMS=1`: `BassMixerBackend.OpenStemDeck`
+     (4 FLAC decoders → one decode `BASS_Mixer` submix, returned as the deck handle so BASS_FX/master are
+     unchanged), stem-aware seek + loop-wrap via `SeekStemDecodersToFraction` (same fraction → same byte
+     offset), stem-aware free in `UnplugDeck`/`Dispose`. Core seam `IStemCache` (impl = `StemStore`); Load
+     branch `TwoDeckBassEngine.OpenDeckHandle` chooses stems only on gate-on + complete + local cached set,
+     else single file, with a single-attempt single-file fallback if the stem open throws. Pure gate logic
+     in `StemDeckDecision`. Managed logic unit-tested (Audio.Tests); the three native unknowns below remain
+     owner-verified on hardware.
+  2. Single master mute per stem (action + handler + IMixer + 4 buttons) — first owner-visible demo.
+  3. Fallback hardening + load branch + default-off gate + tests.
+  4. Isolate UX + Push/CMD feedback + mid-track toggle.
+  5. (later) per-stem EQ/filter — deferred (would multiply DSP).
+  Touch points: `BassMixerBackend.cs` (OpenStemDeck, stem-aware seek/loop/free, SetStemEnabled),
+  `IBassMixerBackend`/`IBassMixerChannel`/`BassMixer.cs`, `TwoDeckBassEngine.Transport.cs` (load branch),
+  `IMixer.cs`/`MixerActionHandler.cs`/`PerformanceActionKind.cs` (MixerStemEnable).
+
 ### Phase 3 — Hardening
 - Real-audio regression corpus (also needed by beat-sync) to measure segmentation/stem quality.
 - THIRD-PARTY-NOTICES updated for every new Python dep + model.

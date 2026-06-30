@@ -13,7 +13,7 @@ namespace Liveolator.Media.Analysis;
 /// cache hit (skip re-separation), exposes the per-track output dir a separator writes into, and
 /// persists/loads the manifest. No Python, no subprocess — pure filesystem.
 /// </summary>
-public sealed class StemStore
+public sealed class StemStore : IStemCache
 {
     private const string ManifestName = "manifest.json";
     private readonly string _cacheRoot;

@@ -1,3 +1,4 @@
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
 using Microsoft.Extensions.Logging;
 
@@ -31,8 +32,9 @@ public sealed partial class TwoDeckBassEngine
                 // Open the new stream BEFORE unloading the current track, so a failed open (missing /
                 // corrupt / unreadable file — e.g. a stale live-queue or restored entry) leaves the deck's
                 // existing track loaded and playable rather than wiping it. A bad track must never empty a
-                // good deck (global standards #16/#26).
-                int handle = _backend.OpenDeckStream(trackPath);
+                // good deck (global standards #16/#26). With the stems gate on and a complete local stem
+                // set cached, this opens a 4-stem submix deck; otherwise the single file (doc 32 §2b).
+                int handle = OpenDeckHandle(trackPath);
                 UnloadSlot(slot);
                 IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
@@ -200,6 +202,32 @@ public sealed partial class TwoDeckBassEngine
                 _backend.SetDeckPlaying(deck.Handle, false);
                 s.Deck = deck with { Playing = false };
             }
+        }
+    }
+
+    // Caller holds _gate. Decide single-file vs 4-stem submix for this track and open the deck handle
+    // (doc 32 §2b). Stems are used only when the gate is on AND a complete local stem set is cached; a
+    // corrupt/unopenable stem set must never take down a deck, so a stem-open failure falls back ONCE to
+    // the single mixed file before surfacing. Returns the raw deck handle PlugDeck wraps in BASS_FX.
+    private int OpenDeckHandle(string trackPath)
+    {
+        StemSet? cached = _stemsEnabled ? _stemCache?.TryLoad(trackPath) : null;
+        if (!StemDeckDecision.ShouldUseStems(_stemsEnabled, cached, out string reason))
+        {
+            _logger.LogDebug("Deck load uses single file ({Reason}): {Track}", reason, trackPath);
+            return _backend.OpenDeckStream(trackPath);
+        }
+
+        try
+        {
+            _logger.LogInformation("Deck load uses 4-stem submix ({Model}): {Track}", cached!.ModelId, trackPath);
+            return _backend.OpenStemDeck(cached);
+        }
+        catch (Exception ex)
+        {
+            // A corrupt/unopenable stem must never take down a deck — retry once with the single file.
+            _logger.LogWarning(ex, "Stem deck open failed for {Track}; falling back to the single file.", trackPath);
+            return _backend.OpenDeckStream(trackPath);
         }
     }
 

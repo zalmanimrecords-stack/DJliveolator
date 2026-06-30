@@ -29,6 +29,15 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Open a decoding deck stream for a file (not yet plugged into the mixer). Throws on failure.</summary>
     int OpenDeckStream(string filePath);
 
+    /// <summary>
+    /// Open a 4-stem deck (doc 32 §Phase 2b, Option C): four FLAC decoders summed by one decode-flagged
+    /// BASS_Mixer "stem submix", returning the submix handle so <see cref="PlugDeck"/> wraps it in BASS_FX
+    /// and plugs it into the master exactly like a single file stream. The inner decoders are remembered
+    /// against the returned handle so seek + loop-wrap reposition all four in lockstep and unplug frees
+    /// them. Throws on failure so the engine can fall back to the single mixed file.
+    /// </summary>
+    int OpenStemDeck(Liveolator.Core.Analysis.Stems.StemSet stems);
+
     /// <summary>Plug an opened deck stream into the master mix, returning its per-deck FX control.</summary>
     IBassMixerChannel PlugDeck(int deckHandle, int slot);
 

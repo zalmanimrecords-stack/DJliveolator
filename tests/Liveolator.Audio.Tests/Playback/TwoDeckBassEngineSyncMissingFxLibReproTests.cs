@@ -50,6 +50,7 @@ public class TwoDeckBassEngineSyncMissingFxLibReproTests
         // Everything else delegates to the working fake.
         public MasterMixInfo CreateMaster() => _inner.CreateMaster();
         public int OpenDeckStream(string filePath) => _inner.OpenDeckStream(filePath);
+        public int OpenStemDeck(Liveolator.Core.Analysis.Stems.StemSet stems) => _inner.OpenStemDeck(stems);
         public void SetDeckPlaying(int deckHandle, bool playing) => _inner.SetDeckPlaying(deckHandle, playing);
         public void UnplugDeck(int deckHandle) => _inner.UnplugDeck(deckHandle);
         public double GetDeckPositionFraction(int deckHandle) => _inner.GetDeckPositionFraction(deckHandle);

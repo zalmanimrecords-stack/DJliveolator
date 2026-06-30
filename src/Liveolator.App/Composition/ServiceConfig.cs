@@ -21,6 +21,7 @@ using Liveolator.Audio.Waveform;
 using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
@@ -374,7 +375,16 @@ public static class ServiceConfig
         // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
-        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory);
+        // Stem-deck support (doc 32 §Phase 2b, native spike). The local stem cache lookup is always wired
+        // so a future UI toggle just flips the gate; the gate itself is the default-off env var
+        // LIVEOLATOR_STEMS=1 (lightest gate — no settings-snapshot plumbing for an experimental path).
+        // Off ⇒ Load behaves exactly as before (single file). On ⇒ a complete locally-cached stem set
+        // makes a deck a 4-stem submix.
+        var stemCache = new StemStore();
+        services.AddSingleton<IStemCache>(stemCache);
+        bool stemsEnabled = Environment.GetEnvironmentVariable("LIVEOLATOR_STEMS") == "1";
+        TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(
+            mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory, stemCache, stemsEnabled);
         // The master-mix clock phase-locks its detected grid onto the audible kick (OnsetPhaseLock), so
         // when a deck is NOT the sync master — an un-analyzed track, or live input with no precomputed
         // grid — the shared clock still tracks the beat without drifting (doc 03 drift prevention).
@@ -833,7 +843,9 @@ public static class ServiceConfig
         AudioSettings audioSettings,
         IAudioEffectRackProvider effectRacks,
         IHotCueStore hotCueStore,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IStemCache stemCache,
+        bool stemsEnabled)
     {
         try
         {
@@ -846,7 +858,7 @@ public static class ServiceConfig
             // NullLogger silently dropping them.
             return new TwoDeckBassEngine(
                 mixer, loggerFactory: loggerFactory, audioSettings: audioSettings, effectRacks: effectRacks,
-                hotCueStore: hotCueStore, phaseLock: phaseLock);
+                hotCueStore: hotCueStore, phaseLock: phaseLock, stemCache: stemCache, stemsEnabled: stemsEnabled);
         }
         catch (Exception ex) when (ex is BassPlaybackException or DllNotFoundException)
         {
