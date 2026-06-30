@@ -791,6 +791,11 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
             settings.SmartRelease, settings.Character, settings.CeilingDbTp);
     }
 
+    /// <summary>Live gain reduction (dB) of the master limiter, for the UI GR meter (<see cref="ILimiterControl"/>).
+    /// Reads the limiter's smoothed gain — a torn read on the audio thread is impossible on 64-bit and a
+    /// one-poll-stale value is invisible at the UI's poll rate.</summary>
+    public double CurrentGainReductionDb => _masterLimiter.CurrentGainReductionDb;
+
     // BASS update thread: apply the master brick-wall limiter in place (Gap #5) so two summed decks
     // never hard-clip the master, write the limited master back to the device, then hand the limited
     // master to (a) the analysis tap and (b) the headphone-cue master leg. Allocation-free on the heavy

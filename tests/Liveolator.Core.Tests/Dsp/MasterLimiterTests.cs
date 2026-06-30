@@ -260,6 +260,35 @@ public class MasterLimiterTests
         }
     }
 
+    // --- Gain-reduction metering --------------------------------------------------------------------
+
+    [Fact]
+    public void GainReductionDb_IsZero_WhenNotLimiting()
+    {
+        var limiter = MakeStereoLimiter();
+        Assert.Equal(0.0, limiter.CurrentGainReductionDb, precision: 6);
+
+        // A below-ceiling signal keeps gain at unity → still zero reduction.
+        var quiet = new float[1024 * Stereo];
+        Array.Fill(quiet, 0.1f);
+        limiter.Process(quiet);
+        Assert.Equal(0.0, limiter.CurrentGainReductionDb, precision: 6);
+    }
+
+    [Fact]
+    public void GainReductionDb_IsPositive_AndMatchesAppliedGain_WhenLimiting()
+    {
+        var limiter = MakeStereoLimiter();
+        var loud = new float[SampleRate * Stereo];
+        Array.Fill(loud, 2.0f); // +6 dB over full scale → the limiter pulls the master down
+        limiter.Process(loud);
+
+        Assert.True(limiter.CurrentGain < 1.0, "test setup: expected the limiter to be reducing");
+        double expected = -20.0 * Math.Log10(limiter.CurrentGain);
+        Assert.True(limiter.CurrentGainReductionDb > 0.0, "reduction dB should be positive while limiting");
+        Assert.Equal(expected, limiter.CurrentGainReductionDb, precision: 6);
+    }
+
     // --- Stereo linking & N channels ----------------------------------------------------------------
 
     [Fact]

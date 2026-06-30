@@ -342,6 +342,7 @@ public static class ServiceConfig
         var mixer = new BassMixer();
         services.AddSingleton<IMixer>(mixer);
         services.AddSingleton<IDeckLevelMeter>(mixer);
+        services.AddSingleton<ILimiterMeter>(mixer);
         var mixerHandler = new MixerActionHandler(mixer);
 
         // --- Global OS volume (the computer's master output level, not the app's mix): the per-OS
@@ -604,6 +605,7 @@ public static class ServiceConfig
             sp.GetService<IWaveformProvider>(),
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetService<IDeckLevelMeter>(),
+            sp.GetService<ILimiterMeter>(),
             appSettings.Visuals.WaveformZoomSeconds,
             appSettings.Visuals.NudgeSeconds,
             // Deck transport is handled only when the realtime engine is up; in catalog-browser mode the

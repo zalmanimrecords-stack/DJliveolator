@@ -18,7 +18,7 @@ namespace Liveolator.Audio.Playback;
 /// channel is registered, calls for that slot are logged and dropped rather than crashing the audio
 /// path (global standard #26 — never fail silently).
 /// </remarks>
-public sealed class BassMixer : IMixer, IDeckLevelMeter
+public sealed class BassMixer : IMixer, IDeckLevelMeter, ILimiterMeter
 {
     private readonly IBassMixerChannel?[] _channels;
     // Last-written gain per slot. Stored so SetChannel can re-apply the correct crossfader-derived
@@ -144,6 +144,10 @@ public sealed class BassMixer : IMixer, IDeckLevelMeter
         EnsureSlot(slot);
         return _channels[slot]?.Level ?? DeckLevel.Silent;
     }
+
+    /// <summary>Live master-limiter gain reduction (dB) for the UI GR meter. Zero when no realtime limiter
+    /// is registered (headless/CI), so the meter simply reads idle rather than failing.</summary>
+    public double CurrentGainReductionDb => _limiterControl?.CurrentGainReductionDb ?? 0.0;
 
     private bool TryChannel(int slot, string op, out IBassMixerChannel channel)
     {

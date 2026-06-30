@@ -20,6 +20,11 @@ public sealed class MixerViewModelTests
         public DeckLevel GetLevel(int slot) => slot == 0 ? A : B;
     }
 
+    private sealed class FakeLimiterMeter : ILimiterMeter
+    {
+        public double CurrentGainReductionDb { get; set; }
+    }
+
     public MixerViewModelTests()
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
@@ -271,5 +276,35 @@ public sealed class MixerViewModelTests
 
         Assert.Equal(0, vm.LevelA);
         Assert.Equal(0.25, vm.LevelB);
+    }
+
+    [Fact]
+    public void UpdateLevels_GainReduction_AttacksToNewPeakInstantly()
+    {
+        var limiter = new FakeLimiterMeter { CurrentGainReductionDb = 4.0 };
+        var vm = new MixerViewModel(limiterMeter: limiter);
+
+        vm.UpdateLevels(deckAPlaying: false, deckBPlaying: false);
+
+        // The GR is read regardless of deck-playing state (it reflects the summed master) and jumps
+        // straight to the new, higher reduction.
+        Assert.Equal(4.0, vm.LimiterGainReductionDb, precision: 6);
+    }
+
+    [Fact]
+    public void UpdateLevels_GainReduction_HoldsThenDecaysWhenReductionDrops()
+    {
+        var limiter = new FakeLimiterMeter { CurrentGainReductionDb = 6.0 };
+        var vm = new MixerViewModel(limiterMeter: limiter);
+
+        vm.UpdateLevels(false, false); // attack to 6 dB
+        Assert.Equal(6.0, vm.LimiterGainReductionDb, precision: 6);
+
+        limiter.CurrentGainReductionDb = 0.0; // limiter releases
+        vm.UpdateLevels(false, false);
+
+        // Peak-hold: the meter does NOT snap to 0 — it decays a fraction of the way down per poll.
+        Assert.True(vm.LimiterGainReductionDb > 0.0, "GR meter should hold, not snap to zero");
+        Assert.True(vm.LimiterGainReductionDb < 6.0, "GR meter should be decaying toward zero");
     }
 }

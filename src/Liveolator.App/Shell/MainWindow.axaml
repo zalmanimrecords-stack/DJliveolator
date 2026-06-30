@@ -117,6 +117,17 @@
                            IsEnabled="{Binding Limiter.LimiterCeiling.IsEnabled}" />
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
           </StackPanel>
+
+          <!-- Gain-reduction meter: the only feedback that the (inaudible-by-design) brick wall is working,
+               and how hard. The LED lights when it engages; the bar shows the dB of reduction (peak-held in
+               the VM). Lets the DJ see the effect of CHARACTER / SMART / CEILING without trusting the ear. -->
+          <StackPanel Spacing="1" VerticalAlignment="Center"
+                      ToolTip.Tip="Master limiter gain reduction — lights when the brick wall engages (peak-held)">
+            <controls:GainReductionMeter Width="64" Height="14" VerticalAlignment="Center"
+                                         GainReductionDb="{Binding Limiter.LimiterGainReductionDb}"
+                                         FullScaleDb="{Binding Limiter.LimiterGainReductionFullScaleDb}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="GR" />
+          </StackPanel>
         </StackPanel>
 
         <!-- RIGHT: system / window utilities (not DJ-output controls) -->

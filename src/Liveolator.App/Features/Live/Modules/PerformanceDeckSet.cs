@@ -39,6 +39,7 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         IWaveformProvider? waveformProvider = null,
         MusicLibrary? library = null,
         IDeckLevelMeter? levelMeter = null,
+        ILimiterMeter? limiterMeter = null,
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
         bool deckTransportEnabled = true,
@@ -49,7 +50,7 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService);
         // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
-        Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB);
+        Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB, limiterMeter);
         _waveformZoom = ZoomKnobFromSeconds(waveformZoomSeconds); // reflect the initial zoom on the knob
 
         // Cross-deck beatmatch highlight: when both decks are playing at the same audible tempo, light the
