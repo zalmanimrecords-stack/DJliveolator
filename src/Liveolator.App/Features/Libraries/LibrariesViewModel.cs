@@ -141,6 +141,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
                 (scanning, cueing) => !scanning && !cueing));
 
+        // The single LIBRARIES "Scan" button (owner request, 2026-06-30): one click runs the whole
+        // library pass — scan → rescan → auto-cue. Blocked while any step is running so it can't
+        // overlap itself or the building-block commands above.
+        ScanAllCommand = ReactiveCommand.CreateFromTask(
+            RunScanAllAsync,
+            this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
+                (scanning, cueing) => !scanning && !cueing));
+
         ScanHealthCommand = ReactiveCommand.CreateFromTask(
             RunScanHealthAsync,
             this.WhenAnyValue(x => x.IsScanning, x => x.IsAutoCueing,
@@ -238,6 +246,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     public Playlists.PlaylistBuilderViewModel? PlaylistBuilder { get; }
 
     public ReactiveCommand<Unit, Unit> ScanCommand { get; }
+
+    /// <summary>
+    /// The one-button LIBRARIES "Scan" action (owner request, 2026-06-30): scans the folders, force
+    /// re-maps every track (BPM/key/beat grid/cues), then places automatic hot cues — in sequence.
+    /// Composes <see cref="ScanCommand"/>, <see cref="RescanAllCommand"/> and
+    /// <see cref="AutoCueLibraryCommand"/>; the auto-cue step is skipped when no service was wired.
+    /// </summary>
+    public ReactiveCommand<Unit, Unit> ScanAllCommand { get; }
 
     /// <summary>Places automatic hot cues on every track in the scanned folders (persisted to the cue store).</summary>
     public ReactiveCommand<Unit, Unit> AutoCueLibraryCommand { get; }
@@ -783,6 +799,18 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         {
             RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not save sample folders: {ex.Message}");
         }
+    }
+
+    // The LIBRARIES tab's single "Scan" action (owner request, 2026-06-30): run the three library
+    // passes back-to-back — discover files, force re-map every track, then place automatic hot cues.
+    // Each step owns its own busy state, status text, and error guard, so a failure in one surfaces
+    // without aborting the others; auto-cue is skipped when no service was wired.
+    private async Task RunScanAllAsync()
+    {
+        await RunScanAsync().ConfigureAwait(false);
+        await RunRescanAllAsync().ConfigureAwait(false);
+        if (_autoCueService is not null)
+            await RunAutoCueLibraryAsync().ConfigureAwait(false);
     }
 
     private async Task RunScanAsync()

@@ -75,4 +75,34 @@ public sealed class LibrariesViewModelAutoCueTests
         Assert.Empty(service.Requested);
         Assert.Contains("No tracks", vm.ScanStatus);
     }
+
+    // The single LIBRARIES "Scan" button (owner request, 2026-06-30): one click discovers files,
+    // force re-maps the catalog, then places auto cues.
+    [Fact]
+    public async Task ScanAll_scans_remaps_and_autoCues_in_one_command()
+    {
+        var service = new FakeAutoCueService(cued: 2);
+        LibrariesViewModel vm = BuildViewModel(service, "/music/A.wav", "/music/B.wav");
+
+        await vm.ScanAllCommand.Execute().ToTask();
+
+        Assert.Equal(2, vm.Tracks.Count);                         // folders were scanned
+        Assert.All(vm.Tracks, t => Assert.NotNull(t.Track.Bpm));  // re-map produced fresh analysis
+        Assert.Equal(2, service.Requested.Count);                 // auto-cue ran over the catalog
+        Assert.False(vm.IsScanning);
+        Assert.False(vm.IsAutoCueing);
+        Assert.Contains("Auto-cue complete", vm.ScanStatus);
+    }
+
+    [Fact]
+    public async Task ScanAll_withoutAutoCueService_stillScans()
+    {
+        LibrariesViewModel vm = BuildViewModel(service: null, "/music/A.wav");
+
+        await vm.ScanAllCommand.Execute().ToTask();
+
+        Assert.Single(vm.Tracks);
+        Assert.False(vm.IsScanning);
+        Assert.False(vm.IsAutoCueing);
+    }
 }
