@@ -1374,42 +1374,43 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
-    public void LoopLength_DefaultsToOneBar_AndSteps()
+    public void LoopLengthKnob_DefaultsToOneBar()
     {
         var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
-        Assert.Equal("1 BAR", vm.LoopLengthLabel); // default 4 beats
+        Assert.Equal("1 BAR", vm.LoopLengthLabel); // default 4 beats (index 8 of 12)
+    }
 
-        vm.LoopLongerCommand.Execute().Subscribe();
-        Assert.Equal("2 BAR", vm.LoopLengthLabel); // 8 beats
+    [Theory]
+    [InlineData(0.0, "1/64")]   // knob fully left → shortest
+    [InlineData(1.0, "8 BAR")]  // fully right → 32 beats
+    [InlineData(6.0 / 11, "1")] // index 6 → 1 beat
+    public void LoopLengthKnob_MapsPositionToLength(double knob, string expectedLabel)
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher()) { LoopLengthKnob = knob };
+        Assert.Equal(expectedLabel, vm.LoopLengthLabel);
+    }
 
-        vm.LoopShorterCommand.Execute().Subscribe();
-        vm.LoopShorterCommand.Execute().Subscribe();
-        Assert.Equal("2", vm.LoopLengthLabel); // 4 → 2 beats
+    [Theory]
+    [InlineData(-0.5, "1/64")] // below range clamps to shortest
+    [InlineData(2.0, "8 BAR")] // above range clamps to longest
+    public void LoopLengthKnob_ClampsOutOfRange(double knob, string expectedLabel)
+    {
+        var vm = new DeckViewModel(slot: 0, new FakeDispatcher()) { LoopLengthKnob = knob };
+        Assert.Equal(expectedLabel, vm.LoopLengthLabel);
     }
 
     [Fact]
-    public void LoopLength_ClampsAtTheEnds()
-    {
-        var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
-        for (int i = 0; i < 20; i++) vm.LoopShorterCommand.Execute().Subscribe();
-        Assert.Equal("1/64", vm.LoopLengthLabel);
-        for (int i = 0; i < 40; i++) vm.LoopLongerCommand.Execute().Subscribe();
-        Assert.Equal("8 BAR", vm.LoopLengthLabel);
-    }
-
-    [Fact]
-    public void LoopCommand_ArmsTheSelectedLength()
+    public void LoopCommand_ArmsTheKnobSelectedLength()
     {
         var dispatcher = new FakeDispatcher();
-        var vm = new DeckViewModel(slot: 0, dispatcher);
-        vm.LoopLongerCommand.Execute().Subscribe(); // 4 → 8 beats
+        var vm = new DeckViewModel(slot: 0, dispatcher) { LoopLengthKnob = 1.0 }; // 32 beats = 8 bars
         dispatcher.Dispatched.Clear();
 
         vm.LoopCommand.Execute().Subscribe();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.DeckSetLoop, action.Kind);
-        Assert.Equal(8.0, action.Value, precision: 6);
+        Assert.Equal(32.0, action.Value, precision: 6);
     }
 
 

@@ -171,10 +171,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             () => _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: _loopBeats, Slot: slot)),
             canEmit);
-        // Loop-length selector: −/+ step the armed length through LoopLengthsBeats (1/64 … 8 bars). Pure
-        // state — the next LOOP press arms the chosen length; an active loop is not resized underfoot.
-        LoopShorterCommand = ReactiveCommand.Create(() => StepLoopLength(-1), canEmit);
-        LoopLongerCommand = ReactiveCommand.Create(() => StepLoopLength(+1), canEmit);
         _isLooping = _dispatcher?.GetFeedback(PerformanceActionKind.DeckSetLoop, slot).IsActive ?? false;
 
         // Loop release: emit DeckSetLoop with a non-positive beat length, which the engine handler maps
@@ -345,6 +341,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private static readonly double[] LoopLengthsBeats =
         { 1 / 64.0, 1 / 32.0, 1 / 16.0, 1 / 8.0, 1 / 4.0, 1 / 2.0, 1, 2, 4, 8, 16, 32 };
     private double _loopBeats = DefaultLoopBeats;
+    private double _loopLengthKnob = (double)ClosestLoopIndex(DefaultLoopBeats) / (LoopLengthsBeats.Length - 1);
 
     /// <summary>Deck label, "A" or "B".</summary>
     public string DeckId { get; }
@@ -739,16 +736,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
     }
 
-    // Step the armed loop length to the next/previous entry in LoopLengthsBeats (−1 shorter, +1 longer).
-    private void StepLoopLength(int direction)
-    {
-        int i = Math.Clamp(ClosestLoopIndex(_loopBeats) + direction, 0, LoopLengthsBeats.Length - 1);
-        if (LoopLengthsBeats[i] == _loopBeats)
-            return;
-        _loopBeats = LoopLengthsBeats[i];
-        this.RaisePropertyChanged(nameof(LoopLengthLabel));
-    }
-
     private static int ClosestLoopIndex(double beats)
     {
         int best = 0;
@@ -891,8 +878,26 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// within-beat first-beat anchor from the current position).</summary>
     /// <summary>The armed loop length as a deck label (e.g. "1/8", "1 BAR", "8 BAR"); shown on the LOOP key.</summary>
     public string LoopLengthLabel => FormatLoopLength(_loopBeats);
-    public ReactiveCommand<Unit, Unit> LoopShorterCommand { get; }
-    public ReactiveCommand<Unit, Unit> LoopLongerCommand { get; }
+
+    /// <summary>
+    /// The loop-length KNOB position (0..1, two-way). The knob carries 12 detents (1/64 … 8 bars); turning
+    /// it selects the armed length the LOOP key uses. Pure UI state — an active loop is not resized underfoot.
+    /// </summary>
+    public double LoopLengthKnob
+    {
+        get => _loopLengthKnob;
+        set
+        {
+            double v = Math.Clamp(value, 0.0, 1.0);
+            this.RaiseAndSetIfChanged(ref _loopLengthKnob, v);
+            int i = Math.Clamp((int)Math.Round(v * (LoopLengthsBeats.Length - 1)), 0, LoopLengthsBeats.Length - 1);
+            if (_loopBeats != LoopLengthsBeats[i])
+            {
+                _loopBeats = LoopLengthsBeats[i];
+                this.RaisePropertyChanged(nameof(LoopLengthLabel));
+            }
+        }
+    }
     public ReactiveCommand<Unit, Unit> SetGridHereCommand { get; }
     public ReactiveCommand<Unit, Unit> NudgeGridBackCommand { get; }
     public ReactiveCommand<Unit, Unit> NudgeGridForwardCommand { get; }
