@@ -1,10 +1,15 @@
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
 
 namespace Liveolator.Core.Analysis;
 
-/// <summary>Combined offline analysis of one track: tempo, musical key/scale, duration, cues.</summary>
-public sealed record TrackAnalysisResult(BpmResult Bpm, MusicalKey Key, TimeSpan Duration, TrackCues Cues);
+/// <summary>Combined offline analysis of one track: tempo, musical key/scale, duration, cues, and
+/// (when the optional Python/librosa analyzer is available) the song structure (doc 32).</summary>
+/// <param name="Structure">Detected musical structure, or <c>null</c> when structure analysis was not
+/// run or was unavailable — existing analysis without Python keeps working unchanged.</param>
+public sealed record TrackAnalysisResult(
+    BpmResult Bpm, MusicalKey Key, TimeSpan Duration, TrackCues Cues, SongStructure? Structure = null);
 
 /// <summary>
 /// Measures BPM and musical key/scale from mono PCM, and (via <see cref="IAudioDecoder"/>)
@@ -20,8 +25,11 @@ public sealed class TrackAnalyzer
     /// v4: beat PHASE now anchors on the kick (not the broadband envelope) with frame-centre latency
     /// compensation, and the kick onset uses percussive/HPSS separation (<see cref="Bpm.PercussiveOnsetEnvelope"/>)
     /// so an in-band bassline no longer pulls the grid off the down-beat (system review 2026-06-27). Existing
-    /// tracks re-grid in the background on next scan.</remarks>
-    public const int CurrentVersion = 4;
+    /// tracks re-grid in the background on next scan.
+    /// v5: optional offline song-structure segmentation (intro/buildup/drop/breakdown/outro) via the
+    /// Python+librosa seam (<see cref="Structure.ISongStructureAnalyzer"/>, doc 32). Additive — when the
+    /// runtime is absent, <see cref="TrackAnalysisResult.Structure"/> stays null and analysis is unchanged.</remarks>
+    public const int CurrentVersion = 5;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
@@ -30,17 +38,20 @@ public sealed class TrackAnalyzer
     private readonly ChromaExtractor _chroma;
     private readonly KeyClassifier _key;
     private readonly SilenceCueDetector _cues;
+    private readonly ISongStructureAnalyzer? _structure;
 
     public TrackAnalyzer(
         BpmDetector? bpmDetector = null,
         ChromaExtractor? chromaExtractor = null,
         KeyClassifier? keyClassifier = null,
-        SilenceCueDetector? cueDetector = null)
+        SilenceCueDetector? cueDetector = null,
+        ISongStructureAnalyzer? structureAnalyzer = null)
     {
         _bpm = bpmDetector ?? new BpmDetector();
         _chroma = chromaExtractor ?? new ChromaExtractor();
         _key = keyClassifier ?? new KeyClassifier();
         _cues = cueDetector ?? new SilenceCueDetector();
+        _structure = structureAnalyzer;
     }
 
     /// <summary>Analyzes an in-memory mono PCM buffer.</summary>
@@ -77,6 +88,29 @@ public sealed class TrackAnalyzer
         }
 
         var buffer = pcm.ToArray();
-        return AnalyzePcm(buffer, AnalysisSampleRate);
+        TrackAnalysisResult result = AnalyzePcm(buffer, AnalysisSampleRate);
+
+        // Optional song-structure pass (doc 32). The analyzer is graceful by contract (null on missing
+        // runtime / failure); the guard here only keeps a buggy implementation from breaking core analysis.
+        if (_structure is not null)
+        {
+            try
+            {
+                SongStructure? structure =
+                    await _structure.AnalyzeAsync(decoder, filePath, cancellationToken).ConfigureAwait(false);
+                if (structure is not null)
+                    result = result with { Structure = structure };
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // Structure is a best-effort enrichment; never let it fail the core BPM/key/cue analysis.
+            }
+        }
+
+        return result;
     }
 }

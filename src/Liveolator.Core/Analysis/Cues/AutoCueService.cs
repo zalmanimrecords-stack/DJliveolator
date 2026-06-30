@@ -101,7 +101,7 @@ public sealed class AutoCueService : IAutoCueService
         if (string.IsNullOrWhiteSpace(path) || !_decoder.CanDecode(path))
             return false;
 
-        TrackCueSet? auto = await _analyzer.AnalyzeAsync(_decoder, path, cancellationToken).ConfigureAwait(false);
+        TrackCueSet? auto = await _analyzer.AnalyzeAsync(_decoder, path, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (auto is null || auto.HotCues.Count == 0)
             return false;
 

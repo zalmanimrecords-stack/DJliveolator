@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Liveolator.Core.Analysis.Cues;
+using Liveolator.Core.Analysis.Structure;
 using Xunit;
 
 namespace Liveolator.Core.Tests.Analysis.Cues;
@@ -43,6 +44,47 @@ public class AutoCueAnalyzerTests
 
         Assert.NotNull(result);
         Assert.Contains(result!.HotCues, c => c.Label == "Drop");
+    }
+
+    [Fact]
+    public void AnalyzePcm_WithSongStructure_PrefersRealSectionBoundaries()
+    {
+        // A real drop at a deliberate position the energy heuristic would not pick. The placed Drop cue
+        // must land on (the beat-snap of) that real boundary, proving structure wins over the heuristic.
+        const double realDropSeconds = 24.0;
+        var structure = new SongStructure(
+            new[]
+            {
+                new SongSection(0.0, SongSectionLabel.Intro),
+                new SongSection(realDropSeconds, SongSectionLabel.Drop),
+            },
+            "librosa 0.10.2");
+
+        TrackCueSet? withStructure = Analyzer().AnalyzePcm(CueTestSignals.StructuredClickTrack(), Sr, structure);
+        TrackCueSet? heuristic = Analyzer().AnalyzePcm(CueTestSignals.StructuredClickTrack(), Sr);
+
+        Assert.NotNull(withStructure);
+        HotCue structDrop = withStructure!.HotCues.Single(c => c.Label == "Drop");
+        HotCue heuristicDrop = heuristic!.HotCues.Single(c => c.Label == "Drop");
+
+        double structDropSeconds = (double)structDrop.PositionSamples / Sr;
+        Assert.InRange(structDropSeconds, realDropSeconds - 0.5, realDropSeconds + 0.5);
+        Assert.NotEqual(heuristicDrop.PositionSamples, structDrop.PositionSamples);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_WithSongStructure_PrefersRealSectionBoundaries()
+    {
+        var decoder = new FakeAudioDecoder(CueTestSignals.StructuredClickTrack());
+        var structure = new SongStructure(
+            new[] { new SongSection(0.0, SongSectionLabel.Intro), new SongSection(24.0, SongSectionLabel.Drop) },
+            "librosa 0.10.2");
+
+        TrackCueSet? result = await Analyzer().AnalyzeAsync(decoder, @"C:\Music\track.wav", structure);
+
+        Assert.NotNull(result);
+        double dropSeconds = (double)result!.HotCues.Single(c => c.Label == "Drop").PositionSamples / Sr;
+        Assert.InRange(dropSeconds, 23.5, 24.5);
     }
 
     [Fact]
