@@ -29,18 +29,17 @@ internal sealed record PythonRuntimeSpec(string Url, string Sha256, string Archi
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && arch == Architecture.X64)
             return Asset(
                 "cpython-" + Version + "+" + Tag + "-x86_64-pc-windows-msvc-install_only.tar.gz",
-                // ponytail: placeholder hash — replace with the published SHA256SUMS entry before shipping.
-                "0000000000000000000000000000000000000000000000000000000000000000");
+                "4c71d25731214b8a960d1d87510f24179d819249c5b434aaf7135818421b6215");
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && arch == Architecture.Arm64)
             return Asset(
                 "cpython-" + Version + "+" + Tag + "-aarch64-apple-darwin-install_only.tar.gz",
-                "0000000000000000000000000000000000000000000000000000000000000000");
+                "8760e908f25fdc8a01f4d1b101854ac047b4eacb723fb2593a168fb989c86eef");
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && arch == Architecture.X64)
             return Asset(
                 "cpython-" + Version + "+" + Tag + "-x86_64-apple-darwin-install_only.tar.gz",
-                "0000000000000000000000000000000000000000000000000000000000000000");
+                "76073305812c093ce840df9c4c17068aa69da8d951e7376ef48f43376986a13e");
 
         return null;
     }
