@@ -753,7 +753,10 @@ public static class ServiceConfig
             sp.GetRequiredService<IControlSkinCatalog>(),
             sp.GetRequiredService<IControlSkinApplier>(),
             sp.GetRequiredService<IUiThemeLiveApplier>(),
-            sp.GetRequiredService<MappingsViewModel>()));
+            sp.GetRequiredService<MappingsViewModel>(),
+            // Advanced offline analysis runtime installer (doc 32): drives the Settings "Enable advanced
+            // analysis" button. Optional — null leaves the button disabled in headless/limited builds.
+            sp.GetService<IAdvancedAnalysisInstaller>()));
 
         // Shell top-bar status: audio route + MIDI connection/activity, driven off IMidiControlStatus
         // (the MidiControlSession registered above). AppSettings feeds the device-name readouts, and the

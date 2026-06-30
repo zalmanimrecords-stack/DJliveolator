@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Settings;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
@@ -642,5 +643,56 @@ public sealed class SettingsViewModelTests
         await vm.SaveAsync();
 
         Assert.Equal("Warning", store.Saved.Diagnostics.MinimumLevel);
+    }
+
+    // --- Advanced analysis (doc 32): the "Enable advanced analysis" button drives the runtime installer.
+    private sealed class FakeInstaller : IAdvancedAnalysisInstaller
+    {
+        private readonly bool _result;
+        public int Calls { get; private set; }
+        public FakeInstaller(bool result) => _result = result;
+        public bool IsInstalled => false;
+        public System.Threading.Tasks.Task<bool> InstallAsync(
+            System.IProgress<InstallProgress>? progress = null, CancellationToken ct = default)
+        {
+            Calls++;
+            // No progress.Report here: Progress<T> dispatches to the threadpool when there is no captured
+            // SynchronizationContext (as in a test), which would race the final-status assignment below.
+            return Task.FromResult(_result);
+        }
+    }
+
+    [Fact]
+    public void AdvancedAnalysis_DisabledWhenNoInstaller()
+    {
+        var vm = NewVm();
+        Assert.False(vm.CanEnableAdvancedAnalysis);
+    }
+
+    [Fact]
+    public async Task AdvancedAnalysis_Success_RunsInstallerAndReportsEnabled()
+    {
+        var installer = new FakeInstaller(result: true);
+        var vm = new SettingsViewModel(
+            new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore(),
+            advancedAnalysisInstaller: installer);
+
+        Assert.True(vm.CanEnableAdvancedAnalysis);
+        await vm.EnableAdvancedAnalysisCommand.Execute().ToTask();
+
+        Assert.Equal(1, installer.Calls);
+        Assert.Contains("enabled", vm.AdvancedAnalysisStatus, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AdvancedAnalysis_Failure_ReportsFailure()
+    {
+        var vm = new SettingsViewModel(
+            new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore(),
+            advancedAnalysisInstaller: new FakeInstaller(result: false));
+
+        await vm.EnableAdvancedAnalysisCommand.Execute().ToTask();
+
+        Assert.Contains("could not", vm.AdvancedAnalysisStatus, System.StringComparison.OrdinalIgnoreCase);
     }
 }
