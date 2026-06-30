@@ -31,7 +31,10 @@ public class PythonRuntimeInstallerTests
         Assert.Equal(1, ops.DownloadCalls);
         Assert.Equal(1, ops.VerifyCalls);
         Assert.Equal(1, ops.ExtractCalls);
-        Assert.Equal(1, ops.PipCalls);
+        // librosa (structure) + openunmix + soundfile (stems) are all provisioned by the one-click download.
+        Assert.Equal(3, ops.PipCalls);
+        Assert.Contains("librosa", ops.PipPackages);
+        Assert.Contains("openunmix", ops.PipPackages);
         Assert.Equal(InstallPhase.Done, progress.Phases[^1]);
     }
 
@@ -130,6 +133,7 @@ public class PythonRuntimeInstallerTests
         public int VerifyCalls;
         public int ExtractCalls;
         public int PipCalls;
+        public List<string> PipPackages { get; } = new();
 
         // Tracks the runtime's interpreter path so a successful extract makes IsAvailable true.
         private string? _interpreterPath;
@@ -168,6 +172,7 @@ public class PythonRuntimeInstallerTests
         public Task<bool> PipInstallAsync(string interpreterPath, string package, CancellationToken ct)
         {
             PipCalls++;
+            PipPackages.Add(package);
             return Task.FromResult(PipOk);
         }
 

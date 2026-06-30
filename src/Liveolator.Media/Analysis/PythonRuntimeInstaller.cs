@@ -17,8 +17,11 @@ namespace Liveolator.Media.Analysis;
 /// </summary>
 public sealed class PythonRuntimeInstaller : IAdvancedAnalysisInstaller
 {
-    private const string LibrosaPackage = "librosa";
     private const string LibrosaModule = "librosa";
+
+    // Pip packages the one-click download provisions. librosa powers structure analysis (doc 32 Phase 1);
+    // openunmix powers stem separation (Phase 2) and pulls torch + soundfile as its own dependencies.
+    private static readonly string[] PipPackages = { "librosa", "openunmix", "soundfile" };
 
     private readonly PythonRuntime _runtime;
     private readonly IPythonRuntimeOps _ops;
@@ -109,12 +112,15 @@ public sealed class PythonRuntimeInstaller : IAdvancedAnalysisInstaller
             }
             TryDelete(archivePath);
 
-            Report(progress, InstallPhase.InstallingPackages, 0.8, "Installing librosa…");
-            if (!await _ops.PipInstallAsync(_runtime.InterpreterPath, LibrosaPackage, ct).ConfigureAwait(false))
+            Report(progress, InstallPhase.InstallingPackages, 0.8, "Installing analysis packages…");
+            foreach (string package in PipPackages)
             {
-                _logger.LogWarning("Advanced-analysis install failed: pip install librosa failed.");
-                Report(progress, InstallPhase.Failed, 0, "Installing librosa failed.");
-                return false;
+                if (!await _ops.PipInstallAsync(_runtime.InterpreterPath, package, ct).ConfigureAwait(false))
+                {
+                    _logger.LogWarning("Advanced-analysis install failed: pip install {Package} failed.", package);
+                    Report(progress, InstallPhase.Failed, 0, $"Installing {package} failed.");
+                    return false;
+                }
             }
 
             // Confirm the interpreter resolves AND librosa actually imports before declaring success.
