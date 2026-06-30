@@ -2,6 +2,7 @@ using System.IO;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
 
 namespace Liveolator.Core.Library.Music;
 
@@ -17,7 +18,11 @@ public sealed record MusicTrack(
     TrackMetadata? Metadata = null,
     MusicMediaKind Kind = MusicMediaKind.Track,
     int AnalyzerVersion = 0,
-    bool AnalysisIsManual = false) : IMediaEntry
+    bool AnalysisIsManual = false,
+    // Optional offline song-structure segmentation (doc 32). Null when not yet analyzed; an older
+    // catalog JSON simply lacks the property and deserializes to null (backward compatible — the
+    // snapshot version is NOT bumped, so existing caches still load).
+    SongStructure? Structure = null) : IMediaEntry
 {
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>
