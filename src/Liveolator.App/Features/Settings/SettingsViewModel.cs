@@ -94,6 +94,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
     private string _termsAcceptanceStatus = "Not yet accepted.";
     private bool _checkForUpdatesOnStartup = UpdateSettings.Default.CheckOnStartup;
+    private string? _getSongBpmApiKey;
 
     public SettingsViewModel(
         IAudioOutputDeviceCatalog outputs,
@@ -283,6 +284,14 @@ public sealed class SettingsViewModel : ViewModelBase
     {
         get => _activeUiThemeId;
         set => this.RaiseAndSetIfChanged(ref _activeUiThemeId, value);
+    }
+
+    /// <summary>GetSongBPM API key for online genre/BPM/key enrichment (doc 16); blank disables it.
+    /// Takes effect on the next launch (the provider is wired once at startup).</summary>
+    public string? GetSongBpmApiKey
+    {
+        get => _getSongBpmApiKey;
+        set => this.RaiseAndSetIfChanged(ref _getSongBpmApiKey, value);
     }
 
     /// <summary>Selected knob skin id (doc 30), or <see cref="NoSkin"/> for the built-in look. Applied live on Save.</summary>
@@ -487,6 +496,7 @@ public sealed class SettingsViewModel : ViewModelBase
             Diagnostics = new DiagnosticsSettings(SelectedLogLevel),
             // Keep any previously-skipped version; only the enabled flag is editable here.
             Updates = _loadedSettings.Updates with { CheckOnStartup = CheckForUpdatesOnStartup },
+            Online = new OnlineSettings(GetSongBpmApiKey),
         };
 
         await _store.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
@@ -581,6 +591,7 @@ public sealed class SettingsViewModel : ViewModelBase
         NudgeSeconds = settings.Visuals.NudgeSeconds;
         SelectedLogLevel = settings.Diagnostics.Normalized().MinimumLevel;
         CheckForUpdatesOnStartup = settings.Updates.CheckOnStartup;
+        GetSongBpmApiKey = settings.Online.GetSongBpmApiKey;
         TermsAcceptanceStatus = settings.Legal.HasAcceptedCurrentTerms
             ? $"Accepted (terms v{settings.Legal.AcceptedTermsVersion})."
             : "Not yet accepted.";

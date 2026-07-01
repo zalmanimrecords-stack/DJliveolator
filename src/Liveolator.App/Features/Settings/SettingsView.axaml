@@ -255,6 +255,18 @@
                 <TextBlock Classes="faint" TextWrapping="Wrap" Text="{Binding AdvancedAnalysisStatus}" />
               </StackPanel>
             </Border>
+
+            <TextBlock Classes="section" Text="ONLINE ENRICHMENT" />
+            <Border Classes="panel">
+              <StackPanel Spacing="10" Margin="14">
+                <TextBlock Classes="faint" Text="GetSongBPM API key (fills missing genre/BPM/key during a scan)" />
+                <TextBox Classes="spartan"
+                         Watermark="getsongbpm.com API key"
+                         Text="{Binding GetSongBpmApiKey}" />
+                <TextBlock Classes="faint" TextWrapping="Wrap"
+                           Text="Free courtesy key from getsongbpm.com. Takes effect on the next launch." />
+              </StackPanel>
+            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

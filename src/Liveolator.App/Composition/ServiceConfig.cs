@@ -267,7 +267,7 @@ public static class ServiceConfig
         services.AddSingleton<TrackAnalyzer>(sp => new TrackAnalyzer(
             structureAnalyzer: sp.GetService<ISongStructureAnalyzer>()));
         services.AddSingleton<MusicLibrary>();
-        WireOnlineEnrichment(services);
+        WireOnlineEnrichment(services, appSettings.Online.GetSongBpmApiKey);
         WireUpdateCheck(services, loggerFactory);
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
         // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
@@ -683,7 +683,8 @@ public static class ServiceConfig
             hotCueStore: sp.GetService<IHotCueStore>(),
             importService: sp.GetService<LibraryImportService>(),
             importers: sp.GetServices<ILibraryImporter>().ToList(),
-            folderImporters: sp.GetServices<IFolderLibraryImporter>().ToList()));
+            folderImporters: sp.GetServices<IFolderLibraryImporter>().ToList(),
+            metadataProvider: sp.GetService<IMetadataProvider>()));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(
@@ -867,13 +868,17 @@ public static class ServiceConfig
         }
     }
 
-    private static void WireOnlineEnrichment(IServiceCollection services)
+    // The GetSongBPM key comes from the persisted Settings (preferred) or the LIVEOLATOR_GETSONGBPM_KEY
+    // env var (fallback). The provider is built once here at startup, so a key entered in Settings takes
+    // effect on the NEXT launch.
+    private static void WireOnlineEnrichment(IServiceCollection services, string? persistedGetSongBpmKey)
     {
         services.AddSingleton<IAudioFingerprinter>(_ => new FpcalcFingerprinter(
             Environment.GetEnvironmentVariable("LIVEOLATOR_FPCALC_PATH")));
 
-        string? getSongBpmKey =
-            Environment.GetEnvironmentVariable("LIVEOLATOR_GETSONGBPM_KEY");
+        string? getSongBpmKey = string.IsNullOrWhiteSpace(persistedGetSongBpmKey)
+            ? Environment.GetEnvironmentVariable("LIVEOLATOR_GETSONGBPM_KEY")
+            : persistedGetSongBpmKey;
         if (string.IsNullOrWhiteSpace(getSongBpmKey))
             return;
 

@@ -39,6 +39,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
     private readonly IHotCueStore? _hotCueStore;
+    private readonly Core.Enrichment.IMetadataProvider? _metadataProvider;
     // Reachability probe used to skip unreachable / online-only cloud placeholders before a decode so a
     // single un-downloaded OneDrive file can't hang the auto-cue pass. Injected so tests stay pure.
     private readonly Func<string, bool> _isLocallyDecodable;
@@ -102,7 +103,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Core.Library.Import.LibraryImportService? importService = null,
         IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null,
         IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null,
-        Func<string, bool>? isLocallyDecodable = null)
+        Func<string, bool>? isLocallyDecodable = null,
+        Core.Enrichment.IMetadataProvider? metadataProvider = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
@@ -115,6 +117,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _contextActions = contextActions;
         _autoCueService = autoCueService;
         _hotCueStore = hotCueStore;
+        _metadataProvider = metadataProvider;
         _importService = importService;
         _importers = importers ?? Array.Empty<Core.Library.Import.ILibraryImporter>();
         _folderImporters = folderImporters ?? Array.Empty<Core.Library.Import.IFolderLibraryImporter>();
@@ -855,6 +858,49 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         await RunScanAsync().ConfigureAwait(false);
         if (_autoCueService is not null)
             await RunAutoCueLibraryAsync().ConfigureAwait(false);
+        await RunGenreEnrichmentAsync().ConfigureAwait(false);
+    }
+
+    // Fills in missing track genres from the online provider (doc 16) as the last step of the one-click
+    // ScanAll pass. Skipped (with a clear status) when no provider was wired — i.e. no GetSongBPM key.
+    // The online lookups run off the UI thread; progress marshals to the status line; cancellation ties to
+    // the view-model lifetime. Guarded so a failure surfaces but never blocks scan completion (global #16/#26).
+    private async Task RunGenreEnrichmentAsync()
+    {
+        if (_metadataProvider is null)
+        {
+            // Append rather than replace, so the preceding auto-cue summary ("… tracks cued") stays visible.
+            ScanStatus = $"{ScanStatus} · Genre enrichment skipped (no getsongbpm key in Settings).";
+            return;
+        }
+
+        var service = new Core.Enrichment.CatalogEnrichmentService(
+            _library, _metadataProvider, _store,
+            onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e));
+
+        try
+        {
+            var progress = new Progress<Core.Enrichment.EnrichmentProgress>(p =>
+                RxApp.MainThreadScheduler.Schedule(() =>
+                {
+                    ScanStatus = p.Done >= p.Total
+                        ? $"Enriched {p.Enriched} genres"
+                        : $"Enriching genres… {p.Done}/{p.Total}";
+                    if (p.Done >= p.Total)
+                        RefreshRows();
+                }));
+
+            await Task.Run(() => service.RunAsync(progress, _lifetime.Token), _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(RefreshRows);
+        }
+        catch (OperationCanceledException)
+        {
+            // App shutting down / tab disposed — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Genre enrichment failed: {ex.Message}");
+        }
     }
 
     private async Task RunScanAsync()

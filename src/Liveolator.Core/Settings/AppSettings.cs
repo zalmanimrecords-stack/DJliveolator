@@ -34,6 +34,9 @@ public sealed record AppSettings
     /// <summary>Startup update-check preferences (enabled flag + a skipped version).</summary>
     public UpdateSettings Updates { get; init; } = UpdateSettings.Default;
 
+    /// <summary>Online-enrichment preferences (the GetSongBPM API key for genre/BPM/key lookup).</summary>
+    public OnlineSettings Online { get; init; } = OnlineSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -50,5 +53,6 @@ public sealed record AppSettings
             WindowLayout = WindowLayout.Normalized(),
             Legal = Legal.Normalized(),
             Updates = Updates.Normalized(),
+            Online = Online.Normalized(),
         };
 }

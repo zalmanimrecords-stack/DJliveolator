@@ -365,6 +365,34 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsGetSongBpmApiKey()
+    {
+        // The trap: a new AppSettings field persists only if it is threaded through the flat snapshot.
+        var store = NewStore();
+        var settings = AppSettings.Default with { Online = new OnlineSettings("my-getsongbpm-key") };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal("my-getsongbpm-key", loaded.Online.GetSongBpmApiKey);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutOnlineKey_ReadsNull()
+    {
+        // Back-compat: a file written before the online key existed must read null (enrichment disabled).
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":40,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Null(loaded.Online.GetSongBpmApiKey);
+    }
+
+    [Fact]
     public async Task Load_IncompatibleVersion_ReturnsDefaultsWithWarning()
     {
         string warning = string.Empty;

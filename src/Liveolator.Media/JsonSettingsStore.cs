@@ -36,7 +36,8 @@ public sealed record SettingsSnapshot(
     bool? WindowIsFullScreen = null,
     int? AcceptedTermsVersion = null,
     bool? CheckForUpdatesOnStartup = null,
-    string? SkippedUpdateVersion = null)
+    string? SkippedUpdateVersion = null,
+    string? GetSongBpmApiKey = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -147,6 +148,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             Updates = new UpdateSettings(
                 snapshot.CheckForUpdatesOnStartup ?? UpdateSettings.Default.CheckOnStartup,
                 snapshot.SkippedUpdateVersion),
+            // Written before the online key existed reads null → enrichment disabled until a key is set.
+            Online = new OnlineSettings(snapshot.GetSongBpmApiKey),
         }.Normalized();
     }
 
@@ -181,7 +184,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             WindowIsFullScreen: normalized.WindowLayout.IsFullScreen,
             AcceptedTermsVersion: normalized.Legal.AcceptedTermsVersion,
             CheckForUpdatesOnStartup: normalized.Updates.CheckOnStartup,
-            SkippedUpdateVersion: normalized.Updates.SkippedVersion);
+            SkippedUpdateVersion: normalized.Updates.SkippedVersion,
+            GetSongBpmApiKey: normalized.Online.GetSongBpmApiKey);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to
