@@ -124,14 +124,7 @@ public static class FrktlPresetAddon
         });
 
     public static string EnsureShaderCreated(string? directory = null)
-    {
-        directory ??= VisualAssetPaths.Default();
-        Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, "frktl.frag");
-        if (!File.Exists(path) || File.ReadAllText(path) != FragmentShader)
-            File.WriteAllText(path, FragmentShader);
-        return path;
-    }
+        => BuiltInPresetAddonRegistration.EnsureShaderCreated("frktl.frag", FragmentShader, directory);
 
     /// <summary>
     /// Registers the generator effect and its preset. Both share the package id so an uninstall/reload
@@ -142,19 +135,7 @@ public static class FrktlPresetAddon
         IVisualEffectRegistry effects,
         IGeneratorPresetRegistry presets,
         Action<string>? onWarning = null)
-    {
-        ArgumentNullException.ThrowIfNull(effects);
-        ArgumentNullException.ThrowIfNull(presets);
-        try
-        {
-            effects.ReplacePackage(PackageId, new[] { Descriptor(EnsureShaderCreated()) });
-            presets.ReplacePackage(PackageId, new[] { Preset() });
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            onWarning?.Invoke($"Built-in FRKTL preset unavailable ({ex.Message}).");
-            return false;
-        }
-    }
+        => BuiltInPresetAddonRegistration.TryRegister(
+            PackageId, "FRKTL", "frktl.frag", FragmentShader, Descriptor, Preset(),
+            effects, presets, onWarning);
 }

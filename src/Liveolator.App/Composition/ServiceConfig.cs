@@ -166,6 +166,24 @@ public static class ServiceConfig
             visualEffects, generatorPresets,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
 
+        // More built-in controllable presets (same doc 28 standard): scenic generators, each exposing
+        // five live knobs via the preset picker.
+        ForestJourneyPresetAddon.TryRegister(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        StormySeaPresetAddon.TryRegister(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        MysticSigilsPresetAddon.TryRegister(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        CosmicNebulaPresetAddon.TryRegister(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        NeonTunnelPresetAddon.TryRegister(
+            visualEffects, generatorPresets,
+            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+
         // User-authored FRKTL presets (doc 29): a folder of self-contained .frktl files (each its own
         // shader + up to five controllable knobs), loaded after the built-ins so they extend the picker.
         ILogger frktlLog = loggerFactory.CreateLogger("Liveolator.Frktl");
