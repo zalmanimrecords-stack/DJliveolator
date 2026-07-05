@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.1.8",
+    "date": "2026-07-05",
+    "notes": [
+      "Maintenance build: fixes and small improvements."
+    ]
+  },
+  {
     "version": "0.1.4",
     "date": "2026-06-26",
     "notes": [

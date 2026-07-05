@@ -1,16 +1,7 @@
 {
-  "version": "0.1.4",
-  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.1.4.exe",
+  "version": "0.1.8",
+  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.1.8.exe",
   "notes": [
-    "Top status bar reorganized: the master limiter is centred under a MASTER label, the computer volume is separated and relabelled SYS VOL, and the controls are one consistent size.",
-    "More DJ library imports: Serato, VirtualDJ, Mixxx and Engine DJ join Rekordbox and Traktor — tracks, hot cues, beat grids, key and playlists/crates.",
-    "Set the downbeat: place bar \"one\" exactly on the grid and waveform, with smarter downbeat handling.",
-    "Jog or seek on one deck no longer disturbs the other playing deck.",
-    "Each deck shows its live BPM, with a highlight when the two decks are matched.",
-    "Folded \"butterfly\" waveform and DJ mixer layout polish.",
-    "Closing the window can no longer freeze the app on exit.",
-    "Clearer load errors, transport stays disabled until a track is loaded, and hot cues are auto-placed on load.",
-    "SYNC is no longer silently starved when a track's BPM is missing from the catalog.",
-    "New vintage scalloped knob themes for the Retro Sci-Fi look."
+    "Maintenance build: fixes and small improvements."
   ]
 }
