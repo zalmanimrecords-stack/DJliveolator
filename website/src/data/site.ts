@@ -76,8 +76,8 @@ export const features: Feature[] = [
   },
   {
     tag: "Platform",
-    title: "Windows today, macOS next",
-    body: "Right now Liveolator runs on Windows. It's built on .NET 8 and Avalonia with a cross-platform audio engine, so a macOS build is on the way — no Windows lock-in by design.",
+    title: "Runs on Windows",
+    body: "Liveolator runs on Windows, built on .NET 8 and Avalonia with a low-latency audio engine and GPU-shader visuals. Install the free build and you're mixing in minutes.",
   },
 ];
 

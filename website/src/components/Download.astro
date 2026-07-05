@@ -8,9 +8,9 @@ import { site } from "../data/site";
       <p class="eyebrow">Get Liveolator</p>
       <h2>Download the free build</h2>
       <p class="dl-note">
-        <strong>Alpha, Windows-only for now</strong> — expect bugs. Grab the
+        <strong>Alpha, for Windows</strong> — expect bugs. Grab the
         installer below and you're mixing in minutes; it works with any MIDI
-        controller you plug in. A macOS build is on the way.
+        controller you plug in.
       </p>
 
       <form class="dl-gate" id="dl-gate" novalidate>
@@ -47,12 +47,6 @@ import { site } from "../data/site";
           share your address.
         </p>
       </form>
-
-      <div class="dl-actions">
-        <button class="btn btn-ghost" disabled aria-disabled="true">
-          macOS — coming soon
-        </button>
-      </div>
 
       <p class="dl-build">
         Windows installer · {site.stage} v{site.version} · {site.downloadSize} · .exe
@@ -93,15 +87,8 @@ import { site } from "../data/site";
     color: var(--amber);
     font-weight: 700;
   }
-  .dl-actions {
-    margin-top: 32px;
-    display: flex;
-    gap: 14px;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
   .dl-build {
-    margin-top: 16px;
+    margin-top: 32px;
     font-family: var(--font-mono);
     font-size: 12.5px;
     letter-spacing: 0.06em;
