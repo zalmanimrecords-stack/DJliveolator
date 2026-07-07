@@ -48,9 +48,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     private readonly IMultiDeckPlaybackEngine _engine;
     private readonly JogWheelSettings _jogSettings;
     private readonly ActionFeedbackState[] _loadedTracks;
-    // The per-deck downbeat (bar-1) anchor in seconds. Display/grid-only (it never reaches the audio engine,
-    // unlike the first-beat anchor), so the handler owns it directly and only relays it back as feedback so a
-    // deck UI can re-anchor its bar markers and a session restore can re-apply a manually-set "one".
+    // The per-deck downbeat (bar-1) anchor in seconds, mirrored here for feedback (the engine seam has a
+    // setter but no getter) so a deck UI can re-anchor its bar markers and a session restore can re-apply a
+    // manually-set "one". The anchor itself is forwarded to the engine for bar-level phase alignment.
     private readonly double[] _downbeats;
 
     /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
@@ -104,9 +104,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, slot, ValueFeedback(action.Value));
                 break;
             case PerformanceActionKind.DeckSetDownbeat:
-                // The bar-1 ("one") anchor in seconds. Display/grid-only — it never touches the audio engine
-                // or the audible pitch; the handler just records it and echoes it so the deck UI re-anchors
-                // its red bar markers on the one (and a session restore can re-apply a manual edit).
+                // The bar-1 ("one") anchor in seconds. Forwarded to the engine so Quantize/SYNC phase-match
+                // can snap onto the leader's DOWNBEAT (bar-level) when both decks know theirs; also recorded
+                // and echoed so the deck UI re-anchors its red bar markers on the one (and a session restore
+                // can re-apply a manual edit). Never touches the audible pitch/rate.
+                _engine.SetDeckDownbeat(slot, action.Value);
                 _downbeats[slot] = action.Value;
                 RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(action.Value));
                 break;

@@ -123,6 +123,14 @@ public interface IMultiDeckPlaybackEngine
     void SetDeckFirstBeat(int slot, double firstBeatSeconds);
 
     /// <summary>
+    /// Set the deck's downbeat (bar-1 "one") anchor in seconds — a confidence-gated analyzed downbeat or
+    /// a manual SET ONE, arriving via <c>DeckSetDownbeat</c>. When BOTH decks have one, Quantize/SYNC
+    /// phase-match snaps onto the leader's DOWNBEAT instead of just the nearest beat, so engaging sync
+    /// can never land beat 3 on the leader's one. 0 (or negative) = unknown → beat-level alignment.
+    /// </summary>
+    void SetDeckDownbeat(int slot, double downbeatSeconds);
+
+    /// <summary>
     /// Beatmatches this deck to the other deck and snaps its analyzed kick/grid phase once.
     /// The resulting audible tempo is retained until the performer changes pitch/tempo again; no
     /// continuous lock is engaged. The matched rate may exceed the manual pitch fader's display range.

@@ -248,6 +248,7 @@ public sealed partial class TwoDeckBassEngine
         Array.Clear(s.HotCues);
         s.BaseBpm = 0.0;         // base BPM belongs to the track — the new track supplies its own on load
         s.FirstBeat = 0.0;       // first-beat anchor likewise belongs to the track
+        s.Downbeat = 0.0;        // and so does the bar-1 anchor — stale, it would bar-snap the wrong "one"
         s.LoopBeats = 0.0;       // a new track has no active loop
     }
 
