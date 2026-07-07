@@ -1166,6 +1166,70 @@ public class TwoDeckBassEngineTests
         Assert.Equal(0.4, backend.PositionFraction[101], precision: 6);
     }
 
+    // --- Bar-level phase match: with both downbeats known, Quantize snaps onto the leader's DOWNBEAT ---
+
+    [Fact]
+    public void Quantize_BothDownbeatsKnown_SnapsFollowerToLeaderDownbeat_NotJustTheNearestBeat()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader, handle 100
+        engine.Load(1, @"C:\b.wav"); // follower, handle 101
+        engine.SetDeckBaseBpm(0, 120.0);  // beat = 0.5 s, bar (4/4) = 2 s
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckDownbeat(0, 0.5);
+        engine.SetDeckDownbeat(1, 0.5);
+        // Leader one beat PAST its downbeat (1.0 s); follower exactly ON its downbeat (0.5 s). Both sit on
+        // a beat, so a beat-level snap would move nothing — yet the follower is a beat off the leader's bar.
+        backend.PositionFraction[100] = 0.010; // 1.0 s of the 100 s default length
+        backend.PositionFraction[101] = 0.005; // 0.5 s
+
+        engine.SetQuantize(1, true);
+
+        // Bar phase: leader 0.25 bar past the one, follower 0 -> advance the follower +0.5 s (one beat)
+        // onto the leader's bar grid, so its "one" lands on the leader's "one".
+        Assert.Equal(0.010, backend.PositionFraction[101], precision: 6);
+    }
+
+    [Fact]
+    public void Quantize_OneDownbeatMissing_FallsBackToBeatLevelSnap()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckDownbeat(0, 0.5); // leader bar known, follower bar UNKNOWN (ambiguous analysis)
+        // Same both-on-a-beat setup as the bar-snap test: a bar snap would move the follower +0.5 s, the
+        // beat-level fallback moves nothing.
+        backend.PositionFraction[100] = 0.010;
+        backend.PositionFraction[101] = 0.005;
+
+        engine.SetQuantize(1, true);
+
+        Assert.Equal(0.005, backend.PositionFraction[101], precision: 6);
+    }
+
+    [Fact]
+    public void DeckDownbeat_ClearedOnReload_SoAStaleBarAnchorNeverMisSnapsTheNewTrack()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 120.0);
+        engine.SetDeckBaseBpm(1, 120.0);
+        engine.SetDeckDownbeat(0, 0.5);
+        engine.SetDeckDownbeat(1, 0.5);
+
+        engine.Load(1, @"C:\c.wav"); // new track, handle 102 — its bar anchor is unknown until re-analyzed
+        engine.SetDeckBaseBpm(1, 120.0);
+        backend.PositionFraction[100] = 0.010; // the bar-snap scenario again: stale downbeat would +0.5 s
+        backend.PositionFraction[102] = 0.005;
+
+        engine.SetQuantize(1, true);
+
+        Assert.Equal(0.005, backend.PositionFraction[102], precision: 6); // beat-level snap only
+    }
+
     [Fact]
     public void SetDeckFirstBeat_IsStoredPerSlot()
     {

@@ -108,6 +108,9 @@ public class DeckActionHandlerTests
         private readonly double[] _firstBeat;
         private readonly double[] _loopBeats;
 
+        /// <summary>Downbeat anchor last routed to the engine per slot (0 = never set / cleared).</summary>
+        public double[] Downbeats { get; }
+
         public List<(int Slot, string Path)> Loaded { get; } = new();
         public List<int> PlayPaused { get; } = new();
         public List<int> Stopped { get; } = new();
@@ -133,6 +136,7 @@ public class DeckActionHandlerTests
             _bpm = new double[deckCount];
             _firstBeat = new double[deckCount];
             _loopBeats = new double[deckCount];
+            Downbeats = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
                 _pitch[i] = 0.5; // center = original tempo
         }
@@ -204,6 +208,7 @@ public class DeckActionHandlerTests
 
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+        public void SetDeckDownbeat(int slot, double downbeatSeconds) => Downbeats[slot] = downbeatSeconds;
         public void SyncOnce(int slot) => SyncOnceCalls.Add(slot);
 
         public bool IsSyncLocked(int slot) => _sync[slot];
@@ -909,7 +914,7 @@ public class DeckActionHandlerTests
         Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
     }
 
-    // --- Downbeat (bar-1 "one") anchor seam — display/grid only ---
+    // --- Downbeat (bar-1 "one") anchor seam ---
 
     [Fact]
     public void DeckSetDownbeat_IsAHandledKind()
@@ -922,8 +927,8 @@ public class DeckActionHandlerTests
     [Fact]
     public void DeckSetDownbeat_RecordsTheAnchor_AndReportsItBackAsFeedback()
     {
-        // The downbeat is display-only: it must NOT reach the engine's first-beat (phase) anchor, only be
-        // stored and echoed so the deck UI can re-anchor its bar markers on the one.
+        // The downbeat is a bar anchor: it must NOT move the engine's first-beat (beat-phase) anchor, only
+        // be stored and echoed so the deck UI can re-anchor its bar markers on the one.
         var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);
 
@@ -934,6 +939,21 @@ public class DeckActionHandlerTests
         Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 1).IsAvailable);
         // Independent of the first-beat (beat-phase) anchor — setting the bar never moves the beats.
         Assert.Equal(0.0, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    [Fact]
+    public void DeckSetDownbeat_RoutesTheAnchorToTheEngine_ForBarLevelPhaseAlignment()
+    {
+        // Quantize/SYNC snap onto the leader's DOWNBEAT (not just the nearest beat) when the engine knows
+        // both bar anchors, so the handler must forward the downbeat to the engine, not just display it.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.55, Slot: 1));
+
+        Assert.Equal(0.55, engine.Downbeats[1], precision: 6);
+        Assert.Equal(0.0, engine.Downbeats[0], precision: 6); // per-slot addressing
     }
 
     [Fact]

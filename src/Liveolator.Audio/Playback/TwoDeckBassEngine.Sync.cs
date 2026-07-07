@@ -23,6 +23,12 @@ public sealed partial class TwoDeckBassEngine
         lock (_gate) _slots[slot].FirstBeat = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
     }
 
+    public void SetDeckDownbeat(int slot, double downbeatSeconds)
+    {
+        ValidateSlot(slot);
+        lock (_gate) _slots[slot].Downbeat = downbeatSeconds > 0.0 ? downbeatSeconds : 0.0;
+    }
+
     public void SyncOnce(int slot)
     {
         ValidateSlot(slot);
@@ -370,7 +376,17 @@ public sealed partial class TwoDeckBassEngine
         var leaderPhase = new DeckPhase(
             _backend.GetDeckPositionSeconds(leaderDeck.Handle), leader.FirstBeat, leader.BaseBpm);
 
-        double nudgeSeconds = PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
+        // Snap onto the leader's DOWNBEAT when BOTH bar anchors are known: a beat-level snap can land
+        // beat 3 on the leader's one — audibly locked but musically a bar off. With either downbeat
+        // unknown (analysis ambiguity is confidence-gated at the source), the beat-level snap stands.
+        // The continuous lock (CorrectSlaveLocked) stays beat-based, which preserves bar alignment.
+        bool barSnap = s.Downbeat > 0.0 && leader.Downbeat > 0.0;
+        double nudgeSeconds = barSnap
+            ? PhaseAlignmentCalculator.BarPhaseNudgeSeconds(
+                followerPhase with { FirstBeatSeconds = s.Downbeat },
+                leaderPhase with { FirstBeatSeconds = leader.Downbeat },
+                BeatsPerBar)
+            : PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
         double length = _backend.GetDeckLengthSeconds(deck.Handle);
         if (length <= 0.0)
             return;
@@ -378,6 +394,12 @@ public sealed partial class TwoDeckBassEngine
         double targetFraction = Math.Clamp((followerPhase.PositionSeconds + nudgeSeconds) / length, 0.0, 1.0);
         _backend.SetDeckPositionFraction(deck.Handle, targetFraction);
         _logger.LogInformation(
-            "Deck slot {Slot} quantize: phase-aligned by {Nudge:F4}s to the leader grid.", slot, nudgeSeconds);
+            "Deck slot {Slot} quantize: {Grid}-aligned by {Nudge:F4}s to the leader grid.",
+            slot, barSnap ? "bar" : "beat", nudgeSeconds);
     }
+
+    // ponytail: DownbeatEstimator is only ever invoked in 4/4 today (BpmDetector passes no meter), so the
+    // action layer carries no beats-per-bar; thread BpmResult.BeatsPerBar through DeckSetDownbeat when
+    // non-4/4 support lands.
+    private const int BeatsPerBar = 4;
 }
