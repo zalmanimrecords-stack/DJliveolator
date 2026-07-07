@@ -22,8 +22,16 @@ internal static class BeatDetectionCorpus
     public const int SampleRate = 44_100;
     public const double Seconds = 16.0;
 
-    /// <summary>Tempos spanning house/techno/trance/DnB so octave (half/double) traps are represented.</summary>
-    private static readonly double[] Tempos = { 90, 100, 110, 120, 124, 128, 130, 140, 150, 174 };
+    /// <summary>Tempos spanning house/techno/trance/DnB so octave (half/double) traps are represented.
+    /// 86 probes the grid-refiner band boundary (its double 172 is now in-band); 168–178 are the fast
+    /// tempos the pipeline used to fold down to ~70/87.</summary>
+    private static readonly double[] Tempos = { 86, 90, 100, 110, 120, 124, 128, 130, 140, 150, 168, 172, 174, 178 };
+
+    /// <summary>Fast tempos also rendered as DnB half-time (kick on 1, snare on 3, dense hats) — the
+    /// pattern whose kick–snare backbone makes 174 read as ~70/87.</summary>
+    private static readonly double[] DnbTempos = { 168, 172, 174, 178 };
+
+    private const string DnbPollution = "dnb-halftime";
 
     /// <summary>The corpus: each tempo at a non-trivial phase offset, in both pollution regimes.</summary>
     public static IReadOnlyList<CorpusCase> Cases { get; } = Build();
@@ -37,11 +45,18 @@ internal static class BeatDetectionCorpus
             cases.Add(new CorpusCase($"{bpm:0} bpm / bass>band", bpm, offset, BassHz: 320.0, "broadband-only"));
             cases.Add(new CorpusCase($"{bpm:0} bpm / bass in-band", bpm, offset, BassHz: 110.0, "in-band-bass"));
         }
+        foreach (double bpm in DnbTempos)
+        {
+            double offset = 0.08 + bpm % 3 * 0.02;
+            cases.Add(new CorpusCase($"{bpm:0} bpm / dnb half-time", bpm, offset, BassHz: 0.0, DnbPollution));
+        }
         return cases.ToArray();
     }
 
-    public static float[] Render(CorpusCase c) => BeatMixSignals.KickBassHatsFourOnFloor(
-        c.Bpm, SampleRate, Seconds, c.KickOffsetSeconds, bassHz: c.BassHz);
+    public static float[] Render(CorpusCase c) => c.Pollution == DnbPollution
+        ? BeatMixSignals.KickSnareHatsDnB(c.Bpm, SampleRate, Seconds, c.KickOffsetSeconds)
+        : BeatMixSignals.KickBassHatsFourOnFloor(
+            c.Bpm, SampleRate, Seconds, c.KickOffsetSeconds, bassHz: c.BassHz);
 
     /// <summary>Score one detection against ground truth (octave-aware tempo, circular phase error in ms).</summary>
     public static CaseScore Score(CorpusCase c, BpmResult result)

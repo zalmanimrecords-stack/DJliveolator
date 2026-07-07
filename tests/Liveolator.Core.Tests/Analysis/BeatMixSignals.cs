@@ -44,6 +44,50 @@ internal static class BeatMixSignals
         return buffer;
     }
 
+    /// <summary>
+    /// A drum &amp; bass half-time mix at a fast tempo (~170+): kick on beat 1 and snare on beat 3 of every
+    /// 4-beat bar, with dense hats on every half-beat. The kick–snare backbone gives strong periodicity at
+    /// HALF the true tempo (and slower sub-harmonics like 2.5 beats), the classic trap that makes 174 BPM
+    /// read as ~70/87 — the regression fixture for fast-tempo octave errors. The hats carry the true beat.
+    /// </summary>
+    public static float[] KickSnareHatsDnB(
+        double bpm,
+        int sampleRate,
+        double seconds,
+        double kickOffsetSeconds = 0.0,
+        double kickHz = 55.0,
+        double hatHz = 9_000.0)
+    {
+        int total = (int)(sampleRate * seconds);
+        var buffer = new float[total];
+        double samplesPerBeat = 60.0 / bpm * sampleRate;
+        double firstKick = kickOffsetSeconds * sampleRate;
+
+        for (double pos = firstKick; pos < total; pos += samplesPerBeat / 2.0)
+            AddHat(buffer, (int)pos, sampleRate, hatHz, amplitude: 0.5);
+
+        for (double barPos = firstKick; barPos < total; barPos += samplesPerBeat * 4.0)
+        {
+            AddKick(buffer, (int)barPos, sampleRate, kickHz);
+            AddSnare(buffer, (int)(barPos + samplesPerBeat * 2.0), sampleRate);
+        }
+
+        Normalize(buffer);
+        return buffer;
+    }
+
+    // A loud mid-band crack: inharmonic partials with a fast decay — a strong broadband transient that
+    // stays OUT of the kick band (<200 Hz), so it pollutes the broadband tempo but not the kick fit.
+    private static void AddSnare(float[] buffer, int start, int sampleRate)
+    {
+        int len = (int)(0.08 * sampleRate);
+        double w1 = 2.0 * Math.PI * 900.0 / sampleRate;
+        double w2 = 2.0 * Math.PI * 1_730.0 / sampleRate;
+        double decay = 60.0 / sampleRate;
+        for (int i = 0; i < len && start + i < buffer.Length && start + i >= 0; i++)
+            buffer[start + i] += (float)(1.2 * Math.Exp(-decay * i) * (Math.Sin(w1 * i) + 0.7 * Math.Sin(w2 * i)));
+    }
+
     // A real-kick shape: a short broadband attack CLICK plus a low-frequency BODY. The click deposits
     // strike energy across the low spectrum (a vertical stroke), which is what lets percussive/HPSS
     // separation tell a kick apart from a narrow-band sustained bass note; the body carries the thump.
