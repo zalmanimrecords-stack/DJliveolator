@@ -10,6 +10,7 @@ using Liveolator.App.Tests.Live;
 using System.Linq;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 using Xunit;
@@ -659,7 +660,7 @@ public sealed class DeckViewModelTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task Sync_EmitsDeckSyncOnce_ForItsSlot(int slot)
+    public async Task Sync_EmitsDeckSyncToggle_ForItsSlot(int slot)
     {
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
@@ -671,16 +672,15 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSyncOnce, action.Kind);
-        Assert.Equal(ActionInputMode.Momentary, action.InputMode);
+        Assert.Equal(PerformanceActionKind.DeckSyncToggle, action.Kind);
         Assert.Equal(slot, action.Slot);
     }
 
     [Fact]
-    public async Task Sync_IsOneShot_EachPressEmitsAFreshDeckSyncOnce()
+    public async Task Sync_IsALatch_EachPressEmitsDeckSyncToggle_AndStateComesOnlyFromFeedback()
     {
-        // SYNC is a momentary beatmatch, not a latch: pressing it twice fires two independent
-        // DeckSyncOnce actions (a toggle would have alternated engage/release state instead).
+        // SYNC is a continuous sync latch (the LED model, like KEY LOCK): the VM only emits the toggle;
+        // the engaged state follows the handler's DeckSyncToggle feedback, never a local guess.
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
 
@@ -688,8 +688,119 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         Assert.Equal(2, dispatcher.Dispatched.Count);
-        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncOnce, a.Kind));
+        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncToggle, a.Kind));
+        Assert.False(vm.IsSyncEngaged); // no feedback arrived, so the latch must not self-light
     }
+
+    [Fact]
+    public void IsSyncEngaged_FollowsDeckSyncToggleFeedback_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.False(vm.IsSyncEngaged);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 1,
+            SyncFeedbackState(engaged: true, SyncLockState.Active));
+        Assert.False(vm.IsSyncEngaged); // other deck
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
+            SyncFeedbackState(engaged: true, SyncLockState.Active));
+        Assert.True(vm.IsSyncEngaged);
+        Assert.Equal(SyncLockState.Active, vm.SyncState);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
+            SyncFeedbackState(engaged: false, SyncLockState.Off));
+        Assert.False(vm.IsSyncEngaged);
+        Assert.Equal(SyncLockState.Off, vm.SyncState);
+    }
+
+    [Fact]
+    public void SyncState_SeedsFromExistingFeedback_AtConstruction()
+    {
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, slot: 1,
+            SyncFeedbackState(engaged: true, SyncLockState.Locked));
+
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        Assert.True(vm.IsSyncEngaged);
+        Assert.Equal(SyncLockState.Locked, vm.SyncState);
+        Assert.True(vm.IsSyncLocked);
+    }
+
+    [Theory]
+    [InlineData(SyncLockState.Off, false, false, false)]
+    [InlineData(SyncLockState.Active, false, true, false)]
+    [InlineData(SyncLockState.Locked, true, false, false)]
+    [InlineData(SyncLockState.Drifting, false, true, false)]
+    [InlineData(SyncLockState.OutOfRange, false, false, true)]
+    public void SyncState_DrivesTheLockIndicatorFlags(
+        SyncLockState state, bool locked, bool settling, bool outOfRange)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
+            SyncFeedbackState(engaged: state != SyncLockState.Off, state));
+
+        Assert.Equal(state, vm.SyncState);
+        Assert.Equal(locked, vm.IsSyncLocked);
+        Assert.Equal(settling, vm.IsSyncSettling);
+        Assert.Equal(outOfRange, vm.IsSyncOutOfRange);
+    }
+
+    [Fact]
+    public void SyncState_OutOfRange_ReadsAsCantSync()
+    {
+        // OutOfRange must be readable as "can't sync — tempo gap too wide", not just a color change.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
+            SyncFeedbackState(engaged: true, SyncLockState.OutOfRange));
+
+        Assert.Contains("tempo gap", vm.SyncStateTip, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("can't sync", vm.SyncStateTip, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void UpdatePlayhead_RefreshesTheSyncLockState_WhileEngaged()
+    {
+        // The engine's phase-lock loop moves Active→Locked→Drifting WITHOUT dispatching any action, so
+        // no feedback event fires; the deck polls the state on the same render tick the playhead uses.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
+            SyncFeedbackState(engaged: true, SyncLockState.Active));
+        Assert.Equal(SyncLockState.Active, vm.SyncState);
+
+        // The engine loop settled into lock — only the queryable feedback changed, no event was raised.
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, slot: 0,
+            SyncFeedbackState(engaged: true, SyncLockState.Locked));
+        vm.UpdatePlayhead(); // works while paused too — lock state is not gated on IsPlaying
+
+        Assert.Equal(SyncLockState.Locked, vm.SyncState);
+        Assert.True(vm.IsSyncLocked);
+    }
+
+    [Fact]
+    public void UpdatePlayhead_DoesNotPollSyncState_WhileDisengaged()
+    {
+        // Off decks vastly outnumber synced ones; the render tick must not pay for a sync read per deck.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, slot: 0,
+            SyncFeedbackState(engaged: true, SyncLockState.Locked));
+
+        vm.UpdatePlayhead();
+
+        Assert.False(vm.IsSyncEngaged); // disengaged → the seeded state is never pulled in by the tick
+    }
+
+    // The handler's SyncFeedback shape: IsActive = latch engaged, Value = (double)SyncLockState,
+    // Argument = SyncLockState.ToString().
+    private static ActionFeedbackState SyncFeedbackState(bool engaged, SyncLockState state)
+        => new(IsActive: engaged, IsAvailable: true, Value: (double)state, Argument: state.ToString());
 
     [Fact]
     public void CanSync_IsFalse_WithoutADispatcher()

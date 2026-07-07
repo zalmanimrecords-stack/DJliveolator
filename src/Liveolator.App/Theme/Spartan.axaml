@@ -397,6 +397,15 @@
     <Setter Property="RenderTransform" Value="translate(0px, 3px)" />
     <Setter Property="BoxShadow" Value="0 0 3 0 #66000000, inset 0 3 6 0 #A6000000" />
   </Style>
+  <!-- SYNC lock state on an engaged key. The state is always paired with the button's face text /
+       tooltip (never color-only); the ring uses the semantic tokens (Green = locked, Red = can't
+       sync — the "something is wrong" alarm), not the accent, so a re-split palette lights correctly. -->
+  <Style Selector="Button.key.on.locked">
+    <Setter Property="BorderBrush" Value="{DynamicResource Green}" />
+  </Style>
+  <Style Selector="Button.key.on.outofrange">
+    <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+  </Style>
   <Style Selector="Button.key:disabled">
     <Setter Property="Opacity" Value="0.5" />
     <Setter Property="Cursor" Value="Arrow" />

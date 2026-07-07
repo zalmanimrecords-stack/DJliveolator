@@ -52,6 +52,21 @@ public sealed class MappingsViewModelPresetTargetTests
         Assert.Contains(vm.Targets, t => t.Argument == $"{PresetId}.warp");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Targets_IncludeASyncLockLatchPerDeck(int slot)
+    {
+        // The on-screen SYNC button is a continuous sync latch (DeckSyncToggle); a hardware button must be
+        // learnable onto the same latch, alongside the legacy one-shot "Deck X: Sync" (DeckSyncOnce).
+        var vm = new MappingsViewModel(new FakeMidiControlSession());
+
+        MappingTargetViewModel latch = Assert.Single(
+            vm.Targets, t => t.Action == PerformanceActionKind.DeckSyncToggle && t.Slot == slot);
+        Assert.Equal(ActionInputMode.Toggle, latch.PreferredInputMode);
+        Assert.Single(vm.Targets, t => t.Action == PerformanceActionKind.DeckSyncOnce && t.Slot == slot);
+    }
+
     [Fact]
     public void NoRegistry_LeavesOnlyTheFixedTargets()
     {

@@ -13,6 +13,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -23,8 +24,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
-/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), the continuous sync latch
+/// (<see cref="PerformanceActionKind.DeckSyncToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -77,6 +78,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isPlaying;
     private bool _isLooping;
     private bool _isKeyLock;
+    private bool _isSyncEngaged;
+    private SyncLockState _syncState;
     private bool _isHotCueBankB;
     private string _title = "No track loaded";
     private string? _artist;
@@ -181,12 +184,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 0.0, Slot: slot)),
             canEmit);
 
-        // One-shot Sync: a single press beatmatches tempo + phase to the other deck, then leaves the
-        // deck free for manual NUDGE. Momentary (no latch) — the UI and MIDI controller share it.
+        // Sync latch: each press toggles the engine's CONTINUOUS phase-lock loop for this deck via
+        // DeckSyncToggle, and the button follows the handler's feedback (the LED model) exactly like
+        // KEY LOCK. The lock state (Active/Locked/Drifting/OutOfRange) rides on the same feedback.
+        // The one-shot DeckSyncOnce stays available to MIDI mappings; the on-screen key is the latch.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot)),
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: slot)),
             canEmit);
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot)
+            is { IsAvailable: true } syncSeed)
+            ApplySyncFeedback(syncSeed);
 
         // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
         // The VM emits the toggle action and follows the DeckKeyLockToggle active-state feedback (the LED
@@ -669,6 +676,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         if (_dispatcher is null)
             return;
 
+        // The engine's phase-lock loop moves the lock state (Active→Locked→Drifting) WITHOUT dispatching
+        // any action, so no feedback event fires — poll it on this same render tick while the latch is
+        // engaged (engage/disengage themselves always arrive as feedback, so an off deck pays nothing).
+        if (_isSyncEngaged)
+            ApplySyncFeedback(_dispatcher.GetFeedback(PerformanceActionKind.DeckSyncToggle, _slot));
+
         if (!_isPlaying)
             return;
         ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
@@ -829,6 +842,70 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _isKeyLock;
         private set => this.RaiseAndSetIfChanged(ref _isKeyLock, value);
+    }
+
+    /// <summary>True while the continuous sync latch is engaged for this deck (drives the SYNC key's
+    /// active state), from <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback.</summary>
+    public bool IsSyncEngaged
+    {
+        get => _isSyncEngaged;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncEngaged, value);
+    }
+
+    /// <summary>The engine's live phase-lock state for this deck (Off / Active / Locked / Drifting /
+    /// OutOfRange), parsed from the <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback and
+    /// refreshed by <see cref="UpdatePlayhead"/> while the latch is engaged (the engine loop moves it
+    /// without dispatching any action). Drives the SYNC key's label, tooltip, and indicator classes.</summary>
+    public SyncLockState SyncState
+    {
+        get => _syncState;
+        private set
+        {
+            if (_syncState == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _syncState, value);
+            this.RaisePropertyChanged(nameof(IsSyncLocked));
+            this.RaisePropertyChanged(nameof(IsSyncSettling));
+            this.RaisePropertyChanged(nameof(IsSyncOutOfRange));
+            this.RaisePropertyChanged(nameof(SyncStateLabel));
+            this.RaisePropertyChanged(nameof(SyncStateTip));
+        }
+    }
+
+    /// <summary>Beat-locked to the master within tolerance.</summary>
+    public bool IsSyncLocked => _syncState == SyncLockState.Locked;
+
+    /// <summary>Engaged but still pulling into lock (Active) or recovering from a slip (Drifting).</summary>
+    public bool IsSyncSettling => _syncState is SyncLockState.Active or SyncLockState.Drifting;
+
+    /// <summary>Engaged but the tempo gap is too wide to beatmatch — the deck holds its own tempo.</summary>
+    public bool IsSyncOutOfRange => _syncState == SyncLockState.OutOfRange;
+
+    /// <summary>The SYNC key's face text — the lock state is carried in text, never color alone.</summary>
+    public string SyncStateLabel => _syncState switch
+    {
+        SyncLockState.Locked => "LOCKED",
+        SyncLockState.Active or SyncLockState.Drifting => "SYNC…",
+        SyncLockState.OutOfRange => "SYNC ⚠",
+        _ => "SYNC",
+    };
+
+    /// <summary>The SYNC key's tooltip, spelling the current lock state out in words.</summary>
+    public string SyncStateTip => _syncState switch
+    {
+        SyncLockState.Locked => "Sync lock: beat-locked to the other deck",
+        SyncLockState.Active or SyncLockState.Drifting => "Sync lock engaged — pulling into beat lock",
+        SyncLockState.OutOfRange => "Can't sync — tempo gap too wide for the sync range",
+        _ => "Sync lock: continuously match tempo + phase to the other deck",
+    };
+
+    // The handler's SyncFeedback: IsActive = latch engaged, Argument = SyncLockState name (Value is its
+    // ordinal). Parse the name; fall back to the engaged flag so a malformed echo can't throw or mislight.
+    private void ApplySyncFeedback(ActionFeedbackState state)
+    {
+        IsSyncEngaged = state.IsActive;
+        SyncState = Enum.TryParse(state.Argument, out SyncLockState parsed) ? parsed
+            : state.IsActive ? SyncLockState.Active : SyncLockState.Off;
     }
 
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
@@ -1060,6 +1137,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.DeckKeyLockToggle:
                     IsKeyLock = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckSyncToggle:
+                    ApplySyncFeedback(e.State);
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);
