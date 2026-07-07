@@ -61,6 +61,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double GridNudgeStep = 0.004;
     private static readonly TimeSpan PitchBendWindow = TimeSpan.FromMilliseconds(140);
 
+    /// <summary>
+    /// <see cref="PerformanceAction.Origin"/> tag stamped on grid/downbeat actions this deck derives from
+    /// automatic track analysis (mirrors <c>StudioArranger.Origin</c>). Never carried by a human gesture,
+    /// so session persistence can tell an analyzer downbeat from a manual SET ONE and skip persisting it.
+    /// </summary>
+    public const string AnalysisOrigin = "analysis";
+
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     // True when the deck-transport actions are actually handled (a deck engine backs this slot). Gates the
@@ -71,6 +78,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly Func<string, BpmResult?>? _analysisInfo;
     // Offline auto-cue placement for the AUTO-CUE button; null hides it. Set by the composition root.
     private readonly IAutoCueService? _autoCueService;
+    // On-demand background BPM analysis for a load with no analysis anywhere (not even the catalog):
+    // decodes + detects tempo off-thread over the same offline-decoder pipeline AUTO-CUE uses and
+    // re-emits the self-heal grid actions on completion, so SYNC isn't a dead button on such a load.
+    // Null (no decoder wired) leaves the deck grid-less, as before.
+    private readonly Func<string, CancellationToken, Task<BpmResult?>>? _bpmAnalysis;
+    private CancellationTokenSource? _bpmAnalysisCts;
+    // The path the in-flight background analysis is decoding; null when none is running.
+    private string? _bpmAnalysisPath;
     // The currently-loaded track path (from DeckLoadTrack feedback) — the file AUTO-CUE analyzes.
     private string? _loadedTrackPath;
     private readonly int _slot;
@@ -135,7 +150,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
         bool deckTransportEnabled = true,
-        IAutoCueService? autoCueService = null)
+        IAutoCueService? autoCueService = null,
+        Func<string, CancellationToken, Task<BpmResult?>>? bpmAnalysis = null)
     {
         _slot = slot;
         _dispatcher = dispatcher;
@@ -143,6 +159,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _trackInfo = trackInfo;
         _analysisInfo = analysisInfo;
         _autoCueService = autoCueService;
+        _bpmAnalysis = bpmAnalysis;
         _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
         _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
@@ -961,6 +978,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
+        CancelBackgroundBpmAnalysis();
         _pitchPercentText.Dispose();
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged -= OnFeedback;
@@ -1183,6 +1201,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private void OnTrackLoadFailed(string trackPath)
     {
         _loadedTrackPath = null;
+        CancelBackgroundBpmAnalysis(); // nothing playable to grid — a late result must not re-enable SYNC
         HasLoadedTrack = false;     // there is no playable track — transport stays disabled
         IsBpmEnabled = false;       // and SYNC stays disabled (nothing to beatmatch)
         Title = $"⚠ Couldn't load {Path.GetFileNameWithoutExtension(trackPath)}";
@@ -1207,6 +1226,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         _loadedTrackPath = trackPath; // the file the AUTO-CUE button analyzes
         HasLoadedTrack = true;        // a successful load arrived — enable the transport controls
+
+        // A different track supersedes any in-flight background BPM analysis: its late result must never
+        // re-grid the newly loaded track (a quick A→B→A swap would otherwise apply a stale grid).
+        if (_bpmAnalysisPath is not null
+            && !string.Equals(_bpmAnalysisPath, trackPath, StringComparison.OrdinalIgnoreCase))
+            CancelBackgroundBpmAnalysis();
 
         DeckTrackInfo? info = _trackInfo?.Invoke(trackPath);
         Title = !string.IsNullOrWhiteSpace(info?.Title)
@@ -1253,13 +1278,25 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
                     Value: analysis.FirstBeatSeconds, Slot: _slot));
         }
+        else if (bpm <= 0)
+        {
+            // No analysis ANYWHERE — the load carried no BPM and the catalog has none. Analyze the file in
+            // the background and re-emit the same grid actions on completion, so SYNC comes alive instead
+            // of staying a dead button on a real-world (uncatalogued / unanalyzed) load.
+            StartBackgroundBpmAnalysis(trackPath);
+        }
 
         // Auto-anchor the bar markers on the analyzed downbeat (the musical "one") only when the analysis is
         // confident; a low-confidence bar (four-on-the-floor is genuinely ambiguous) would just jump the red
         // bars onto a guess, so we leave them at the default (index 0) for the DJ to place with SET ONE. A
         // manual SET ONE / a restored anchor arrives later via DeckSetDownbeat feedback and overrides this.
         if (analysis is { DownbeatSeconds: > 0 } && analysis.DownbeatConfidence >= DownbeatEstimate.ConfidenceFloor)
+        {
             _downbeatSeconds = analysis.DownbeatSeconds;
+            // Also push it through the action seam so the engine's bar-level sync snap can engage without
+            // a manual SET ONE on both decks — guarded so a restored/manual anchor always wins.
+            DispatchAnalyzedDownbeat(analysis);
+        }
 
         LoadWaveform(trackPath);
     }
@@ -1268,6 +1305,87 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         foreach (HotCuePadViewModel pad in HotCues)
             pad.Clear();
+    }
+
+    // Fire-and-forget background BPM analysis at the event boundary (mirrors LoadWaveform): decode +
+    // detect off the UI thread, then re-emit the SAME grid actions the catalog self-heal path uses. A
+    // newer load cancels it; a failure is logged, never thrown (global standards #16/#26).
+    private async void StartBackgroundBpmAnalysis(string trackPath)
+    {
+        if (_bpmAnalysis is null)
+            return;
+        // Already analyzing this very file (e.g. a duplicate load feedback) — don't decode it twice.
+        if (_bpmAnalysisCts is not null
+            && string.Equals(_bpmAnalysisPath, trackPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        CancelBackgroundBpmAnalysis();
+        var cts = new CancellationTokenSource();
+        _bpmAnalysisCts = cts;
+        _bpmAnalysisPath = trackPath;
+
+        try
+        {
+            BpmResult? analysis = await Task.Run(() => _bpmAnalysis(trackPath, cts.Token), cts.Token);
+            // Superseded by a newer load — a stale result must never re-grid a different track.
+            if (cts.IsCancellationRequested
+                || !string.Equals(_loadedTrackPath, trackPath, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (analysis is { Bpm: > 0 })
+            {
+                _dispatcher?.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute,
+                    Value: analysis.Bpm, Slot: _slot, Origin: AnalysisOrigin));
+                if (analysis.FirstBeatSeconds > 0)
+                    _dispatcher?.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
+                        Value: analysis.FirstBeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
+                DispatchAnalyzedDownbeat(analysis);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer load — ignore.
+        }
+        catch (Exception ex)
+        {
+            // Best-effort enrichment: the deck stays grid-less (SYNC disabled) but the UI never crashes.
+            System.Diagnostics.Trace.TraceWarning(
+                $"Background BPM analysis of '{trackPath}' for deck {DeckId} failed: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_bpmAnalysisCts, cts))
+            {
+                _bpmAnalysisCts = null;
+                _bpmAnalysisPath = null;
+            }
+            cts.Dispose();
+        }
+    }
+
+    private void CancelBackgroundBpmAnalysis()
+    {
+        _bpmAnalysisCts?.Cancel();
+        _bpmAnalysisCts = null; // the analysis' own finally disposes its cts
+        _bpmAnalysisPath = null;
+    }
+
+    // Anchor the bars on a confident analyzed downbeat THROUGH the action seam (not just the local
+    // display field) so the engine's bar-level snap sees it. Skipped when an anchor already sits in the
+    // engine for this load (a load resets it to 0; a restore/manual SET ONE re-applies one afterwards):
+    // the DJ's "one" must always beat the analyzer's guess.
+    private void DispatchAnalyzedDownbeat(BpmResult analysis)
+    {
+        if (_dispatcher is null
+            || analysis is not { DownbeatSeconds: > 0 }
+            || analysis.DownbeatConfidence < DownbeatEstimate.ConfidenceFloor)
+            return;
+        if (_dispatcher.GetFeedback(PerformanceActionKind.DeckSetDownbeat, _slot).Value != 0)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute,
+            Value: analysis.DownbeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick

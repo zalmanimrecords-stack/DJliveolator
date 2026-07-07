@@ -15,7 +15,12 @@ public sealed class FakeDispatcher : IPerformanceActionDispatcher
 
     public List<PerformanceAction> Dispatched { get; } = new();
 
-    public void Dispatch(PerformanceAction action) => Dispatched.Add(action);
+    public void Dispatch(PerformanceAction action)
+    {
+        Dispatched.Add(action);
+        // Mirrors the real dispatcher: ActionDispatched fires for every action, before any routing.
+        ActionDispatched?.Invoke(this, action);
+    }
 
     public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
         => _feedback.TryGetValue((kind, slot), out ActionFeedbackState? state) ? state : ActionFeedbackState.Unavailable;
@@ -25,7 +30,7 @@ public sealed class FakeDispatcher : IPerformanceActionDispatcher
 
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
-    public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
+    public event EventHandler<PerformanceAction>? ActionDispatched;
 
     public void RaiseFeedback(PerformanceActionKind kind, int slot, ActionFeedbackState state)
         => FeedbackChanged?.Invoke(this, new ActionFeedbackChanged(kind, slot, state));
