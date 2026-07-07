@@ -9,6 +9,12 @@ public sealed class TempoEstimator
 {
     private const double DoubleTimeCeilingBpm = 100.0;
     private const double DoubleTimeEvidenceRatio = 0.2;
+    // 2.5x rescues the fast-tempo trap where the strongest in-band lag is the 2.5-beat sub-harmonic
+    // (174 BPM reads as ~69.6): the beat lag itself is nearly as strong there, so this promotion demands
+    // near-parity evidence — mere subdivision energy must never push a genuinely slow track fast.
+    private const double TwoAndAHalfTimeEvidenceRatio = 0.5;
+    private static readonly (double Factor, double EvidenceRatio)[] FastTempoPromotions =
+        { (2.0, DoubleTimeEvidenceRatio), (2.5, TwoAndAHalfTimeEvidenceRatio) };
     private const int HarmonicSearchRadius = 2;
 
     private readonly double _minBpm;
@@ -75,7 +81,7 @@ public sealed class TempoEstimator
             }
         }
 
-        bestLag = PreferSupportedDoubleTime(
+        bestLag = PreferSupportedFastTempo(
             bestLag, bestVal, correlations, minLag, maxLag, envelopeRateHz);
         bestVal = correlations[bestLag];
         double bpm = 60.0 * envelopeRateHz / bestLag;
@@ -89,7 +95,11 @@ public sealed class TempoEstimator
         return new TempoEstimate(bpm, confidence);
     }
 
-    private int PreferSupportedDoubleTime(
+    // When the winning lag is slow (< 100 BPM), check whether a supported fast multiple (2x, 2.5x) of it
+    // is the real tempo: dense fast onset trains (DnB half-time) make the 2-beat and 2.5-beat sub-harmonics
+    // the strongest lags, folding 174 down to ~87 / ~70. Each factor promotes only when the fast lag holds
+    // its own autocorrelation evidence; among qualifying factors the strongest evidence wins.
+    private int PreferSupportedFastTempo(
         int bestLag,
         double bestValue,
         IReadOnlyList<double> correlations,
@@ -98,27 +108,38 @@ public sealed class TempoEstimator
         double envelopeRateHz)
     {
         double selectedBpm = 60.0 * envelopeRateHz / bestLag;
-        double doubleTimeBpm = selectedBpm * 2.0;
-        if (selectedBpm >= DoubleTimeCeilingBpm || doubleTimeBpm > _maxBpm || bestValue <= 0.0)
+        if (selectedBpm >= DoubleTimeCeilingBpm || bestValue <= 0.0)
             return bestLag;
 
-        int halfLag = (int)Math.Round(bestLag / 2.0);
-        double strongestDoubleTime = double.NegativeInfinity;
-        int doubleTimeLag = halfLag;
-        int from = Math.Max(minLag, halfLag - HarmonicSearchRadius);
-        int to = Math.Min(maxLag, halfLag + HarmonicSearchRadius);
-        for (int lag = from; lag <= to; lag++)
+        int promotedLag = bestLag;
+        double promotedValue = double.NegativeInfinity;
+        foreach ((double factor, double evidenceRatio) in FastTempoPromotions)
         {
-            if (correlations[lag] > strongestDoubleTime)
+            if (selectedBpm * factor > _maxBpm)
+                continue;
+
+            int target = (int)Math.Round(bestLag / factor);
+            int from = Math.Max(minLag, target - HarmonicSearchRadius);
+            int to = Math.Min(maxLag, target + HarmonicSearchRadius);
+            double strongest = double.NegativeInfinity;
+            int strongestLag = target;
+            for (int lag = from; lag <= to; lag++)
             {
-                strongestDoubleTime = correlations[lag];
-                doubleTimeLag = lag;
+                if (correlations[lag] > strongest)
+                {
+                    strongest = correlations[lag];
+                    strongestLag = lag;
+                }
+            }
+
+            if (strongest >= bestValue * evidenceRatio && strongest > promotedValue)
+            {
+                promotedValue = strongest;
+                promotedLag = strongestLag;
             }
         }
 
-        return strongestDoubleTime >= bestValue * DoubleTimeEvidenceRatio
-            ? doubleTimeLag
-            : bestLag;
+        return promotedLag;
     }
 }
 
