@@ -48,3 +48,6 @@ smoke*.err
 # Python bytecode cache (analysis scripts)
 __pycache__/
 *.pyc
+
+# graphify was removed from this project (2026-06-12); its output dir must not return
+graphify-out/
