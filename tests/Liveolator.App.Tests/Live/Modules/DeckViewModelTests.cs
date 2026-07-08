@@ -1333,6 +1333,180 @@ public sealed class DeckViewModelTests
         Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetGridBpm);
     }
 
+    // --- Background BPM analysis: a load with no analysis anywhere self-heals by analyzing the file ---
+
+    [Fact]
+    public async Task LoadWithoutAnyAnalysis_RunsBackgroundAnalysis_AndDispatchesTheGridOnCompletion()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, FirstBeatSeconds: 0.31)
+        {
+            DownbeatSeconds = 0.81,
+            DownbeatConfidence = 0.9,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => null, // not in the catalog at all
+            bpmAnalysis: (_, _) => Task.FromResult<Liveolator.Core.Analysis.Bpm.BpmResult?>(analysis));
+        Task<PerformanceAction> downbeat = WaitForDispatch(dispatcher, PerformanceActionKind.DeckSetDownbeat);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\new.flac"));
+        await downbeat; // the downbeat is dispatched last, so all grid actions are in by now
+
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetGridBpm && Math.Abs(a.Value - 128.0) < 1e-9 && a.Slot == 0);
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetFirstBeat && Math.Abs(a.Value - 0.31) < 1e-9 && a.Slot == 0);
+        PerformanceAction one = await downbeat; // already completed above — just reads the result
+        Assert.Equal(0.81, one.Value, precision: 6);
+        Assert.Equal(DeckViewModel.AnalysisOrigin, one.Origin); // never persisted as a manual edit
+    }
+
+    [Fact]
+    public async Task LoadWithCatalogAnalysis_DoesNotRunBackgroundAnalysis()
+    {
+        var dispatcher = new FakeDispatcher();
+        int analysisRuns = 0;
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null,
+            analysisInfo: _ => new Liveolator.Core.Analysis.Bpm.BpmResult(140.0, 0.8, 0.29),
+            bpmAnalysis: (_, _) =>
+            {
+                Interlocked.Increment(ref analysisRuns);
+                return Task.FromResult<Liveolator.Core.Analysis.Bpm.BpmResult?>(null);
+            });
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\a.flac"));
+        // The catalog self-heal grids the deck synchronously; a wrongly-started analysis would run on a
+        // worker thread right after, so give it a moment to (not) appear.
+        await Task.Delay(100);
+
+        Assert.Equal(0, analysisRuns); // the catalog already gridded the deck — never decode twice
+    }
+
+    [Fact]
+    public async Task TrackSwap_CancelsTheInFlightAnalysis_AndNeverAppliesTheStaleResult()
+    {
+        var dispatcher = new FakeDispatcher();
+        var staleResult = new TaskCompletionSource<Liveolator.Core.Analysis.Bpm.BpmResult?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var analysisStarted = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => null,
+            bpmAnalysis: (_, token) =>
+            {
+                analysisStarted.TrySetResult(token);
+                return staleResult.Task;
+            });
+
+        // Track A loads unanalyzed → analysis starts; track B (analyzed) replaces it before it finishes.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\a.flac"));
+        CancellationToken analysisToken = await analysisStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\b.flac"));
+
+        Assert.True(analysisToken.IsCancellationRequested); // the swap cancelled A's analysis
+
+        // A's late result must not re-grid B — give the (cancelled) continuation a moment to misbehave.
+        staleResult.SetResult(new Liveolator.Core.Analysis.Bpm.BpmResult(99.0, 0.9, 0.5));
+        await Task.Delay(100);
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetGridBpm);
+    }
+
+    [Fact]
+    public async Task DuplicateLoadOfTheSameTrack_DoesNotStartASecondAnalysis()
+    {
+        var dispatcher = new FakeDispatcher();
+        int analysisRuns = 0;
+        var pending = new TaskCompletionSource<Liveolator.Core.Analysis.Bpm.BpmResult?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => null,
+            bpmAnalysis: (_, _) =>
+            {
+                Interlocked.Increment(ref analysisRuns);
+                return pending.Task;
+            });
+        var load = new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\a.flac");
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0, load);
+        // Wait until the first analysis is actually underway (it starts on a worker thread).
+        await WaitUntil(() => Volatile.Read(ref analysisRuns) > 0);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0, load); // duplicate load feedback
+        await Task.Delay(100);
+
+        Assert.Equal(1, analysisRuns);
+        pending.SetResult(null); // release the in-flight task
+    }
+
+    [Fact]
+    public async Task BackgroundAnalysisFailure_IsLoggedAndNeverThrown()
+    {
+        var dispatcher = new FakeDispatcher();
+        var logged = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var listener = new WarningCaptureListener(logged);
+        System.Diagnostics.Trace.Listeners.Add(listener);
+        try
+        {
+            var vm = new DeckViewModel(
+                slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+                trackInfo: null, analysisInfo: _ => null,
+                bpmAnalysis: (_, _) => throw new InvalidOperationException("decoder exploded"));
+
+            dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+                new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0, Argument: @"C:\bad.flac"));
+
+            string warning = await logged.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Contains(@"C:\bad.flac", warning);
+            Assert.Contains("decoder exploded", warning);
+        }
+        finally
+        {
+            System.Diagnostics.Trace.Listeners.Remove(listener);
+        }
+    }
+
+    private sealed class WarningCaptureListener : System.Diagnostics.TraceListener
+    {
+        private readonly TaskCompletionSource<string> _captured;
+        public WarningCaptureListener(TaskCompletionSource<string> captured) => _captured = captured;
+        public override void Write(string? message) => Capture(message);
+        public override void WriteLine(string? message) => Capture(message);
+        private void Capture(string? message)
+        {
+            if (message?.Contains("Background BPM analysis") == true)
+                _captured.TrySetResult(message);
+        }
+    }
+
+    private static Task<PerformanceAction> WaitForDispatch(FakeDispatcher dispatcher, PerformanceActionKind kind)
+    {
+        var tcs = new TaskCompletionSource<PerformanceAction>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.ActionDispatched += (_, action) =>
+        {
+            if (action.Kind == kind)
+                tcs.TrySetResult(action);
+        };
+        return tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var timeout = Task.Delay(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            Assert.False(timeout.IsCompleted, "Timed out waiting for the condition.");
+            await Task.Delay(10);
+        }
+    }
+
     // --- Grid edit (DeckSetFirstBeat) ---
 
     [Fact]
@@ -1580,6 +1754,101 @@ public sealed class DeckViewModelTests
         await gridSet;
 
         Assert.Equal(0, vm.DownbeatBarOffset);
+    }
+
+    [Fact]
+    public async Task Load_DispatchesTheConfidentAnalyzedDownbeat_ThroughTheActionSeam()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.9,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4), trackInfo: null, analysisInfo: _ => analysis);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet;
+
+        // The "one" reaches the engine (bar-level sync snap) — not just the local bar-marker display —
+        // and is stamped with the analysis origin so persistence never saves it as a manual edit.
+        PerformanceAction one = Assert.Single(
+            dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetDownbeat);
+        Assert.Equal(1.0, one.Value, precision: 6);
+        Assert.Equal(0, one.Slot);
+        Assert.Equal(DeckViewModel.AnalysisOrigin, one.Origin);
+    }
+
+    [Fact]
+    public async Task Load_DoesNotDispatchTheDownbeat_WhenLowConfidence()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.1,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4), trackInfo: null, analysisInfo: _ => analysis);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet;
+
+        // An ambiguous bar (four-on-the-floor) must not push a guessed "one" into the engine's bar snap.
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetDownbeat);
+    }
+
+    [Fact]
+    public async Task Load_DoesNotOverwriteARestoredManualDownbeat_WithTheAnalyzedOne()
+    {
+        var dispatcher = new FakeDispatcher();
+        // The session restore already re-applied a manual SET ONE for this load (loads reset the engine's
+        // anchor to 0, so a non-zero value can only be a restore/manual edit for THIS track).
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSetDownbeat, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5));
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.9,
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(4), trackInfo: null, analysisInfo: _ => analysis);
+        Task gridSet = WaitForBeatGrid(vm);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        await gridSet;
+        // The restore's own feedback echo arrives after the load (DispatchLoad dispatches load THEN downbeat).
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5));
+
+        // The DJ's anchor wins: no analyzer dispatch, and the bars sit on the restored 0.5 s (beat 1 of
+        // the 120 BPM grid), not the analyzer's 1.0 s (beat 2).
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetDownbeat);
+        Assert.Equal(1, vm.DownbeatBarOffset);
+    }
+
+    [Fact]
+    public void Constructor_KeepsTheRestoredDownbeat_OverTheAnalyzedOne()
+    {
+        var dispatcher = new FakeDispatcher();
+        // A deck restored before this VM existed: the load AND the manual downbeat are already feedback.
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 120.0, Argument: @"C:\a.flac"));
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSetDownbeat, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.5));
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(120.0, 0.9, FirstBeatSeconds: 0.0)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatConfidence = 0.9,
+        };
+
+        var vm = new DeckViewModel(slot: 0, dispatcher, trackInfo: null, analysisInfo: _ => analysis);
+
+        // The ctor path must not push the analyzer's guess over the engine's restored anchor.
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetDownbeat);
     }
 
     // The deck loads its overview off-thread (async void over Task.Run); wait for the property the load

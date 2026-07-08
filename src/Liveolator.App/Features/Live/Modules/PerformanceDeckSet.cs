@@ -34,6 +34,8 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     /// <param name="deckTransportEnabled">Whether a realtime deck engine backs the decks (so transport
     /// actions are handled). False in catalog-browser mode, where the decks disable their transport controls
     /// instead of silently dropping actions; the mixer EQ/filter knobs stay live (mixer handler is always on).</param>
+    /// <param name="bpmAnalysis">On-demand background BPM analysis of a loaded file, for loads with no
+    /// analysis anywhere (not even the catalog) — see <see cref="DeckViewModel"/>; null disables it.</param>
     public PerformanceDeckSet(
         IPerformanceActionDispatcher? dispatcher = null,
         IWaveformProvider? waveformProvider = null,
@@ -43,11 +45,12 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
         bool deckTransportEnabled = true,
-        IAutoCueService? autoCueService = null)
+        IAutoCueService? autoCueService = null,
+        Func<string, System.Threading.CancellationToken, System.Threading.Tasks.Task<BpmResult?>>? bpmAnalysis = null)
     {
         _library = library;
-        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService);
-        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService);
+        DeckA = new DeckViewModel(slot: 0, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService, bpmAnalysis);
+        DeckB = new DeckViewModel(slot: 1, dispatcher, waveformProvider, ResolveTrackInfo, ResolveAnalysis, waveformZoomSeconds, nudgeSeconds, deckTransportEnabled, autoCueService, bpmAnalysis);
         // The mixer hosts the per-channel EQ/filter knobs (the DJ mixer renders them as channel strips), so
         // it is given both decks — the knobs already emit per-slot Mixer* actions, this just relocates them.
         Mixer = new MixerViewModel(dispatcher, levelMeter, DeckA, DeckB, limiterMeter);

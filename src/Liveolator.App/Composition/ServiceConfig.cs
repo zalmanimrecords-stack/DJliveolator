@@ -652,7 +652,8 @@ public static class ServiceConfig
             // Deck transport is handled only when the realtime engine is up; in catalog-browser mode the
             // decks disable Play/Cue/Sync/etc. instead of silently dropping those actions (QA finding S1).
             deckTransportEnabled: realtimeUp,
-            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
+            bpmAnalysis: DeckBpmAnalysis(sp)));
 
         WireCaptureSources(services, captureCatalogOverride, captureFactoryOverride);
         WireLiveTab(services, sharedLiveClock, hostClock);
@@ -884,6 +885,21 @@ public static class ServiceConfig
             System.Diagnostics.Trace.TraceWarning($"Realtime audio disabled: {ex.Message}.");
             return null;
         }
+    }
+
+    // On-demand background BPM analysis for a deck load with no analysis anywhere (not even the catalog):
+    // reuses the SAME offline decoder the AUTO-CUE seam runs on, with a plain TrackAnalyzer (deliberately
+    // NOT the registered singleton — its optional Python structure pass must never spawn a subprocess from
+    // a live deck load). Null (no decoder — e.g. tests without audio) leaves the deck grid-less as before.
+    private static Func<string, CancellationToken, Task<Liveolator.Core.Analysis.Bpm.BpmResult?>>? DeckBpmAnalysis(
+        IServiceProvider sp)
+    {
+        IAudioDecoder? decoder = sp.GetService<IAudioDecoder>();
+        if (decoder is null)
+            return null;
+        var analyzer = new TrackAnalyzer();
+        return async (path, cancellationToken) =>
+            (await analyzer.AnalyzeAsync(decoder, path, cancellationToken).ConfigureAwait(false)).Bpm;
     }
 
     // The GetSongBPM key comes from the persisted Settings (preferred) or the LIVEOLATOR_GETSONGBPM_KEY

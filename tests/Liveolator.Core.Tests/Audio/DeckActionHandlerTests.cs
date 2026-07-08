@@ -964,6 +964,29 @@ public class DeckActionHandlerTests
         Assert.Equal(0.0, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 0).Value, precision: 6);
     }
 
+    [Fact]
+    public void DeckLoadTrack_ClearsThePreviousTracksDownbeat_AndEchoesTheReset()
+    {
+        // The "one" belongs to the track (like hot cues): a new load must not inherit the previous
+        // track's bar anchor, and the reset is echoed so observers see downbeat feedback go to 0.
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.55, Slot: 1));
+        var echoes = new List<double>();
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckSetDownbeat && e.Slot == 1)
+                echoes.Add(e.State.Value);
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128, Slot: 1, Argument: @"C:\next.flac"));
+
+        Assert.Equal(0.0, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 1).Value, precision: 6);
+        Assert.Contains(0.0, echoes);
+    }
+
     // --- DeckBpmNudge ---
 
     [Fact]

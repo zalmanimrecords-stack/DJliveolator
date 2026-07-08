@@ -231,6 +231,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         // beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
         _engine.SetDeckBaseBpm(slot, action.Value);
         RaiseBpmFeedback(slot);
+        // The downbeat ("one") belongs to the TRACK, like the hot cues: clear the previous track's anchor
+        // on load and echo the reset, so a stale bar-1 can never be read as this load's (the deck UI and
+        // session persistence both ignore the 0 echo by design — it never erases a saved anchor).
+        _downbeats[slot] = 0;
+        RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(0));
         // The first-beat (downbeat) anchor — BpmResult.FirstBeatSeconds — feeds phase-match the same way
         // base BPM feeds tempo-match. The single-Value load action carries the BPM only, so the anchor is
         // supplied separately via SetDeckFirstBeat by the composition root that holds the full BpmResult
