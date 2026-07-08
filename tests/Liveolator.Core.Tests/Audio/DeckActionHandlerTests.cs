@@ -229,6 +229,12 @@ public class DeckActionHandlerTests
 
         public SyncLockState SyncState(int slot) => _sync[slot] ? SyncLockState.Active : SyncLockState.Off;
 
+        public event Action<int, SyncLockState>? SyncStateChanged;
+
+        // Test hook: simulate the engine's continuous loop moving a deck's lock state with no action.
+        public void RaiseSyncStateChanged(int slot, SyncLockState state)
+            => SyncStateChanged?.Invoke(slot, state);
+
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
         public void SetQuantize(int slot, bool enabled) => _quantize[slot] = enabled;
 
@@ -516,6 +522,31 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
         Assert.False(engine.IsSyncLocked(1));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
+    }
+
+    [Fact]
+    public void EngineSyncStateTransition_ReEmitsSyncToggleFeedback()
+    {
+        // The continuous loop moves the lock state with no action dispatched; the handler must turn each
+        // engine SyncStateChanged into DeckSyncToggle feedback so the LED / indicator follows by push.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        var states = new List<(int Slot, ActionFeedbackState State)>();
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckSyncToggle)
+                states.Add((change.Slot, change.State));
+        };
+
+        engine.RaiseSyncStateChanged(1, SyncLockState.Active);
+        engine.RaiseSyncStateChanged(1, SyncLockState.Locked);
+
+        Assert.Equal(2, states.Count);
+        Assert.Equal(1, states[0].Slot);
+        Assert.True(states[0].State.IsActive); // engaged
+        Assert.Equal((double)SyncLockState.Active, states[0].State.Value);
+        Assert.Equal((double)SyncLockState.Locked, states[1].State.Value);
+        Assert.Equal(nameof(SyncLockState.Locked), states[1].State.Argument);
     }
 
     [Fact]

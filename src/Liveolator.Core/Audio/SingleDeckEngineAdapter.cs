@@ -96,6 +96,14 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public SyncLockState SyncState(int slot) { EnsureSlot(slot); return SyncLockState.Off; }
 
+    // A single deck never syncs, so its sync state never transitions; declared to satisfy the seam. The
+    // explicit add/remove keep the compiler from warning about an unused event.
+    public event Action<int, SyncLockState>? SyncStateChanged
+    {
+        add { }
+        remove { }
+    }
+
     public bool IsQuantizeEnabled(int slot) { EnsureSlot(slot); return false; }
 
     public void SetQuantize(int slot, bool enabled) => EnsureSlot(slot);

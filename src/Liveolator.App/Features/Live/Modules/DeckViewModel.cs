@@ -693,12 +693,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         if (_dispatcher is null)
             return;
 
-        // The engine's phase-lock loop moves the lock state (Active→Locked→Drifting) WITHOUT dispatching
-        // any action, so no feedback event fires — poll it on this same render tick while the latch is
-        // engaged (engage/disengage themselves always arrive as feedback, so an off deck pays nothing).
-        if (_isSyncEngaged)
-            ApplySyncFeedback(_dispatcher.GetFeedback(PerformanceActionKind.DeckSyncToggle, _slot));
-
+        // Sync-lock state (Active→Locked→Drifting) now arrives by push: the engine raises SyncStateChanged
+        // on every transition and the handler re-emits DeckSyncToggle feedback, handled in OnFeedback. No
+        // per-tick poll (which took the audio _gate 3x and allocated per frame) is needed here.
         if (!_isPlaying)
             return;
         ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
@@ -916,12 +913,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _ => "Sync lock: continuously match tempo + phase to the other deck",
     };
 
-    // The handler's SyncFeedback: IsActive = latch engaged, Argument = SyncLockState name (Value is its
-    // ordinal). Parse the name; fall back to the engaged flag so a malformed echo can't throw or mislight.
+    // The handler's SyncFeedback: IsActive = latch engaged, Value = (double)SyncLockState ordinal. Read the
+    // ordinal directly (it arrived numerically); fall back to the engaged flag if it is ever out of range,
+    // so a malformed echo can't mislight the indicator.
     private void ApplySyncFeedback(ActionFeedbackState state)
     {
         IsSyncEngaged = state.IsActive;
-        SyncState = Enum.TryParse(state.Argument, out SyncLockState parsed) ? parsed
+        var ordinal = (SyncLockState)(int)state.Value;
+        SyncState = Enum.IsDefined(ordinal) ? ordinal
             : state.IsActive ? SyncLockState.Active : SyncLockState.Off;
     }
 

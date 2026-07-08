@@ -93,6 +93,7 @@ public sealed partial class TwoDeckBassEngine
     public void SetSyncLock(int slot, bool enabled)
     {
         ValidateSlot(slot);
+        List<(int Slot, SyncLockState State)>? transitions;
         lock (_gate)
         {
             DeckSlot s = _slots[slot];
@@ -118,7 +119,12 @@ public sealed partial class TwoDeckBassEngine
                     _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
                 SetSyncStateLocked(slot, SyncLockState.Off);
             }
+
+            // Drain inside the lock so the engage/disengage (and any immediate OutOfRange) reaches the LED /
+            // UI instantly; raise outside the lock below.
+            transitions = DrainPendingSyncTransitionsLocked();
         }
+        RaiseSyncTransitions(transitions);
     }
 
     public int? SyncMaster
@@ -135,6 +141,7 @@ public sealed partial class TwoDeckBassEngine
     /// <inheritdoc />
     public void UpdateSync(long hostTimeTicks)
     {
+        List<(int Slot, SyncLockState State)>? transitions;
         lock (_gate)
         {
             if (_disposed)
@@ -155,7 +162,12 @@ public sealed partial class TwoDeckBassEngine
                 }
                 CorrectSlaveLocked(slot, leader);
             }
+
+            // Also flushes any transition queued by an off-tick path (ReapplySyncedFollowers on a load /
+            // BPM / pitch change) within one pump tick (<=16ms).
+            transitions = DrainPendingSyncTransitionsLocked();
         }
+        RaiseSyncTransitions(transitions);
     }
 
     /// <inheritdoc />
@@ -277,8 +289,18 @@ public sealed partial class TwoDeckBassEngine
         SetSyncStateLocked(slot, correction.State);
     }
 
+    /// <inheritdoc />
+    public event Action<int, SyncLockState>? SyncStateChanged;
+
+    // Sync-state transitions queued under _gate (by SetSyncStateLocked) to be raised AFTER the lock is
+    // released — a SyncStateChanged handler may do MIDI I/O or marshal to the UI thread, so it must never
+    // run nested under the audio-contended _gate (mirrors the DeckEnded pattern).
+    private readonly List<(int Slot, SyncLockState State)> _pendingSyncTransitions = new();
+
     // Caller holds _gate. Store the slot's sync state, logging only on a transition (never per frame) so
-    // set diagnostics capture lock/drift changes without flooding the log (doc 03 invariant).
+    // set diagnostics capture lock/drift changes without flooding the log (doc 03 invariant). The
+    // transition is queued for SyncStateChanged and raised once the caller drains + releases the lock, so
+    // the LED / UI indicator follows the live state by push instead of a per-frame poll of the engine.
     private void SetSyncStateLocked(int slot, SyncLockState state)
     {
         DeckSlot s = _slots[slot];
@@ -286,6 +308,37 @@ public sealed partial class TwoDeckBassEngine
             return;
         _logger.LogInformation("Deck slot {Slot} sync state {Old} -> {New}.", slot, s.SyncState, state);
         s.SyncState = state;
+        _pendingSyncTransitions.Add((slot, state));
+    }
+
+    // Caller holds _gate. Take and clear the queued transitions to raise after the lock releases; null when
+    // none, so the common no-transition tick allocates nothing.
+    private List<(int Slot, SyncLockState State)>? DrainPendingSyncTransitionsLocked()
+    {
+        if (_pendingSyncTransitions.Count == 0)
+            return null;
+        var drained = new List<(int, SyncLockState)>(_pendingSyncTransitions);
+        _pendingSyncTransitions.Clear();
+        return drained;
+    }
+
+    // Raise queued transitions OUTSIDE _gate. MUST NOT be called while holding the lock. A misbehaving
+    // subscriber is logged, never bubbled onto the clock-pump / UI thread (global #16/#26).
+    private void RaiseSyncTransitions(List<(int Slot, SyncLockState State)>? transitions)
+    {
+        if (transitions is null)
+            return;
+        foreach ((int slot, SyncLockState state) in transitions)
+        {
+            try
+            {
+                SyncStateChanged?.Invoke(slot, state);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "A SyncStateChanged handler threw for deck slot {Slot}.", slot);
+            }
+        }
     }
 
     // Caller holds _gate. Beatmatch one synced deck to the sync leader: leader = the other deck if it is

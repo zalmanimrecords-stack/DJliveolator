@@ -764,29 +764,29 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
-    public void UpdatePlayhead_RefreshesTheSyncLockState_WhileEngaged()
+    public void SyncState_FollowsEngineTransitions_ByPush()
     {
-        // The engine's phase-lock loop moves Active→Locked→Drifting WITHOUT dispatching any action, so
-        // no feedback event fires; the deck polls the state on the same render tick the playhead uses.
+        // The engine's phase-lock loop moves Active→Locked→Drifting on its pump thread; the engine now
+        // raises SyncStateChanged and the handler re-emits DeckSyncToggle feedback, so the deck follows the
+        // live state by push (no render-tick poll). A settling transition arrives as a feedback event.
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
         dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
             SyncFeedbackState(engaged: true, SyncLockState.Active));
         Assert.Equal(SyncLockState.Active, vm.SyncState);
 
-        // The engine loop settled into lock — only the queryable feedback changed, no event was raised.
-        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, slot: 0,
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0,
             SyncFeedbackState(engaged: true, SyncLockState.Locked));
-        vm.UpdatePlayhead(); // works while paused too — lock state is not gated on IsPlaying
 
         Assert.Equal(SyncLockState.Locked, vm.SyncState);
         Assert.True(vm.IsSyncLocked);
     }
 
     [Fact]
-    public void UpdatePlayhead_DoesNotPollSyncState_WhileDisengaged()
+    public void UpdatePlayhead_DoesNotTouchSyncState()
     {
-        // Off decks vastly outnumber synced ones; the render tick must not pay for a sync read per deck.
+        // The sync state arrives by push (feedback event), never by a per-tick poll — the render tick must
+        // not take the audio lock or allocate to read it. A state seeded but never RAISED must not appear.
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
         dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, slot: 0,
@@ -794,7 +794,8 @@ public sealed class DeckViewModelTests
 
         vm.UpdatePlayhead();
 
-        Assert.False(vm.IsSyncEngaged); // disengaged → the seeded state is never pulled in by the tick
+        Assert.False(vm.IsSyncEngaged); // the seeded state is never pulled in by the tick
+        Assert.Equal(SyncLockState.Off, vm.SyncState);
     }
 
     // The handler's SyncFeedback shape: IsActive = latch engaged, Value = (double)SyncLockState,

@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using Liveolator.Audio.Playback;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Beat;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
@@ -640,6 +642,43 @@ public class TwoDeckBassEngineTests
         engine.SetPitch(0, 1.0, relative: false); // nudge the leader's pitch fader to +8%
 
         Assert.Equal(1.08, backend.Rate[101], 6); // follower tracks the leader's audible tempo
+    }
+
+    [Fact]
+    public void SyncStateChanged_RaisedOnEngageAndDisengage_TransitionsOnly()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0); // in sync range
+        var events = new List<(int Slot, SyncLockState State)>();
+        engine.SyncStateChanged += (slot, state) => events.Add((slot, state));
+
+        engine.SetSyncLock(1, true);  // Off -> Active
+        engine.SetSyncLock(1, true);  // already Active -> no transition (transitions-only)
+        engine.SetSyncLock(1, false); // Active -> Off
+
+        Assert.Equal(new[] { (1, SyncLockState.Active), (1, SyncLockState.Off) }, events);
+    }
+
+    [Fact]
+    public void SyncStateChanged_EngageOutOfRange_RaisesOutOfRange_NotActive()
+    {
+        // A too-wide tempo gap engages OutOfRange; the transition raised must be OutOfRange, never a
+        // fleeting Active (Fix: SetSyncLock must not clobber ReapplyRate's OutOfRange with Active).
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 180.0);
+        engine.SetDeckBaseBpm(1, 120.0); // folded rate 0.75 -> 25% > the 15% sync ceiling
+        var events = new List<(int Slot, SyncLockState State)>();
+        engine.SyncStateChanged += (slot, state) => events.Add((slot, state));
+
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal((1, SyncLockState.OutOfRange), Assert.Single(events));
+        Assert.Equal(SyncLockState.OutOfRange, engine.SyncState(1));
     }
 
     [Fact]

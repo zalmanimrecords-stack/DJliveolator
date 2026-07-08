@@ -89,6 +89,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetSyncLock(int slot, bool enabled) { }
     public int? SyncMaster => null;
     public SyncLockState SyncState(int slot) => SyncLockState.Off;
+    public event Action<int, SyncLockState>? SyncStateChanged { add { } remove { } }
     public bool IsQuantizeEnabled(int slot) => false;
     public void SetQuantize(int slot, bool enabled) { }
     public bool IsKeyLockEnabled(int slot) => false;

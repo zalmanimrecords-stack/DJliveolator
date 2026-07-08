@@ -66,6 +66,12 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         _jogSettings = (jogSettings ?? JogWheelSettings.Default).Normalized();
         _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
         _downbeats = new double[engine.DeckCount];
+        // The continuous correction loop moves a deck's lock state (Active->Locked->Drifting) on the sync
+        // pump thread with no action dispatched, so re-emit DeckSyncToggle feedback on every transition —
+        // that is how the SYNC LED / on-screen indicator follows the live state (push, not a UI poll). The
+        // engine raises this off its gate; feedback subscribers already marshal to their own thread. The
+        // handler and engine are composition-root singletons with the same lifetime, so this never leaks.
+        _engine.SyncStateChanged += OnEngineSyncStateChanged;
     }
 
     /// <inheritdoc />
@@ -279,12 +285,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
     }
 
-    private ActionFeedbackState SyncFeedback(int slot)
+    // Re-emit sync feedback when the engine reports a lock-state transition (Active/Locked/Drifting/
+    // OutOfRange) — built from the pushed state, not a re-query, so it never re-enters the engine lock.
+    private void OnEngineSyncStateChanged(int slot, SyncLockState state)
+        => RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncFeedback(slot, state));
+
+    private ActionFeedbackState SyncFeedback(int slot) => SyncFeedback(slot, _engine.SyncState(slot));
+
+    private static ActionFeedbackState SyncFeedback(int slot, SyncLockState state)
         => new(
-            IsActive: _engine.IsSyncLocked(slot),
+            IsActive: state != SyncLockState.Off,
             IsAvailable: true,
-            Value: (double)_engine.SyncState(slot),
-            Argument: _engine.SyncState(slot).ToString());
+            Value: (double)state,
+            Argument: state.ToString());
 
     private void TriggerHotCue(int slot, PerformanceAction action)
     {
