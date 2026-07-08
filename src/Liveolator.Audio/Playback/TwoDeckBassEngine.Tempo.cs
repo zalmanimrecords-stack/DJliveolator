@@ -31,6 +31,9 @@ public sealed partial class TwoDeckBassEngine
             // This deck may be the sync leader — pull any synced follower to the new tempo.
             ReapplySyncedFollowers();
         }
+        // ReapplySyncedFollowers can move a follower's lock state (e.g. into/out of OutOfRange); flush the
+        // transition here so the indicator follows even in a host with no UpdateSync pump running.
+        FlushSyncTransitions();
     }
 
     public bool IsKeyLockEnabled(int slot)
@@ -78,6 +81,7 @@ public sealed partial class TwoDeckBassEngine
             // synced follower whose own tempo just changed.
             ReapplySyncedFollowers();
         }
+        FlushSyncTransitions(); // see SetPitch — lock-state moves here must not wait for the pump
     }
 
     public double DeckBpm(int slot)
@@ -121,6 +125,7 @@ public sealed partial class TwoDeckBassEngine
                 _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
             ReapplySyncedFollowers();
         }
+        FlushSyncTransitions(); // see SetPitch — lock-state moves here must not wait for the pump
     }
 
     public void PitchBend(int slot, double bendFraction)

@@ -68,6 +68,26 @@ public sealed class TempoEstimatorTests
         Assert.InRange(result.Bpm, 68.5, 72.5);
     }
 
+    [Fact]
+    public void Estimate_PicksThePromotionByGateMargin_NotRawCorrelation()
+    {
+        // Both fast-tempo promotions qualify at once: the 2.5x candidate (lag 34) carries MORE raw
+        // autocorrelation than the 2x candidate (lag 42), but only barely clears its strict 0.5 gate,
+        // while the 2x clears its loose 0.2 gate by ~3x. Ranking by raw correlation would promote to
+        // ~176 BPM; ranking by gate-normalized margin must promote to ~143 BPM (the 2x). Envelope =
+        // three impulse trains (periods 84 / 34 / 42), amplitudes tuned so the in-band best lag stays 84
+        // (~71 BPM) and the two windows hold exactly that relationship (verified numerically against the
+        // estimator's own zero-mean, (n-lag)-normalized autocorrelation).
+        var envelope = new double[1_680];
+        for (int frame = 0; frame < envelope.Length; frame += 84) envelope[frame] += 1.0;
+        for (int frame = 0; frame < envelope.Length; frame += 34) envelope[frame] += 0.75;
+        for (int frame = 0; frame < envelope.Length; frame += 42) envelope[frame] += 0.42;
+
+        TempoEstimate result = new TempoEstimator().Estimate(envelope, EnvelopeRateHz);
+
+        Assert.InRange(result.Bpm, 139.0, 147.0);
+    }
+
     private static double[] AccentedBeatEnvelope(
         int frames, int beatPeriod, double strong, double weak)
     {

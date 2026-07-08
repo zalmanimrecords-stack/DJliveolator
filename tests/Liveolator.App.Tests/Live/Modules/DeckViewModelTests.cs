@@ -729,13 +729,13 @@ public sealed class DeckViewModelTests
     }
 
     [Theory]
-    [InlineData(SyncLockState.Off, false, false, false)]
-    [InlineData(SyncLockState.Active, false, true, false)]
-    [InlineData(SyncLockState.Locked, true, false, false)]
-    [InlineData(SyncLockState.Drifting, false, true, false)]
-    [InlineData(SyncLockState.OutOfRange, false, false, true)]
+    [InlineData(SyncLockState.Off, false, false)]
+    [InlineData(SyncLockState.Active, false, false)]
+    [InlineData(SyncLockState.Locked, true, false)]
+    [InlineData(SyncLockState.Drifting, false, false)]
+    [InlineData(SyncLockState.OutOfRange, false, true)]
     public void SyncState_DrivesTheLockIndicatorFlags(
-        SyncLockState state, bool locked, bool settling, bool outOfRange)
+        SyncLockState state, bool locked, bool outOfRange)
     {
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
@@ -745,7 +745,6 @@ public sealed class DeckViewModelTests
 
         Assert.Equal(state, vm.SyncState);
         Assert.Equal(locked, vm.IsSyncLocked);
-        Assert.Equal(settling, vm.IsSyncSettling);
         Assert.Equal(outOfRange, vm.IsSyncOutOfRange);
     }
 

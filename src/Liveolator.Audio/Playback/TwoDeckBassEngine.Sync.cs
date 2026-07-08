@@ -93,7 +93,6 @@ public sealed partial class TwoDeckBassEngine
     public void SetSyncLock(int slot, bool enabled)
     {
         ValidateSlot(slot);
-        List<(int Slot, SyncLockState State)>? transitions;
         lock (_gate)
         {
             DeckSlot s = _slots[slot];
@@ -119,12 +118,8 @@ public sealed partial class TwoDeckBassEngine
                     _backend.SetDeckRate(deck.Handle, s.PlaybackRate);
                 SetSyncStateLocked(slot, SyncLockState.Off);
             }
-
-            // Drain inside the lock so the engage/disengage (and any immediate OutOfRange) reaches the LED /
-            // UI instantly; raise outside the lock below.
-            transitions = DrainPendingSyncTransitionsLocked();
         }
-        RaiseSyncTransitions(transitions);
+        FlushSyncTransitions();
     }
 
     public int? SyncMaster
@@ -141,7 +136,6 @@ public sealed partial class TwoDeckBassEngine
     /// <inheritdoc />
     public void UpdateSync(long hostTimeTicks)
     {
-        List<(int Slot, SyncLockState State)>? transitions;
         lock (_gate)
         {
             if (_disposed)
@@ -162,12 +156,10 @@ public sealed partial class TwoDeckBassEngine
                 }
                 CorrectSlaveLocked(slot, leader);
             }
-
-            // Also flushes any transition queued by an off-tick path (ReapplySyncedFollowers on a load /
-            // BPM / pitch change) within one pump tick (<=16ms).
-            transitions = DrainPendingSyncTransitionsLocked();
         }
-        RaiseSyncTransitions(transitions);
+        // Also flushes any transition queued by a path with no flush of its own (a load / unload), within
+        // one pump tick (<=16ms).
+        FlushSyncTransitions();
     }
 
     /// <inheritdoc />
@@ -311,32 +303,41 @@ public sealed partial class TwoDeckBassEngine
         _pendingSyncTransitions.Add((slot, state));
     }
 
-    // Caller holds _gate. Take and clear the queued transitions to raise after the lock releases; null when
-    // none, so the common no-transition tick allocates nothing.
-    private List<(int Slot, SyncLockState State)>? DrainPendingSyncTransitionsLocked()
-    {
-        if (_pendingSyncTransitions.Count == 0)
-            return null;
-        var drained = new List<(int, SyncLockState)>(_pendingSyncTransitions);
-        _pendingSyncTransitions.Clear();
-        return drained;
-    }
+    // Serializes the drain-and-raise phase across threads. Without it, two flushers (the pump tick and a
+    // UI-thread SetSyncLock) can each drain their own batch, release _gate, and then race the raises —
+    // delivering a STALE transition after a fresher one (e.g. Off then a late Locked), wedging the SYNC
+    // indicator on a state the engine already left. Holding this lock across drain+raise means whoever
+    // drains first also raises first, so subscribers always see transitions in queue order. Lock order is
+    // _syncRaiseGate -> _gate (flush is only ever called with _gate released), never the reverse.
+    private readonly object _syncRaiseGate = new();
 
-    // Raise queued transitions OUTSIDE _gate. MUST NOT be called while holding the lock. A misbehaving
-    // subscriber is logged, never bubbled onto the clock-pump / UI thread (global #16/#26).
-    private void RaiseSyncTransitions(List<(int Slot, SyncLockState State)>? transitions)
+    // Drain and raise any queued sync transitions, in order. MUST be called with _gate released (public
+    // entry points call it after their lock block). The no-transition path allocates nothing. Subscribers
+    // may do MIDI I/O / UI marshaling, so they run outside _gate; a misbehaving subscriber is logged,
+    // never bubbled onto the clock-pump / UI thread (global #16/#26).
+    private void FlushSyncTransitions()
     {
-        if (transitions is null)
-            return;
-        foreach ((int slot, SyncLockState state) in transitions)
+        lock (_syncRaiseGate)
         {
-            try
+            List<(int Slot, SyncLockState State)>? transitions;
+            lock (_gate)
             {
-                SyncStateChanged?.Invoke(slot, state);
+                if (_pendingSyncTransitions.Count == 0)
+                    return;
+                transitions = new List<(int, SyncLockState)>(_pendingSyncTransitions);
+                _pendingSyncTransitions.Clear();
             }
-            catch (Exception ex)
+
+            foreach ((int slot, SyncLockState state) in transitions)
             {
-                _logger.LogError(ex, "A SyncStateChanged handler threw for deck slot {Slot}.", slot);
+                try
+                {
+                    SyncStateChanged?.Invoke(slot, state);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "A SyncStateChanged handler threw for deck slot {Slot}.", slot);
+                }
             }
         }
     }

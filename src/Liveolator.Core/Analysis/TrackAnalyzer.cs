@@ -72,25 +72,26 @@ public sealed class TrackAnalyzer
     }
 
     /// <summary>
+    /// Tempo-only analysis of a file: decode + <see cref="BpmDetector"/> and nothing else — no chroma
+    /// FFT, key classification, cue scan, or structure pass. For latency-sensitive callers that only
+    /// need the beat grid (a live deck load self-healing an unanalyzed track); the full
+    /// <see cref="AnalyzeAsync"/> stays the catalog/scan path.
+    /// </summary>
+    public async Task<BpmResult> AnalyzeBpmAsync(
+        IAudioDecoder decoder, string filePath, CancellationToken cancellationToken = default)
+    {
+        float[] buffer = await DecodeMonoAsync(decoder, filePath, cancellationToken).ConfigureAwait(false);
+        return _bpm.Detect(buffer, AnalysisSampleRate);
+    }
+
+    /// <summary>
     /// Decodes a file to mono PCM through <paramref name="decoder"/> and analyzes it. Throws
     /// <see cref="NotSupportedException"/> if the decoder cannot handle the file.
     /// </summary>
     public async Task<TrackAnalysisResult> AnalyzeAsync(
         IAudioDecoder decoder, string filePath, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(decoder);
-        ArgumentException.ThrowIfNullOrEmpty(filePath);
-        if (!decoder.CanDecode(filePath))
-            throw new NotSupportedException($"Decoder cannot handle '{filePath}'.");
-
-        var pcm = new List<float>();
-        await foreach (ReadOnlyMemory<float> block in
-            decoder.DecodeMonoAsync(filePath, AnalysisSampleRate, cancellationToken).ConfigureAwait(false))
-        {
-            pcm.AddRange(block.ToArray());
-        }
-
-        var buffer = pcm.ToArray();
+        float[] buffer = await DecodeMonoAsync(decoder, filePath, cancellationToken).ConfigureAwait(false);
         TrackAnalysisResult result = AnalyzePcm(buffer, AnalysisSampleRate);
 
         // Optional song-structure pass (doc 32). The analyzer is graceful by contract (null on missing
@@ -115,5 +116,24 @@ public sealed class TrackAnalyzer
         }
 
         return result;
+    }
+
+    // One shared decode for both analysis entry points: whole file to mono PCM at the analysis rate.
+    private static async Task<float[]> DecodeMonoAsync(
+        IAudioDecoder decoder, string filePath, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(decoder);
+        ArgumentException.ThrowIfNullOrEmpty(filePath);
+        if (!decoder.CanDecode(filePath))
+            throw new NotSupportedException($"Decoder cannot handle '{filePath}'.");
+
+        var pcm = new List<float>();
+        await foreach (ReadOnlyMemory<float> block in
+            decoder.DecodeMonoAsync(filePath, AnalysisSampleRate, cancellationToken).ConfigureAwait(false))
+        {
+            pcm.AddRange(block.ToArray());
+        }
+
+        return pcm.ToArray();
     }
 }

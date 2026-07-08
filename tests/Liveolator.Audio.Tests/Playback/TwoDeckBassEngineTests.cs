@@ -682,6 +682,25 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void SyncStateChanged_ThrowingSubscriber_NeverBubblesOntoTheCaller()
+    {
+        // A misbehaving subscriber must never bubble onto the caller (clock-pump / UI thread) — it is
+        // logged and contained, and the engine's own state still lands (global #16/#26). Later
+        // transitions keep flowing (the failure is per-raise, not a dead event).
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.SyncStateChanged += (_, _) => throw new InvalidOperationException("boom");
+
+        engine.SetSyncLock(1, true);  // must not throw despite the subscriber
+        engine.SetSyncLock(1, false); // and the next transition must also be contained
+
+        Assert.Equal(SyncLockState.Off, engine.SyncState(1));
+    }
+
+    [Fact]
     public void Position_ReadsBackend_ZeroWhenNothingLoaded()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

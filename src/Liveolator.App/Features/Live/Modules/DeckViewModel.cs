@@ -208,9 +208,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         SyncCommand = ReactiveCommand.Create(
             () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: slot)),
             canEmit);
-        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot)
-            is { IsAvailable: true } syncSeed)
-            ApplySyncFeedback(syncSeed);
+        // The sync-state seed happens at the END of this constructor, AFTER FeedbackChanged is subscribed:
+        // the engine pushes lock-state transitions from its pump thread, so a seed taken before the
+        // subscription leaves a window where a transition is missed and (with no poll) never recovered.
 
         // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
         // The VM emits the toggle action and follows the DeckKeyLockToggle active-state feedback (the LED
@@ -345,7 +345,15 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         }
 
         if (_dispatcher is not null)
+        {
             _dispatcher.FeedbackChanged += OnFeedback;
+            // Seed the sync state only now that transitions are subscribed (see the SyncCommand comment):
+            // GetFeedback live-queries the engine, so this read is at least as fresh as anything a
+            // pre-subscription transition could have carried — nothing is lost in between.
+            if (_dispatcher.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot)
+                is { IsAvailable: true } syncSeed)
+                ApplySyncFeedback(syncSeed);
+        }
     }
 
     // EqBands.Unity (0.5) = flat; MixerMath maps 0..1 to boost/cut. Filter/pitch centre likewise.
@@ -867,9 +875,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>The engine's live phase-lock state for this deck (Off / Active / Locked / Drifting /
-    /// OutOfRange), parsed from the <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback and
-    /// refreshed by <see cref="UpdatePlayhead"/> while the latch is engaged (the engine loop moves it
-    /// without dispatching any action). Drives the SYNC key's label, tooltip, and indicator classes.</summary>
+    /// OutOfRange), from <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback — the engine pushes
+    /// every transition through the handler, so this stays live with no polling. Drives the SYNC key's
+    /// label, tooltip, and indicator classes.</summary>
     public SyncLockState SyncState
     {
         get => _syncState;
@@ -879,7 +887,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             this.RaiseAndSetIfChanged(ref _syncState, value);
             this.RaisePropertyChanged(nameof(IsSyncLocked));
-            this.RaisePropertyChanged(nameof(IsSyncSettling));
             this.RaisePropertyChanged(nameof(IsSyncOutOfRange));
             this.RaisePropertyChanged(nameof(SyncStateLabel));
             this.RaisePropertyChanged(nameof(SyncStateTip));
@@ -888,9 +895,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Beat-locked to the master within tolerance.</summary>
     public bool IsSyncLocked => _syncState == SyncLockState.Locked;
-
-    /// <summary>Engaged but still pulling into lock (Active) or recovering from a slip (Drifting).</summary>
-    public bool IsSyncSettling => _syncState is SyncLockState.Active or SyncLockState.Drifting;
 
     /// <summary>Engaged but the tempo gap is too wide to beatmatch — the deck holds its own tempo.</summary>
     public bool IsSyncOutOfRange => _syncState == SyncLockState.OutOfRange;
@@ -1350,12 +1354,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // through the same grid actions a manual edit uses, so the grid/BPM appear instead of staying blank.
         if (bpm <= 0 && analysis is { Bpm: > 0 })
         {
-            _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute, Value: analysis.Bpm, Slot: _slot));
-            if (analysis.FirstBeatSeconds > 0)
-                _dispatcher?.Dispatch(new PerformanceAction(
-                    PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
-                    Value: analysis.FirstBeatSeconds, Slot: _slot));
+            DispatchAnalyzedGrid(analysis);
         }
         else if (bpm <= 0)
         {
@@ -1412,13 +1411,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             if (analysis is { Bpm: > 0 })
             {
-                _dispatcher?.Dispatch(new PerformanceAction(
-                    PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute,
-                    Value: analysis.Bpm, Slot: _slot, Origin: AnalysisOrigin));
-                if (analysis.FirstBeatSeconds > 0)
-                    _dispatcher?.Dispatch(new PerformanceAction(
-                        PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
-                        Value: analysis.FirstBeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
+                DispatchAnalyzedGrid(analysis);
                 DispatchAnalyzedDownbeat(analysis);
             }
         }
@@ -1441,6 +1434,23 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             }
             cts.Dispose();
         }
+    }
+
+    // The ONE analysis-derived grid emit (BPM + first-beat), shared by the catalog self-heal and the
+    // background-analysis completion so the two load routes can never drift apart. Stamped with
+    // AnalysisOrigin so observers of the raw action stream (DeckSessionPersistence) can tell an
+    // analyzer-derived grid from a manual edit.
+    private void DispatchAnalyzedGrid(BpmResult analysis)
+    {
+        if (_dispatcher is null || analysis.Bpm <= 0)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute,
+            Value: analysis.Bpm, Slot: _slot, Origin: AnalysisOrigin));
+        if (analysis.FirstBeatSeconds > 0)
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
+                Value: analysis.FirstBeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
     }
 
     private void CancelBackgroundBpmAnalysis()

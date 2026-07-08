@@ -113,8 +113,11 @@ public static class PhaseAlignmentCalculator
     /// <summary>
     /// Seconds to nudge the <paramref name="follower"/> playhead so its BAR phase aligns with the
     /// <paramref name="leader"/>'s — the shortest correction onto the nearest leader downbeat.
-    /// Intended as a one-shot, inaudible (pre-fade) seek; the continuous
-    /// <c>PhaseLockController</c> stays beat-based, which preserves bar alignment once established.
+    /// PRE-FADE ONLY: the correction spans up to half a BAR (±2 beats at 4/4), so applying it to a deck
+    /// already audible in the mix is an audible skip — every caller must gate on the deck NOT playing
+    /// (see <c>TwoDeckBassEngine.PhaseAlignToLeader</c>) and fall back to the ±half-beat
+    /// <see cref="PhaseNudgeSeconds"/> otherwise. The continuous <c>PhaseLockController</c> stays
+    /// beat-based, which preserves bar alignment once established.
     /// Returns 0 when either tempo or <paramref name="beatsPerBar"/> is not positive.
     /// </summary>
     public static double BarPhaseNudgeSeconds(DeckPhase follower, DeckPhase leader, int beatsPerBar)

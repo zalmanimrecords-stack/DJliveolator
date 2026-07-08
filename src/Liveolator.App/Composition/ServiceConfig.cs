@@ -888,9 +888,10 @@ public static class ServiceConfig
     }
 
     // On-demand background BPM analysis for a deck load with no analysis anywhere (not even the catalog):
-    // reuses the SAME offline decoder the AUTO-CUE seam runs on, with a plain TrackAnalyzer (deliberately
-    // NOT the registered singleton — its optional Python structure pass must never spawn a subprocess from
-    // a live deck load). Null (no decoder — e.g. tests without audio) leaves the deck grid-less as before.
+    // reuses the SAME offline decoder the AUTO-CUE seam runs on, via the tempo-only AnalyzeBpmAsync (a
+    // plain TrackAnalyzer, deliberately NOT the registered singleton — no Python structure subprocess, and
+    // no chroma/key/cue passes whose output a deck load would just throw away). Null (no decoder — e.g.
+    // tests without audio) leaves the deck grid-less as before.
     private static Func<string, CancellationToken, Task<Liveolator.Core.Analysis.Bpm.BpmResult?>>? DeckBpmAnalysis(
         IServiceProvider sp)
     {
@@ -899,7 +900,7 @@ public static class ServiceConfig
             return null;
         var analyzer = new TrackAnalyzer();
         return async (path, cancellationToken) =>
-            (await analyzer.AnalyzeAsync(decoder, path, cancellationToken).ConfigureAwait(false)).Bpm;
+            await analyzer.AnalyzeBpmAsync(decoder, path, cancellationToken).ConfigureAwait(false);
     }
 
     // The GetSongBPM key comes from the persisted Settings (preferred) or the LIVEOLATOR_GETSONGBPM_KEY
