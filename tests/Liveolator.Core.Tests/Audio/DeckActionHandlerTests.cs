@@ -108,6 +108,9 @@ public class DeckActionHandlerTests
         private readonly double[] _firstBeat;
         private readonly double[] _loopBeats;
 
+        /// <summary>Downbeat anchor last routed to the engine per slot (0 = never set / cleared).</summary>
+        public double[] Downbeats { get; }
+
         public List<(int Slot, string Path)> Loaded { get; } = new();
         public List<int> PlayPaused { get; } = new();
         public List<int> Stopped { get; } = new();
@@ -133,6 +136,7 @@ public class DeckActionHandlerTests
             _bpm = new double[deckCount];
             _firstBeat = new double[deckCount];
             _loopBeats = new double[deckCount];
+            Downbeats = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
                 _pitch[i] = 0.5; // center = original tempo
         }
@@ -204,6 +208,7 @@ public class DeckActionHandlerTests
 
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+        public void SetDeckDownbeat(int slot, double downbeatSeconds) => Downbeats[slot] = downbeatSeconds;
         public void SyncOnce(int slot) => SyncOnceCalls.Add(slot);
 
         public bool IsSyncLocked(int slot) => _sync[slot];
@@ -223,6 +228,12 @@ public class DeckActionHandlerTests
         }
 
         public SyncLockState SyncState(int slot) => _sync[slot] ? SyncLockState.Active : SyncLockState.Off;
+
+        public event Action<int, SyncLockState>? SyncStateChanged;
+
+        // Test hook: simulate the engine's continuous loop moving a deck's lock state with no action.
+        public void RaiseSyncStateChanged(int slot, SyncLockState state)
+            => SyncStateChanged?.Invoke(slot, state);
 
         public bool IsQuantizeEnabled(int slot) => _quantize[slot];
         public void SetQuantize(int slot, bool enabled) => _quantize[slot] = enabled;
@@ -511,6 +522,31 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
         Assert.False(engine.IsSyncLocked(1));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
+    }
+
+    [Fact]
+    public void EngineSyncStateTransition_ReEmitsSyncToggleFeedback()
+    {
+        // The continuous loop moves the lock state with no action dispatched; the handler must turn each
+        // engine SyncStateChanged into DeckSyncToggle feedback so the LED / indicator follows by push.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        var states = new List<(int Slot, ActionFeedbackState State)>();
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckSyncToggle)
+                states.Add((change.Slot, change.State));
+        };
+
+        engine.RaiseSyncStateChanged(1, SyncLockState.Active);
+        engine.RaiseSyncStateChanged(1, SyncLockState.Locked);
+
+        Assert.Equal(2, states.Count);
+        Assert.Equal(1, states[0].Slot);
+        Assert.True(states[0].State.IsActive); // engaged
+        Assert.Equal((double)SyncLockState.Active, states[0].State.Value);
+        Assert.Equal((double)SyncLockState.Locked, states[1].State.Value);
+        Assert.Equal(nameof(SyncLockState.Locked), states[1].State.Argument);
     }
 
     [Fact]
@@ -909,7 +945,7 @@ public class DeckActionHandlerTests
         Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
     }
 
-    // --- Downbeat (bar-1 "one") anchor seam — display/grid only ---
+    // --- Downbeat (bar-1 "one") anchor seam ---
 
     [Fact]
     public void DeckSetDownbeat_IsAHandledKind()
@@ -922,8 +958,8 @@ public class DeckActionHandlerTests
     [Fact]
     public void DeckSetDownbeat_RecordsTheAnchor_AndReportsItBackAsFeedback()
     {
-        // The downbeat is display-only: it must NOT reach the engine's first-beat (phase) anchor, only be
-        // stored and echoed so the deck UI can re-anchor its bar markers on the one.
+        // The downbeat is a bar anchor: it must NOT move the engine's first-beat (beat-phase) anchor, only
+        // be stored and echoed so the deck UI can re-anchor its bar markers on the one.
         var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);
 
@@ -937,11 +973,49 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
+    public void DeckSetDownbeat_RoutesTheAnchorToTheEngine_ForBarLevelPhaseAlignment()
+    {
+        // Quantize/SYNC snap onto the leader's DOWNBEAT (not just the nearest beat) when the engine knows
+        // both bar anchors, so the handler must forward the downbeat to the engine, not just display it.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.55, Slot: 1));
+
+        Assert.Equal(0.55, engine.Downbeats[1], precision: 6);
+        Assert.Equal(0.0, engine.Downbeats[0], precision: 6); // per-slot addressing
+    }
+
+    [Fact]
     public void DeckSetDownbeat_DefaultsToZero_BeforeAnyEdit()
     {
         var handler = new DeckActionHandler(new FakeMultiDeckEngine());
 
         Assert.Equal(0.0, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 0).Value, precision: 6);
+    }
+
+    [Fact]
+    public void DeckLoadTrack_ClearsThePreviousTracksDownbeat_AndEchoesTheReset()
+    {
+        // The "one" belongs to the track (like hot cues): a new load must not inherit the previous
+        // track's bar anchor, and the reset is echoed so observers see downbeat feedback go to 0.
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.55, Slot: 1));
+        var echoes = new List<double>();
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckSetDownbeat && e.Slot == 1)
+                echoes.Add(e.State.Value);
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, ActionInputMode.Absolute,
+            Value: 128, Slot: 1, Argument: @"C:\next.flac"));
+
+        Assert.Equal(0.0, handler.GetFeedback(PerformanceActionKind.DeckSetDownbeat, 1).Value, precision: 6);
+        Assert.Contains(0.0, echoes);
     }
 
     // --- DeckBpmNudge ---

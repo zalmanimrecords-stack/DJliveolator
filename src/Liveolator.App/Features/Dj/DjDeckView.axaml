@@ -157,9 +157,13 @@
                 Command="{Binding PlayPauseCommand}" Margin="0,0,4,0" ToolTip.Tip="Play / pause">
           <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
         </Button>
-        <Button Grid.Column="2" Classes="key" Content="⇄" FontSize="16" Margin="0,0,4,0"
+        <!-- SYNC latch (DeckSyncToggle): the narrow key keeps its glyph; the lit state + border classes
+             show engaged/locked/out-of-range, and the tooltip spells the lock state out in words. -->
+        <Button Grid.Column="2" Classes="key" Classes.on="{Binding IsSyncEngaged}"
+                Classes.locked="{Binding IsSyncLocked}" Classes.outofrange="{Binding IsSyncOutOfRange}"
+                Content="⇄" FontSize="16" Margin="0,0,4,0"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
-                ToolTip.Tip="Sync — match tempo + phase to the other deck (one-shot)" />
+                ToolTip.Tip="{Binding SyncStateTip}" />
         <Button Grid.Column="3" Classes="key" Classes.on="{Binding IsKeyLock}" Content="🔒" FontSize="14"
                 Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
                 ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />

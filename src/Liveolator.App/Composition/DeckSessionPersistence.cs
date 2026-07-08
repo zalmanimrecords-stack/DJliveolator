@@ -1,3 +1,4 @@
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Persistence;
 using Microsoft.Extensions.Logging;
@@ -31,6 +32,9 @@ internal sealed class DeckSessionPersistence : IDisposable
     private readonly Dictionary<int, DeckSessionState> _decks = new();
     // Decks whose file was offline at restore, awaiting the drive to mount (keyed by slot).
     private readonly Dictionary<int, DeckSessionState> _pending = new();
+    // Downbeat dispatches stamped Origin=analysis (slot → value): the deck auto-derived them from track
+    // analysis, so exactly the matching feedback echo is skipped — only a DJ's SET ONE is persisted.
+    private readonly Dictionary<int, double> _analysisDownbeats = new();
     private readonly object _gate = new();
     private readonly Timer? _retryTimer;
     private Task _pendingSave = Task.CompletedTask;
@@ -57,6 +61,10 @@ internal sealed class DeckSessionPersistence : IDisposable
         Restore(deckCount);
         // Subscribe AFTER restoring so the restore's own load dispatches don't echo back and re-save.
         _dispatcher.FeedbackChanged += OnFeedbackChanged;
+        // Watch the raw actions too: PerformanceAction.Origin (not carried by feedback) is what tells an
+        // analyzer-derived downbeat from a manual SET ONE. ActionDispatched fires before routing, so the
+        // marker is always in place by the time the handler's feedback echo reaches OnFeedbackChanged.
+        _dispatcher.ActionDispatched += OnActionDispatched;
 
         // Only run the reachability poll when something was actually deferred — an all-local session
         // never starts a timer.
@@ -170,6 +178,19 @@ internal sealed class DeckSessionPersistence : IDisposable
                 Slot: deck.Slot));
     }
 
+    private void OnActionDispatched(object? sender, PerformanceAction action)
+    {
+        // An analyzer-derived downbeat re-derives on every load; persisting it would turn the analyzer's
+        // guess into a "manual edit" that later shadows a better analysis. Remember it (with its value)
+        // so its feedback echo is skipped below — a manual SET ONE carries no origin and still persists.
+        if (action.Kind == PerformanceActionKind.DeckSetDownbeat
+            && string.Equals(action.Origin, DeckViewModel.AnalysisOrigin, StringComparison.Ordinal))
+        {
+            lock (_gate)
+                _analysisDownbeats[action.Slot] = action.Value;
+        }
+    }
+
     private void OnFeedbackChanged(object? sender, ActionFeedbackChanged e)
     {
         lock (_gate)
@@ -210,13 +231,23 @@ internal sealed class DeckSessionPersistence : IDisposable
                     QueueSaveLocked();
                 }
             }
-            else if (e.Kind == PerformanceActionKind.DeckSetDownbeat
-                     && _decks.TryGetValue(e.Slot, out DeckSessionState? downbeatDeck))
+            else if (e.Kind == PerformanceActionKind.DeckSetDownbeat)
             {
+                // The echo of a deck's auto-analysis downbeat (marked via its Origin in OnActionDispatched):
+                // consume the marker and do NOT persist — it re-derives on every load, and saving it would
+                // masquerade as a manual edit. The value must match so a manual SET ONE racing the marker
+                // can't be swallowed.
+                if (_analysisDownbeats.TryGetValue(e.Slot, out double autoValue) && autoValue == e.State.Value)
+                {
+                    _analysisDownbeats.Remove(e.Slot);
+                    return;
+                }
+
                 // Persist a manually-set downbeat ("one") so it survives a restart. As with the first-beat
                 // anchor, a reset to 0 must not erase a saved one — only overwrite on a non-zero edit (or the
                 // first time). The auto-resolved downbeat is NOT persisted (it re-derives from the catalog).
-                if (e.State.Value != 0 && e.State.Value != downbeatDeck.DownbeatSeconds)
+                if (_decks.TryGetValue(e.Slot, out DeckSessionState? downbeatDeck)
+                    && e.State.Value != 0 && e.State.Value != downbeatDeck.DownbeatSeconds)
                 {
                     _decks[e.Slot] = downbeatDeck with { DownbeatSeconds = e.State.Value };
                     QueueSaveLocked();
@@ -248,6 +279,7 @@ internal sealed class DeckSessionPersistence : IDisposable
         _disposed = true;
         _retryTimer?.Dispose();
         _dispatcher.FeedbackChanged -= OnFeedbackChanged;
+        _dispatcher.ActionDispatched -= OnActionDispatched;
         try
         {
             _pendingSave.GetAwaiter().GetResult();

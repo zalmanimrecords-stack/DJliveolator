@@ -28,8 +28,11 @@ public sealed class TrackAnalyzer
     /// tracks re-grid in the background on next scan.
     /// v5: optional offline song-structure segmentation (intro/buildup/drop/breakdown/outro) via the
     /// Python+librosa seam (<see cref="Structure.ISongStructureAnalyzer"/>, doc 32). Additive — when the
-    /// runtime is absent, <see cref="TrackAnalysisResult.Structure"/> stays null and analysis is unchanged.</remarks>
-    public const int CurrentVersion = 5;
+    /// runtime is absent, <see cref="TrackAnalysisResult.Structure"/> stays null and analysis is unchanged.
+    /// v6: fast-tempo (&gt;~160 BPM) fix — the grid-refiner band reaches 180 and the tempo estimator promotes
+    /// supported 2x/2.5x harmonics, so DnB-range tracks (168–180) no longer fold to ~70/87; previously
+    /// mis-gridded fast tracks re-analyze.</remarks>
+    public const int CurrentVersion = 6;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;

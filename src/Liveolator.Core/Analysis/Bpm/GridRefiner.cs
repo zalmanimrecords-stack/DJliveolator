@@ -27,13 +27,23 @@ public sealed class GridRefiner
     private const double SnapToleranceBpm = 0.08;  // snap to a clean integer only within this distance…
     private const double SnapCoherenceMargin = 0.01; // …and only if coherence does not drop more than this
     private const int MinOnsets = 4;
+    // A tempo and its double fit sparse kicks EQUALLY well (kicks on every other grid beat are still all
+    // in phase), separated only by quantization jitter — so coherence differences this small are a tie,
+    // not evidence, and the metrical level is decided by occupancy / the coarse estimate instead.
+    private const double CoherenceTieMargin = 0.02;
+    // Kicks landing on at least this fraction of a candidate's beats prove the kicks ARE that beat (a
+    // four-on-the-floor floor); sparser patterns (DnB bar-rate kicks) leave the level to the coarse tempo.
+    private const double OccupiedGridFloor = 0.7;
 
     private readonly double _minBpm;
     private readonly double _maxBpm;
 
-    /// <summary>The target tempo band used for octave/metrical reconciliation. The default 84–168 makes
-    /// 140-ish electronic tempos their own home and rejects their exact half/double (70 / 280).</summary>
-    public GridRefiner(double minBpm = 84.0, double maxBpm = 168.0)
+    /// <summary>The target tempo band used for octave/metrical reconciliation. The default 84–180 matches
+    /// <see cref="TempoEstimator"/>'s ceiling so fast tempos (DnB 168–180) are representable — the old 168
+    /// ceiling folded a correct coarse 174 down to 87. The 84–90 range now has its double in band too, but
+    /// the coherence fit still prefers the true tempo (doubling amplifies the onsets' phase jitter) and the
+    /// tie-break leans on the coarse estimate.</summary>
+    public GridRefiner(double minBpm = 84.0, double maxBpm = 180.0)
     {
         if (minBpm <= 0 || maxBpm <= minBpm)
             throw new ArgumentException("Require 0 < minBpm < maxBpm.");
@@ -63,25 +73,35 @@ public sealed class GridRefiner
         if (totalWeight <= 0.0)
             return fallback;
 
-        double best = -1.0, bestBpm = coarseBpm, bestOffset = coarseFirstBeatSeconds;
+        // Sweep each metrical candidate to its own best fit, then pick between candidates. Within one
+        // sweep coherence decides outright; between candidates a near-tie is metrical ambiguity (a tempo
+        // vs its double both fit sparse kicks), resolved by grid occupancy and closeness to the coarse tempo.
+        var fits = new List<(double Bpm, double Offset, double Coherence)>();
         foreach (double candidate in CandidateTempos(coarseBpm))
         {
+            double cBest = -1.0, cBpm = candidate, cOffset = 0.0;
             for (double bpm = candidate - SearchRadiusBpm; bpm <= candidate + SearchRadiusBpm; bpm += SearchStepBpm)
             {
                 if (bpm <= 0)
                     continue;
                 (double coherence, double offset) = Score(bpm, times, weights, totalWeight);
-                // Tie-break toward the candidate closest to the coarse estimate — only matters for the rare
-                // genuine 3:2 ambiguity; exact octaves are already removed by the band.
-                if (coherence > best + 1e-9 ||
-                    (coherence > best - 1e-9 && Math.Abs(bpm - coarseBpm) < Math.Abs(bestBpm - coarseBpm)))
+                if (coherence > cBest + 1e-9 ||
+                    (coherence > cBest - 1e-9 && Math.Abs(bpm - coarseBpm) < Math.Abs(cBpm - coarseBpm)))
                 {
-                    best = coherence;
-                    bestBpm = bpm;
-                    bestOffset = offset;
+                    cBest = coherence;
+                    cBpm = bpm;
+                    cOffset = offset;
                 }
             }
+            if (cBest >= 0.0)
+                fits.Add((cBpm, cOffset, cBest));
         }
+
+        if (fits.Count == 0)
+            return fallback;
+
+        (double bestBpm, double bestOffset, double best) =
+            PickMetricalLevel(fits, coarseBpm, times, kickEnvelope.Length / envelopeRateHz);
 
         // Snap to a clean integer tempo when it's a hair away and coherence holds (140.01 → 140.00),
         // but never when snapping would actually loosen the fit (a genuinely non-integer tempo).
@@ -98,6 +118,38 @@ public sealed class GridRefiner
         }
 
         return new GridFit(bestBpm, bestOffset, best);
+    }
+
+    // Chooses the metrical level among the per-candidate best fits. Clear coherence winner → take it.
+    // Near-ties (a tempo vs its half/double fitting sparse kicks identically): a candidate whose grid the
+    // kicks fully occupy (a kick on ~every beat) is proven by the kicks themselves and wins, slowest
+    // first; otherwise the kick band cannot decide the level and the fit closest to the coarse
+    // (full-spectrum) estimate stands. Known ceiling: a snare bleeding into the kick band at exactly the
+    // half-tempo rate would read as an occupied slow grid — the real-audio corpus is the watchdog there.
+    private static (double Bpm, double Offset, double Coherence) PickMetricalLevel(
+        List<(double Bpm, double Offset, double Coherence)> fits,
+        double coarseBpm,
+        double[] onsetTimes,
+        double envelopeSeconds)
+    {
+        double top = fits.Max(f => f.Coherence);
+
+        var contenders = fits.FindAll(f => f.Coherence >= top - CoherenceTieMargin);
+        if (contenders.Count == 1)
+            return contenders[0];
+
+        (double Bpm, double Offset, double Coherence)? slowestOccupied = null;
+        foreach (var fit in contenders)
+        {
+            double beats = envelopeSeconds * fit.Bpm / 60.0;
+            bool occupied = beats > 0 && onsetTimes.Length / beats >= OccupiedGridFloor;
+            if (occupied && (slowestOccupied is null || fit.Bpm < slowestOccupied.Value.Bpm))
+                slowestOccupied = fit;
+        }
+        if (slowestOccupied is not null)
+            return slowestOccupied.Value;
+
+        return contenders.MinBy(f => Math.Abs(f.Bpm - coarseBpm));
     }
 
     // The coarse tempo plus its octave / 3:2 metrical relatives, kept inside the target band. Folding the

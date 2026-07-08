@@ -82,6 +82,35 @@ public sealed class DeckSessionPersistenceTests
     }
 
     [Fact]
+    public async Task AnalysisOriginDownbeat_IsNotPersisted_ButALaterManualOneIs()
+    {
+        var dispatcher = new FakeDispatcher();
+        var store = new FakeDeckSessionStore([new DeckSessionState(0, "/m/a.wav", 126, 0.1)]);
+        using var persistence = new DeckSessionPersistence(
+            dispatcher, store, deckCount: 2, enableRetryTimer: false);
+
+        // The deck auto-derived a downbeat from track analysis: the tagged action, then its engine echo.
+        dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute,
+            Value: 0.7, Slot: 0, Origin: Liveolator.App.Features.Live.Modules.DeckViewModel.AnalysisOrigin));
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckSetDownbeat, 0, new ActionFeedbackState(false, true, 0.7));
+
+        // The analyzer's guess is NOT a manual edit — nothing may be saved for it.
+        Assert.False(store.Saved.Task.IsCompleted);
+
+        // A real SET ONE afterwards (no origin = a human gesture) still persists.
+        dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute, Value: 0.9, Slot: 0));
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckSetDownbeat, 0, new ActionFeedbackState(false, true, 0.9));
+
+        await store.Saved.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        DeckSessionState saved = Assert.Single(store.LastSaved!);
+        Assert.Equal(0.9, saved.DownbeatSeconds, 6);
+    }
+
+    [Fact]
     public async Task DownbeatFeedback_PersistsTheManuallySetOne()
     {
         var dispatcher = new FakeDispatcher();

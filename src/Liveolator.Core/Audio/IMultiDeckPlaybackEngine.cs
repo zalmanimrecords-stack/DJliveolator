@@ -123,6 +123,14 @@ public interface IMultiDeckPlaybackEngine
     void SetDeckFirstBeat(int slot, double firstBeatSeconds);
 
     /// <summary>
+    /// Set the deck's downbeat (bar-1 "one") anchor in seconds — a confidence-gated analyzed downbeat or
+    /// a manual SET ONE, arriving via <c>DeckSetDownbeat</c>. When BOTH decks have one, Quantize/SYNC
+    /// phase-match snaps onto the leader's DOWNBEAT instead of just the nearest beat, so engaging sync
+    /// can never land beat 3 on the leader's one. 0 (or negative) = unknown → beat-level alignment.
+    /// </summary>
+    void SetDeckDownbeat(int slot, double downbeatSeconds);
+
+    /// <summary>
     /// Beatmatches this deck to the other deck and snaps its analyzed kick/grid phase once.
     /// The resulting audible tempo is retained until the performer changes pitch/tempo again; no
     /// continuous lock is engaged. The matched rate may exceed the manual pitch fader's display range.
@@ -148,6 +156,15 @@ public interface IMultiDeckPlaybackEngine
 
     /// <summary>The deck's beat-lock state for the SYNC button / waveform indicator (doc 11/12).</summary>
     SyncLockState SyncState(int slot);
+
+    /// <summary>
+    /// Raised whenever a deck slot's <see cref="SyncState"/> TRANSITIONS (Off→Active→Locked→Drifting→
+    /// OutOfRange, in any direction) — including the autonomous moves the continuous correction loop makes
+    /// with no action dispatched. Lets the SYNC LED / UI indicator follow the live lock state via push,
+    /// not a poll. Args: (slot, new state). Raised OFF the engine lock (a handler may do MIDI I/O or marshal
+    /// to the UI thread), so it can fire from the clock-pump thread; handlers must be thread-tolerant.
+    /// </summary>
+    event Action<int, SyncLockState>? SyncStateChanged;
 
     /// <summary>True while the deck quantizes cue/loop actions to the beat grid.</summary>
     bool IsQuantizeEnabled(int slot);

@@ -54,6 +54,35 @@ public sealed class GridRefinerTests
         Assert.True(fit.Coherence > 0.9, $"the correct meter should fit tightly, was {fit.Coherence:F3}");
     }
 
+    [Theory]
+    [InlineData(86.0)]
+    [InlineData(90.0)]
+    public void Refine_KeepsSlowTempo_WhenCoarseWasWronglyDoubled(double trueBpm)
+    {
+        // The band reaches 180 so fast tempos (174 DnB) are representable — but that puts the DOUBLE of
+        // 84–90 material in band too. When the coarse estimator wrongly promoted (86 -> 172.3, the
+        // four-on-the-floor in-band-bass trap), the refiner must still fold back to the real kicks, not
+        // keep the double (every kick also lands on every other double-tempo grid beat).
+        double[] env = KickEnvelope(trueBpm, seconds: 120, firstBeatSeconds: 0.05);
+
+        GridFit fit = new GridRefiner().Refine(
+            env, RateHz, coarseBpm: trueBpm * 2.0 + 0.3, coarseFirstBeatSeconds: 0.0);
+
+        Assert.InRange(fit.Bpm, trueBpm - 0.5, trueBpm + 0.5);
+    }
+
+    [Fact]
+    public void Refine_RepresentsFastTempos_UpTo180()
+    {
+        // 174 (DnB) must be representable: the old 168 ceiling folded a correct coarse 174 down to 87.
+        double[] env = KickEnvelope(trueBpm: 174.0, seconds: 120, firstBeatSeconds: 0.0);
+
+        GridFit fit = new GridRefiner().Refine(env, RateHz, coarseBpm: 172.3, coarseFirstBeatSeconds: 0.0);
+
+        Assert.InRange(fit.Bpm, 173.5, 174.5);
+        Assert.True(fit.Coherence > 0.9, $"clean kicks should fit tightly, was {fit.Coherence:F3}");
+    }
+
     [Fact]
     public void Refine_NoKickStructure_ReturnsLowCoherence_SoTheCallerFallsBack()
     {

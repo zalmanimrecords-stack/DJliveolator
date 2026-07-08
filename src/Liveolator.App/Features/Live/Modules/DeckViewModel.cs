@@ -13,6 +13,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -23,8 +24,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
-/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), the continuous sync latch
+/// (<see cref="PerformanceActionKind.DeckSyncToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -61,6 +62,13 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private const double GridNudgeStep = 0.004;
     private static readonly TimeSpan PitchBendWindow = TimeSpan.FromMilliseconds(140);
 
+    /// <summary>
+    /// <see cref="PerformanceAction.Origin"/> tag stamped on grid/downbeat actions this deck derives from
+    /// automatic track analysis (mirrors <c>StudioArranger.Origin</c>). Never carried by a human gesture,
+    /// so session persistence can tell an analyzer downbeat from a manual SET ONE and skip persisting it.
+    /// </summary>
+    public const string AnalysisOrigin = "analysis";
+
 
     private readonly IPerformanceActionDispatcher? _dispatcher;
     // True when the deck-transport actions are actually handled (a deck engine backs this slot). Gates the
@@ -71,12 +79,22 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly Func<string, BpmResult?>? _analysisInfo;
     // Offline auto-cue placement for the AUTO-CUE button; null hides it. Set by the composition root.
     private readonly IAutoCueService? _autoCueService;
+    // On-demand background BPM analysis for a load with no analysis anywhere (not even the catalog):
+    // decodes + detects tempo off-thread over the same offline-decoder pipeline AUTO-CUE uses and
+    // re-emits the self-heal grid actions on completion, so SYNC isn't a dead button on such a load.
+    // Null (no decoder wired) leaves the deck grid-less, as before.
+    private readonly Func<string, CancellationToken, Task<BpmResult?>>? _bpmAnalysis;
+    private CancellationTokenSource? _bpmAnalysisCts;
+    // The path the in-flight background analysis is decoding; null when none is running.
+    private string? _bpmAnalysisPath;
     // The currently-loaded track path (from DeckLoadTrack feedback) — the file AUTO-CUE analyzes.
     private string? _loadedTrackPath;
     private readonly int _slot;
     private bool _isPlaying;
     private bool _isLooping;
     private bool _isKeyLock;
+    private bool _isSyncEngaged;
+    private SyncLockState _syncState;
     private bool _isHotCueBankB;
     private string _title = "No track loaded";
     private string? _artist;
@@ -135,7 +153,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         double waveformZoomSeconds = VisualsSettings.DefaultZoomSeconds,
         double nudgeSeconds = VisualsSettings.DefaultNudgeSeconds,
         bool deckTransportEnabled = true,
-        IAutoCueService? autoCueService = null)
+        IAutoCueService? autoCueService = null,
+        Func<string, CancellationToken, Task<BpmResult?>>? bpmAnalysis = null)
     {
         _slot = slot;
         _dispatcher = dispatcher;
@@ -143,6 +162,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _trackInfo = trackInfo;
         _analysisInfo = analysisInfo;
         _autoCueService = autoCueService;
+        _bpmAnalysis = bpmAnalysis;
         _zoomSeconds = ClampZoomSeconds(waveformZoomSeconds);
         _nudgeSeconds = ClampNudgeSeconds(nudgeSeconds);
         DeckId = slot == 0 ? "A" : "B";
@@ -181,12 +201,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 0.0, Slot: slot)),
             canEmit);
 
-        // One-shot Sync: a single press beatmatches tempo + phase to the other deck, then leaves the
-        // deck free for manual NUDGE. Momentary (no latch) — the UI and MIDI controller share it.
+        // Sync latch: each press toggles the engine's CONTINUOUS phase-lock loop for this deck via
+        // DeckSyncToggle, and the button follows the handler's feedback (the LED model) exactly like
+        // KEY LOCK. The lock state (Active/Locked/Drifting/OutOfRange) rides on the same feedback.
+        // The one-shot DeckSyncOnce stays available to MIDI mappings; the on-screen key is the latch.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot)),
+            () => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: slot)),
             canEmit);
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot)
+            is { IsAvailable: true } syncSeed)
+            ApplySyncFeedback(syncSeed);
 
         // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
         // The VM emits the toggle action and follows the DeckKeyLockToggle active-state feedback (the LED
@@ -669,6 +693,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         if (_dispatcher is null)
             return;
 
+        // Sync-lock state (Active→Locked→Drifting) now arrives by push: the engine raises SyncStateChanged
+        // on every transition and the handler re-emits DeckSyncToggle feedback, handled in OnFeedback. No
+        // per-tick poll (which took the audio _gate 3x and allocated per frame) is needed here.
         if (!_isPlaying)
             return;
         ActionFeedbackState position = _dispatcher.GetFeedback(PerformanceActionKind.DeckSeek, _slot);
@@ -831,6 +858,72 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set => this.RaiseAndSetIfChanged(ref _isKeyLock, value);
     }
 
+    /// <summary>True while the continuous sync latch is engaged for this deck (drives the SYNC key's
+    /// active state), from <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback.</summary>
+    public bool IsSyncEngaged
+    {
+        get => _isSyncEngaged;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncEngaged, value);
+    }
+
+    /// <summary>The engine's live phase-lock state for this deck (Off / Active / Locked / Drifting /
+    /// OutOfRange), parsed from the <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback and
+    /// refreshed by <see cref="UpdatePlayhead"/> while the latch is engaged (the engine loop moves it
+    /// without dispatching any action). Drives the SYNC key's label, tooltip, and indicator classes.</summary>
+    public SyncLockState SyncState
+    {
+        get => _syncState;
+        private set
+        {
+            if (_syncState == value)
+                return;
+            this.RaiseAndSetIfChanged(ref _syncState, value);
+            this.RaisePropertyChanged(nameof(IsSyncLocked));
+            this.RaisePropertyChanged(nameof(IsSyncSettling));
+            this.RaisePropertyChanged(nameof(IsSyncOutOfRange));
+            this.RaisePropertyChanged(nameof(SyncStateLabel));
+            this.RaisePropertyChanged(nameof(SyncStateTip));
+        }
+    }
+
+    /// <summary>Beat-locked to the master within tolerance.</summary>
+    public bool IsSyncLocked => _syncState == SyncLockState.Locked;
+
+    /// <summary>Engaged but still pulling into lock (Active) or recovering from a slip (Drifting).</summary>
+    public bool IsSyncSettling => _syncState is SyncLockState.Active or SyncLockState.Drifting;
+
+    /// <summary>Engaged but the tempo gap is too wide to beatmatch — the deck holds its own tempo.</summary>
+    public bool IsSyncOutOfRange => _syncState == SyncLockState.OutOfRange;
+
+    /// <summary>The SYNC key's face text — the lock state is carried in text, never color alone.</summary>
+    public string SyncStateLabel => _syncState switch
+    {
+        SyncLockState.Locked => "LOCKED",
+        SyncLockState.Active or SyncLockState.Drifting => "SYNC…",
+        SyncLockState.OutOfRange => "SYNC ⚠",
+        _ => "SYNC",
+    };
+
+    /// <summary>The SYNC key's tooltip, spelling the current lock state out in words.</summary>
+    public string SyncStateTip => _syncState switch
+    {
+        SyncLockState.Locked => "Sync lock: beat-locked to the other deck",
+        SyncLockState.Active or SyncLockState.Drifting => "Sync lock engaged — pulling into beat lock",
+        SyncLockState.OutOfRange => "Can't sync — tempo gap too wide for the sync range",
+        _ => "Sync lock: continuously match tempo + phase to the other deck",
+    };
+
+    // The handler's SyncFeedback: IsActive = latch engaged, Value = (double)SyncLockState ordinal. Read the
+    // ordinal directly (it arrived numerically); fall back to the engaged flag if it is ever out of range,
+    // so a malformed echo can't mislight the indicator.
+    private void ApplySyncFeedback(ActionFeedbackState state)
+    {
+        IsSyncEngaged = state.IsActive;
+        var ordinal = (SyncLockState)(int)state.Value;
+        SyncState = Enum.IsDefined(ordinal) ? ordinal
+            : state.IsActive ? SyncLockState.Active : SyncLockState.Off;
+    }
+
     public ReactiveCommand<Unit, Unit> PlayPauseCommand { get; }
     public ReactiveCommand<Unit, Unit> CueCommand { get; }
     public ReactiveCommand<Unit, Unit> LoopCommand { get; }
@@ -961,6 +1054,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _disposed = true;
         _loadCts?.Cancel();
         _loadCts?.Dispose();
+        CancelBackgroundBpmAnalysis();
         _pitchPercentText.Dispose();
         if (_dispatcher is not null)
             _dispatcher.FeedbackChanged -= OnFeedback;
@@ -1060,6 +1154,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.DeckKeyLockToggle:
                     IsKeyLock = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckSyncToggle:
+                    ApplySyncFeedback(e.State);
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);
@@ -1183,6 +1280,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private void OnTrackLoadFailed(string trackPath)
     {
         _loadedTrackPath = null;
+        CancelBackgroundBpmAnalysis(); // nothing playable to grid — a late result must not re-enable SYNC
         HasLoadedTrack = false;     // there is no playable track — transport stays disabled
         IsBpmEnabled = false;       // and SYNC stays disabled (nothing to beatmatch)
         Title = $"⚠ Couldn't load {Path.GetFileNameWithoutExtension(trackPath)}";
@@ -1207,6 +1305,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         _loadedTrackPath = trackPath; // the file the AUTO-CUE button analyzes
         HasLoadedTrack = true;        // a successful load arrived — enable the transport controls
+
+        // A different track supersedes any in-flight background BPM analysis: its late result must never
+        // re-grid the newly loaded track (a quick A→B→A swap would otherwise apply a stale grid).
+        if (_bpmAnalysisPath is not null
+            && !string.Equals(_bpmAnalysisPath, trackPath, StringComparison.OrdinalIgnoreCase))
+            CancelBackgroundBpmAnalysis();
 
         DeckTrackInfo? info = _trackInfo?.Invoke(trackPath);
         Title = !string.IsNullOrWhiteSpace(info?.Title)
@@ -1253,13 +1357,25 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
                     Value: analysis.FirstBeatSeconds, Slot: _slot));
         }
+        else if (bpm <= 0)
+        {
+            // No analysis ANYWHERE — the load carried no BPM and the catalog has none. Analyze the file in
+            // the background and re-emit the same grid actions on completion, so SYNC comes alive instead
+            // of staying a dead button on a real-world (uncatalogued / unanalyzed) load.
+            StartBackgroundBpmAnalysis(trackPath);
+        }
 
         // Auto-anchor the bar markers on the analyzed downbeat (the musical "one") only when the analysis is
         // confident; a low-confidence bar (four-on-the-floor is genuinely ambiguous) would just jump the red
         // bars onto a guess, so we leave them at the default (index 0) for the DJ to place with SET ONE. A
         // manual SET ONE / a restored anchor arrives later via DeckSetDownbeat feedback and overrides this.
         if (analysis is { DownbeatSeconds: > 0 } && analysis.DownbeatConfidence >= DownbeatEstimate.ConfidenceFloor)
+        {
             _downbeatSeconds = analysis.DownbeatSeconds;
+            // Also push it through the action seam so the engine's bar-level sync snap can engage without
+            // a manual SET ONE on both decks — guarded so a restored/manual anchor always wins.
+            DispatchAnalyzedDownbeat(analysis);
+        }
 
         LoadWaveform(trackPath);
     }
@@ -1268,6 +1384,87 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         foreach (HotCuePadViewModel pad in HotCues)
             pad.Clear();
+    }
+
+    // Fire-and-forget background BPM analysis at the event boundary (mirrors LoadWaveform): decode +
+    // detect off the UI thread, then re-emit the SAME grid actions the catalog self-heal path uses. A
+    // newer load cancels it; a failure is logged, never thrown (global standards #16/#26).
+    private async void StartBackgroundBpmAnalysis(string trackPath)
+    {
+        if (_bpmAnalysis is null)
+            return;
+        // Already analyzing this very file (e.g. a duplicate load feedback) — don't decode it twice.
+        if (_bpmAnalysisCts is not null
+            && string.Equals(_bpmAnalysisPath, trackPath, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        CancelBackgroundBpmAnalysis();
+        var cts = new CancellationTokenSource();
+        _bpmAnalysisCts = cts;
+        _bpmAnalysisPath = trackPath;
+
+        try
+        {
+            BpmResult? analysis = await Task.Run(() => _bpmAnalysis(trackPath, cts.Token), cts.Token);
+            // Superseded by a newer load — a stale result must never re-grid a different track.
+            if (cts.IsCancellationRequested
+                || !string.Equals(_loadedTrackPath, trackPath, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (analysis is { Bpm: > 0 })
+            {
+                _dispatcher?.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute,
+                    Value: analysis.Bpm, Slot: _slot, Origin: AnalysisOrigin));
+                if (analysis.FirstBeatSeconds > 0)
+                    _dispatcher?.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
+                        Value: analysis.FirstBeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
+                DispatchAnalyzedDownbeat(analysis);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer load — ignore.
+        }
+        catch (Exception ex)
+        {
+            // Best-effort enrichment: the deck stays grid-less (SYNC disabled) but the UI never crashes.
+            System.Diagnostics.Trace.TraceWarning(
+                $"Background BPM analysis of '{trackPath}' for deck {DeckId} failed: {ex.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_bpmAnalysisCts, cts))
+            {
+                _bpmAnalysisCts = null;
+                _bpmAnalysisPath = null;
+            }
+            cts.Dispose();
+        }
+    }
+
+    private void CancelBackgroundBpmAnalysis()
+    {
+        _bpmAnalysisCts?.Cancel();
+        _bpmAnalysisCts = null; // the analysis' own finally disposes its cts
+        _bpmAnalysisPath = null;
+    }
+
+    // Anchor the bars on a confident analyzed downbeat THROUGH the action seam (not just the local
+    // display field) so the engine's bar-level snap sees it. Skipped when an anchor already sits in the
+    // engine for this load (a load resets it to 0; a restore/manual SET ONE re-applies one afterwards):
+    // the DJ's "one" must always beat the analyzer's guess.
+    private void DispatchAnalyzedDownbeat(BpmResult analysis)
+    {
+        if (_dispatcher is null
+            || analysis is not { DownbeatSeconds: > 0 }
+            || analysis.DownbeatConfidence < DownbeatEstimate.ConfidenceFloor)
+            return;
+        if (_dispatcher.GetFeedback(PerformanceActionKind.DeckSetDownbeat, _slot).Value != 0)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute,
+            Value: analysis.DownbeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick

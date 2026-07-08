@@ -48,9 +48,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     private readonly IMultiDeckPlaybackEngine _engine;
     private readonly JogWheelSettings _jogSettings;
     private readonly ActionFeedbackState[] _loadedTracks;
-    // The per-deck downbeat (bar-1) anchor in seconds. Display/grid-only (it never reaches the audio engine,
-    // unlike the first-beat anchor), so the handler owns it directly and only relays it back as feedback so a
-    // deck UI can re-anchor its bar markers and a session restore can re-apply a manually-set "one".
+    // The per-deck downbeat (bar-1) anchor in seconds, mirrored here for feedback (the engine seam has a
+    // setter but no getter) so a deck UI can re-anchor its bar markers and a session restore can re-apply a
+    // manually-set "one". The anchor itself is forwarded to the engine for bar-level phase alignment.
     private readonly double[] _downbeats;
 
     /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
@@ -66,6 +66,12 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         _jogSettings = (jogSettings ?? JogWheelSettings.Default).Normalized();
         _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
         _downbeats = new double[engine.DeckCount];
+        // The continuous correction loop moves a deck's lock state (Active->Locked->Drifting) on the sync
+        // pump thread with no action dispatched, so re-emit DeckSyncToggle feedback on every transition —
+        // that is how the SYNC LED / on-screen indicator follows the live state (push, not a UI poll). The
+        // engine raises this off its gate; feedback subscribers already marshal to their own thread. The
+        // handler and engine are composition-root singletons with the same lifetime, so this never leaks.
+        _engine.SyncStateChanged += OnEngineSyncStateChanged;
     }
 
     /// <inheritdoc />
@@ -104,9 +110,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, slot, ValueFeedback(action.Value));
                 break;
             case PerformanceActionKind.DeckSetDownbeat:
-                // The bar-1 ("one") anchor in seconds. Display/grid-only — it never touches the audio engine
-                // or the audible pitch; the handler just records it and echoes it so the deck UI re-anchors
-                // its red bar markers on the one (and a session restore can re-apply a manual edit).
+                // The bar-1 ("one") anchor in seconds. Forwarded to the engine so Quantize/SYNC phase-match
+                // can snap onto the leader's DOWNBEAT (bar-level) when both decks know theirs; also recorded
+                // and echoed so the deck UI re-anchors its red bar markers on the one (and a session restore
+                // can re-apply a manual edit). Never touches the audible pitch/rate.
+                _engine.SetDeckDownbeat(slot, action.Value);
                 _downbeats[slot] = action.Value;
                 RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(action.Value));
                 break;
@@ -229,6 +237,11 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         // beatmatching can match against it (doc 11) — kept on the action seam, no new kind.
         _engine.SetDeckBaseBpm(slot, action.Value);
         RaiseBpmFeedback(slot);
+        // The downbeat ("one") belongs to the TRACK, like the hot cues: clear the previous track's anchor
+        // on load and echo the reset, so a stale bar-1 can never be read as this load's (the deck UI and
+        // session persistence both ignore the 0 echo by design — it never erases a saved anchor).
+        _downbeats[slot] = 0;
+        RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(0));
         // The first-beat (downbeat) anchor — BpmResult.FirstBeatSeconds — feeds phase-match the same way
         // base BPM feeds tempo-match. The single-Value load action carries the BPM only, so the anchor is
         // supplied separately via SetDeckFirstBeat by the composition root that holds the full BpmResult
@@ -272,12 +285,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
     }
 
-    private ActionFeedbackState SyncFeedback(int slot)
+    // Re-emit sync feedback when the engine reports a lock-state transition (Active/Locked/Drifting/
+    // OutOfRange) — built from the pushed state, not a re-query, so it never re-enters the engine lock.
+    private void OnEngineSyncStateChanged(int slot, SyncLockState state)
+        => RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncFeedback(slot, state));
+
+    private ActionFeedbackState SyncFeedback(int slot) => SyncFeedback(slot, _engine.SyncState(slot));
+
+    private static ActionFeedbackState SyncFeedback(int slot, SyncLockState state)
         => new(
-            IsActive: _engine.IsSyncLocked(slot),
+            IsActive: state != SyncLockState.Off,
             IsAvailable: true,
-            Value: (double)_engine.SyncState(slot),
-            Argument: _engine.SyncState(slot).ToString());
+            Value: (double)state,
+            Argument: state.ToString());
 
     private void TriggerHotCue(int slot, PerformanceAction action)
     {

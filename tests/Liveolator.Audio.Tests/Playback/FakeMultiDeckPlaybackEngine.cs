@@ -83,11 +83,13 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
     public double DeckFirstBeat(int slot) => _firstBeat[slot];
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+    public void SetDeckDownbeat(int slot, double downbeatSeconds) { }
     public void SyncOnce(int slot) => Calls.Add($"SyncOnce({slot})");
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
     public int? SyncMaster => null;
     public SyncLockState SyncState(int slot) => SyncLockState.Off;
+    public event Action<int, SyncLockState>? SyncStateChanged { add { } remove { } }
     public bool IsQuantizeEnabled(int slot) => false;
     public void SetQuantize(int slot, bool enabled) { }
     public bool IsKeyLockEnabled(int slot) => false;

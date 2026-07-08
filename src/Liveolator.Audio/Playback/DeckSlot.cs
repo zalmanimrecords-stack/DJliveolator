@@ -66,6 +66,10 @@ internal sealed class DeckSlot
     /// <summary>First-beat (downbeat) anchor in seconds; 0 = unknown. Cleared on unload.</summary>
     public double FirstBeat;
 
+    /// <summary>Downbeat (bar-1 "one") anchor in seconds; 0 = unknown, so phase-match stays beat-level.
+    /// Cleared on unload — a stale bar anchor must never mis-snap the next track.</summary>
+    public double Downbeat;
+
     /// <summary>Active loop length in beats; 0 = no loop. Cleared on unload.</summary>
     public double LoopBeats;
 
