@@ -20,7 +20,7 @@ namespace Liveolator.App.Shell;
 /// <summary>
 /// The application shell: the tab set and the currently selected tab. Real feature
 /// view-models (e.g. Libraries) are injected — that injection is how a module connects to
-/// the UI. Tabs without a module yet show a <see cref="PlaceholderViewModel"/>.
+/// the UI. Every tab is backed by a real feature view-model.
 /// </summary>
 public sealed class MainWindowViewModel : ViewModelBase
 {

@@ -248,6 +248,19 @@ public class VisualActionHandlerTests
         Assert.Equal(VisualActionHandler.DefaultTransition, transition.Style);
     }
 
+    [Theory]
+    [InlineData(PerformanceActionKind.VisualTransitionNow)]
+    [InlineData(PerformanceActionKind.VisualTransitionNextBeat)]
+    [InlineData(PerformanceActionKind.VisualTransitionNextBar)]
+    [InlineData(PerformanceActionKind.VisualLaunchClip)]
+    public void DeferredVisualActions_ReportUnavailable_SoTheirPadLedsStayDark(PerformanceActionKind kind)
+    {
+        // Transitions and clip launch are wired through the seam, but the production engine defers them
+        // (a logged no-op). Feedback must report them unavailable so a Push pad / UI control never lights
+        // as a working button for a feature that does nothing yet (global standard #26 — no silent success).
+        Assert.False(_handler.GetFeedback(kind, slot: 0).IsAvailable);
+    }
+
     [Fact]
     public void EndToEnd_DispatcherRoutesVisualBlackoutToTheEngine()
     {

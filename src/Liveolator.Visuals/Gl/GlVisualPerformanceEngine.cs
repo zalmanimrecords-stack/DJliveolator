@@ -610,7 +610,10 @@ public sealed class GlVisualPerformanceEngine : IVisualPerformanceEngine, IVisua
     }
 
     private void LogDeferred(string operation)
-        => _logger.LogDebug("{Operation} is deferred to a later compositor phase; no-op in this slice.", operation);
+        // Warning, not Debug: this operation is wired through the seam but not implemented yet, so a
+        // triggered request silently does nothing. Surface it in the diagnostics log (global standard #26)
+        // rather than swallow it, so a mapped Push button / UI control that appears to fire is diagnosable.
+        => _logger.LogWarning("{Operation} is not available yet (deferred to a later compositor phase); the request was ignored.", operation);
 
     private static double NormalizeDefault(VisualMacro macro)
     {
