@@ -20,13 +20,13 @@ public sealed partial class TwoDeckBassEngine
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds)
     {
         ValidateSlot(slot);
-        lock (_gate) _slots[slot].FirstBeat = firstBeatSeconds > 0.0 ? firstBeatSeconds : 0.0;
+        lock (_gate) _slots[slot].FirstBeat = Math.Max(0.0, firstBeatSeconds);
     }
 
     public void SetDeckDownbeat(int slot, double downbeatSeconds)
     {
         ValidateSlot(slot);
-        lock (_gate) _slots[slot].Downbeat = downbeatSeconds > 0.0 ? downbeatSeconds : 0.0;
+        lock (_gate) _slots[slot].Downbeat = Math.Max(0.0, downbeatSeconds);
     }
 
     public void SyncOnce(int slot)
@@ -105,7 +105,12 @@ public sealed partial class TwoDeckBassEngine
                 ReapplyRate(slot);
                 if (ValidLeaderSlot(slot) >= 0)
                     PhaseAlignToLeader(slot);
-                SetSyncStateLocked(slot, SyncLockState.Active); // the loop refines to Locked on the next tick
+                // ReapplyRate reports OutOfRange when the tempo gap is too wide to beatmatch; don't clobber
+                // that with Active (it would flash "settling" for a deck that can never lock until the next
+                // UpdateSync tick re-derives it — misleading, and worse while paused pre-fade). Only a deck
+                // that is actually in range starts Active; the loop refines it to Locked on the next tick.
+                if (s.SyncState != SyncLockState.OutOfRange)
+                    SetSyncStateLocked(slot, SyncLockState.Active);
             }
             else
             {
@@ -380,7 +385,12 @@ public sealed partial class TwoDeckBassEngine
         // beat 3 on the leader's one — audibly locked but musically a bar off. With either downbeat
         // unknown (analysis ambiguity is confidence-gated at the source), the beat-level snap stands.
         // The continuous lock (CorrectSlaveLocked) stays beat-based, which preserves bar alignment.
-        bool barSnap = s.Downbeat > 0.0 && leader.Downbeat > 0.0;
+        //
+        // Bar-snap only when the follower is NOT playing (armed pre-fade, the normal moment to align).
+        // BarPhaseNudgeSeconds wraps to +/-half a BAR (+/-2 beats at 4/4) vs the beat snap's +/-half beat,
+        // so bar-snapping a deck already audible in the mix could jump the playhead up to ~2 beats — an
+        // audible skip. A playing follower therefore keeps the near-inaudible beat-level snap.
+        bool barSnap = s.Downbeat > 0.0 && leader.Downbeat > 0.0 && !deck.Playing;
         double nudgeSeconds = barSnap
             ? PhaseAlignmentCalculator.BarPhaseNudgeSeconds(
                 followerPhase with { FirstBeatSeconds = s.Downbeat },

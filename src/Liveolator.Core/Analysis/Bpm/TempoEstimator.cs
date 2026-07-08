@@ -132,10 +132,19 @@ public sealed class TempoEstimator
                 }
             }
 
-            if (strongest >= bestValue * evidenceRatio && strongest > promotedValue)
+            // Choose among qualifying factors by how far each clears ITS OWN (differently-tuned) gate,
+            // not by raw correlation: the 2.5x gate (0.5) is far stricter than the 2x gate (0.2), so a 2.5x
+            // candidate barely over its bar must not outrank a 2x candidate that dominates its own. The
+            // gate-normalized margin strongest/evidenceRatio compares them fairly (the common bestValue
+            // cancels). Below-gate candidates never enter the comparison.
+            if (strongest >= bestValue * evidenceRatio)
             {
-                promotedValue = strongest;
-                promotedLag = strongestLag;
+                double margin = strongest / evidenceRatio;
+                if (margin > promotedValue)
+                {
+                    promotedValue = margin;
+                    promotedLag = strongestLag;
+                }
             }
         }
 

@@ -132,9 +132,7 @@ public sealed class GridRefiner
         double[] onsetTimes,
         double envelopeSeconds)
     {
-        double top = double.NegativeInfinity;
-        foreach ((_, _, double coherence) in fits)
-            top = Math.Max(top, coherence);
+        double top = fits.Max(f => f.Coherence);
 
         var contenders = fits.FindAll(f => f.Coherence >= top - CoherenceTieMargin);
         if (contenders.Count == 1)
@@ -151,13 +149,7 @@ public sealed class GridRefiner
         if (slowestOccupied is not null)
             return slowestOccupied.Value;
 
-        var closest = contenders[0];
-        foreach (var fit in contenders)
-        {
-            if (Math.Abs(fit.Bpm - coarseBpm) < Math.Abs(closest.Bpm - coarseBpm))
-                closest = fit;
-        }
-        return closest;
+        return contenders.MinBy(f => Math.Abs(f.Bpm - coarseBpm));
     }
 
     // The coarse tempo plus its octave / 3:2 metrical relatives, kept inside the target band. Folding the
