@@ -76,6 +76,29 @@ public class StructuralCueDetectorTests
     }
 
     [Fact]
+    public void Detect_TrustedDownbeat_AnchorsPhraseGridToDownbeat()
+    {
+        var (signal, duration) = StructuredTrack();
+        BandEnergyFrames bands = new BandEnergyEnvelope().Compute(signal, Sr);
+        TrackCues silence = new SilenceCueDetector().Detect(signal, Sr);
+
+        // A trusted downbeat half a bar off the intro edge (0.5 s within the 2 s bar at 120 BPM). The drop
+        // cue must snap to a bar line sharing that phase, not to the RMS-intro-anchored grid (phase 0).
+        var bpm = new BpmResult(Bpm, 0.9, FirstBeatSeconds: 0.5)
+        {
+            DownbeatSeconds = 0.5,
+            DownbeatConfidence = 0.9,
+        };
+
+        StructuralCueResult result = Detector().Detect(bands, bpm, silence, duration);
+
+        double drop = PositionOf(result, StructuralCueKind.Drop);
+        double barSeconds = 4.0 * 60.0 / Bpm; // 2.0 s at 120 BPM / 4-4
+        double phase = ((drop % barSeconds) + barSeconds) % barSeconds;
+        Assert.InRange(phase, 0.4, 0.6); // aligned to the downbeat's 0.5 s bar phase, not 0
+    }
+
+    [Fact]
     public void Detect_FlatTrack_PlacesOnlySafeCuePair()
     {
         // Constant kick throughout: no readable structure -> conservative behaviour.

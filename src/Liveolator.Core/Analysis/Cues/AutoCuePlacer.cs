@@ -64,8 +64,12 @@ public sealed class AutoCuePlacer
     /// <param name="bpm">Track tempo, used to beat-snap positions (must be positive).</param>
     /// <param name="sampleRate">Sample rate the cue offsets are measured against (must be positive).</param>
     /// <param name="slotCount">Number of hot-cue slots (default 8).</param>
+    /// <param name="firstBeatSeconds">The beat-grid phase anchor (<see cref="Bpm.BpmResult.FirstBeatSeconds"/>):
+    /// positions snap to <c>anchor + k·beat</c>, not to a grid starting at sample 0. Defaults to 0 (a
+    /// sample-0 grid) so callers that have no phase anchor behave as before.</param>
     public TrackCueSet Place(
-        StructuralCueResult? result, double bpm, int sampleRate, int slotCount = TrackCueSet.DefaultSlotCount)
+        StructuralCueResult? result, double bpm, int sampleRate,
+        int slotCount = TrackCueSet.DefaultSlotCount, double firstBeatSeconds = 0.0)
     {
         if (bpm <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(bpm), "BPM must be positive.");
@@ -77,6 +81,7 @@ public sealed class AutoCuePlacer
             return set;
 
         double samplesPerBeat = sampleRate * 60.0 / bpm;
+        double anchorSamples = Math.Max(0.0, firstBeatSeconds) * sampleRate;
         var placedSamples = new List<long>();
 
         // Bank A + the outro slot: one cue per fixed kind, gated unless always-safe.
@@ -90,7 +95,7 @@ public sealed class AutoCuePlacer
             if (!IsAlwaysSafe(kind) && cue.Confidence < _minConfidence)
                 continue;
 
-            long samples = SnapSamples(cue.PositionSeconds, samplesPerBeat, sampleRate);
+            long samples = SnapSamples(cue.PositionSeconds, samplesPerBeat, anchorSamples, sampleRate);
             (string label, int color) = Style[kind];
             set = set.SetHotCue(slot, samples, label, color, isAuto: true);
             placedSamples.Add(samples);
@@ -111,7 +116,7 @@ public sealed class AutoCuePlacer
             if (slot >= slotCount)
                 break;
 
-            long samples = SnapSamples(phrase.PositionSeconds, samplesPerBeat, sampleRate);
+            long samples = SnapSamples(phrase.PositionSeconds, samplesPerBeat, anchorSamples, sampleRate);
             if (placedSamples.Any(p => Math.Abs(p - samples) <= collisionTolerance))
                 continue;
 
@@ -123,11 +128,11 @@ public sealed class AutoCuePlacer
         return set;
     }
 
-    private static long SnapSamples(double seconds, double samplesPerBeat, int sampleRate)
+    private static long SnapSamples(double seconds, double samplesPerBeat, double anchorSamples, int sampleRate)
     {
         double pos = Math.Max(0.0, seconds) * sampleRate;
-        long beatIndex = (long)Math.Round(pos / samplesPerBeat);
-        long snapped = (long)Math.Round(beatIndex * samplesPerBeat);
+        long beatIndex = (long)Math.Round((pos - anchorSamples) / samplesPerBeat);
+        long snapped = (long)Math.Round(anchorSamples + beatIndex * samplesPerBeat);
         return snapped < 0 ? 0 : snapped;
     }
 }
