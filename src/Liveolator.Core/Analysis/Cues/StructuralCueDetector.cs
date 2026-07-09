@@ -105,7 +105,21 @@ public sealed class StructuralCueDetector
         int introStartFrame = Clamp((int)Math.Round(introStartSeconds * frameRate), 0, totalFrames - 1);
         int outroEndFrame = Clamp((int)Math.Round(outroEndSeconds * frameRate), introStartFrame + 1, totalFrames);
 
-        BarEnergies bars = AggregateBars(bands, introStartFrame, outroEndFrame, framesPerBar);
+        // Anchor the bar/phrase grid to the musical downbeat (bar 1) when the detector trusts it, so phrase
+        // boundaries land on real bar lines rather than the RMS-detected intro edge (which sits on an
+        // arbitrary beat of a bar). Falls back to the intro edge when the downbeat is absent/low-confidence,
+        // preserving the pre-downbeat behaviour. downbeat == first-beat + n·beat, so the placer's beat-snap
+        // (anchored on FirstBeatSeconds) leaves these boundaries untouched — the two grids compose.
+        int gridAnchorFrame = introStartFrame;
+        if (bpm.DownbeatConfidence >= DownbeatEstimate.ConfidenceFloor && bpm.DownbeatSeconds > 0.0)
+        {
+            double downbeatFrame = bpm.DownbeatSeconds * frameRate;
+            double phase = downbeatFrame % framesPerBar;                       // within-bar phase of the grid
+            double k = Math.Ceiling((introStartFrame - phase) / framesPerBar); // first bar line >= intro edge
+            gridAnchorFrame = Clamp((int)Math.Round(phase + k * framesPerBar), 0, totalFrames - 1);
+        }
+
+        BarEnergies bars = AggregateBars(bands, gridAnchorFrame, outroEndFrame, framesPerBar);
         double phraseSeconds = phraseFrames / frameRate;
 
         var cues = new List<StructuralCue>();
@@ -121,12 +135,12 @@ public sealed class StructuralCueDetector
 
         int outroBar = -1;
         if (structureReadable)
-            AddStructuralCues(cues, bars, bpm.Confidence, introStartFrame, framesPerBar, phraseFrames,
+            AddStructuralCues(cues, bars, bpm.Confidence, gridAnchorFrame, framesPerBar, phraseFrames,
                 frameRate, totalFrames, out outroBar);
 
         cues.Add(new StructuralCue(
             StructuralCueKind.OutroStart,
-            OutroStartSeconds(outroBar, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames,
+            OutroStartSeconds(outroBar, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames,
                 outroEndSeconds, phraseSeconds, introStartSeconds),
             structureReadable && outroBar >= 0 ? Clamp01(bpm.Confidence) : 0.7));
 
@@ -193,7 +207,7 @@ public sealed class StructuralCueDetector
     }
 
     private void AddStructuralCues(
-        List<StructuralCue> cues, BarEnergies bars, double bpmConfidence, int introStartFrame,
+        List<StructuralCue> cues, BarEnergies bars, double bpmConfidence, int gridAnchorFrame,
         double framesPerBar, double phraseFrames, double frameRate, int totalFrames, out int outroBar)
     {
         outroBar = -1;
@@ -212,7 +226,7 @@ public sealed class StructuralCueDetector
         {
             cues.Add(new StructuralCue(
                 StructuralCueKind.Drop,
-                SnapBarToPhraseSeconds(dropBar, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
+                SnapBarToPhraseSeconds(dropBar, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
                 Clamp01(bpmConfidence)));
         }
 
@@ -223,7 +237,7 @@ public sealed class StructuralCueDetector
         {
             cues.Add(new StructuralCue(
                 StructuralCueKind.Breakdown,
-                SnapBarToPhraseSeconds(breakdownBar, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
+                SnapBarToPhraseSeconds(breakdownBar, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
                 Clamp01(bpmConfidence)));
 
             // Build-up: the phrase leading into the kick re-entry that ends the breakdown.
@@ -234,7 +248,7 @@ public sealed class StructuralCueDetector
                 double highRise = HighBandRise(bars.High, buildBar, reEntryBar);
                 cues.Add(new StructuralCue(
                     StructuralCueKind.BuildUp,
-                    SnapBarToPhraseSeconds(buildBar, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
+                    SnapBarToPhraseSeconds(buildBar, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
                     Clamp01(bpmConfidence * highRise)));
             }
         }
@@ -242,12 +256,12 @@ public sealed class StructuralCueDetector
         // Outro: the last kick-present -> kick-absent transition that stays absent to the end.
         outroBar = FindLastTrailingRun(kickActive, active: false, _minSustainBars);
 
-        AddPhraseFillers(cues, bars, dropBar, introStartFrame, framesPerBar, phraseFrames, frameRate,
+        AddPhraseFillers(cues, bars, dropBar, gridAnchorFrame, framesPerBar, phraseFrames, frameRate,
             totalFrames, bpmConfidence);
     }
 
     private void AddPhraseFillers(
-        List<StructuralCue> cues, BarEnergies bars, int dropBar, int introStartFrame, double framesPerBar,
+        List<StructuralCue> cues, BarEnergies bars, int dropBar, int gridAnchorFrame, double framesPerBar,
         double phraseFrames, double frameRate, int totalFrames, double bpmConfidence)
     {
         // Phrase mix points every phrase from the first phrase after the drop onward; the placer dedups
@@ -257,17 +271,17 @@ public sealed class StructuralCueDetector
         {
             cues.Add(new StructuralCue(
                 StructuralCueKind.Phrase,
-                SnapBarToPhraseSeconds(b, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
+                SnapBarToPhraseSeconds(b, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames),
                 Clamp01(bpmConfidence * 0.6)));
         }
     }
 
     private double OutroStartSeconds(
-        int outroBar, BarEnergies bars, int introStartFrame, double framesPerBar, double phraseFrames,
+        int outroBar, BarEnergies bars, int gridAnchorFrame, double framesPerBar, double phraseFrames,
         double frameRate, int totalFrames, double outroEndSeconds, double phraseSeconds, double introStartSeconds)
     {
         if (outroBar >= 0 && outroBar < bars.Count)
-            return SnapBarToPhraseSeconds(outroBar, bars, introStartFrame, framesPerBar, phraseFrames, frameRate, totalFrames);
+            return SnapBarToPhraseSeconds(outroBar, bars, gridAnchorFrame, framesPerBar, phraseFrames, frameRate, totalFrames);
 
         // Fallback (also the low-confidence path): one phrase before the audible end.
         return Math.Max(introStartSeconds, outroEndSeconds - phraseSeconds);
@@ -344,15 +358,15 @@ public sealed class StructuralCueDetector
     }
 
     private static double SnapBarToPhraseSeconds(
-        int bar, BarEnergies bars, int introStartFrame, double framesPerBar, double phraseFrames,
+        int bar, BarEnergies bars, int gridAnchorFrame, double framesPerBar, double phraseFrames,
         double frameRate, int totalFrames)
     {
         int frame = bar >= 0 && bar < bars.StartFrame.Length
             ? bars.StartFrame[bar]
-            : introStartFrame + (int)Math.Round(bar * framesPerBar);
+            : gridAnchorFrame + (int)Math.Round(bar * framesPerBar);
 
-        double k = Math.Round((frame - introStartFrame) / phraseFrames);
-        double snapped = introStartFrame + k * phraseFrames;
+        double k = Math.Round((frame - gridAnchorFrame) / phraseFrames);
+        double snapped = gridAnchorFrame + k * phraseFrames;
         if (snapped < 0) snapped = 0;
         if (snapped > totalFrames) snapped = totalFrames;
         return snapped / frameRate;

@@ -106,4 +106,7 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void ClearLoop(int slot) { }
     public void HalveLoop(int slot) { }
     public void DoubleLoop(int slot) { }
+    public bool IsStemDeck(int slot) => false;
+    public bool IsStemMuted(int slot, Liveolator.Core.Analysis.Stems.StemKind kind) => false;
+    public void SetStemMuted(int slot, Liveolator.Core.Analysis.Stems.StemKind kind, bool muted) { }
 }

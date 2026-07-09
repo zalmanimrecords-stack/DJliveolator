@@ -237,13 +237,42 @@ public static class ServiceConfig
             vstCatalogPath,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         vstCatalog.RefreshAsync().GetAwaiter().GetResult();
-        var effectRacks = new AudioEffectRackProvider(new Vst3AudioEffectProcessorFactory());
+        // The rack takes ONE factory: the built-in managed DSP effects (Moog LP / reverb / phaser that back
+        // the channel-strip FX mode) first, then the VST3 host for external plugins. 48 kHz matches the
+        // mixer/engine default; the built-in effects retune themselves if BASS opens at another rate.
+        var effectRacks = new AudioEffectRackProvider(new CompositeAudioEffectProcessorFactory(
+            new ManagedAudioEffectProcessorFactory(48_000),
+            new Vst3AudioEffectProcessorFactory()));
         // Restore persisted audio-effect rack state at startup and persist on every change, so VST3
         // chains / parameters / missing-plugin placeholders survive restarts (app-shell wave).
         var rackStateStore = new JsonAudioEffectRackStateStore(
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         foreach (AudioEffectRackState state in rackStateStore.LoadAsync().GetAwaiter().GetResult())
             effectRacks.GetRack(state.Slot).Restore(state);
+
+        // Ensure each live deck (A/B) has the built-in channel-strip FX chain loaded (Moog -> Phaser ->
+        // Reverb), idempotently, and force every parameter to neutral so the app boots in EQ mode with the
+        // chain fully dry/transparent — FX mode is a UI toggle, never persisted on.
+        foreach (int deckSlot in new[] { AudioEffectRackSlot.DeckA, AudioEffectRackSlot.DeckB })
+        {
+            IAudioEffectRack deckRack = effectRacks.GetRack(deckSlot);
+            EnsureFxInstance(deckRack, BuiltInAudioEffects.MoogUid, BuiltInAudioEffects.MoogInstance);
+            EnsureFxInstance(deckRack, BuiltInAudioEffects.PhaserUid, BuiltInAudioEffects.PhaserInstance);
+            EnsureFxInstance(deckRack, BuiltInAudioEffects.ReverbUid, BuiltInAudioEffects.ReverbInstance);
+            deckRack.SetParameter(BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Cutoff,
+                BuiltInAudioEffects.Neutral(BuiltInAudioEffects.Cutoff));
+            deckRack.SetParameter(BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Resonance, 0.0);
+            deckRack.SetParameter(BuiltInAudioEffects.PhaserInstance, BuiltInAudioEffects.Wet, 0.0);
+            deckRack.SetParameter(BuiltInAudioEffects.ReverbInstance, BuiltInAudioEffects.Wet, 0.0);
+        }
+
+        static void EnsureFxInstance(IAudioEffectRack rack, string pluginUid, string instanceId)
+        {
+            foreach (AudioEffectInstanceState effect in rack.State.Effects)
+                if (effect.InstanceId == instanceId)
+                    return;
+            rack.Load(pluginUid, instanceId);
+        }
         services.AddSingleton<IAudioEffectPluginCatalog>(vstCatalog);
         services.AddSingleton<IAudioEffectRackProvider>(effectRacks);
         services.AddSingleton<IAudioEffectRackStateStore>(rackStateStore);
@@ -341,6 +370,9 @@ public static class ServiceConfig
             new Liveolator.Core.Analysis.Cues.AutoCueService(
                 sp.GetRequiredService<IAudioDecoder>(),
                 sp.GetRequiredService<IHotCueStore>(),
+                // Anchor cues on the real librosa section boundaries already stored on the catalog track when
+                // present; the analyzer falls back to its heuristic detector when there is no stored structure.
+                structureProvider: path => sp.GetService<MusicLibrary>()?.TryGetByPathOrName(path)?.Structure,
                 onError: w => System.Diagnostics.Trace.TraceWarning(w)));
 
         // Library import from other DJ apps (doc: import): plain-XML parsers (Rekordbox/Traktor) + the

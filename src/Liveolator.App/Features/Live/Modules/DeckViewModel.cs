@@ -12,7 +12,9 @@ using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
@@ -96,6 +98,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isSyncEngaged;
     private SyncLockState _syncState;
     private bool _isHotCueBankB;
+
+    // Channel-strip FX mode: when on, HI/MID/LOW/FLT stop driving EQ and instead drive the built-in FX
+    // chain (Reverb wet / Phaser wet / Moog resonance / Moog cutoff). The FX values are remembered across
+    // toggles; the EQ knob positions are stashed on entry and restored on exit so the EQ curve is untouched.
+    private bool _isFxMode;
+    private double _fxReverbWet;   // HI knob in FX mode
+    private double _fxPhaserWet;   // MID knob in FX mode
+    private double _fxMoogRes;     // LOW knob in FX mode
+    private double _fxMoogCutoff = 1.0; // FLT knob in FX mode (1 = fully open = neutral)
+    private double _savedEqHigh = EqBands_Unity;
+    private double _savedEqMid = EqBands_Unity;
+    private double _savedEqLow = EqBands_Unity;
+    private double _savedFilter = FilterCentre;
     private string _title = "No track loaded";
     private string? _artist;
     private string _meta = NoMeta;
@@ -289,6 +304,21 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // so every stored cue is reachable live, not just the first four (audit finding #2).
         ToggleHotCueBankCommand = ReactiveCommand.Create(() => { IsHotCueBankB = !IsHotCueBankB; });
 
+        // Per-stem mute (doc 32 §2b): one button per stem, disabled until the loaded track is a 4-stem deck.
+        // Each emits DeckStemMute for its stem; the engine toggles it and echoes state back (audible + avail).
+        var stems = new StemMuteViewModel[StemSet.RequiredStems.Count];
+        for (int i = 0; i < stems.Length; i++)
+        {
+            StemKind kind = StemSet.RequiredStems[i];
+            stems[i] = new StemMuteViewModel(
+                kind,
+                _transportEnabled
+                    ? () => _dispatcher?.Dispatch(new PerformanceAction(
+                        PerformanceActionKind.DeckStemMute, Slot: slot, Argument: kind.ToString()))
+                    : null);
+        }
+        Stems = stems;
+
         // AUTO-CUE: analyze the loaded track and apply its suggested hot cues live (doc 11/16). Available
         // only when a decoder-backed auto-cue service is wired, the deck transport is live, AND a track is
         // loaded — so the button isn't a dead control that silently no-ops on an empty deck (same gate the
@@ -300,17 +330,27 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
         // EQ/filter emit Mixer* actions, owned by the always-present MixerActionHandler — usable whenever a
         // dispatcher exists, even in catalog-browser mode (unlike the deck-transport controls above).
-        EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity, dispatcherPresent ? v => EmitEq("High", v) : null);
-        EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity, dispatcherPresent ? v => EmitEq("Mid", v) : null);
-        EqLow = new ContinuousControlViewModel("Low", EqBands_Unity, dispatcherPresent ? v => EmitEq("Low", v) : null);
+        // Each channel-strip knob drives EITHER its EQ band / filter (normal) OR a built-in FX parameter
+        // (FX mode), decided at turn time by _isFxMode — the FX button re-routes the same four knobs.
+        EqHigh = new ContinuousControlViewModel("Hi", EqBands_Unity,
+            dispatcherPresent ? v => OnEqKnobTurned("High", BuiltInAudioEffects.ReverbInstance, BuiltInAudioEffects.Wet, v) : null);
+        EqMid = new ContinuousControlViewModel("Mid", EqBands_Unity,
+            dispatcherPresent ? v => OnEqKnobTurned("Mid", BuiltInAudioEffects.PhaserInstance, BuiltInAudioEffects.Wet, v) : null);
+        EqLow = new ContinuousControlViewModel("Low", EqBands_Unity,
+            dispatcherPresent ? v => OnEqKnobTurned("Low", BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Resonance, v) : null);
         Filter = new ContinuousControlViewModel(
             "Flt", Seed(PerformanceActionKind.MixerFilter, FilterCentre),
-            dispatcherPresent ? v => Emit(PerformanceActionKind.MixerFilter, v) : null);
+            dispatcherPresent ? v => OnFilterKnobTurned(v) : null);
 
         // Channel-strip EQ RESET (the small button above the EQ knobs): snaps this channel's three tone
         // bands back to flat. Gated on the same dispatcher presence as the EQ knobs themselves, so the
         // button disables in catalog-browser mode exactly like the knobs it resets.
         ResetEqCommand = ReactiveCommand.Create(ResetEq, Observable.Return(dispatcherPresent));
+
+        // FX-mode toggle — only the live A/B decks have a built-in FX rack (slots 0/1); hidden STUDIO decks
+        // (C/D) map to the master/out-of-range rack, so the button stays disabled there.
+        FxModeCommand = ReactiveCommand.Create(
+            ToggleFxMode, Observable.Return(dispatcherPresent && _slot <= AudioEffectRackSlot.DeckB));
 
         // Pitch fader emits DeckPitch (deck-handler-owned), so it follows the transport gate, not the mixer one.
         Pitch = new ContinuousControlViewModel(
@@ -1005,6 +1045,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>All eight hot-cue pads (two banks of four). Indexed by absolute cue index for feedback.</summary>
     public IReadOnlyList<HotCuePadViewModel> HotCues { get; }
 
+    /// <summary>The four per-stem mute buttons (Drums/Bass/Vocals/Other), in RequiredStems order. Enabled
+    /// only while the loaded track is a 4-stem deck (doc 32 §2b).</summary>
+    public IReadOnlyList<StemMuteViewModel> Stems { get; }
+
     /// <summary>The four pads of the currently selected bank (A = slots 0–3, B = slots 4–7).</summary>
     public IReadOnlyList<HotCuePadViewModel> VisibleHotCues =>
         new ArraySegment<HotCuePadViewModel>(
@@ -1033,6 +1077,29 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ContinuousControlViewModel EqLow { get; }
     public ContinuousControlViewModel Filter { get; }
     public ContinuousControlViewModel Pitch { get; }
+
+    /// <summary>True when the channel-strip knobs drive the built-in FX chain instead of the EQ/filter.</summary>
+    public bool IsFxMode
+    {
+        get => _isFxMode;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isFxMode, value);
+            this.RaisePropertyChanged(nameof(EqHighLabel));
+            this.RaisePropertyChanged(nameof(EqMidLabel));
+            this.RaisePropertyChanged(nameof(EqLowLabel));
+            this.RaisePropertyChanged(nameof(FilterLabel));
+        }
+    }
+
+    /// <summary>Toggles the channel-strip knobs between EQ and FX (Moog LP + reverb + phaser).</summary>
+    public ReactiveCommand<Unit, Unit> FxModeCommand { get; }
+
+    // Captions that flip with the mode so the strip reads what the knobs actually do right now.
+    public string EqHighLabel => _isFxMode ? "VERB" : "HI";
+    public string EqMidLabel => _isFxMode ? "PHAS" : "MID";
+    public string EqLowLabel => _isFxMode ? "RES" : "LOW";
+    public string FilterLabel => _isFxMode ? "MOOG" : "FLT";
 
     /// <summary>Resets this channel's three EQ bands (HI/MID/LOW) to flat — the RESET button seated above
     /// the channel-strip EQ knobs. The filter knob is intentionally left untouched.</summary>
@@ -1073,6 +1140,79 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private void EmitEq(string band, double value)
         => _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.MixerEqBand, ActionInputMode.Absolute, Value: value, Slot: _slot, Argument: band));
+
+    // A built-in FX-rack parameter change for this deck (AudioFxSetParameter → the deck's rack instance).
+    private void EmitFx(string instanceId, string parameterId, double value)
+        => _dispatcher?.Dispatch(new PerformanceAction(
+            PerformanceActionKind.AudioFxSetParameter, ActionInputMode.Absolute,
+            Value: value, Slot: _slot, Argument: parameterId, Target: instanceId));
+
+    // One of the three top knobs (HI/MID/LOW) turned: drive its EQ band, or its FX parameter in FX mode.
+    private void OnEqKnobTurned(string band, string fxInstance, string fxParameter, double value)
+    {
+        if (_isFxMode)
+            EmitFx(fxInstance, fxParameter, value);
+        else
+            EmitEq(band, value);
+    }
+
+    // The FLT knob turned: drive the single-knob filter, or the Moog cutoff in FX mode.
+    private void OnFilterKnobTurned(double value)
+    {
+        if (_isFxMode)
+            EmitFx(BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Cutoff, value);
+        else
+            Emit(PerformanceActionKind.MixerFilter, value);
+    }
+
+    // Flip the four channel-strip knobs between EQ and FX. Entering FX stashes the EQ knob positions and
+    // shows the remembered FX values (pushing them to the rack); leaving FX saves the FX values, forces the
+    // rack fully dry so EQ mode is transparent, and restores the EQ knob display (the EQ curve never moved).
+    private void ToggleFxMode()
+    {
+        if (!_isFxMode)
+        {
+            _savedEqHigh = EqHigh.Value;
+            _savedEqMid = EqMid.Value;
+            _savedEqLow = EqLow.Value;
+            _savedFilter = Filter.Value;
+
+            IsFxMode = true; // set first so the knob callbacks route to FX
+
+            ShowFxValue(EqHigh, _fxReverbWet, BuiltInAudioEffects.ReverbInstance, BuiltInAudioEffects.Wet);
+            ShowFxValue(EqMid, _fxPhaserWet, BuiltInAudioEffects.PhaserInstance, BuiltInAudioEffects.Wet);
+            ShowFxValue(EqLow, _fxMoogRes, BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Resonance);
+            ShowFxValue(Filter, _fxMoogCutoff, BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Cutoff);
+        }
+        else
+        {
+            _fxReverbWet = EqHigh.Value;
+            _fxPhaserWet = EqMid.Value;
+            _fxMoogRes = EqLow.Value;
+            _fxMoogCutoff = Filter.Value;
+
+            // Ramp the whole chain to neutral (dry / open) — the processors glide, so this is click-free.
+            EmitFx(BuiltInAudioEffects.ReverbInstance, BuiltInAudioEffects.Wet, 0.0);
+            EmitFx(BuiltInAudioEffects.PhaserInstance, BuiltInAudioEffects.Wet, 0.0);
+            EmitFx(BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Resonance, 0.0);
+            EmitFx(BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Cutoff, 1.0);
+
+            IsFxMode = false; // set before restoring so display updates don't re-emit FX
+
+            EqHigh.SetFromFeedback(_savedEqHigh);
+            EqMid.SetFromFeedback(_savedEqMid);
+            EqLow.SetFromFeedback(_savedEqLow);
+            Filter.SetFromFeedback(_savedFilter);
+        }
+    }
+
+    // Show an FX value on a knob without re-emitting (SetFromFeedback), then push it to the rack so the
+    // engine reflects the remembered value on entry to FX mode.
+    private void ShowFxValue(ContinuousControlViewModel knob, double value, string instanceId, string parameterId)
+    {
+        knob.SetFromFeedback(value);
+        EmitFx(instanceId, parameterId, value);
+    }
 
     // Setting each knob's Value re-emits its MixerEqBand only when the band actually moved (the
     // ContinuousControlViewModel emit guard), so a reset of an already-flat channel dispatches nothing.
@@ -1138,10 +1278,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         {
             switch (e.Kind)
             {
-                case PerformanceActionKind.MixerEqBand:
+                case PerformanceActionKind.MixerEqBand when !_isFxMode:
                     ApplyEqFeedback(e.State);
                     break;
-                case PerformanceActionKind.MixerFilter:
+                case PerformanceActionKind.MixerFilter when !_isFxMode:
                     Filter.SetFromFeedback(e.State.Value);
                     break;
                 case PerformanceActionKind.DeckPitch:
@@ -1164,6 +1304,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);
+                    break;
+                case PerformanceActionKind.DeckStemMute:
+                    UpdateStem(e.State);
                     break;
                 case PerformanceActionKind.DeckSeek when e.State.IsAvailable:
                     Progress = e.State.Value; // playhead follows seek/cue position
@@ -1277,6 +1420,21 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // The lit state is the feedback's IsActive (an unset slot relights as not-lit); the label/color/auto
         // come from the decoded cue metadata.
         HotCues[index].SetState(state.IsActive, info.Label, info.Color, info.IsAuto);
+    }
+
+    // Route a DeckStemMute echo to its button by stem name (the Argument). IsActive = audible (lit),
+    // IsAvailable = the deck is a stem deck (enables the button). A load relights all four (doc 32 §2b).
+    private void UpdateStem(ActionFeedbackState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.Argument)
+            || !Enum.TryParse(state.Argument, ignoreCase: true, out StemKind kind))
+            return;
+        foreach (StemMuteViewModel stem in Stems)
+            if (stem.Kind == kind)
+            {
+                stem.SetState(audible: state.IsActive, available: state.IsAvailable);
+                return;
+            }
     }
 
     // A load that the engine could not complete: present a clear failure on the deck and keep the

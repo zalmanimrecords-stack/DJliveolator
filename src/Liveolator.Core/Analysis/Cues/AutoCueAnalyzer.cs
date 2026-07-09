@@ -62,7 +62,7 @@ public sealed class AutoCueAnalyzer
         StructuralCueResult cues = SongStructureCues.ToStructuralCues(structure)
             ?? _structural.Detect(_bandEnergy.Compute(mono, sampleRate), bpm, silence, (double)mono.Length / sampleRate);
 
-        return _placer.Place(cues, bpm.Bpm, sampleRate);
+        return _placer.Place(cues, bpm.Bpm, sampleRate, firstBeatSeconds: bpm.FirstBeatSeconds);
     }
 
     /// <summary>
@@ -84,7 +84,7 @@ public sealed class AutoCueAnalyzer
         await foreach (ReadOnlyMemory<float> block in
             decoder.DecodeMonoAsync(filePath, TrackAnalyzer.AnalysisSampleRate, cancellationToken).ConfigureAwait(false))
         {
-            pcm.AddRange(block.ToArray());
+            pcm.AddRange(block.Span);
         }
 
         return AnalyzePcm(pcm.ToArray(), TrackAnalyzer.AnalysisSampleRate, structure);

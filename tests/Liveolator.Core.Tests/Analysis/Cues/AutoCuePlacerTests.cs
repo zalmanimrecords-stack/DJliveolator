@@ -69,6 +69,20 @@ public class AutoCuePlacerTests
     }
 
     [Fact]
+    public void Place_SnapsToBeatGridAnchoredAtFirstBeat()
+    {
+        // A track whose beat grid is offset 0.1 s from sample 0. A cue already sitting on that grid must be
+        // kept exactly, not pulled onto the sample-0 grid (the pre-fix behaviour placed it 0.1 s early).
+        var result = new StructuralCueResult(
+            new List<StructuralCue> { new(StructuralCueKind.Drop, 10.1, 0.9) }, 0.9);
+
+        TrackCueSet set = new AutoCuePlacer().Place(result, Bpm, Sr, firstBeatSeconds: 0.1);
+
+        // 10.1 s = 0.1 + 20 * 0.5 -> exactly on the 0.1-anchored beat grid.
+        Assert.Equal((long)System.Math.Round(10.1 * Sr), set.RecallSamples(1));
+    }
+
+    [Fact]
     public void Place_LowConfidenceSpeculativeCue_LeavesSlotEmpty()
     {
         var result = new StructuralCueResult(

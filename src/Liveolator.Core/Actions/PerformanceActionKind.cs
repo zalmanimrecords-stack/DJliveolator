@@ -223,4 +223,14 @@ public enum PerformanceActionKind
     /// the press/release seam (doc 31) — bind with ReportRelease. Distinct from <see cref="DeckCue"/> so a
     /// plain click (no release) keeps the back-to-cue behavior.</summary>
     DeckCuePlay,
+
+    /// <summary>
+    /// Toggle mute of one of a stem-deck's four stems (doc 32 §Phase 2b): Slot = A/B, Argument = the
+    /// <see cref="Analysis.Stems.StemKind"/> name (Drums/Bass/Vocals/Other). A no-op when the deck is a
+    /// normal single-file deck (stems absent / gate off). Mute is a per-transition gesture that belongs to
+    /// the loaded track — it resets to all-audible on every load, unlike the persistent Gain/EQ. Feedback
+    /// carries the stem name in <see cref="PerformanceAction.Argument"/> and IsActive = the stem is AUDIBLE
+    /// (lit = playing), so a per-stem button reflects state; IsAvailable = the deck is a stem deck.
+    /// </summary>
+    DeckStemMute,
 }

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Cues;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Persistence;
 using Xunit;
 
@@ -34,6 +35,26 @@ public class AutoCueServiceTests
         TrackCueSet saved = store.Records[TrackA].ToCueSet();
         Assert.Contains(saved.HotCues, c => c.Label == "Drop");
         Assert.All(saved.HotCues, c => Assert.True(c.IsAuto));
+    }
+
+    [Fact]
+    public async Task RunAsync_ForwardsStoredStructure_ToAnalyzer()
+    {
+        var store = new InMemoryHotCueStore();
+        // A real drop boundary the energy heuristic would not land on; the provider stands in for the
+        // catalog's stored librosa structure. The written Drop must snap to that boundary.
+        var structure = new SongStructure(
+            new[] { new SongSection(0.0, SongSectionLabel.Intro), new SongSection(24.0, SongSectionLabel.Drop) },
+            "librosa 0.10.2");
+        var service = new AutoCueService(
+            new FakeAudioDecoder(CueTestSignals.StructuredClickTrack()), store,
+            analyzer: FineGrainedAnalyzer(), structureProvider: _ => structure);
+
+        await service.RunAsync(new[] { TrackA });
+
+        double dropSeconds =
+            (double)store.Records[TrackA].ToCueSet().HotCues.Single(c => c.Label == "Drop").PositionSamples / Sr;
+        Assert.InRange(dropSeconds, 23.5, 24.5);
     }
 
     [Fact]

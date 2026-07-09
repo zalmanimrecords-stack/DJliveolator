@@ -115,7 +115,23 @@ parse failure → log + return null (graceful, never throws on the analysis path
      else single file, with a single-attempt single-file fallback if the stem open throws. Pure gate logic
      in `StemDeckDecision`. Managed logic unit-tested (Audio.Tests); the three native unknowns below remain
      owner-verified on hardware.
-  2. Single master mute per stem (action + handler + IMixer + 4 buttons) — first owner-visible demo.
+  2. **Per-stem MUTE — BUILT 2026-07-09 (slice 2), tested (Core+Audio+App green).** First owner-visible
+     demo. Advisors (dj-software-advisor over the real code) chose per-stem MUTE (not isolate/solo) and a
+     key **architecture change from the original plan: a `DeckStemMute` Deck action (Slot=A/B, Argument=stem
+     name), NOT `MixerStemEnable` via `IMixer`.** Reason: the inner decoders live in the backend keyed by
+     handle (which the engine owns) and the per-slot `DeckSlot` already resets track state on load, so
+     mute is reset-on-load "for free"; `MixerActionHandler`/`BassMixer` are slot-addressed with no load
+     hook. Modelled on `DeckKeyLockToggle`. Touch points delivered: `PerformanceActionKind.DeckStemMute`;
+     `DeckActionHandler` (toggle + per-stem feedback + relight-all-4-on-load, feedback IsActive = AUDIBLE,
+     IsAvailable = stem deck); `IMultiDeckPlaybackEngine.IsStemDeck/IsStemMuted/SetStemMuted`;
+     `DeckSlot.IsStemDeck` + `bool[4] StemMuted` (cleared in `UnloadSlot`); `TwoDeckBassEngine.Stems.cs`
+     (state, reset-on-load, single-file no-op) + `OpenDeckHandle` reports stem-ness;
+     `IBassMixerBackend.SetStemEnabled(handle, kind, enabled)` → `BassMixerBackend`
+     `Bass.ChannelSlideAttribute(innerDecoder, Volume, 0|1, 20 ms)` (click-free ramp, zero audio-thread
+     work; decoder resolved via new `StemSet.IndexOf(kind)`); UI = `StemMuteViewModel` + a per-channel
+     `STEMS` 2×2 cluster on the DJ mixer channel strip (`DjMixerView.axaml`, both decks, lit = audible,
+     enabled only for a stem deck). **NATIVE owner-verify remaining:** that a Volume slide on a submix
+     source decoder attenuates just that stem, click-free (not exercised in CI).
   3. Fallback hardening + load branch + default-off gate + tests.
   4. Isolate UX + Push/CMD feedback + mid-track toggle.
   5. (later) per-stem EQ/filter — deferred (would multiply DSP).

@@ -57,6 +57,8 @@ public class TwoDeckBassEngineSyncMissingFxLibReproTests
         public void SetDeckPositionFraction(int deckHandle, double fraction) => _inner.SetDeckPositionFraction(deckHandle, fraction);
         public void SetDeckRate(int deckHandle, double rateMultiplier) => _inner.SetDeckRate(deckHandle, rateMultiplier);
         public void SetDeckKeyLock(int deckHandle, bool enabled) => _inner.SetDeckKeyLock(deckHandle, enabled);
+        public void SetStemEnabled(int deckHandle, Liveolator.Core.Analysis.Stems.StemKind kind, bool enabled)
+            => _inner.SetStemEnabled(deckHandle, kind, enabled);
         public double GetDeckPositionSeconds(int deckHandle) => _inner.GetDeckPositionSeconds(deckHandle);
         public double GetDeckLengthSeconds(int deckHandle) => _inner.GetDeckLengthSeconds(deckHandle);
         public void SetDeckLoop(int deckHandle, double startSeconds, double endSeconds) => _inner.SetDeckLoop(deckHandle, startSeconds, endSeconds);

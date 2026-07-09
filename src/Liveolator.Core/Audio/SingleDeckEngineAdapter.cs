@@ -140,6 +140,13 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void DoubleLoop(int slot) => EnsureSlot(slot);
 
+    // The legacy single-deck engine has no stem support, so a deck is never a stem deck and mute is a no-op.
+    public bool IsStemDeck(int slot) { EnsureSlot(slot); return false; }
+
+    public bool IsStemMuted(int slot, Analysis.Stems.StemKind kind) { EnsureSlot(slot); return false; }
+
+    public void SetStemMuted(int slot, Analysis.Stems.StemKind kind, bool muted) => EnsureSlot(slot);
+
     private void EnsureSlot(int slot)
     {
         if (slot != 0)

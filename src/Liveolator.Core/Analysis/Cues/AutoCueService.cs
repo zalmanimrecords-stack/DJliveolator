@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Persistence;
 
 namespace Liveolator.Core.Analysis.Cues;
@@ -35,24 +36,30 @@ public sealed class AutoCueService : IAutoCueService
     private readonly AutoCueMerger _merger;
     private readonly IAudioDecoder _decoder;
     private readonly IHotCueStore _store;
+    private readonly Func<string, SongStructure?>? _structureProvider;
     private readonly Action<string>? _onError;
 
     /// <param name="decoder">Offline decoder used to read each track's PCM.</param>
     /// <param name="store">Persistent per-track cue store the merged cues are written to.</param>
     /// <param name="analyzer">Auto-cue analyzer; defaults to a standard instance.</param>
     /// <param name="merger">Manual-preserving merger; defaults to a standard instance.</param>
+    /// <param name="structureProvider">Looks up a track's already-computed <see cref="SongStructure"/> (from
+    /// the catalog / offline Python analysis, doc 32) by path so cues anchor on real section boundaries. When
+    /// null or it returns null, the analyzer falls back to its heuristic structural detector.</param>
     /// <param name="onError">Receives a note for a single track failure; the pass continues.</param>
     public AutoCueService(
         IAudioDecoder decoder,
         IHotCueStore store,
         AutoCueAnalyzer? analyzer = null,
         AutoCueMerger? merger = null,
+        Func<string, SongStructure?>? structureProvider = null,
         Action<string>? onError = null)
     {
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _analyzer = analyzer ?? new AutoCueAnalyzer();
         _merger = merger ?? new AutoCueMerger();
+        _structureProvider = structureProvider;
         _onError = onError;
     }
 
@@ -101,7 +108,10 @@ public sealed class AutoCueService : IAutoCueService
         if (string.IsNullOrWhiteSpace(path) || !_decoder.CanDecode(path))
             return false;
 
-        TrackCueSet? auto = await _analyzer.AnalyzeAsync(_decoder, path, cancellationToken: cancellationToken).ConfigureAwait(false);
+        SongStructure? structure = _structureProvider?.Invoke(path);
+        TrackCueSet? auto = await _analyzer
+            .AnalyzeAsync(_decoder, path, structure, cancellationToken)
+            .ConfigureAwait(false);
         if (auto is null || auto.HotCues.Count == 0)
             return false;
 

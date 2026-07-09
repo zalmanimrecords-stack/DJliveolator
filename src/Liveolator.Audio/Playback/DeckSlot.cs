@@ -80,4 +80,17 @@ internal sealed class DeckSlot
     /// <summary>Hot-cue bank per pad (position + label/color/auto metadata); a null entry = unset.
     /// Cleared on unload.</summary>
     public readonly HotCueState?[] HotCues;
+
+    /// <summary>
+    /// True when the loaded track opened as a 4-stem submix (doc 32 §2b) rather than a single file — so the
+    /// per-stem mute controls are live. Set on load from the stem-vs-file decision; cleared on unload.
+    /// </summary>
+    public bool IsStemDeck;
+
+    /// <summary>
+    /// Per-stem mute state in <see cref="Liveolator.Core.Analysis.Stems.StemSet.RequiredStems"/> order
+    /// (Drums/Bass/Vocals/Other); true = muted. Belongs to the track, like the hot cues: the engine opens
+    /// fresh decoders at unity on every load, so this resets to all-audible on unload.
+    /// </summary>
+    public readonly bool[] StemMuted = new bool[Liveolator.Core.Analysis.Stems.StemSet.RequiredStems.Count];
 }

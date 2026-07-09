@@ -101,6 +101,16 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
 
     public void SetDeckKeyLock(int deckHandle, bool enabled) => KeyLock[deckHandle] = enabled;
 
+    /// <summary>Per-(deck, stem) enabled state as last set via <see cref="SetStemEnabled"/> (true = audible).</summary>
+    public Dictionary<(int Handle, Liveolator.Core.Analysis.Stems.StemKind Kind), bool> StemEnabled { get; } = new();
+    public List<(int Handle, Liveolator.Core.Analysis.Stems.StemKind Kind, bool Enabled)> StemEnableCalls { get; } = new();
+
+    public void SetStemEnabled(int deckHandle, Liveolator.Core.Analysis.Stems.StemKind kind, bool enabled)
+    {
+        StemEnableCalls.Add((deckHandle, kind, enabled));
+        StemEnabled[(deckHandle, kind)] = enabled;
+    }
+
     private double DeckLength(int deckHandle)
         => LengthSeconds.TryGetValue(deckHandle, out double len) && len > 0 ? len : 100.0;
 

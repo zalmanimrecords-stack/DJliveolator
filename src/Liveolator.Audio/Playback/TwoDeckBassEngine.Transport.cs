@@ -34,12 +34,13 @@ public sealed partial class TwoDeckBassEngine
                 // existing track loaded and playable rather than wiping it. A bad track must never empty a
                 // good deck (global standards #16/#26). With the stems gate on and a complete local stem
                 // set cached, this opens a 4-stem submix deck; otherwise the single file (doc 32 §2b).
-                int handle = OpenDeckHandle(trackPath);
+                int handle = OpenDeckHandle(trackPath, out bool isStemDeck);
                 UnloadSlot(slot);
                 IBassMixerChannel channel = _backend.PlugDeck(handle, slot);
                 _mixer.SetChannel(slot, channel); // route the Core mixer's gain/EQ/filter to this deck
                 s.Deck = new LoadedDeck(handle, channel, Playing: false);
                 s.LoadedPath = trackPath; // the cue-store key for this slot
+                s.IsStemDeck = isStemDeck; // enables the per-stem mute controls for this deck (doc 32 §2b)
                 // Re-arm key-lock on the fresh stream FIRST so the rate below takes the right audible path
                 // (pitch-preserving tempo when locked, vinyl frequency otherwise). Key-lock is per-deck
                 // transport state that persists across loads, like the pitch fader.
@@ -209,8 +210,9 @@ public sealed partial class TwoDeckBassEngine
     // (doc 32 §2b). Stems are used only when the gate is on AND a complete local stem set is cached; a
     // corrupt/unopenable stem set must never take down a deck, so a stem-open failure falls back ONCE to
     // the single mixed file before surfacing. Returns the raw deck handle PlugDeck wraps in BASS_FX.
-    private int OpenDeckHandle(string trackPath)
+    private int OpenDeckHandle(string trackPath, out bool isStemDeck)
     {
+        isStemDeck = false;
         StemSet? cached = _stemsEnabled ? _stemCache?.TryLoad(trackPath) : null;
         if (!StemDeckDecision.ShouldUseStems(_stemsEnabled, cached, out string reason))
         {
@@ -221,7 +223,9 @@ public sealed partial class TwoDeckBassEngine
         try
         {
             _logger.LogInformation("Deck load uses 4-stem submix ({Model}): {Track}", cached!.ModelId, trackPath);
-            return _backend.OpenStemDeck(cached);
+            int handle = _backend.OpenStemDeck(cached);
+            isStemDeck = true;
+            return handle;
         }
         catch (Exception ex)
         {
@@ -250,6 +254,8 @@ public sealed partial class TwoDeckBassEngine
         s.FirstBeat = 0.0;       // first-beat anchor likewise belongs to the track
         s.Downbeat = 0.0;        // and so does the bar-1 anchor — stale, it would bar-snap the wrong "one"
         s.LoopBeats = 0.0;       // a new track has no active loop
+        s.IsStemDeck = false;    // whether the NEXT track is a stem deck is decided at its load
+        Array.Clear(s.StemMuted); // fresh decoders open at unity — stem mute is per-track, reset to audible
     }
 
     // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the

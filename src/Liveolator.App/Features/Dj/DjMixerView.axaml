@@ -36,13 +36,19 @@
         <!-- [A EQ/FLT] · A fader · shared dB scale · B fader · [B EQ/FLT] — the channel EQ + filter knobs
              flank each volume fader, the way a hardware mixer stacks them on the channel strip. The knobs
              are compact (28px) so the strip stays inside the DJ-mixer column without scrolling. -->
-        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
               HorizontalAlignment="Center">
           <TextBlock Grid.Row="0" Grid.Column="1" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="A" />
           <TextBlock Grid.Row="0" Grid.Column="3" Classes="accent" FontSize="14" HorizontalAlignment="Center" Text="B" />
 
-          <!-- A channel EQ + filter (left of fader A) -->
+          <!-- A channel EQ + filter (left of fader A). FX flips the four knobs to the built-in FX chain
+               (Moog LP + phaser + reverb); the captions follow the mode. -->
           <StackPanel Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,8,0">
+            <!-- FX: re-routes HI/MID/LOW/FLT to Reverb / Phaser / Moog-res / Moog-cutoff. -->
+            <Button Classes="key mixer" Classes.on="{Binding ChannelA.IsFxMode}" Content="FX"
+                    FontSize="9" Padding="6,3" MinWidth="0" HorizontalAlignment="Center" Margin="0,0,0,2"
+                    Command="{Binding ChannelA.FxModeCommand}"
+                    ToolTip.Tip="Switch the EQ knobs to effects: Moog LP filter + phaser + reverb" />
             <!-- RESET: snaps this channel's HI/MID/LOW back to flat (the filter is left as-is). -->
             <Button Classes="key mixer" Content="RST" FontSize="9" Padding="6,3" MinWidth="0"
                     HorizontalAlignment="Center" Margin="0,0,0,2"
@@ -50,16 +56,16 @@
                     ToolTip.Tip="Reset this channel's EQ (HI / MID / LOW) to flat" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqHigh.Value}" IsEnabled="{Binding ChannelA.EqHigh.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelA.EqHighLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqMid.Value}" IsEnabled="{Binding ChannelA.EqMid.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelA.EqMidLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.EqLow.Value}" IsEnabled="{Binding ChannelA.EqLow.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelA.EqLowLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelA.Filter.Value}" IsEnabled="{Binding ChannelA.Filter.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelA.FilterLabel}" />
           </StackPanel>
 
           <controls:Fader Grid.Row="1" Grid.Column="1"
@@ -88,8 +94,13 @@
                           Value="{Binding ChannelGainB.Value}" Level="{Binding LevelB}"
                           IsEnabled="{Binding ChannelGainB.IsEnabled}" />
 
-          <!-- B channel EQ + filter (right of fader B) -->
+          <!-- B channel EQ + filter (right of fader B). FX flips the four knobs to the built-in FX chain. -->
           <StackPanel Grid.Row="1" Grid.Column="4" VerticalAlignment="Center" Spacing="2" Margin="8,0,0,0">
+            <!-- FX: re-routes HI/MID/LOW/FLT to Reverb / Phaser / Moog-res / Moog-cutoff. -->
+            <Button Classes="key mixer" Classes.on="{Binding ChannelB.IsFxMode}" Content="FX"
+                    FontSize="9" Padding="6,3" MinWidth="0" HorizontalAlignment="Center" Margin="0,0,0,2"
+                    Command="{Binding ChannelB.FxModeCommand}"
+                    ToolTip.Tip="Switch the EQ knobs to effects: Moog LP filter + phaser + reverb" />
             <!-- RESET: snaps this channel's HI/MID/LOW back to flat (the filter is left as-is). -->
             <Button Classes="key mixer" Content="RST" FontSize="9" Padding="6,3" MinWidth="0"
                     HorizontalAlignment="Center" Margin="0,0,0,2"
@@ -97,16 +108,16 @@
                     ToolTip.Tip="Reset this channel's EQ (HI / MID / LOW) to flat" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqHigh.Value}" IsEnabled="{Binding ChannelB.EqHigh.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="HI" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelB.EqHighLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqMid.Value}" IsEnabled="{Binding ChannelB.EqMid.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MID" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelB.EqMidLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.EqLow.Value}" IsEnabled="{Binding ChannelB.EqLow.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="LOW" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelB.EqLowLabel}" />
             <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" HorizontalAlignment="Center"
                            Value="{Binding ChannelB.Filter.Value}" IsEnabled="{Binding ChannelB.Filter.IsEnabled}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="FLT" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding ChannelB.FilterLabel}" />
           </StackPanel>
 
           <Button Grid.Row="2" Grid.Column="1" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
@@ -126,6 +137,43 @@
 
           <Button Grid.Row="2" Grid.Column="3" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                   Command="{Binding CueBCommand}" Margin="0,8,0,0" />
+
+          <!-- Per-stem mute (doc 32 §2b): DRUMS/BASS/VOCALS/OTHER as a 2×2 cluster under each CUE button,
+               lit = the stem is playing. Enabled ONLY for a 4-stem deck (a track with a complete local
+               stem set + the stems gate on); ghosted/disabled for a normal single-file track. -->
+          <StackPanel Grid.Row="3" Grid.Column="1" Spacing="2" Margin="0,8,0,0" HorizontalAlignment="Center">
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="STEMS" />
+            <ItemsControl ItemsSource="{Binding ChannelA.Stems}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="m:StemMuteViewModel">
+                  <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
+                          FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                          Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
+                          ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Grid.Row="3" Grid.Column="3" Spacing="2" Margin="0,8,0,0" HorizontalAlignment="Center">
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="STEMS" />
+            <ItemsControl ItemsSource="{Binding ChannelB.Stems}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="m:StemMuteViewModel">
+                  <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
+                          FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                          Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
+                          ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </Grid>
 
         <!-- Headphone-cue LEVEL + MIX, inside the mixer frame -->

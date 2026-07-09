@@ -20,6 +20,19 @@ public sealed record StemSet(
     public static readonly IReadOnlyList<StemKind> RequiredStems =
         new[] { StemKind.Drums, StemKind.Bass, StemKind.Vocals, StemKind.Other };
 
+    /// <summary>
+    /// The position of <paramref name="kind"/> in <see cref="RequiredStems"/>, or -1 if not required. The
+    /// realtime stem submix creates its inner decoders (and the deck tracks per-stem mute) in this order,
+    /// so this is the single source of truth mapping a stem kind to its decoder/state index.
+    /// </summary>
+    public static int IndexOf(StemKind kind)
+    {
+        for (int i = 0; i < RequiredStems.Count; i++)
+            if (RequiredStems[i] == kind)
+                return i;
+        return -1;
+    }
+
     /// <summary>True when a path is present for all four required stems.</summary>
     public bool IsComplete
     {
