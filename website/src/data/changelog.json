@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.3.0",
+    "date": "2026-07-09",
+    "notes": [
+      "Built-in mixer effects: the channel FX button now adds a Moog-style low-pass filter, phaser, and reverb - no plugins needed.",
+      "Continuous beat-sync: SYNC holds a live tempo and phase lock with an on-screen lock indicator (BEAT SYNC v2).",
+      "Smarter automatic hot-cue placement on analyzed tracks.",
+      "Stability and audio-engine fixes throughout."
+    ]
+  },
+  {
     "version": "0.1.8",
     "date": "2026-07-05",
     "notes": [

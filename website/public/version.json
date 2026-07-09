@@ -1,7 +1,10 @@
 {
-  "version": "0.1.8",
-  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.1.8.exe",
+  "version": "0.3.0",
+  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.3.0.exe",
   "notes": [
-    "Maintenance build: fixes and small improvements."
+    "Built-in mixer effects: the channel FX button now adds a Moog-style low-pass filter, phaser, and reverb - no plugins needed.",
+    "Continuous beat-sync: SYNC holds a live tempo and phase lock with an on-screen lock indicator (BEAT SYNC v2).",
+    "Smarter automatic hot-cue placement on analyzed tracks.",
+    "Stability and audio-engine fixes throughout."
   ]
 }
