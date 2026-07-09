@@ -1,10 +1,9 @@
 {
-  "version": "0.3.0",
-  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.3.0.exe",
+  "version": "0.4.0",
+  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.4.0.exe",
   "notes": [
-    "Built-in mixer effects: the channel FX button now adds a Moog-style low-pass filter, phaser, and reverb - no plugins needed.",
-    "Continuous beat-sync: SYNC holds a live tempo and phase lock with an on-screen lock indicator (BEAT SYNC v2).",
-    "Smarter automatic hot-cue placement on analyzed tracks.",
-    "Stability and audio-engine fixes throughout."
+    "Stem decks (experimental): right-click a track and choose \"Separate stems\" to split it into drums / bass / vocals / other, then turn on Stem decks in Settings to mute each stem live on either deck.",
+    "Stem separation runs offline (it needs the Advanced analysis engine) and takes a few minutes per track - prepare tracks before your set.",
+    "Stability and audio-engine fixes."
   ]
 }

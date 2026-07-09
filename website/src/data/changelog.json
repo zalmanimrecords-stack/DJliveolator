@@ -1,5 +1,14 @@
 [
   {
+    "version": "0.4.0",
+    "date": "2026-07-09",
+    "notes": [
+      "Stem decks (experimental): right-click a track and choose \"Separate stems\" to split it into drums / bass / vocals / other, then turn on Stem decks in Settings to mute each stem live on either deck.",
+      "Stem separation runs offline (it needs the Advanced analysis engine) and takes a few minutes per track - prepare tracks before your set.",
+      "Stability and audio-engine fixes."
+    ]
+  },
+  {
     "version": "0.3.0",
     "date": "2026-07-09",
     "notes": [

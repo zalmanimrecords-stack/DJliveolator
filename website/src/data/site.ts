@@ -20,8 +20,8 @@ export const site = {
   // Windows installer, served from the site's own /downloads (bind-mounted on
   // the VPS — see website/DEPLOY.md). These three are updated automatically by
   // scripts/publish-website-release.ps1 each time an installer is built.
-  version: "0.3.0",
-  downloadUrl: "/downloads/LiveolatorSetup-0.3.0.exe",
+  version: "0.4.0",
+  downloadUrl: "/downloads/LiveolatorSetup-0.4.0.exe",
   downloadSize: "38 MB",
   // Email-gated download: the button posts the visitor's email here and the WP
   // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
