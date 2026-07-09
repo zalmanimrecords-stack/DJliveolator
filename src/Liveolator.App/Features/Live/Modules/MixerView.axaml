@@ -22,7 +22,7 @@
 
       <Border Classes="hardware-well" Padding="8,12">
       <!-- A fader | one shared dB scale | B fader — faders centred on each side of the centre scale -->
-      <Grid ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto,Auto">
+      <Grid ColumnDefinitions="*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
         <TextBlock Grid.Row="0" Grid.Column="0" Classes="accent" FontSize="15" HorizontalAlignment="Center" Text="A" />
         <TextBlock Grid.Row="0" Grid.Column="2" Classes="accent" FontSize="15" HorizontalAlignment="Center" Text="B" />
 
@@ -63,6 +63,43 @@
 
         <Button Grid.Row="2" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                 Command="{Binding CueBCommand}" Margin="0,10,0,0" />
+
+        <!-- Per-stem mute (doc 32 §2b): DRUMS/BASS/VOCALS/OTHER as a 2×2 cluster under each CUE button,
+             lit = the stem is playing. Enabled ONLY for a 4-stem deck (a track with a complete local
+             stem set + the stems gate on); ghosted/disabled for a normal single-file track. -->
+        <StackPanel Grid.Row="3" Grid.Column="0" Spacing="2" Margin="0,10,0,0" HorizontalAlignment="Center">
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="STEMS" />
+          <ItemsControl ItemsSource="{Binding ChannelA.Stems}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="m:StemMuteViewModel">
+                <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
+                        FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                        Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
+                        ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Grid.Column="2" Spacing="2" Margin="0,10,0,0" HorizontalAlignment="Center">
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="STEMS" />
+          <ItemsControl ItemsSource="{Binding ChannelB.Stems}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="m:StemMuteViewModel">
+                <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
+                        FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                        Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
+                        ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </Grid>
       </Border>
 
