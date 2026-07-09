@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
@@ -136,6 +137,7 @@ public class DeckActionHandlerTests
             _bpm = new double[deckCount];
             _firstBeat = new double[deckCount];
             _loopBeats = new double[deckCount];
+            _stemDeck = new bool[deckCount];
             Downbeats = new double[deckCount];
             for (int i = 0; i < deckCount; i++)
                 _pitch[i] = 0.5; // center = original tempo
@@ -240,6 +242,22 @@ public class DeckActionHandlerTests
 
         public bool IsKeyLockEnabled(int slot) => _keyLock[slot];
         public void SetKeyLock(int slot, bool enabled) => _keyLock[slot] = enabled;
+
+        // Stems (doc 32 §2b). A slot is a stem deck only when a test marks it so; mute state is per-stem.
+        private readonly bool[] _stemDeck;
+        private readonly Dictionary<(int Slot, StemKind Kind), bool> _stemMuted = new();
+        public List<(int Slot, StemKind Kind, bool Muted)> StemMutes { get; } = new();
+        /// <summary>Test hook: mark (or clear) a slot as a 4-stem deck so mute has effect.</summary>
+        public void SetStemDeck(int slot, bool value) => _stemDeck[slot] = value;
+        public bool IsStemDeck(int slot) => _stemDeck[slot];
+        public bool IsStemMuted(int slot, StemKind kind)
+            => _stemMuted.TryGetValue((slot, kind), out bool m) && m;
+        public void SetStemMuted(int slot, StemKind kind, bool muted)
+        {
+            StemMutes.Add((slot, kind, muted));
+            if (_stemDeck[slot]) // a single-file deck ignores mute, mirroring the real engine
+                _stemMuted[(slot, kind)] = muted;
+        }
 
         public int HotCueCount => 8;
         public List<(int Slot, int Index)> HotCues { get; } = new();
@@ -563,6 +581,74 @@ public class DeckActionHandlerTests
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckKeyLockToggle, Slot: 1));
         Assert.False(engine.IsKeyLockEnabled(1));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckKeyLockToggle, 1).IsActive);
+    }
+
+    [Fact]
+    public void StemMute_TogglesTheRequestedStemAndSlot_AndReportsAudibleState()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetStemDeck(1, true);
+        var handler = new DeckActionHandler(engine);
+
+        // First press mutes BASS on deck B; feedback IsActive = AUDIBLE, so a mute reads as not-active.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckStemMute, Slot: 1, Argument: nameof(StemKind.Bass)));
+        Assert.True(engine.IsStemMuted(1, StemKind.Bass));
+        Assert.False(engine.IsStemMuted(0, StemKind.Bass));   // other deck untouched
+        Assert.False(engine.IsStemMuted(1, StemKind.Drums));  // other stem untouched
+
+        // Second press un-mutes it again.
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckStemMute, Slot: 1, Argument: nameof(StemKind.Bass)));
+        Assert.False(engine.IsStemMuted(1, StemKind.Bass));
+    }
+
+    [Fact]
+    public void StemMute_OnSingleFileDeck_IsANoOp_AndFeedbackReportsUnavailable()
+    {
+        var engine = new FakeMultiDeckEngine(); // no slot marked as a stem deck
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckStemMute, Slot: 0, Argument: nameof(StemKind.Vocals)));
+
+        Assert.False(engine.IsStemMuted(0, StemKind.Vocals)); // ignored — not a stem deck
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckStemMute, 0).IsAvailable);
+    }
+
+    [Fact]
+    public void Load_RelightsAllFourStems_EnabledOnlyForAStemDeck()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetStemDeck(1, true);
+        var handler = new DeckActionHandler(engine);
+        var stemFeedback = new List<ActionFeedbackChanged>();
+        handler.FeedbackChanged += (_, e) =>
+        {
+            if (e.Kind == PerformanceActionKind.DeckStemMute)
+                stemFeedback.Add(e);
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckLoadTrack, Slot: 1, Argument: "b.wav"));
+
+        // One push per required stem, all reporting audible (lit) and available (this deck IS a stem deck).
+        Assert.Equal(StemSet.RequiredStems.Count, stemFeedback.Count);
+        Assert.All(stemFeedback, e => Assert.True(e.State.IsActive));   // lit = audible
+        Assert.All(stemFeedback, e => Assert.True(e.State.IsAvailable)); // stem deck
+    }
+
+    [Fact]
+    public void StemMute_WithMissingOrBadArgument_Throws()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetStemDeck(0, true);
+        var handler = new DeckActionHandler(engine);
+
+        Assert.Throws<ArgumentException>(() =>
+            handler.Handle(new PerformanceAction(PerformanceActionKind.DeckStemMute, Slot: 0, Argument: "kick")));
+        Assert.Throws<ArgumentException>(() =>
+            handler.Handle(new PerformanceAction(PerformanceActionKind.DeckStemMute, Slot: 0)));
     }
 
     [Fact]

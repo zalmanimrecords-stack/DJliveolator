@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
 
@@ -43,6 +44,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckSetFirstBeat,
         PerformanceActionKind.DeckSetDownbeat,
         PerformanceActionKind.DeckSetGridBpm,
+        PerformanceActionKind.DeckStemMute,
     };
 
     private readonly IMultiDeckPlaybackEngine _engine;
@@ -198,6 +200,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.DeckApplyAutoCues:
                 ApplyAutoCues(slot);
                 break;
+            case PerformanceActionKind.DeckStemMute:
+                ToggleStemMute(slot, action);
+                break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
@@ -246,6 +251,18 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         // base BPM feeds tempo-match. The single-Value load action carries the BPM only, so the anchor is
         // supplied separately via SetDeckFirstBeat by the composition root that holds the full BpmResult
         // (the engine defaults to a 0 anchor, leaving phase-match a no-op, until one is set).
+        // Stems: the engine opens fresh decoders at unity (all audible) and mute is per-track, so relight
+        // every stem button to audible + refresh its availability (a stem deck vs a plain single-file deck).
+        RaiseStemFeedback(slot);
+    }
+
+    // Re-emit the mute/availability state of all four stems for a deck (doc 32 §2b) — used on load so the
+    // per-stem buttons enable only for a stem deck and reset to audible, mirroring how the hot-cue pads
+    // relight on load. A no-op-looking push on a single-file deck (IsAvailable:false) disables the buttons.
+    private void RaiseStemFeedback(int slot)
+    {
+        foreach (StemKind kind in StemSet.RequiredStems)
+            RaiseFeedback(PerformanceActionKind.DeckStemMute, slot, StemFeedback(slot, kind));
     }
 
     private void SetLoop(int slot, PerformanceAction action)
@@ -274,6 +291,33 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         bool next = !_engine.IsKeyLockEnabled(slot);
         _engine.SetKeyLock(slot, next);
         RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, slot, ActiveFeedback(next));
+    }
+
+    // Flip one stem's mute on the deck and echo its state (doc 32 §2b). The engine no-ops for a single-file
+    // deck, so a press on a disabled control is harmless; the echoed IsAvailable tells the button it's dead.
+    private void ToggleStemMute(int slot, PerformanceAction action)
+    {
+        StemKind kind = ParseStemKind(action.Argument);
+        _engine.SetStemMuted(slot, kind, !_engine.IsStemMuted(slot, kind));
+        RaiseFeedback(PerformanceActionKind.DeckStemMute, slot, StemFeedback(slot, kind));
+    }
+
+    // DeckStemMute feedback: IsActive = the stem is AUDIBLE (lit = playing, per the design line), Argument =
+    // the stem name so one push updates the matching button, IsAvailable = the deck is actually a stem deck.
+    private ActionFeedbackState StemFeedback(int slot, StemKind kind)
+        => new(
+            IsActive: !_engine.IsStemMuted(slot, kind),
+            IsAvailable: _engine.IsStemDeck(slot),
+            Value: 0,
+            Argument: kind.ToString());
+
+    private static StemKind ParseStemKind(string? argument)
+    {
+        if (string.IsNullOrWhiteSpace(argument) || !Enum.TryParse(argument, ignoreCase: true, out StemKind kind)
+            || !Enum.IsDefined(kind))
+            throw new ArgumentException(
+                "DeckStemMute requires Argument set to a stem name (Drums/Bass/Vocals/Other).", nameof(argument));
+        return kind;
     }
 
     private void ToggleSync(int slot)
@@ -382,6 +426,10 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),
             PerformanceActionKind.DeckSetDownbeat => ValueFeedback(_downbeats[slot]),
+            // No stem is addressable through the (kind, slot) pull, so report only whether the deck is a
+            // stem deck; the per-stem active state is delivered by push (RaiseStemFeedback on load + toggle).
+            PerformanceActionKind.DeckStemMute
+                => new ActionFeedbackState(IsActive: false, IsAvailable: _engine.IsStemDeck(slot), Value: 0),
             _ => ActionFeedbackState.Unavailable,
         };
     }

@@ -9,7 +9,9 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
 using System.Linq;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -64,6 +66,69 @@ public sealed class DeckViewModelTests
         Assert.Equal(1, action.Slot);
         Assert.Equal(band, action.Argument);
         Assert.Equal(0.7, action.Value);
+    }
+
+    [Fact]
+    public void FxMode_On_ReRoutesTheFourKnobsToTheBuiltInFxChain()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        vm.FxModeCommand.Execute().Subscribe();
+
+        Assert.True(vm.IsFxMode);
+        Assert.Equal("VERB", vm.EqHighLabel);
+        Assert.Equal("PHAS", vm.EqMidLabel);
+        Assert.Equal("RES", vm.EqLowLabel);
+        Assert.Equal("MOOG", vm.FilterLabel);
+
+        void AssertRoutes(ContinuousControlViewModel knob, double value, string instance, string parameter)
+        {
+            dispatcher.Dispatched.Clear();
+            knob.Value = value;
+            PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+            Assert.Equal(PerformanceActionKind.AudioFxSetParameter, action.Kind);
+            Assert.Equal(0, action.Slot);
+            Assert.Equal(instance, action.Target);
+            Assert.Equal(parameter, action.Argument);
+            Assert.Equal(value, action.Value);
+        }
+
+        AssertRoutes(vm.EqHigh, 0.6, BuiltInAudioEffects.ReverbInstance, BuiltInAudioEffects.Wet);
+        AssertRoutes(vm.EqMid, 0.55, BuiltInAudioEffects.PhaserInstance, BuiltInAudioEffects.Wet);
+        AssertRoutes(vm.EqLow, 0.7, BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Resonance);
+        AssertRoutes(vm.Filter, 0.3, BuiltInAudioEffects.MoogInstance, BuiltInAudioEffects.Cutoff);
+    }
+
+    [Fact]
+    public void FxMode_Off_SilencesTheFxChain_AndRestoresEqRouting()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        vm.EqLow.Value = 0.8; // an EQ setting to preserve across the FX round-trip
+
+        vm.FxModeCommand.Execute().Subscribe();  // enter FX
+        vm.EqLow.Value = 0.9;                     // now Moog resonance
+        dispatcher.Dispatched.Clear();
+
+        vm.FxModeCommand.Execute().Subscribe();  // leave FX
+
+        Assert.False(vm.IsFxMode);
+        Assert.Equal("LOW", vm.EqLowLabel);
+        // Leaving FX forces the whole chain dry/open so EQ mode is transparent.
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.AudioFxSetParameter &&
+            a.Target == BuiltInAudioEffects.ReverbInstance && a.Argument == BuiltInAudioEffects.Wet && a.Value == 0.0);
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Target == BuiltInAudioEffects.MoogInstance && a.Argument == BuiltInAudioEffects.Cutoff && a.Value == 1.0);
+        // The EQ knob shows its preserved value again and drives the EQ once more.
+        Assert.Equal(0.8, vm.EqLow.Value);
+        dispatcher.Dispatched.Clear();
+        vm.EqLow.Value = 0.4;
+        PerformanceAction eq = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerEqBand, eq.Kind);
+        Assert.Equal("Low", eq.Argument);
+        Assert.Equal(0.4, eq.Value);
     }
 
     [Fact]
@@ -148,6 +213,41 @@ public sealed class DeckViewModelTests
             _ => vm.EqLow,
         };
         Assert.Equal(value, knob.Value);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
+    public async Task StemButton_Press_EmitsDeckStemMuteWithStemName()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+        StemMuteViewModel bass = vm.Stems.Single(s => s.Kind == StemKind.Bass);
+        dispatcher.Dispatched.Clear();
+
+        await bass.ToggleCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckStemMute, action.Kind);
+        Assert.Equal(1, action.Slot);
+        Assert.Equal(nameof(StemKind.Bass), action.Argument);
+    }
+
+    [Fact]
+    public void StemFeedback_LightsTheMatchingButton_AndSetsAvailability()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // Vocals muted (IsActive:false) on a stem deck (IsAvailable:true).
+        dispatcher.RaiseFeedback(
+            PerformanceActionKind.DeckStemMute, slot: 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: nameof(StemKind.Vocals)));
+
+        StemMuteViewModel vocals = vm.Stems.Single(s => s.Kind == StemKind.Vocals);
+        Assert.False(vocals.IsAudible);   // muted → not lit
+        Assert.True(vocals.IsAvailable);  // a stem deck → button enabled
+        // Other stems remain at their audible/disabled defaults.
+        Assert.True(vm.Stems.Single(s => s.Kind == StemKind.Drums).IsAudible);
         Assert.Empty(dispatcher.Dispatched);
     }
 

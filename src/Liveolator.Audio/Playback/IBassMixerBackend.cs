@@ -65,6 +65,15 @@ internal interface IBassMixerBackend : IDisposable
     /// </summary>
     void SetDeckKeyLock(int deckHandle, bool enabled);
 
+    /// <summary>
+    /// Mute or un-mute one stem of a 4-stem submix deck (doc 32 §Phase 2b): ramps the matching inner FLAC
+    /// decoder's volume to 0 (muted) or unity over a short window so the change is click-free and costs the
+    /// audio thread nothing (BASS slides it on its own update thread). The stem is addressed by
+    /// <see cref="Core.Analysis.Stems.StemKind"/>, resolved to the decoder created for it by
+    /// <see cref="OpenStemDeck"/>. A no-op for an unknown handle or a single-file deck (no inner decoders).
+    /// </summary>
+    void SetStemEnabled(int deckHandle, Core.Analysis.Stems.StemKind kind, bool enabled);
+
     /// <summary>The deck's current playback position in seconds from the track start (0 if unknown).</summary>
     double GetDeckPositionSeconds(int deckHandle);
 

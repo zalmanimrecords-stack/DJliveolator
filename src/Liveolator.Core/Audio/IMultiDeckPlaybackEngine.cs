@@ -1,3 +1,4 @@
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio.Sync;
 
 namespace Liveolator.Core.Audio;
@@ -238,4 +239,26 @@ public interface IMultiDeckPlaybackEngine
 
     /// <summary>Double the active loop length, keeping the in-point fixed (up to the maximum). No-op when not looping.</summary>
     void DoubleLoop(int slot);
+
+    // --- Stems (doc 32 §Phase 2b): a deck loaded with a complete local stem set plays as a 4-stem submix,
+    // letting each stem be muted independently. Driven via DeckStemMute, never directly.
+
+    /// <summary>
+    /// True when the deck's currently loaded track is playing as a 4-stem submix (the stems gate is on and a
+    /// complete local stem set was cached at load). False for a normal single-file deck — the per-stem mute
+    /// controls have no effect and the UI disables them.
+    /// </summary>
+    bool IsStemDeck(int slot);
+
+    /// <summary>
+    /// True when <paramref name="kind"/> is muted on the deck. Always false for a single-file deck (no stems)
+    /// and reset to false (audible) on every track load, since mute is a per-track transition gesture.
+    /// </summary>
+    bool IsStemMuted(int slot, StemKind kind);
+
+    /// <summary>
+    /// Mute or un-mute one stem of a stem deck (ramped, click-free). A no-op when nothing is loaded or the
+    /// deck is a single-file deck. State is per-track and resets to all-audible on the next load.
+    /// </summary>
+    void SetStemMuted(int slot, StemKind kind, bool muted);
 }

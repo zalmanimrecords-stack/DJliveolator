@@ -638,6 +638,33 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         ApplyRate(deck);
     }
 
+    // Ramp window for a stem mute/un-mute: long enough to remove the click of a hard volume step, short
+    // enough that a stem kill still feels instant to the DJ (doc 32 §2b, advisor 2026-07-09).
+    private const int StemMuteRampMs = 20;
+
+    // Mute/un-mute one stem by sliding its inner FLAC decoder's volume (doc 32 §2b). The decoder is a
+    // mixer-source channel of the stem submix, so BASS_ATTRIB_VOL on it is honoured by the submix sum —
+    // attenuating just that stem while the other three keep playing. ChannelSlideAttribute ramps on BASS's
+    // own update thread, so this costs the audio thread nothing and is click-free. A single-file deck has
+    // no inner decoders, so this no-ops (surfaced, not silent — global #26). NATIVE: not exercised in CI
+    // (tests drive the fake backend); verify by ear in the running app. See Liveolator.Audio/CLAUDE.md.
+    public void SetStemEnabled(int deckHandle, StemKind kind, bool enabled)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck) || deck.StemDecoders.Length == 0)
+        {
+            _logger.LogDebug("SetStemEnabled ignored: deck {Handle} is not a stem deck.", deckHandle);
+            return;
+        }
+        // The inner decoders are created in StemSet.RequiredStems order (OpenStemDeck), so a stem's decoder
+        // sits at StemSet.IndexOf(kind) — resolved there rather than hardcoded so the two never drift.
+        int index = StemSet.IndexOf(kind);
+        if (index < 0 || index >= deck.StemDecoders.Length)
+            return;
+        float target = enabled ? 1f : 0f;
+        if (!Bass.ChannelSlideAttribute(deck.StemDecoders[index], ChannelAttribute.Volume, target, StemMuteRampMs))
+            _logger.LogWarning("Stem {Kind} volume slide on deck {Handle} failed: {Error}", kind, deckHandle, Bass.LastError);
+    }
+
     // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % time-stretch) or
     // vinyl-style (resampling the tempo stream). BOTH attributes live on the BASS_FX tempo stream
     // (MixerHandle) — the stream actually plugged into the master mixer. The raw source decode stream is
