@@ -1,6 +1,8 @@
 using System.Reactive.Concurrency;
 using Liveolator.App.Features.Shared;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using ReactiveUI;
@@ -238,5 +240,114 @@ public sealed class TrackContextActionsTests
     {
         var actions = new TrackContextActions(null, new FakePlaylistStore());
         await actions.AutoCueAsync(@"C:\m\a.wav"); // must not throw
+    }
+
+    // --- Stem separation (doc 32 §Phase 2b, slice 3) ---
+
+    private sealed class FakeStemSeparator : IStemSeparator
+    {
+        private readonly StemSet? _result;
+        public FakeStemSeparator(StemSet? result) => _result = result;
+        public List<string> Requested { get; } = new();
+        public Task<StemSet?> SeparateAsync(IAudioDecoder decoder, string filePath, CancellationToken ct = default)
+        {
+            Requested.Add(filePath);
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class StubDecoder : IAudioDecoder
+    {
+        public bool CanDecode(string filePath) => true;
+        public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
+            string filePath, int targetSampleRate,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private static StemSet CompleteStems(string source) => new(
+        source, "umxhq", new Dictionary<StemKind, string>
+        {
+            [StemKind.Drums] = @"C:\cache\drums.flac",
+            [StemKind.Bass] = @"C:\cache\bass.flac",
+            [StemKind.Vocals] = @"C:\cache\vocals.flac",
+            [StemKind.Other] = @"C:\cache\other.flac",
+        });
+
+    [Fact]
+    public void CanSeparateStems_needs_both_a_separator_and_a_decoder()
+    {
+        Assert.False(new TrackContextActions(null, new FakePlaylistStore()).CanSeparateStems);
+        Assert.False(new TrackContextActions(null, new FakePlaylistStore(),
+            stemSeparator: new FakeStemSeparator(null)).CanSeparateStems); // decoder missing
+        Assert.True(new TrackContextActions(null, new FakePlaylistStore(),
+            stemSeparator: new FakeStemSeparator(null), stemDecoder: new StubDecoder()).CanSeparateStems);
+    }
+
+    [Fact]
+    public async Task SeparateStems_runs_the_separator_and_reports_success()
+    {
+        string file = Path.GetTempFileName();
+        try
+        {
+            var separator = new FakeStemSeparator(CompleteStems(file));
+            string? status = null;
+            var actions = new TrackContextActions(null, new FakePlaylistStore(),
+                onStatus: s => status = s, stemSeparator: separator, stemDecoder: new StubDecoder());
+
+            await actions.SeparateStemsAsync(file);
+
+            Assert.Equal(file, Assert.Single(separator.Requested));
+            Assert.NotNull(status);
+            Assert.Contains("Stems ready", status, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public async Task SeparateStems_when_runtime_unavailable_reports_enable_advanced_analysis_and_does_not_run()
+    {
+        string file = Path.GetTempFileName();
+        try
+        {
+            var separator = new FakeStemSeparator(CompleteStems(file));
+            string? status = null;
+            var actions = new TrackContextActions(null, new FakePlaylistStore(),
+                onStatus: s => status = s, stemSeparator: separator, stemDecoder: new StubDecoder(),
+                stemRuntimeAvailable: () => false);
+
+            await actions.SeparateStemsAsync(file);
+
+            Assert.Empty(separator.Requested); // never spawned the job
+            Assert.NotNull(status);
+            Assert.Contains("Advanced analysis", status, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { File.Delete(file); }
+    }
+
+    [Fact]
+    public async Task SeparateStems_when_track_offline_reports_unreachable_and_does_not_run()
+    {
+        var separator = new FakeStemSeparator(CompleteStems(@"S:\gone.flac"));
+        string? status = null;
+        var actions = new TrackContextActions(null, new FakePlaylistStore(),
+            onStatus: s => status = s, stemSeparator: separator, stemDecoder: new StubDecoder(),
+            stemRuntimeAvailable: () => true);
+
+        await actions.SeparateStemsAsync(@"S:\gone.flac"); // does not exist
+
+        Assert.Empty(separator.Requested);
+        Assert.NotNull(status);
+        Assert.Contains("offline", status, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SeparateStems_without_a_separator_is_a_no_op()
+    {
+        var actions = new TrackContextActions(null, new FakePlaylistStore());
+        await actions.SeparateStemsAsync(@"C:\m\a.wav"); // must not throw
     }
 }

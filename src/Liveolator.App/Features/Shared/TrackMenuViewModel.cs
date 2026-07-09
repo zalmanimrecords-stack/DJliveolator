@@ -35,6 +35,8 @@ public sealed class TrackMenuViewModel
             () => _actions.EditAsync(_trackPath), Observable.Return(_actions.CanEdit));
         AutoCueCommand = ReactiveCommand.CreateFromTask(
             () => _actions.AutoCueAsync(_trackPath), Observable.Return(_actions.CanAutoCue));
+        SeparateStemsCommand = ReactiveCommand.CreateFromTask(
+            () => _actions.SeparateStemsAsync(_trackPath), Observable.Return(_actions.CanSeparateStems));
     }
 
     public ReactiveCommand<Unit, Unit> LoadToDeckACommand { get; }
@@ -47,6 +49,12 @@ public sealed class TrackMenuViewModel
 
     /// <summary>Drives the "Auto-cue track" menu item's visibility (hidden when no decoder/cue store).</summary>
     public bool CanAutoCue => _actions.CanAutoCue;
+
+    /// <summary>Separates this track into stems offline and caches them (doc 32 §2b) — a prep-time job.</summary>
+    public ReactiveCommand<Unit, Unit> SeparateStemsCommand { get; }
+
+    /// <summary>Drives the "Separate stems" menu item's visibility (hidden when the separator isn't wired).</summary>
+    public bool CanSeparateStems => _actions.CanSeparateStems;
 
     /// <summary>Drives the "Add to Deck B" item's visibility (hidden until a second deck is backed).</summary>
     public bool CanLoadToDeckB => _actions.CanLoadToDeckB;

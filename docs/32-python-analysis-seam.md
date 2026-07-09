@@ -132,7 +132,23 @@ parse failure → log + return null (graceful, never throws on the analysis path
      `STEMS` 2×2 cluster on the DJ mixer channel strip (`DjMixerView.axaml`, both decks, lit = audible,
      enabled only for a stem deck). **NATIVE owner-verify remaining:** that a Volume slide on a submix
      source decoder attenuates just that stem, click-free (not exercised in CI).
-  3. Fallback hardening + load branch + default-off gate + tests.
+  3. **Gate promotion + in-app stem generation — BUILT 2026-07-09 (slice 3), tested (Core 1414 / Media 248 /
+     App 898 green).** Advisor-gated (dj-software-advisor, "full usability" scope). Made stems usable without
+     dev tooling: (a) the gate moved from the `LIVEOLATOR_STEMS=1` env var to a persisted, default-off
+     `AudioSettings.StemsEnabled` (Settings → Extensions checkbox, next to "Enable advanced analysis";
+     read once at engine construction → **takes effect on next launch**; env var kept as a dev OR-override).
+     Plumbed through the flat `SettingsSnapshot` (trailing nullable param, no version bump). (b) `IStemSeparator`
+     → `OpenUnmixStemSeparator` registered in DI (reuses the existing `PythonRuntime` + `StemStore`; the
+     advanced-analysis installer already provisions openunmix+soundfile). (c) a "Separate stems (experimental)"
+     per-track action — `TrackContextActions.SeparateStemsAsync`/`CanSeparateStems` (mirrors `AutoCueAsync`),
+     surfaced as `TrackMenuViewModel.SeparateStemsCommand` in the **library track context menu** (2 spots).
+     Honest state messages for runtime-absent / offline-source / done / failed, a "several minutes, heavy CPU —
+     before your set" pre-warning, and an in-flight `HashSet` guard against concurrent separation of the same
+     track (would corrupt the FLACs). **Deck-view generation button DEFERRED** (a multi-minute CPU job doesn't
+     belong on a live deck — advisor's own "prep-time, not live-set" rule; the library menu is the prep surface).
+     Also deferred: batch separation, htdemucs opt-in, cache eviction/size-cap/content-hash keying, isolate/EQ,
+     Push/CMD mapping, live gate toggle. End-to-end path now: enable advanced analysis → right-click "Separate
+     stems" → tick "Stem decks" → restart → load → the slice-2 STEMS mute buttons work.
   4. Isolate UX + Push/CMD feedback + mid-track toggle.
   5. (later) per-stem EQ/filter — deferred (would multiply DSP).
   Touch points: `BassMixerBackend.cs` (OpenStemDeck, stem-aware seek/loop/free, SetStemEnabled),

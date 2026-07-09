@@ -258,6 +258,32 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public async Task Save_PersistsStemsEnabled()
+    {
+        var store = new FakeSettingsStore();
+        var vm = NewVm(store: store);
+        vm.StemsEnabled = true;
+
+        await vm.SaveAsync();
+
+        Assert.True(store.Saved.Audio.StemsEnabled);
+    }
+
+    [Fact]
+    public async Task Initialize_AppliesPersistedStemsEnabled()
+    {
+        var store = new FakeSettingsStore
+        {
+            ToLoad = AppSettings.Default with { Audio = new AudioSettings { StemsEnabled = true } },
+        };
+        var vm = NewVm(store: store);
+
+        await vm.InitializeAsync();
+
+        Assert.True(vm.StemsEnabled);
+    }
+
+    [Fact]
     public async Task Save_ReconnectsMidiSessionWithSelectedDevices()
     {
         var session = new FakeMidiControlSession();

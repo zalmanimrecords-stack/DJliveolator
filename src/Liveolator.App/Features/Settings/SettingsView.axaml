@@ -253,6 +253,10 @@
                         Command="{Binding EnableAdvancedAnalysisCommand}"
                         IsEnabled="{Binding CanEnableAdvancedAnalysis}" />
                 <TextBlock Classes="faint" TextWrapping="Wrap" Text="{Binding AdvancedAnalysisStatus}" />
+                <!-- Stem decks reuse the advanced-analysis runtime, so the toggle lives here next to it. -->
+                <CheckBox Content="Stem decks (experimental)" IsChecked="{Binding StemsEnabled}" />
+                <TextBlock Classes="faint" TextWrapping="Wrap"
+                           Text="Load tracks as 4 separated stems (drums / bass / vocals / other) so each can be muted. Requires advanced analysis and per-track &quot;Separate stems&quot; (right-click a track). Four FLAC stems per track use extra disk. Takes effect on the next launch." />
               </StackPanel>
             </Border>
 

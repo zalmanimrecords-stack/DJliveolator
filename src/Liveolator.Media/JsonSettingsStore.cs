@@ -37,7 +37,8 @@ public sealed record SettingsSnapshot(
     int? AcceptedTermsVersion = null,
     bool? CheckForUpdatesOnStartup = null,
     string? SkippedUpdateVersion = null,
-    string? GetSongBpmApiKey = null)
+    string? GetSongBpmApiKey = null,
+    bool? StemsEnabled = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -110,6 +111,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 BufferMilliseconds = snapshot.BufferMilliseconds,
                 CaptureDeviceId = snapshot.CaptureDeviceId,
                 CaptureSource = snapshot.CaptureSource,
+                StemsEnabled = snapshot.StemsEnabled ?? false,
             },
             Midi = new MidiSettings
             {
@@ -185,7 +187,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             AcceptedTermsVersion: normalized.Legal.AcceptedTermsVersion,
             CheckForUpdatesOnStartup: normalized.Updates.CheckOnStartup,
             SkippedUpdateVersion: normalized.Updates.SkippedVersion,
-            GetSongBpmApiKey: normalized.Online.GetSongBpmApiKey);
+            GetSongBpmApiKey: normalized.Online.GetSongBpmApiKey,
+            StemsEnabled: normalized.Audio.StemsEnabled);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to

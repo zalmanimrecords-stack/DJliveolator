@@ -122,6 +122,10 @@
                       <MenuItem Header="Auto-cue track"
                                 Command="{Binding Menu.AutoCueCommand}"
                                 IsVisible="{Binding Menu.CanAutoCue}" />
+                      <MenuItem Header="Separate stems (experimental)"
+                                Command="{Binding Menu.SeparateStemsCommand}"
+                                IsVisible="{Binding Menu.CanSeparateStems}"
+                                ToolTip.Tip="Split into drums / bass / vocals / other for stem decks. Takes several minutes and heavy CPU — do it before your set." />
                       <Separator />
                       <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                         <MenuItem.ItemContainerTheme>
@@ -315,6 +319,10 @@
                           <MenuItem Header="Auto-cue track"
                                     Command="{Binding Menu.AutoCueCommand}"
                                     IsVisible="{Binding Menu.CanAutoCue}" />
+                          <MenuItem Header="Separate stems (experimental)"
+                                    Command="{Binding Menu.SeparateStemsCommand}"
+                                    IsVisible="{Binding Menu.CanSeparateStems}"
+                                    ToolTip.Tip="Split into drums / bass / vocals / other for stem decks. Takes several minutes and heavy CPU — do it before your set." />
                           <Separator />
                           <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
                             <MenuItem.ItemContainerTheme>

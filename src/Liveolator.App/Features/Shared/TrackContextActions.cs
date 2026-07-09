@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Reactive.Concurrency;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Cues;
+using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
@@ -30,6 +32,12 @@ public sealed class TrackContextActions
     private readonly ITrackEditor? _editor;
     private readonly DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
+    private readonly IStemSeparator? _stemSeparator;
+    private readonly IAudioDecoder? _stemDecoder;
+    private readonly Func<bool>? _stemRuntimeAvailable;
+    // Guards against a second "Separate stems" on the same track while one is running — two torch
+    // subprocesses writing the same FLAC sidecars would corrupt them (advisor 2026-07-09).
+    private readonly HashSet<string> _separatingInFlight = new(StringComparer.OrdinalIgnoreCase);
 
     public TrackContextActions(
         IPerformanceActionDispatcher? dispatcher,
@@ -41,7 +49,10 @@ public sealed class TrackContextActions
         IAudioFingerprinter? fingerprinter = null,
         ITrackEditor? editor = null,
         DeckTrackLoader? deckLoader = null,
-        IAutoCueService? autoCueService = null)
+        IAutoCueService? autoCueService = null,
+        IStemSeparator? stemSeparator = null,
+        IAudioDecoder? stemDecoder = null,
+        Func<bool>? stemRuntimeAvailable = null)
     {
         _dispatcher = dispatcher;
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -52,6 +63,9 @@ public sealed class TrackContextActions
         _fingerprinter = fingerprinter;
         _editor = editor;
         _autoCueService = autoCueService;
+        _stemSeparator = stemSeparator;
+        _stemDecoder = stemDecoder;
+        _stemRuntimeAvailable = stemRuntimeAvailable;
         // The shared load-or-queue policy (doc 09/11): file-reachability check + never cut off a
         // playing deck. A custom loader is injected by tests; the default probes the real filesystem.
         _deckLoader = deckLoader
@@ -72,6 +86,10 @@ public sealed class TrackContextActions
 
     /// <summary>True when automatic hot-cue placement is available (a decoder + cue store were wired).</summary>
     public bool CanAutoCue => _autoCueService is not null;
+
+    /// <summary>True when in-app stem separation is available (the separator seam + a decoder were wired).
+    /// The Python runtime it needs is a further runtime check inside <see cref="SeparateStemsAsync"/>.</summary>
+    public bool CanSeparateStems => _stemSeparator is not null && _stemDecoder is not null;
     public event EventHandler<string>? TrackChanged;
     public event EventHandler<string>? StatusChanged;
 
@@ -146,6 +164,66 @@ public sealed class TrackContextActions
         catch (Exception ex)
         {
             ReportStatus($"Could not auto-cue \"{TitleOf(trackPath)}\": {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Separates a track into four stems (drums/bass/vocals/other) offline and caches them locally, so a
+    /// later load with stem decks enabled opens it as a 4-stem submix (doc 32 §Phase 2b). Runs the Open-Unmix
+    /// Python subprocess out-of-process — a prep-time action, NOT a live-set one: it pins CPU for minutes.
+    /// The seam is graceful (a missing runtime / failure returns null, never throws), so this only maps the
+    /// outcome to an honest status line; the four states (runtime absent, offline source, done, failed) are
+    /// surfaced rather than silently no-oped (global #16/#26).
+    /// </summary>
+    public async Task SeparateStemsAsync(string trackPath, CancellationToken cancellationToken = default)
+    {
+        if (!CanSeparateStems || string.IsNullOrWhiteSpace(trackPath))
+            return;
+
+        // The Open-Unmix engine ships inside the "advanced analysis" Python runtime; without it the
+        // separator would just no-op to null. Tell the user where to get it instead of failing silently.
+        if (_stemRuntimeAvailable is not null && !_stemRuntimeAvailable())
+        {
+            ReportStatus($"Cannot separate \"{TitleOf(trackPath)}\": enable Advanced analysis in Settings first (it downloads the stem engine).");
+            return;
+        }
+
+        // An offline / unreachable source (e.g. the S: network drive not mounted) would spawn a doomed job.
+        if (!System.IO.File.Exists(trackPath))
+        {
+            ReportStatus($"Cannot separate \"{TitleOf(trackPath)}\": the track file is offline or unreachable.");
+            return;
+        }
+
+        lock (_separatingInFlight)
+        {
+            if (!_separatingInFlight.Add(trackPath))
+            {
+                ReportStatus($"\"{TitleOf(trackPath)}\" is already being separated.");
+                return;
+            }
+        }
+        try
+        {
+            ReportStatus($"Separating stems for \"{TitleOf(trackPath)}\" — several minutes, heavy CPU. Best done before your set, not during it.");
+            StemSet? result = await _stemSeparator!
+                .SeparateAsync(_stemDecoder!, trackPath, cancellationToken).ConfigureAwait(false);
+            ReportStatus(result is { IsComplete: true }
+                ? $"Stems ready for \"{TitleOf(trackPath)}\" — turn on Stem decks in Settings, then reload the track."
+                : $"Could not separate \"{TitleOf(trackPath)}\" — check the log.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ReportStatus($"Could not separate \"{TitleOf(trackPath)}\": {ex.Message}");
+        }
+        finally
+        {
+            lock (_separatingInFlight)
+                _separatingInFlight.Remove(trackPath);
         }
     }
 

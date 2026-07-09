@@ -70,6 +70,14 @@ public sealed record AudioSettings
     /// </summary>
     public CaptureSourceKind? CaptureSource { get; init; }
 
+    /// <summary>
+    /// Experimental stem decks (doc 32 §Phase 2b): when true, loading a track that has a complete locally-
+    /// cached stem set opens it as a 4-stem submix so each stem can be muted, instead of the single file.
+    /// Default off. Read once at engine construction, so a change takes effect on the next launch (like the
+    /// output device). Off ⇒ every deck load is the normal single file — the stem UI stays disabled.
+    /// </summary>
+    public bool StemsEnabled { get; init; }
+
     /// <summary>The defaults: platform-default device, <see cref="DefaultBufferMs"/> buffer, no capture.</summary>
     public static AudioSettings Default { get; } = new();
 

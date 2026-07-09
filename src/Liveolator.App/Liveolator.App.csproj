@@ -10,7 +10,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Distribution identity: the installer (installer/windows) reads Version from here,
          so the exe metadata, setup filename, and Add/Remove Programs entry always agree. -->
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <ApplicationIcon>Liveolator.ico</ApplicationIcon>
     <Product>Liveolator</Product>
     <Company>Zalman Im Records</Company>

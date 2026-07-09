@@ -162,6 +162,26 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsStemsEnabled()
+    {
+        var store = NewStore();
+        var settings = AppSettings.Default with { Audio = new AudioSettings { StemsEnabled = true } };
+
+        await store.SaveAsync(settings);
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.True(loaded.Audio.StemsEnabled); // a new bool must be threaded through the flat snapshot
+    }
+
+    [Fact]
+    public async Task Load_DefaultsStemsEnabledToFalse()
+    {
+        // A file written before the field existed (no StemsEnabled) must read as off, never all-defaults.
+        AppSettings loaded = await NewStore().LoadAsync();
+        Assert.False(loaded.Audio.StemsEnabled);
+    }
+
+    [Fact]
     public async Task Load_OlderFileWithoutCaptureFields_StillLoads()
     {
         // Backward compatibility: a version-1 file written before the capture fields existed must

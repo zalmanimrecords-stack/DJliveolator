@@ -425,14 +425,22 @@ public static class ServiceConfig
         // driven off that master (MasterMixPlaybackEngine), so it follows the audible post-crossfader
         // signal (doc 11) rather than a single switched deck. The IBeatClock/IMultiDeckPlaybackEngine
         // registrations stay below, next to the dispatcher composition that consumes them.
-        // Stem-deck support (doc 32 §Phase 2b, native spike). The local stem cache lookup is always wired
-        // so a future UI toggle just flips the gate; the gate itself is the default-off env var
-        // LIVEOLATOR_STEMS=1 (lightest gate — no settings-snapshot plumbing for an experimental path).
-        // Off ⇒ Load behaves exactly as before (single file). On ⇒ a complete locally-cached stem set
-        // makes a deck a 4-stem submix.
+        // Stem-deck support (doc 32 §Phase 2b). The local stem cache lookup is always wired; the gate is the
+        // persisted, default-off AppSettings.Audio.StemsEnabled toggle (Settings → Extensions), OR the
+        // LIVEOLATOR_STEMS=1 env var as a dev override. Read once here, so a change takes effect on the next
+        // launch (the engine is built once). Off ⇒ Load behaves exactly as before (single file); on ⇒ a
+        // complete locally-cached stem set makes a deck a 4-stem submix.
         var stemCache = new StemStore();
         services.AddSingleton<IStemCache>(stemCache);
-        bool stemsEnabled = Environment.GetEnvironmentVariable("LIVEOLATOR_STEMS") == "1";
+        // Offline stem separation (doc 32 §Phase 2b): the Open-Unmix subprocess reuses the same on-demand
+        // Python runtime the "Enable advanced analysis" button installs (it provisions openunmix+soundfile),
+        // and the same local FLAC cache. Wired so the "Separate stems" track action can generate stems.
+        services.AddSingleton<IStemSeparator>(sp => new OpenUnmixStemSeparator(
+            sp.GetRequiredService<PythonRuntime>(),
+            stemCache,
+            logger: loggerFactory.CreateLogger<OpenUnmixStemSeparator>()));
+        bool stemsEnabled = appSettings.Audio.StemsEnabled
+            || Environment.GetEnvironmentVariable("LIVEOLATOR_STEMS") == "1";
         TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(
             mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory, stemCache, stemsEnabled);
         // The master-mix clock phase-locks its detected grid onto the audible kick (OnsetPhaseLock), so
@@ -703,7 +711,10 @@ public static class ServiceConfig
             metadataProvider: sp.GetService<IMetadataProvider>(),
             fingerprinter: sp.GetService<IAudioFingerprinter>(),
             editor: sp.GetRequiredService<ITrackEditor>(),
-            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>()));
+            autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
+            stemSeparator: sp.GetService<IStemSeparator>(),
+            stemDecoder: sp.GetService<IAudioDecoder>(),
+            stemRuntimeAvailable: () => sp.GetRequiredService<PythonRuntime>().IsAvailable));
         services.AddSingleton<ITrackEditor, TrackEditor>();
         // Modal yes/no confirmation for destructive actions (e.g. deleting a visual asset's file).
         services.AddSingleton<IConfirmationService, ConfirmationService>();

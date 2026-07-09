@@ -94,6 +94,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private string _selectedLogLevel = DiagnosticsSettings.DefaultMinimumLevel;
     private string _termsAcceptanceStatus = "Not yet accepted.";
     private bool _checkForUpdatesOnStartup = UpdateSettings.Default.CheckOnStartup;
+    private bool _stemsEnabled;
     private string? _getSongBpmApiKey;
 
     public SettingsViewModel(
@@ -390,6 +391,15 @@ public sealed class SettingsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _checkForUpdatesOnStartup, value);
     }
 
+    /// <summary>When true, loading a track that has locally-cached stems opens it as a 4-stem submix so each
+    /// stem can be muted (doc 32 §Phase 2b). Experimental; needs the advanced-analysis runtime + per-track
+    /// "Separate stems". Persisted on Save; takes effect on the next launch (the audio engine is built once).</summary>
+    public bool StemsEnabled
+    {
+        get => _stemsEnabled;
+        set => this.RaiseAndSetIfChanged(ref _stemsEnabled, value);
+    }
+
     /// <summary>The MIDI mapping / learn surface, embedded in the MIDI settings tab (null in headless tests).</summary>
     public MappingsViewModel? Mappings { get; }
 
@@ -476,6 +486,7 @@ public sealed class SettingsViewModel : ViewModelBase
             BufferMilliseconds = SelectedBufferMs,
             CaptureDeviceId = captureSelected ? SelectedCaptureDevice!.Id : null,
             CaptureSource = captureSelected ? SelectedCaptureDevice!.Kind : null,
+            StemsEnabled = StemsEnabled,
         };
         var settings = _loadedSettings with
         {
@@ -580,6 +591,8 @@ public sealed class SettingsViewModel : ViewModelBase
         if (!BufferOptions.Contains(buffer))
             InsertSorted(BufferOptions, buffer);
         SelectedBufferMs = buffer;
+
+        StemsEnabled = settings.Audio.StemsEnabled;
 
         SelectedMidiInput = settings.Midi.ControllerInputName is { } input && MidiInputDevices.Contains(input)
             ? input : NoDevice;
