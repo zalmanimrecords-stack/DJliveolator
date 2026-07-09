@@ -211,7 +211,8 @@ public class DeckActionHandlerTests
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
         public void SetDeckDownbeat(int slot, double downbeatSeconds) => Downbeats[slot] = downbeatSeconds;
-        public void SyncOnce(int slot) => SyncOnceCalls.Add(slot);
+        // Mirrors the real engine: one-shot SYNC engages key-lock to preserve the key across the beatmatch.
+        public void SyncOnce(int slot) { SyncOnceCalls.Add(slot); _keyLock[slot] = true; }
 
         public bool IsSyncLocked(int slot) => _sync[slot];
         public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
@@ -525,6 +526,27 @@ public class DeckActionHandlerTests
 
         Assert.Equal(1, Assert.Single(engine.SyncOnceCalls));
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncOnce, slot: 1).IsActive);
+    }
+
+    [Fact]
+    public void SyncOnce_EchoesKeyLockFeedback_SoTheKeyLockButtonLights()
+    {
+        // One-shot SYNC preserves the key by engaging key-lock in the engine; the handler must re-emit
+        // DeckKeyLockToggle feedback so the on-screen KEY LOCK button reflects the now-locked deck.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackState? keyLockFeedback = null;
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckKeyLockToggle && change.Slot == 1)
+                keyLockFeedback = change.State;
+        };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncOnce, Slot: 1));
+
+        Assert.True(engine.IsKeyLockEnabled(1));
+        Assert.NotNull(keyLockFeedback);
+        Assert.True(keyLockFeedback!.IsActive);
     }
 
     [Fact]

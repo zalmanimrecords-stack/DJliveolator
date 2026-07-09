@@ -70,6 +70,16 @@ public sealed partial class TwoDeckBassEngine
             double targetRate = sync.Rate;
             s.PlaybackRate = targetRate;
             s.PitchPosition = PitchPositionFor(targetRate);
+            // Preserve the musical KEY across the tempo match (owner: "match BPM without changing the
+            // pitch"): engage key-lock so the rate rides the BASS_FX time-stretch path, not the vinyl
+            // pitch. Engage BEFORE SetDeckRate (mirrors SetKeyLock's order) so the new rate takes the
+            // key-locked path. Left ON afterward — the deck is now tempo-stretched; the KEY LOCK button
+            // lights (handler re-emits its feedback) so the deck never lies about its state.
+            if (!s.KeyLocked)
+            {
+                s.KeyLocked = true;
+                _backend.SetDeckKeyLock(deck.Handle, true);
+            }
             _backend.SetDeckRate(deck.Handle, targetRate);
             PhaseAlignToLeader(slot);
             _logger.LogInformation(

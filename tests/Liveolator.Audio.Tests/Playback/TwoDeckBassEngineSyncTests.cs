@@ -58,6 +58,39 @@ public class TwoDeckBassEngineSyncTests
     }
 
     [Fact]
+    public void SyncOnce_PreservesKey_ByEngagingKeyLock()
+    {
+        // Owner requirement: one-shot SYNC matches BPM WITHOUT changing the musical pitch. It engages
+        // key-lock (time-stretch path) so the follower's key is preserved across the tempo match, and
+        // leaves it visibly on — without latching the continuous sync loop.
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        Assert.False(engine.IsKeyLockEnabled(1)); // off before SYNC
+
+        engine.SyncOnce(1);
+
+        Assert.True(engine.IsKeyLockEnabled(1));       // key preserved via key-lock
+        Assert.True(backend.KeyLock[101]);             // and the native path switched to time-stretch
+        Assert.False(engine.IsSyncLocked(1));          // still one-shot, no continuous latch
+        Assert.Equal(128.0 / 124.0, backend.Rate[101], 6);
+    }
+
+    [Fact]
+    public void SyncOnce_LeavesAnAlreadyKeyLockedDeckLocked()
+    {
+        // If the DJ already had key-lock on, SYNC must not flip it off — it's a no-op on the toggle.
+        using var engine = NewSyncedPair(out _);
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.SetKeyLock(1, true);
+
+        engine.SyncOnce(1);
+
+        Assert.True(engine.IsKeyLockEnabled(1));
+    }
+
+    [Fact]
     public void ManualPitchAfterSyncOnce_TakesBackControlFromTheMatchedRate()
     {
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend);

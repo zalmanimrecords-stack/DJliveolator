@@ -225,9 +225,10 @@ public interface IMultiDeckPlaybackEngine
     bool IsLooping(int slot);
 
     /// <summary>
-    /// Start a beat-length loop on the deck, beginning at the current playhead. The beat length is
-    /// converted to a time region using the deck's base BPM, so it is musically <paramref name="beats"/>
-    /// beats long. No-op (and feedback-only) if nothing is loaded or the base BPM is unknown.
+    /// Start a beat-length loop on the deck, beginning at the current playhead — or, when a loop is already
+    /// running, resize it live to <paramref name="beats"/> beats keeping its in-point fixed (the loop-length
+    /// knob path). The beat length is converted to a time region using the deck's base BPM, so it is musically
+    /// <paramref name="beats"/> beats long. No-op (and feedback-only) if nothing is loaded or the base BPM is unknown.
     /// </summary>
     void SetLoop(int slot, double beats);
 

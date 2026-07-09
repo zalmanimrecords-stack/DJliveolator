@@ -56,17 +56,34 @@ internal sealed class RealPythonRuntimeOps : IPythonRuntimeOps
 
     public async Task<bool> ExtractAsync(string archivePath, string destDir, CancellationToken ct)
     {
+        // Decompress the .gz to a temporary, SEEKABLE .tar first, then extract from that file. Extracting
+        // straight from the non-seekable GZipStream corrupts entry names (observed: "python.exe" landing as
+        // "python.exe_hon.exe"), which leaves the interpreter absent at its expected path and fails the
+        // whole install. TarFile needs a seekable stream to read entry headers reliably.
+        string tempTar = Path.Combine(destDir, Path.GetRandomFileName() + ".tar");
         try
         {
             Directory.CreateDirectory(destDir);
-            await using var file = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            await using var gzip = new GZipStream(file, CompressionMode.Decompress);
-            await TarFile.ExtractToDirectoryAsync(gzip, destDir, overwriteFiles: true, ct).ConfigureAwait(false);
+
+            await using (var gzFile = new FileStream(archivePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await using (var gzip = new GZipStream(gzFile, CompressionMode.Decompress))
+            await using (var tarOut = new FileStream(tempTar, FileMode.Create, FileAccess.Write, FileShare.None))
+                await gzip.CopyToAsync(tarOut, ct).ConfigureAwait(false);
+
+            await using (var tarIn = new FileStream(tempTar, FileMode.Open, FileAccess.Read, FileShare.Read))
+                await TarFile.ExtractToDirectoryAsync(tarIn, destDir, overwriteFiles: true, ct).ConfigureAwait(false);
+
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
             return false;
+        }
+        finally
+        {
+            try { if (File.Exists(tempTar)) File.Delete(tempTar); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 

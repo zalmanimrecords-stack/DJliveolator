@@ -46,14 +46,21 @@ public sealed partial class TwoDeckBassEngine
                 return;
             }
 
-            // Convert the musical beat length to a concrete time region starting at the current playhead,
-            // using the deck's natural BPM so the loop is musically <beats> beats regardless of pitch.
-            double startSeconds = _backend.GetDeckPositionSeconds(deck.Handle);
-
-            // With Quantize armed, snap the loop in-point onto the deck's beat grid so the loop boundaries
-            // fall on the kick instead of wherever the playhead happened to be (doc 27 B3).
-            if (s.Quantize)
-                startSeconds = BeatLoopCalculator.SnapToBeat(startSeconds, s.FirstBeat, s.BaseBpm);
+            // A loop already running is RESIZED live from its existing in-point (only the out-point moves) —
+            // this is what turning the loop-length knob does while looping, and it matches halve/double's
+            // pin-the-start behavior. Only a FRESH loop starts at the current playhead, grid-snapped when
+            // Quantize is armed so the boundaries fall on the kick (doc 27 B3).
+            double startSeconds;
+            if (s.LoopBeats > 0.0)
+            {
+                startSeconds = s.LoopStartSeconds;
+            }
+            else
+            {
+                startSeconds = _backend.GetDeckPositionSeconds(deck.Handle);
+                if (s.Quantize)
+                    startSeconds = BeatLoopCalculator.SnapToBeat(startSeconds, s.FirstBeat, s.BaseBpm);
+            }
 
             ApplyLoopLocked(slot, deck, startSeconds, beats);
         }

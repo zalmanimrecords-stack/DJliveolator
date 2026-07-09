@@ -144,6 +144,24 @@ public sealed class MixerViewModelTests
         Assert.Equal(slot, action.Slot);
     }
 
+    [Theory]
+    [InlineData(0, 0.0)] // A → full A
+    [InlineData(1, 1.0)] // B → full B
+    public async Task CrossfadeToSide_SnapsFader_AndEmitsCrossfade(int side, double expected)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+        vm.Crossfader.Value = 0.5;
+        dispatcher.Dispatched.Clear();
+
+        await (side == 0 ? vm.CrossfadeToACommand : vm.CrossfadeToBCommand).Execute().ToTask();
+
+        Assert.Equal(expected, vm.Crossfader.Value);
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerCrossfade, action.Kind);
+        Assert.Equal(expected, action.Value);
+    }
+
     [Fact]
     public void Cue_LatchesFromFeedback()
     {

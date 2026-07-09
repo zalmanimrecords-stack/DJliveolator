@@ -1064,6 +1064,24 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
+    public void SetLoop_WhileLooping_ResizesToSubBarKeepingTheInPoint_EvenAfterThePlayheadMoves()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        backend.PositionFraction[100] = 0.1;  // 10 s
+        engine.SetLoop(0, 4.0);               // fresh loop [10, 12]
+
+        backend.PositionFraction[100] = 0.5;  // playhead runs on inside the loop
+        engine.SetLoop(0, 0.5);               // knob → 1/2 beat, a sub-bar size
+
+        (double start, double end) = backend.Loops[100];
+        Assert.Equal(10.0, start, precision: 6);   // in-point pinned, NOT the moved playhead
+        Assert.Equal(10.25, end, precision: 6);     // 10 + 0.5 beats * 0.5 s
+        Assert.Equal(0.5, engine.LoopBeats(0), precision: 6);
+    }
+
+    [Fact]
     public void HalveLoop_WhenNotLooping_IsNoOp()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);

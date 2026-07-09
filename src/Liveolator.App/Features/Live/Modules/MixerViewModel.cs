@@ -81,6 +81,11 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         CueACommand = ReactiveCommand.Create(() => EmitCue(slot: 0), canCue);
         CueBCommand = ReactiveCommand.Create(() => EmitCue(slot: 1), canCue);
 
+        // Tapping the A / B label snaps the crossfader fully to that side (0 = full A, 1 = full B).
+        // Setting Crossfader.Value both moves the bound fader and emits MixerCrossfade via the seam.
+        CrossfadeToACommand = ReactiveCommand.Create(() => { Crossfader.Value = 0.0; }, canCue);
+        CrossfadeToBCommand = ReactiveCommand.Create(() => { Crossfader.Value = 1.0; }, canCue);
+
         EqCut = new EqCutModeKnobViewModel(
             ModeFromFeedback(_dispatcher?.GetFeedback(PerformanceActionKind.MixerEqCutMode, 0)),
             enabled ? EmitEqCutMode : null);
@@ -183,6 +188,10 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     /// <summary>Headphone-cue toggles per deck (MixerCueToggle — a ready handler).</summary>
     public ReactiveCommand<Unit, Unit> CueACommand { get; }
     public ReactiveCommand<Unit, Unit> CueBCommand { get; }
+
+    /// <summary>Snap the crossfader fully to A (0.0) / B (1.0) — the A/B buttons flanking the crossfader.</summary>
+    public ReactiveCommand<Unit, Unit> CrossfadeToACommand { get; }
+    public ReactiveCommand<Unit, Unit> CrossfadeToBCommand { get; }
 
     /// <summary>Smart-limiter CHARACTER knob: 0 = Transparent (gentle), 1 = Punchy (faster release).</summary>
     public ContinuousControlViewModel LimiterCharacter { get; }

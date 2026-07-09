@@ -181,6 +181,10 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
                 RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+                // One-shot SYNC beatmatches with the musical key preserved (engine engages key-lock), so
+                // echo the key-lock state too — the on-screen KEY LOCK button lights and the deck's audible
+                // state stays truthful after the sync.
+                RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, slot, ActiveFeedback(_engine.IsKeyLockEnabled(slot)));
                 break;
             case PerformanceActionKind.DeckSyncToggle:
                 ToggleSync(slot);

@@ -28,34 +28,76 @@ def _fail(message):
     sys.exit(1)
 
 
+# Process the track in blocks with overlap-add instead of all at once: predict.separate holds the
+# whole-track STFT plus a 4-source Wiener expansion in memory, which crashes (native OOM / access
+# violation) on real-length tracks - only clips of ~1 minute survive. Blocks keep peak memory bounded and
+# a windowed overlap-add removes the seam between them, yielding full-length stems for any track length.
+BLOCK_SECONDS = 30.0
+OVERLAP_SECONDS = 1.0
+
+
+def _stem_block(estimates, name, block_len):
+    """Normalize one stem estimate for a block to (samples, channels)."""
+    import numpy as np
+
+    data = np.squeeze(estimates[name].detach().cpu().numpy())
+    if data.ndim == 1:
+        data = data[:, None]  # mono -> (samples, 1)
+    else:
+        data = data.T  # (channels, samples) -> (samples, channels)
+    return data[:block_len]
+
+
 def _separate(input_path, output_dir):
     import numpy as np
     import soundfile as sf
     import torch
     from openunmix import predict, utils
 
-    info = sf.info(input_path)
-    audio, rate = sf.read(input_path, dtype="float32", always_2d=True)
-    # openunmix wants (channels, samples) as a torch tensor at the model's sample rate.
-    tensor = torch.as_tensor(audio.T, dtype=torch.float32)
+    audio, rate = sf.read(input_path, dtype="float32", always_2d=True)  # (samples, channels)
+    total, channels = audio.shape
+    rate = int(rate)
 
     separator = utils.load_separator(model_str_or_path=MODEL, targets=list(STEMS))
-    estimates = predict.separate(audio=tensor, rate=rate, separator=separator)
 
+    block_len = max(int(BLOCK_SECONDS * rate), 1)
+    overlap = min(int(OVERLAP_SECONDS * rate), block_len // 2)
+    hop = max(block_len - overlap, 1)
+
+    outputs = {name: np.zeros((total, channels), dtype=np.float32) for name in STEMS}
+    weights = np.zeros(total, dtype=np.float32)
+
+    start = 0
+    while start < total:
+        end = min(start + block_len, total)
+        this_len = end - start
+        # openunmix wants (channels, samples).
+        block = torch.as_tensor(audio[start:end].T, dtype=torch.float32)
+        estimates = predict.separate(audio=block, rate=rate, separator=separator)
+
+        # Windowed overlap-add: ramp the overlap regions so adjacent blocks sum to ~1 at the seam.
+        window = np.ones(this_len, dtype=np.float32)
+        if overlap > 0:
+            ramp = np.linspace(0.0, 1.0, overlap, endpoint=False, dtype=np.float32)
+            if start > 0:
+                window[:overlap] = ramp
+            if end < total:
+                window[this_len - overlap:] = ramp[::-1]
+
+        for name in STEMS:
+            if name not in estimates:
+                _fail("model did not produce stem %r" % name)
+            outputs[name][start:end] += _stem_block(estimates, name, this_len) * window[:, None]
+        weights[start:end] += window
+        start += hop
+
+    weights[weights == 0.0] = 1.0
     os.makedirs(output_dir, exist_ok=True)
     paths = {}
     for name in STEMS:
-        if name not in estimates:
-            _fail("model did not produce stem %r" % name)
-        # estimate shape is (nb_samples=1?, channels, samples) or (channels, samples) - normalize.
-        data = estimates[name].detach().cpu().numpy()
-        data = np.squeeze(data)
-        if data.ndim == 1:
-            out = data
-        else:
-            out = data.T  # soundfile wants (samples, channels)
+        out = outputs[name] / weights[:, None]
         out_path = os.path.join(output_dir, "%s.flac" % name)
-        sf.write(out_path, out, int(rate), format="FLAC")
+        sf.write(out_path, out, rate, format="FLAC")
         paths[name] = out_path
     return paths
 

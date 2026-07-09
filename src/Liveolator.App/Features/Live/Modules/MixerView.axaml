@@ -12,10 +12,14 @@
         <StackPanel Spacing="8">
           <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
           <Grid ColumnDefinitions="Auto,*,Auto">
-            <TextBlock Classes="accent" VerticalAlignment="Center" Text="A" Margin="0,0,8,0" />
+            <Button Grid.Column="0" Classes="key mixer" Content="A" FontSize="12" Padding="8,4" MinWidth="30"
+                    VerticalAlignment="Center" Margin="0,0,8,0"
+                    Command="{Binding CrossfadeToACommand}" ToolTip.Tip="Snap crossfader fully to A" />
             <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="32"
                             Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
-            <TextBlock Grid.Column="2" Classes="accent" VerticalAlignment="Center" Text="B" Margin="8,0,0,0" />
+            <Button Grid.Column="2" Classes="key mixer" Content="B" FontSize="12" Padding="8,4" MinWidth="30"
+                    VerticalAlignment="Center" Margin="8,0,0,0"
+                    Command="{Binding CrossfadeToBCommand}" ToolTip.Tip="Snap crossfader fully to B" />
           </Grid>
         </StackPanel>
       </Border>
@@ -75,10 +79,13 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="m:StemMuteViewModel">
-                <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
-                        FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                <Button Classes="key mixer" Classes.on="{Binding IsAudible}"
+                        Padding="6,4" MinWidth="0" Margin="1"
                         Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
-                        ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+                        ToolTip.Tip="{Binding Name}">
+                  <Path Data="{Binding Icon}" Stretch="Uniform" Width="15" Height="15"
+                        Fill="{Binding $parent[Button].Foreground}" />
+                </Button>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -92,10 +99,13 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="m:StemMuteViewModel">
-                <Button Classes="key mixer" Classes.on="{Binding IsAudible}" Content="{Binding Name}"
-                        FontSize="8" Padding="4,2" MinWidth="0" Margin="1"
+                <Button Classes="key mixer" Classes.on="{Binding IsAudible}"
+                        Padding="6,4" MinWidth="0" Margin="1"
                         Command="{Binding ToggleCommand}" IsEnabled="{Binding IsAvailable}"
-                        ToolTip.Tip="Mute / un-mute this stem (lit = playing)" />
+                        ToolTip.Tip="{Binding Name}">
+                  <Path Data="{Binding Icon}" Stretch="Uniform" Width="15" Height="15"
+                        Fill="{Binding $parent[Button].Foreground}" />
+                </Button>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
