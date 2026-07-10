@@ -28,6 +28,14 @@ public sealed record BpmResult(double Bpm, double Confidence, double FirstBeatSe
     /// bar level); consumers gate bar-level alignment on it rather than trusting a guessed downbeat.
     /// </summary>
     public double DownbeatConfidence { get; init; }
+
+    /// <summary>
+    /// Detected kick strike times in seconds (<see cref="KickOnsetPicker"/>), so a deck can snap its grid
+    /// onto the real kick nearest the playhead (SET PHASE / one-shot SYNC auto-align) rather than a global
+    /// anchor. Empty when the kick band could not form. Init-only with a default so the positional record
+    /// shape and existing serialized catalogs are unaffected (positional-record back-compat).
+    /// </summary>
+    public IReadOnlyList<double> KickOnsetsSeconds { get; init; } = Array.Empty<double>();
 }
 
 /// <summary>
@@ -109,11 +117,20 @@ public sealed class BpmDetector
             ? _downbeat.Estimate(kickEnvelope, bpm, kickRateHz, firstBeatSeconds)
             : new DownbeatEstimate(firstBeatSeconds, 4, 0.0);
 
+        // The individual kick strike times, so a deck can later snap its grid onto the real kick nearest
+        // the playhead (SET PHASE / one-shot SYNC), not just a global anchor. Rounded to the millisecond
+        // to keep the catalog compact.
+        IReadOnlyList<double> kickOnsets = kickEnvelope.Length > 0
+            ? KickOnsetPicker.Pick(kickEnvelope, kickRateHz, _kickOnset.AnalysisLatencySeconds(sampleRate))
+                .Select(t => Math.Round(t, 3)).ToArray()
+            : Array.Empty<double>();
+
         return new BpmResult(bpm, Math.Round(confidence, 4), firstBeatSeconds)
         {
             DownbeatSeconds = Math.Round(downbeat.DownbeatSeconds, 4),
             BeatsPerBar = downbeat.BeatsPerBar,
             DownbeatConfidence = downbeat.Confidence,
+            KickOnsetsSeconds = kickOnsets,
         };
     }
 

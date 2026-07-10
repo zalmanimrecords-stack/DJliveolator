@@ -31,8 +31,11 @@ public sealed class TrackAnalyzer
     /// runtime is absent, <see cref="TrackAnalysisResult.Structure"/> stays null and analysis is unchanged.
     /// v6: fast-tempo (&gt;~160 BPM) fix — the grid-refiner band reaches 180 and the tempo estimator promotes
     /// supported 2x/2.5x harmonics, so DnB-range tracks (168–180) no longer fold to ~70/87; previously
-    /// mis-gridded fast tracks re-analyze.</remarks>
-    public const int CurrentVersion = 6;
+    /// mis-gridded fast tracks re-analyze.
+    /// v7: persist the individual kick strike times (<see cref="Bpm.BpmResult.KickOnsetsSeconds"/>) so a
+    /// deck can snap its grid onto the real kick nearest the playhead (SET PHASE / one-shot SYNC auto-align).
+    /// Additive; existing tracks re-analyze on next scan to populate the kick list.</remarks>
+    public const int CurrentVersion = 7;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
