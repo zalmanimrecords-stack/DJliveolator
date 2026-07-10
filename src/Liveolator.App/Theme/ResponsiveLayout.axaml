@@ -47,19 +47,19 @@
   </Style>
 
   <!-- Jog platter: height-driven (Width tracks its own measured height), so it fills the elastic jog row
-       vertically. The per-tier MaxHeight is the real size cap — it grows the platter on big screens and
-       keeps it sane on small ones. (No MaxWidth: the square width simply follows the capped height.) -->
+       vertically. The per-tier MaxHeight is the size cap — the flanks (widened) shrink the middle column to
+       roughly the platter's width, so a filled row leaves little-to-no dead air on either side. -->
   <Style Selector="Window.compact controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="270" />
-  </Style>
-  <Style Selector="Window.standard controls|Jog.platter">
     <Setter Property="MaxHeight" Value="290" />
   </Style>
+  <Style Selector="Window.standard controls|Jog.platter">
+    <Setter Property="MaxHeight" Value="320" />
+  </Style>
   <Style Selector="Window.wide controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="330" />
+    <Setter Property="MaxHeight" Value="360" />
   </Style>
   <Style Selector="Window.ultra controls|Jog.platter">
-    <Setter Property="MaxHeight" Value="430" />
+    <Setter Property="MaxHeight" Value="460" />
   </Style>
 
   <!-- (The DJ-tab console↔browser split is a PROPORTIONAL star split set in DjView code-behind from the

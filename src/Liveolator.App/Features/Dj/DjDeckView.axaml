@@ -64,7 +64,7 @@
            and drags to seek (DeckSeek), flanking the platter the way a controller lays pads beside it.
            This is the elastic (*) row — the platter fills the vertical slack on a big screen. -->
       <Grid Grid.Row="1" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" Width="84">
+        <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" Width="104">
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
             <Button Grid.Column="1" Classes="key" Content="{Binding HotCueBankLabel}" Height="20"
@@ -98,13 +98,12 @@
           </ItemsControl>
         </StackPanel>
 
-        <!-- Responsive platter: it fills the elastic jog row vertically and stays square by tying its WIDTH
-             to its own measured height, so it grows with the panel on a big screen (height-driven) instead
-             of being pinned to the column width. Centered in the column; a per-tier MaxHeight
-             (Theme/ResponsiveLayout.axaml via .platter) keeps it sane. The Jog draws off min(width,height). -->
+        <!-- Responsive platter: height-driven (Width tracks its own measured height) so it fills the elastic
+             jog row vertically and stays square + centered. The flanks are widened to shrink the middle column
+             down to the platter's size, so there's no dead air on either side. Per-tier MaxHeight caps it. -->
         <controls:Jog Grid.Column="1" Classes="platter" Margin="8,0"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                      MinWidth="120" MinHeight="120" Width="{Binding $self.Bounds.Height}"
+                      MinWidth="240" MinHeight="240" Width="{Binding $self.Bounds.Height}"
                       ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
@@ -114,7 +113,7 @@
                       IsSpinning="{Binding IsPlaying}"
                       ToolTip.Tip="Playing: drag to pitch-bend (beat-match nudge — no skip). Paused: drag to scrub/cue — clockwise advances, counter-clockwise rewinds" />
 
-        <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
+        <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="104">
           <TextBlock Classes="section" Text="LOOP" />
           <!-- Loop length knob (1/64 … 8 bars, 12 detents): turn to select the armed length; the value
                shows under the knob and on the LOOP key, which arms a loop of that length. -->
