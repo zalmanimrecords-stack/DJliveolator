@@ -44,4 +44,21 @@ public sealed class LibrariesViewModelCueMarkerTests
 
         Assert.Empty(LibrariesViewModel.CueMarkerFractions(record, duration));
     }
+
+    [Fact]
+    public void Click_fraction_maps_to_the_sample_offset_at_that_position()
+    {
+        // 0.5 of a 10 s / 44.1 kHz track → 5 s → 220_500 samples.
+        Assert.Equal(220_500L, LibrariesViewModel.CueSamplesAt(0.5, durationSeconds: 10.0, sampleRate: 44_100));
+    }
+
+    [Theory]
+    [InlineData(-0.2)]  // a click left of the strip
+    [InlineData(1.5)]   // ...or past its end
+    public void Click_fraction_is_clamped_into_the_track(double fraction)
+    {
+        long samples = LibrariesViewModel.CueSamplesAt(fraction, durationSeconds: 10.0, sampleRate: 44_100);
+
+        Assert.InRange(samples, 0L, 441_000L); // never negative, never past the last sample
+    }
 }

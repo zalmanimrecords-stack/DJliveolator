@@ -232,6 +232,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             this.WhenAnyValue(x => x.SelectedTrack, x => x.IsScanning, x => x.IsAutoCueing,
                 (track, scanning, cueing) => track is not null && _autoCueService is not null && !scanning && !cueing));
 
+        // Click the waveform to drop a manual hot cue there (the strip's SeekCommand carries the 0..1
+        // position). Only when a track is selected and a cue store is wired to persist it.
+        MarkCueCommand = ReactiveCommand.CreateFromTask<double>(
+            MarkCueAtFractionAsync,
+            this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && _hotCueStore is not null));
+
         this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ =>
         {
             RebuildMatches();
@@ -314,6 +320,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
     /// <summary>Places automatic hot cues on the selected track only (the library detail "Auto Hot-Cue" button).</summary>
     public ReactiveCommand<Unit, Unit> AutoCueSelectedCommand { get; }
+
+    /// <summary>Adds a manual hot cue at a clicked 0..1 waveform position (the strip's click seam), placing
+    /// it in the next free slot and persisting it. The parameter is the clicked track fraction.</summary>
+    public ReactiveCommand<double, Unit> MarkCueCommand { get; }
 
     /// <summary>
     /// Force re-maps the whole catalog — re-decodes every track for fresh BPM/key/downbeat/cues,
@@ -1171,8 +1181,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 ScanStatus = outcome.Cued > 0
                     ? $"Placed auto cues for \"{_selectedTrack?.Title}\"."
                     : "No auto cues placed (could not read the track's structure).";
-                RebuildHotCues(); // reload cues → refresh the list + the waveform markers
-                RefreshRows();    // light the row's CUE badge
+                // Reload just the selected track's cues → refresh the list + the waveform markers. NOT
+                // RefreshRows(): rebuilding the Tracks list drops the ListBox selection, which would clear
+                // the cues we just placed (the row CUE badge refreshes on the next scan / re-selection).
+                RebuildHotCues();
             });
         }
         catch (OperationCanceledException)
@@ -1187,6 +1199,68 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         {
             RxApp.MainThreadScheduler.Schedule(() => IsAutoCueing = false);
         }
+    }
+
+    // Drops a manual hot cue at a clicked 0..1 waveform position: converts the fraction to a sample offset
+    // (against the track's real sample rate so the cue time reads correctly), places it in the next free
+    // slot, and persists it — creating the track's cue set if it has none yet. A full bank is reported, not
+    // silently ignored (global #26). The new cue is manual (IsAuto=false) so re-analysis preserves it.
+    private async Task MarkCueAtFractionAsync(double fraction)
+    {
+        TrackRowViewModel? track = _selectedTrack;
+        string? path = track?.Track.File.Path;
+        double duration = _selectedOverview?.DurationSeconds ?? 0;
+        if (_hotCueStore is null || track is null || string.IsNullOrWhiteSpace(path) || duration <= 0)
+            return;
+
+        int sampleRate = track.Track.Metadata?.SampleRateHz is { } hz && hz > 0 ? hz : 44_100;
+        long samples = CueSamplesAt(fraction, duration, sampleRate);
+
+        try
+        {
+            TrackCueRecord? record = await _hotCueStore.LoadAsync(path, _lifetime.Token).ConfigureAwait(false);
+            TrackCueSet set = record?.ToCueSet() ?? new TrackCueSet(sampleRate);
+            int slot = NextFreeCueSlot(set);
+            if (slot < 0)
+            {
+                RxApp.MainThreadScheduler.Schedule(
+                    () => ScanStatus = "All 8 hot-cue slots are full — delete one to add another.");
+                return;
+            }
+
+            set = set.SetHotCue(slot, samples, isAuto: false);
+            await _hotCueStore.SaveAsync(TrackCueRecord.FromCueSet(path, set), _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                ScanStatus = $"Hot cue {slot + 1} set.";
+                // Reload just the selected track's cues → the new marker appears immediately. NOT
+                // RefreshRows(): rebuilding the Tracks list would drop the selection and clear the cue.
+                RebuildHotCues();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-edit — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not set hot cue: {ex.Message}");
+        }
+    }
+
+    /// <summary>The sample offset for a 0..1 track <paramref name="fraction"/> on a track of
+    /// <paramref name="durationSeconds"/> at <paramref name="sampleRate"/> Hz; the fraction is clamped to
+    /// 0..1 so a click can't land a negative or past-the-end cue. Pure so it unit-tests without a decode.</summary>
+    public static long CueSamplesAt(double fraction, double durationSeconds, int sampleRate)
+        => (long)Math.Round(Math.Clamp(fraction, 0.0, 1.0) * durationSeconds * sampleRate);
+
+    // The lowest empty hot-cue slot in the set, or -1 when all slots are taken.
+    private static int NextFreeCueSlot(TrackCueSet set)
+    {
+        for (int i = 0; i < set.SlotCount; i++)
+            if (set.GetHotCue(i) is null)
+                return i;
+        return -1;
     }
 
     /// <summary>

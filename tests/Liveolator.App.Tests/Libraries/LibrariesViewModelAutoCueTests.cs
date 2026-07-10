@@ -132,6 +132,24 @@ public sealed class LibrariesViewModelAutoCueTests
         Assert.Contains("skipped", vm.ScanStatus, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Regression: the detail-panel "Auto Hot-Cue" button appeared to "do nothing" because it rebuilt the
+    // Tracks list on completion, which drops the ListBox selection in the UI and clears the cues just
+    // placed. The command must leave the row instances (and the selection) intact.
+    [Fact]
+    public async Task AutoCueSelected_keeps_the_track_rows_so_the_selection_survives()
+    {
+        var service = new FakeAutoCueService(cued: 1);
+        LibrariesViewModel vm = BuildViewModel(service, "/music/A.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks.Single();
+        TrackRowViewModel rowBefore = vm.Tracks.Single();
+
+        await vm.AutoCueSelectedCommand.Execute().ToTask();
+
+        Assert.Same(rowBefore, vm.Tracks.Single()); // the list was NOT rebuilt
+        Assert.Same(rowBefore, vm.SelectedTrack);    // so the selection (and its cues) survive
+    }
+
     [Fact]
     public async Task AutoCue_withAllTracksUnreachable_reportsAndDoesNotCallService()
     {

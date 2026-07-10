@@ -354,9 +354,11 @@
     <Border Grid.Row="3" Classes="panel" Margin="0,16,0,0" Height="150"
             IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
       <DockPanel Margin="12">
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
           <TextBlock Classes="section" Text="Waveform" VerticalAlignment="Center" />
-          <Button Grid.Column="1" Classes="accent" Content="Auto Hot-Cue"
+          <TextBlock Grid.Column="1" Classes="faint" VerticalAlignment="Center" Margin="0,0,12,0"
+                     Text="Click the waveform to add a hot cue" />
+          <Button Grid.Column="2" Classes="accent" Content="Auto Hot-Cue"
                   Command="{Binding AutoCueSelectedCommand}"
                   ToolTip.Tip="Place automatic hot cues on this track (drums, drops, structure)" />
         </Grid>
@@ -364,6 +366,8 @@
           <controls:WaveformStrip Peaks="{Binding Waveform}" KickPeaks="{Binding KickPeaks}"
                                   MidPeaks="{Binding MidPeaks}" HighPeaks="{Binding HighPeaks}"
                                   HotCueMarkers="{Binding HotCueMarkers}" ZoomWindow="0"
+                                  SeekCommand="{Binding MarkCueCommand}"
+                                  ToolTip.Tip="Click to drop a hot cue at that position"
                                   IsVisible="{Binding WaveformStatus, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
           <!-- Why there's no waveform (loading / offline / undecodable) — shown instead of a blank strip. -->
           <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
