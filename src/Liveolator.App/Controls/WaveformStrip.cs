@@ -78,6 +78,12 @@ public sealed class WaveformStrip : Control
     /// <summary>When <c>true</c>, the CBG beat comb is drawn at the TOP of the strip instead of the bottom.
     /// The lower deck in a stacked pair sets this so the two decks' beat markers sit ADJACENT — meeting in
     /// the middle between the strips (the combined-waveform read), not split to the outer edges.</summary>
+    /// <summary>Brush for the hot-cue markers — a vertical line per stored cue (the library overview uses
+    /// these to show WHERE the track's hot cues sit). A distinct warm colour so cues read over the wave.</summary>
+    public static readonly StyledProperty<IBrush> CueBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(CueBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xF2, 0xC8, 0x3B)));
+
     public static readonly StyledProperty<bool> CombAtTopProperty =
         AvaloniaProperty.Register<WaveformStrip, bool>(nameof(CombAtTop));
 
@@ -120,6 +126,11 @@ public sealed class WaveformStrip : Control
     public static readonly StyledProperty<double?> KickAnchorProperty =
         AvaloniaProperty.Register<WaveformStrip, double?>(nameof(KickAnchor));
 
+    /// <summary>Hot-cue positions as 0..1 track fractions to overlay as vertical markers; null/empty draws
+    /// none. Presentational only — the library overview passes the selected track's stored cues here.</summary>
+    public static readonly StyledProperty<IReadOnlyList<double>?> HotCueMarkersProperty =
+        AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<double>?>(nameof(HotCueMarkers));
+
     /// <summary>Playhead position as a 0..1 fraction of the track.</summary>
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<WaveformStrip, double>(nameof(Progress));
@@ -143,8 +154,9 @@ public sealed class WaveformStrip : Control
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
             MidBrushProperty, HighBrushProperty,
             PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty, FoldedProperty,
+            CueBrushProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
-            BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty,
+            BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty, HotCueMarkersProperty,
             ProgressProperty, ZoomWindowProperty);
     }
 
@@ -163,6 +175,7 @@ public sealed class WaveformStrip : Control
     public IBrush PlayheadBrush { get => GetValue(PlayheadBrushProperty); set => SetValue(PlayheadBrushProperty, value); }
     public IBrush BeatBrush { get => GetValue(BeatBrushProperty); set => SetValue(BeatBrushProperty, value); }
     public IBrush DownbeatBrush { get => GetValue(DownbeatBrushProperty); set => SetValue(DownbeatBrushProperty, value); }
+    public IBrush CueBrush { get => GetValue(CueBrushProperty); set => SetValue(CueBrushProperty, value); }
     public bool CombAtTop { get => GetValue(CombAtTopProperty); set => SetValue(CombAtTopProperty, value); }
     public bool Folded { get => GetValue(FoldedProperty); set => SetValue(FoldedProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
@@ -172,6 +185,7 @@ public sealed class WaveformStrip : Control
     public IReadOnlyList<double>? BeatGrid { get => GetValue(BeatGridProperty); set => SetValue(BeatGridProperty, value); }
     public int DownbeatOffset { get => GetValue(DownbeatOffsetProperty); set => SetValue(DownbeatOffsetProperty, value); }
     public double? KickAnchor { get => GetValue(KickAnchorProperty); set => SetValue(KickAnchorProperty, value); }
+    public IReadOnlyList<double>? HotCueMarkers { get => GetValue(HotCueMarkersProperty); set => SetValue(HotCueMarkersProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public double ZoomWindow { get => GetValue(ZoomWindowProperty); set => SetValue(ZoomWindowProperty, value); }
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
@@ -271,7 +285,23 @@ public sealed class WaveformStrip : Control
         // The CBG comb (beat marking), then the playhead over everything so the current position is never
         // buried under a kick bar or a comb tooth.
         RenderBeatComb(context, b, combY, combH, combAtTop, start, span);
+        RenderCueMarkers(context, b, start, span);
         RenderPlayhead(context, b, start, span);
+    }
+
+    // Hot-cue markers: a full-height vertical line per stored cue, over the wave (the library overview shows
+    // WHERE the track's cues sit). Uses the same MarkerX window mapping as the kick anchor, so a cue outside
+    // the visible window is skipped rather than clamped to an edge.
+    private void RenderCueMarkers(DrawingContext context, Rect b, double start, double span)
+    {
+        IReadOnlyList<double>? markers = HotCueMarkers;
+        if (markers is not { Count: > 0 })
+            return;
+
+        var pen = new Pen(CueBrush, 1.5);
+        foreach (double fraction in markers)
+            if (MarkerX(fraction, start, span, b.Width) is { } x)
+                context.DrawLine(pen, new Point(x, 0), new Point(x, b.Height));
     }
 
     private const double CombHeightFraction = 0.16;

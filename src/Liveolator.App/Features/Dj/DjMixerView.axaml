@@ -15,23 +15,6 @@
     <StackPanel Classes="mixer-root" Margin="14,8" Spacing="6"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
 
-      <Border Classes="hardware-well" Padding="8,6">
-        <StackPanel Spacing="6">
-          <Grid ColumnDefinitions="Auto,*,Auto">
-            <Button Grid.Column="0" Classes="key mixer" Content="A" FontSize="12" Padding="8,3" MinWidth="28"
-                    VerticalAlignment="Center" Margin="0,0,8,0"
-                    Command="{Binding CrossfadeToACommand}" ToolTip.Tip="Snap crossfader fully to A" />
-            <!-- Crossfader is the primary blend control, so it carries more height (36) than the
-                 secondary BPM-nudge fader (26) to reflect its priority. -->
-            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="30"
-                            Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
-            <Button Grid.Column="2" Classes="key mixer" Content="B" FontSize="12" Padding="8,3" MinWidth="28"
-                    VerticalAlignment="Center" Margin="8,0,0,0"
-                    Command="{Binding CrossfadeToBCommand}" ToolTip.Tip="Snap crossfader fully to B" />
-          </Grid>
-        </StackPanel>
-      </Border>
-
       <!-- The MIXER frame: the channel strip (EQ · faders · CUT · CUE) plus the cue LEVEL/MIX, gathered
            inside one well instead of separate sub-frames. The master smart-limiter knobs now live in the
            global top bar (MainWindow.axaml) next to the OS-volume knob. -->
@@ -189,7 +172,7 @@
         <!-- Headphone-cue LEVEL + MIX, inside the mixer frame -->
         <Grid ColumnDefinitions="*,14,*">
           <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center">
-            <TextBlock Classes="section" FontSize="8" HorizontalAlignment="Center" Text="LEVEL" />
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="LEVEL" />
             <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
                            Value="{Binding CueLevel.Value}"
                            IsEnabled="{Binding CueLevel.IsEnabled}" />
@@ -197,7 +180,7 @@
           </StackPanel>
 
           <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center">
-            <TextBlock Classes="section" FontSize="8" HorizontalAlignment="Center" Text="MIX" />
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="MIX" />
             <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
                            Value="{Binding CueMix.Value}"
                            IsEnabled="{Binding CueMix.IsEnabled}" />
@@ -205,6 +188,25 @@
           </StackPanel>
         </Grid>
        </StackPanel>
+      </Border>
+
+      <!-- Crossfader at the BOTTOM of the mixer — below the channel faders, closest to the DJ, matching every
+           hardware mixer and pro app (muscle memory). A/B snap buttons flank it; taller than the secondary
+           faders (BPM nudge) to reflect that it is the primary blend control. -->
+      <Border Classes="hardware-well" Padding="8,6">
+        <StackPanel Spacing="4">
+          <TextBlock Classes="section" HorizontalAlignment="Center" Text="CROSSFADE" />
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Button Grid.Column="0" Classes="key mixer" Content="A" FontSize="12" Padding="8,3" MinWidth="28"
+                    VerticalAlignment="Center" Margin="0,0,8,0"
+                    Command="{Binding CrossfadeToACommand}" ToolTip.Tip="Snap crossfader fully to A" />
+            <controls:Fader Grid.Column="1" Orientation="Horizontal" Height="34"
+                            Value="{Binding Crossfader.Value}" IsEnabled="{Binding Crossfader.IsEnabled}" />
+            <Button Grid.Column="2" Classes="key mixer" Content="B" FontSize="12" Padding="8,3" MinWidth="28"
+                    VerticalAlignment="Center" Margin="8,0,0,0"
+                    Command="{Binding CrossfadeToBCommand}" ToolTip.Tip="Snap crossfader fully to B" />
+          </Grid>
+        </StackPanel>
       </Border>
 
     </StackPanel>

@@ -11,6 +11,7 @@ using Liveolator.Core.Library.Doctor;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Persistence;
+using Liveolator.Core.Waveform;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Libraries;
@@ -39,6 +40,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
     private readonly IHotCueStore? _hotCueStore;
+    private readonly IWaveformProvider? _waveformProvider;
     private readonly Core.Enrichment.IMetadataProvider? _metadataProvider;
     // Reachability probe used to skip unreachable / online-only cloud placeholders before a decode so a
     // single un-downloaded OneDrive file can't hang the auto-cue pass. Injected so tests stay pure.
@@ -51,6 +53,15 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly IReadOnlyList<Core.Library.Import.IFolderLibraryImporter> _folderImporters;
     // Drops a stale hot-cue load when the selection moves on before an async store read returns.
     private int _hotCueLoadSequence;
+    // Same stale-load guard for the (separate, slower) waveform decode. Kept apart from the cue sequence so a
+    // cue edit (which re-reads cues, not the wave) never drops an in-flight waveform load.
+    private int _waveformLoadSequence;
+    // Library overview waveform detail — fewer buckets than the deck (6k) since this strip is display-only.
+    private const int WaveformBuckets = 2_000;
+    // The selected track's decoded overview + stored cue record, held so the hot-cue markers can be
+    // recomputed from whichever of the two async loads arrives last (both are needed to map cues → 0..1).
+    private WaveformOverview? _selectedOverview;
+    private TrackCueRecord? _selectedCueRecord;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
     private string? _selectedArtist;
@@ -100,6 +111,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Core.Playlist.DeckTrackLoader? deckLoader = null,
         IAutoCueService? autoCueService = null,
         IHotCueStore? hotCueStore = null,
+        IWaveformProvider? waveformProvider = null,
         Core.Library.Import.LibraryImportService? importService = null,
         IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null,
         IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null,
@@ -117,6 +129,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _contextActions = contextActions;
         _autoCueService = autoCueService;
         _hotCueStore = hotCueStore;
+        _waveformProvider = waveformProvider;
         _metadataProvider = metadataProvider;
         _importService = importService;
         _importers = importers ?? Array.Empty<Core.Library.Import.ILibraryImporter>();
@@ -212,10 +225,18 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 this.WhenAnyValue(x => x.SortKey).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SortDescending).Select(_ => Unit.Default))
             .Subscribe(_ => ApplyFilter());
+        // Auto-cue just the selected track (the library detail "Auto Hot-Cue" button): place automatic hot
+        // cues on it, then refresh the list + the waveform markers. Same guard as the library-wide pass.
+        AutoCueSelectedCommand = ReactiveCommand.CreateFromTask(
+            RunAutoCueSelectedAsync,
+            this.WhenAnyValue(x => x.SelectedTrack, x => x.IsScanning, x => x.IsAutoCueing,
+                (track, scanning, cueing) => track is not null && _autoCueService is not null && !scanning && !cueing));
+
         this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ =>
         {
             RebuildMatches();
             RebuildHotCues();
+            RebuildWaveform();
         });
     }
 
@@ -228,6 +249,28 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
     /// <summary>True when the selected track has at least one stored hot cue (drives the section's empty state).</summary>
     public bool HasHotCues => HotCues.Count > 0;
+
+    private IReadOnlyList<float>? _waveform;
+    private IReadOnlyList<float>? _kickPeaks;
+    private IReadOnlyList<float>? _midPeaks;
+    private IReadOnlyList<float>? _highPeaks;
+    private IReadOnlyList<double>? _hotCueMarkers;
+    private string _waveformStatus = string.Empty;
+
+    /// <summary>Broadband overview peaks of the selected track for the bottom waveform strip; null when
+    /// none is loaded (the strip then shows its "no track" placeholder).</summary>
+    public IReadOnlyList<float>? Waveform { get => _waveform; private set => this.RaiseAndSetIfChanged(ref _waveform, value); }
+    public IReadOnlyList<float>? KickPeaks { get => _kickPeaks; private set => this.RaiseAndSetIfChanged(ref _kickPeaks, value); }
+    public IReadOnlyList<float>? MidPeaks { get => _midPeaks; private set => this.RaiseAndSetIfChanged(ref _midPeaks, value); }
+    public IReadOnlyList<float>? HighPeaks { get => _highPeaks; private set => this.RaiseAndSetIfChanged(ref _highPeaks, value); }
+
+    /// <summary>The selected track's hot-cue positions as 0..1 track fractions, overlaid on the waveform
+    /// strip; null/empty draws no markers.</summary>
+    public IReadOnlyList<double>? HotCueMarkers { get => _hotCueMarkers; private set => this.RaiseAndSetIfChanged(ref _hotCueMarkers, value); }
+
+    /// <summary>Why there's no waveform to show (loading / offline / undecodable), or empty when the strip
+    /// is drawn — so an un-decodable track explains itself instead of showing a blank strip (global #26).</summary>
+    public string WaveformStatus { get => _waveformStatus; private set => this.RaiseAndSetIfChanged(ref _waveformStatus, value); }
 
     /// <summary>Distinct facet values from the catalog (B1). A null selection on each = "all".</summary>
     public ObservableCollection<string> Artists { get; } = new();
@@ -268,6 +311,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
     /// <summary>Places automatic hot cues on every track in the scanned folders (persisted to the cue store).</summary>
     public ReactiveCommand<Unit, Unit> AutoCueLibraryCommand { get; }
+
+    /// <summary>Places automatic hot cues on the selected track only (the library detail "Auto Hot-Cue" button).</summary>
+    public ReactiveCommand<Unit, Unit> AutoCueSelectedCommand { get; }
 
     /// <summary>
     /// Force re-maps the whole catalog — re-decodes every track for fresh BPM/key/downbeat/cues,
@@ -1099,6 +1145,50 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // Auto-cue just the selected track (the detail-panel "Auto Hot-Cue" button), then re-read its cues so the
+    // list + the waveform markers refresh. Decode runs off the UI thread; an offline file is reported, not
+    // hung on (mirrors the library-wide pass). Guarded — a failure surfaces on the status line (global #16/#26).
+    private async Task RunAutoCueSelectedAsync()
+    {
+        string? path = _selectedTrack?.Track.File.Path;
+        if (_autoCueService is null || string.IsNullOrWhiteSpace(path))
+            return;
+        if (!_isLocallyDecodable(path))
+        {
+            ScanStatus = "Cannot auto-cue — the track file is offline or unreachable.";
+            return;
+        }
+
+        IsAutoCueing = true;
+        try
+        {
+            ScanStatus = $"Placing auto cues for \"{_selectedTrack!.Title}\"...";
+            AutoCueOutcome outcome = await Task.Run(
+                () => _autoCueService.RunAsync(new[] { path }, cancellationToken: _lifetime.Token),
+                _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                ScanStatus = outcome.Cued > 0
+                    ? $"Placed auto cues for \"{_selectedTrack?.Title}\"."
+                    : "No auto cues placed (could not read the track's structure).";
+                RebuildHotCues(); // reload cues → refresh the list + the waveform markers
+                RefreshRows();    // light the row's CUE badge
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // App shutting down / tab disposed — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Auto-cue failed: {ex.Message}");
+        }
+        finally
+        {
+            RxApp.MainThreadScheduler.Schedule(() => IsAutoCueing = false);
+        }
+    }
+
     /// <summary>
     /// Imports another DJ app's library file: parses it with the named importer, maps tracks + cues +
     /// playlists into Liveolator through the import service (path-remapping against the current catalog),
@@ -1345,12 +1435,106 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         int sequence = ++_hotCueLoadSequence;
         ClearHotCues();
+        _selectedCueRecord = null;
+        UpdateCueMarkers();
 
         TrackRowViewModel? track = _selectedTrack;
         if (_hotCueStore is null || track is null)
             return;
 
         _ = LoadHotCuesAsync(track.Track.File.Path, sequence);
+    }
+
+    // Fire-and-forget waveform decode for the bottom overview strip. Kept off the UI thread (a real decode
+    // is CPU-bound) and guarded by a per-selection sequence so a quick A→B→A change never paints a stale
+    // wave. The provider degrades to Empty on failure; markers recompute once the duration is known.
+    private void RebuildWaveform()
+    {
+        int sequence = ++_waveformLoadSequence;
+        _selectedOverview = null;
+        Waveform = null;
+        KickPeaks = null;
+        MidPeaks = null;
+        HighPeaks = null;
+        WaveformStatus = string.Empty;
+        UpdateCueMarkers();
+
+        TrackRowViewModel? track = _selectedTrack;
+        if (_waveformProvider is null || track is null)
+            return;
+
+        // A missing / offline / online-only file (an un-downloaded OneDrive placeholder, a dropped network
+        // drive) can't be decoded — BASS fails with FileOpen. Skip the doomed decode and say why, instead of
+        // showing a blank strip and logging a warning on every click (global #26; OneDrive-placeholder note).
+        string path = track.Track.File.Path;
+        if (!_isLocallyDecodable(path))
+        {
+            WaveformStatus = "Track is offline or online-only — download it (or reconnect the drive) to see its waveform.";
+            return;
+        }
+
+        WaveformStatus = "Loading waveform…";
+        _ = LoadWaveformAsync(path, sequence);
+    }
+
+    private async Task LoadWaveformAsync(string trackPath, int sequence)
+    {
+        try
+        {
+            WaveformOverview overview = await Task.Run(
+                () => _waveformProvider!.GetOverviewAsync(trackPath, WaveformBuckets, _lifetime.Token),
+                _lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                // The selection changed (or another load started) while we were decoding — drop this result.
+                if (sequence != _waveformLoadSequence)
+                    return;
+
+                _selectedOverview = overview.IsEmpty ? null : overview;
+                Waveform = overview.IsEmpty ? null : overview.Peaks;
+                KickPeaks = overview.IsEmpty ? null : overview.LowPeaks;
+                MidPeaks = overview.IsEmpty ? null : overview.MidPeaks;
+                HighPeaks = overview.IsEmpty ? null : overview.HighPeaks;
+                WaveformStatus = overview.IsEmpty ? "Waveform unavailable for this track." : string.Empty;
+                UpdateCueMarkers();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // The view-model was disposed mid-load — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                if (sequence == _waveformLoadSequence)
+                    WaveformStatus = "Could not load the waveform.";
+                ScanStatus = $"Could not load waveform: {ex.Message}";
+            });
+        }
+    }
+
+    // Recompute the waveform's hot-cue markers from the loaded overview + cue record (both async, either can
+    // arrive first). Needs the decoded duration to map a cue's sample offset onto the strip's 0..1 axis.
+    private void UpdateCueMarkers()
+        => HotCueMarkers = _selectedOverview is { } overview && _selectedCueRecord is { } record
+            ? CueMarkerFractions(record, overview.DurationSeconds)
+            : null;
+
+    /// <summary>
+    /// Maps each stored hot cue to its 0..1 position along a track of <paramref name="durationSeconds"/>,
+    /// dropping cues outside the track (or when the duration/sample-rate is unknown). Pure so the mapping
+    /// unit-tests without a decode.
+    /// </summary>
+    public static IReadOnlyList<double> CueMarkerFractions(TrackCueRecord record, double durationSeconds)
+    {
+        if (durationSeconds <= 0 || record.SampleRate <= 0)
+            return Array.Empty<double>();
+
+        return record.HotCues
+            .Select(c => c.PositionSamples / (double)record.SampleRate / durationSeconds)
+            .Where(f => f is >= 0 and <= 1)
+            .ToList();
     }
 
     private async Task LoadHotCuesAsync(string trackPath, int sequence)
@@ -1365,12 +1549,17 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                     return;
 
                 ClearHotCues();
+                _selectedCueRecord = record;
                 if (record is null)
+                {
+                    UpdateCueMarkers();
                     return;
+                }
 
                 foreach (HotCue cue in record.HotCues.OrderBy(c => c.Index))
                     HotCues.Add(new HotCueDisplayViewModel(cue, record.SampleRate, ConfirmHotCue, DeleteHotCue));
                 this.RaisePropertyChanged(nameof(HasHotCues));
+                UpdateCueMarkers();
             });
         }
         catch (OperationCanceledException)

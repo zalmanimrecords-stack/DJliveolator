@@ -147,34 +147,36 @@
         </StackPanel>
       </Grid>
 
-      <!-- transport: CUE · Play · Sync · Key-lock — icon buttons. KEY LOCK lives here (one row up) so the
-           deck fits one screen; it stays a toggle (lights when engaged). Tooltips carry the labels. -->
-      <Grid Grid.Row="2" Margin="0,0,0,8" ColumnDefinitions="*,1.3*,*,*">
-        <Button Grid.Column="0" Classes="key" Content="⏮" FontSize="16" Margin="0,0,4,0"
+      <!-- transport: CUE · PLAY · SYNC — the three primary deck actions, TEXT-LABELLED (no hover needed in
+           a live set) with PLAY as the dominant target (2.2× the flanks, taller). KEY LOCK moved down to the
+           KEY·PITCH row where it belongs — it is a tempo/pitch mode, not a transport control. -->
+      <Grid Grid.Row="2" Margin="0,0,0,8" ColumnDefinitions="*,2.2*,*">
+        <Button Grid.Column="0" Classes="key" Content="CUE" Height="42" Margin="0,0,5,0"
                 Command="{Binding CueCommand}" IsEnabled="{Binding CanCue}"
                 ToolTip.Tip="Cue — jump to the cue point / track start" />
-        <Button Grid.Column="1" Classes="play" Classes.on="{Binding IsPlaying}"
-                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0" ToolTip.Tip="Play / pause">
-          <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
+        <Button Grid.Column="1" Classes="play" Classes.on="{Binding IsPlaying}" Height="42"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,5,0" ToolTip.Tip="Play / pause">
+          <Path Data="M 0,0 L 17,10 L 0,20 Z" Fill="{DynamicResource Accent}" />
         </Button>
         <!-- One-shot SYNC: single-press beatmatch + kick-phase snap to the other deck, key preserved,
              then free. Momentary, no latch. -->
-        <Button Grid.Column="2" Classes="key"
-                Content="⇄" FontSize="16" Margin="0,0,4,0"
+        <Button Grid.Column="2" Classes="key" Content="SYNC" Height="42"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
                 ToolTip.Tip="Match tempo + phase to the other deck once (key preserved)" />
-        <Button Grid.Column="3" Classes="key" Classes.on="{Binding IsKeyLock}" Content="🔒" FontSize="14"
-                Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
-                ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
       </Grid>
 
-      <!-- KEY · pitch%: the loaded track's musical key (BPM-level prominence, from the catalog) on the left,
-           the live signed pitch offset (DeckPitch, hardware/MIDI-driven) on the right. -->
+      <!-- KEY · KEY-LOCK · pitch%: the loaded track's musical key (from the catalog) on the left, the KEY LOCK
+           tempo/pitch-mode toggle in the centre (filling what used to be dead space), and the live signed
+           pitch offset (DeckPitch, hardware/MIDI-driven) on the right. -->
       <Grid Grid.Row="3" Margin="0,0,0,8" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
         <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="KEY" />
         <TextBlock Grid.Column="1" Classes="mono accent" Margin="8,0,0,0" FontSize="{DynamicResource FontTrackKey}"
                    VerticalAlignment="Center" Text="{Binding TrackKey}"
                    IsVisible="{Binding HasTrackKey}" ToolTip.Tip="Musical key of the loaded track" />
+        <Button Grid.Column="2" Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
+                Height="26" Padding="12,0" FontSize="10" HorizontalAlignment="Center"
+                Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
         <TextBlock Grid.Column="3" Classes="tick" VerticalAlignment="Center" Text="PITCH" />
         <TextBlock Grid.Column="4" Classes="mono" Margin="8,0,0,0" VerticalAlignment="Center"
                    Text="{Binding PitchPercentText}"
@@ -216,7 +218,7 @@
                     Command="{Binding SetGridHereCommand}" ToolTip.Tip="Put a beat line on the kick under the playhead">
               <StackPanel Spacing="0">
                 <TextBlock Text="SET" FontSize="11" LineHeight="13" HorizontalAlignment="Center" />
-                <TextBlock Text="PHASE" FontSize="7" LineHeight="9" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
+                <TextBlock Text="PHASE" FontSize="9" LineHeight="11" HorizontalAlignment="Center" Foreground="{DynamicResource Dim}" />
               </StackPanel>
             </Button>
           </Grid>

@@ -47,8 +47,15 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckStemMute,
     };
 
+    // A monotonic seconds source used to time jog ticks (for velocity) and to release a stale bend. A
+    // process-wide Stopwatch keeps it cheap and platform-agnostic; tests inject a fake clock instead.
+    private static readonly System.Diagnostics.Stopwatch MonotonicClock = System.Diagnostics.Stopwatch.StartNew();
+
     private readonly IMultiDeckPlaybackEngine _engine;
     private readonly JogWheelSettings _jogSettings;
+    private readonly Func<double> _nowSeconds;
+    // Per-deck jog→pitch-bend state (playing jog = beat-match nudge). One tracker per slot.
+    private readonly JogBendTracker[] _jogBend;
     private readonly ActionFeedbackState[] _loadedTracks;
     // The per-deck downbeat (bar-1) anchor in seconds, mirrored here for feedback (the engine seam has a
     // setter but no getter) so a deck UI can re-anchor its bar markers and a session restore can re-apply a
@@ -62,10 +69,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     }
 
     /// <summary>Drives a two-deck engine directly, addressing decks by action slot.</summary>
-    public DeckActionHandler(IMultiDeckPlaybackEngine engine, JogWheelSettings? jogSettings = null)
+    /// <param name="nowSeconds">Monotonic seconds source for jog timing; defaults to a process Stopwatch.
+    /// Injected in tests so bend/release timing is deterministic.</param>
+    public DeckActionHandler(
+        IMultiDeckPlaybackEngine engine,
+        JogWheelSettings? jogSettings = null,
+        Func<double>? nowSeconds = null)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _jogSettings = (jogSettings ?? JogWheelSettings.Default).Normalized();
+        _nowSeconds = nowSeconds ?? (() => MonotonicClock.Elapsed.TotalSeconds);
+        _jogBend = new JogBendTracker[engine.DeckCount];
+        for (int i = 0; i < _jogBend.Length; i++)
+            _jogBend[i] = new JogBendTracker(_jogSettings);
         _loadedTracks = Enumerable.Repeat(ActionFeedbackState.Unavailable, engine.DeckCount).ToArray();
         _downbeats = new double[engine.DeckCount];
         // The continuous correction loop moves a deck's lock state (Active->Locked->Drifting) on the sync
@@ -78,6 +94,19 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
 
     /// <inheritdoc />
     public override IReadOnlySet<PerformanceActionKind> HandledKinds => Kinds;
+
+    /// <summary>
+    /// Releases any playing-jog pitch-bend whose ticks have stopped, restoring the deck's normal rate.
+    /// An endless jog encoder sends no "release" event, so the composition root calls this periodically
+    /// (~30 ms). Cheap: a per-deck staleness check that touches the engine only on an actual release.
+    /// </summary>
+    public void PumpJogRelease()
+    {
+        double now = _nowSeconds();
+        for (int slot = 0; slot < _jogBend.Length; slot++)
+            if (_jogBend[slot].TryReleaseStale(now))
+                _engine.PitchBend(slot, 0.0);
+    }
 
     /// <inheritdoc />
     public override void Handle(PerformanceAction action)
@@ -133,11 +162,21 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
                 break;
             case PerformanceActionKind.DeckJog:
-                double secondsPerRevolution = _engine.IsPlaying(slot)
-                    ? _jogSettings.PlayingSecondsPerRevolution
-                    : _jogSettings.PausedSecondsPerRevolution;
-                _engine.Jog(slot, action.Value * secondsPerRevolution);
-                RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+                if (_engine.IsPlaying(slot))
+                {
+                    // PLAYING: a jog is a temporary pitch-bend (beat-match nudge), NOT a position seek. A
+                    // seek flushes the deck buffer (audible click, and historically leaked across decks via
+                    // the shared mixer); a rate bend slides the phase glitch-free. The bend is held until
+                    // the ticks stop (PumpJogRelease) — an endless encoder sends no release. No seek
+                    // feedback: the playhead isn't jumped, so nothing on the transport moves.
+                    _engine.PitchBend(slot, _jogBend[slot].OnJog(action.Value, _nowSeconds()));
+                }
+                else
+                {
+                    // PAUSED: scrub the platter to find a cue, like a record under the hand.
+                    _engine.Jog(slot, action.Value * _jogSettings.PausedSecondsPerRevolution);
+                    RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+                }
                 break;
             case PerformanceActionKind.DeckPitch:
                 _engine.SetPitch(slot, action.Value, action.InputMode == ActionInputMode.Relative);

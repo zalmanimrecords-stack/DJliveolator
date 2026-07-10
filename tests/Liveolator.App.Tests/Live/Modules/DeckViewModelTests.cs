@@ -232,6 +232,39 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
+    public async Task JogBend_EmitsATemporaryPitchBend_FromTheDragVelocity_NotASeek()
+    {
+        // Dragging the platter while PLAYING is a beat-match nudge: the drag's angular velocity maps to a
+        // temporary DeckPitchBend (via the shared JogMath), and never a DeckSeek. 0.5 rev/s * 0.04 = 0.02.
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+        dispatcher.Dispatched.Clear();
+
+        await vm.JogBendCommand.Execute(0.5).ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPitchBend, action.Kind);
+        Assert.Equal(ActionInputMode.Absolute, action.InputMode);
+        Assert.Equal(1, action.Slot);
+        Assert.Equal(0.02, action.Value, precision: 6);
+    }
+
+    [Fact]
+    public async Task JogBendRelease_RestoresTheNormalRate_WithAZeroBend()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.Dispatched.Clear();
+
+        await vm.JogBendReleaseCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckPitchBend, action.Kind);
+        Assert.Equal(0.0, action.Value, precision: 9);
+        Assert.Equal(0, action.Slot);
+    }
+
+    [Fact]
     public void StemFeedback_LightsTheMatchingButton_AndSetsAvailability()
     {
         var dispatcher = new FakeDispatcher();

@@ -37,6 +37,12 @@ public class Jog : Control
     public static readonly StyledProperty<ICommand?> SeekCommandProperty =
         AvaloniaProperty.Register<Jog, ICommand?>(nameof(SeekCommand));
 
+    public static readonly StyledProperty<ICommand?> BendCommandProperty =
+        AvaloniaProperty.Register<Jog, ICommand?>(nameof(BendCommand));
+
+    public static readonly StyledProperty<ICommand?> BendReleaseCommandProperty =
+        AvaloniaProperty.Register<Jog, ICommand?>(nameof(BendReleaseCommand));
+
     public static readonly StyledProperty<IBrush> ArcBrushProperty =
         AvaloniaProperty.Register<Jog, IBrush>(nameof(ArcBrush), Brushes.DodgerBlue);
 
@@ -81,7 +87,16 @@ public class Jog : Control
     /// <summary>Spin tick interval — ~60 fps, smooth enough for the platter without churning the UI thread.</summary>
     private static readonly TimeSpan SpinInterval = TimeSpan.FromMilliseconds(1000.0 / 60.0);
 
+    /// <summary>Clamp the gap between pointer moves before dividing, so a stalled frame (huge dt) or a
+    /// burst of moves (tiny dt) can't spike the bend velocity.</summary>
+    private const double MinBendDtSeconds = 0.004;
+    private const double MaxBendDtSeconds = 0.100;
+
     private bool _dragging;
+    // This drag is a pitch-bend (deck was playing at press), not a scrub-seek. Captured at press so the
+    // gesture stays consistent even if playback state flips mid-drag.
+    private bool _bendMode;
+    private double _lastMoveMs;
     private double _lastAngleRadians;
     private double _baseFraction;
     private double _accumulatedRadians;
@@ -108,8 +123,17 @@ public class Jog : Control
     /// <summary>Playhead position as a 0..1 track fraction; drives the progress ring and marker.</summary>
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
 
-    /// <summary>Invoked with the dragged-to absolute 0..1 fraction (the deck's click-to-seek action).</summary>
+    /// <summary>Invoked with the dragged-to absolute 0..1 fraction (the deck's click-to-seek action).
+    /// Used while the deck is PAUSED — dragging then scrubs the track to find a cue.</summary>
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
+
+    /// <summary>Invoked while the deck is PLAYING with the drag's angular velocity (rev/s, clockwise
+    /// positive): the platter then applies a temporary pitch-bend (beat-match nudge) instead of seeking,
+    /// like a real DJ jog. Paired with <see cref="BendReleaseCommand"/>.</summary>
+    public ICommand? BendCommand { get => GetValue(BendCommandProperty); set => SetValue(BendCommandProperty, value); }
+
+    /// <summary>Invoked (no argument) when a playing-drag is released, so the deck restores its normal rate.</summary>
+    public ICommand? BendReleaseCommand { get => GetValue(BendReleaseCommandProperty); set => SetValue(BendReleaseCommandProperty, value); }
 
     public IBrush ArcBrush { get => GetValue(ArcBrushProperty); set => SetValue(ArcBrushProperty, value); }
     public IBrush TrackBrush { get => GetValue(TrackBrushProperty); set => SetValue(TrackBrushProperty, value); }
@@ -181,6 +205,18 @@ public class Jog : Control
     {
         double turns = accumulatedRadians / (2.0 * Math.PI);
         return Math.Clamp(baseFraction + (turns * SeekTrackFractionPerTurn), 0.0, 1.0);
+    }
+
+    /// <summary>The drag's angular velocity in signed revolutions/second (clockwise positive), from a
+    /// per-move rotation <paramref name="deltaRadians"/> over <paramref name="dtSeconds"/>. The interval is
+    /// clamped so a stalled frame or a burst of moves can't spike it; non-finite input yields 0. This is the
+    /// input the playing-jog pitch-bend is derived from (via the shared <c>JogMath</c>).</summary>
+    internal static double AngularVelocityRevPerSecond(double deltaRadians, double dtSeconds)
+    {
+        if (!double.IsFinite(deltaRadians) || !double.IsFinite(dtSeconds))
+            return 0.0;
+        double dt = Math.Clamp(dtSeconds, MinBendDtSeconds, MaxBendDtSeconds);
+        return (deltaRadians / (2.0 * Math.PI)) / dt;
     }
 
     /// <summary>A 12" record spins at 33 1/3 RPM; the centre medusa turns at that real vinyl speed so the
@@ -432,10 +468,19 @@ public class Jog : Control
         if (!IsEnabled)
             return;
         _dragging = true;
-        _baseFraction = Math.Clamp(Progress, 0, 1);
-        _scrubFraction = _baseFraction;
-        _accumulatedRadians = 0;
+        // Playing deck (IsSpinning is bound to IsPlaying) → the drag pitch-bends; paused → it scrubs.
+        _bendMode = IsSpinning;
         _lastAngleRadians = AngleAt(e.GetPosition(this));
+        if (_bendMode)
+        {
+            _lastMoveMs = e.Timestamp;
+        }
+        else
+        {
+            _baseFraction = Math.Clamp(Progress, 0, 1);
+            _scrubFraction = _baseFraction;
+            _accumulatedRadians = 0;
+        }
         Focus();
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -450,14 +495,27 @@ public class Jog : Control
         double angle = AngleAt(e.GetPosition(this));
         double delta = NormalizeAngle(angle - _lastAngleRadians);
         _lastAngleRadians = angle;
-        _accumulatedRadians += delta;
 
-        double fraction = ScrubFraction(_baseFraction, _accumulatedRadians);
-        if (Math.Abs(fraction - _scrubFraction) >= SeekEpsilon)
+        if (_bendMode)
         {
-            _scrubFraction = fraction;
-            InvalidateVisual();
-            ExecuteSeek(fraction);
+            // PLAYING: turn the drag speed into a temporary pitch-bend (nudge), never a seek. Each move
+            // re-drives the bend, so the deck holds the nudge while the finger keeps moving and snaps back
+            // once it stops (the deck's own restore window) or the drag is released.
+            double dtSeconds = (e.Timestamp - _lastMoveMs) / 1000.0;
+            _lastMoveMs = e.Timestamp;
+            ExecuteBend(AngularVelocityRevPerSecond(delta, dtSeconds));
+        }
+        else
+        {
+            // PAUSED: scrub the platter to an absolute position to find a cue.
+            _accumulatedRadians += delta;
+            double fraction = ScrubFraction(_baseFraction, _accumulatedRadians);
+            if (Math.Abs(fraction - _scrubFraction) >= SeekEpsilon)
+            {
+                _scrubFraction = fraction;
+                InvalidateVisual();
+                ExecuteSeek(fraction);
+            }
         }
 
         e.Handled = true;
@@ -470,6 +528,10 @@ public class Jog : Control
         {
             _dragging = false;
             e.Pointer.Capture(null);
+            // A playing-drag release restores the deck's normal rate immediately (no waiting on a timeout).
+            if (_bendMode)
+                ExecuteBendRelease();
+            _bendMode = false;
             InvalidateVisual();
             e.Handled = true;
         }
@@ -480,6 +542,20 @@ public class Jog : Control
         ICommand? command = SeekCommand;
         if (command is not null && command.CanExecute(fraction))
             command.Execute(fraction);
+    }
+
+    private void ExecuteBend(double revPerSecond)
+    {
+        ICommand? command = BendCommand;
+        if (command is not null && command.CanExecute(revPerSecond))
+            command.Execute(revPerSecond);
+    }
+
+    private void ExecuteBendRelease()
+    {
+        ICommand? command = BendReleaseCommand;
+        if (command is not null && command.CanExecute(null))
+            command.Execute(null);
     }
 
     // atan2 in screen space (y grows downward) increases clockwise, so a clockwise drag yields a

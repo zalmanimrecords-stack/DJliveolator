@@ -123,6 +123,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // first-beat anchor (where beats land). Drives which grid line carries the red bar marker. Auto-set from
     // the analyzed downbeat when confident, or placed by the DJ via SET ONE; 0 = unknown → index 0 is the bar.
     private double _downbeatSeconds;
+    // The track's detected kick strike times (seconds), from analysis. SET PHASE and one-shot SYNC snap the
+    // grid onto the kick nearest the playhead from this list, so alignment lands on the real transient
+    // rather than the raw playhead. Empty until analysis is known.
+    private IReadOnlyList<double> _kickOnsets = Array.Empty<double>();
     private int _downbeatBarOffset;
     private double _durationSeconds;
     private double _zoomWindow;
@@ -213,14 +217,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 0.0, Slot: slot)),
             canEmit);
 
-        // One-shot Sync (owner requirement): a single press beatmatches tempo + snaps beat-phase onto the
-        // other deck's kick grid ONCE, preserving the musical key (the engine engages key-lock), then leaves
-        // the deck free for manual NUDGE — no continuous latch fighting the DJ. Momentary; the UI and a MIDI
-        // controller share it. (A latching "Sync Lock" via DeckSyncToggle stays available as a MIDI mapping
-        // target for controllers that want a hold-lock; the on-screen key is deliberately the one-shot.)
+        // One-shot Sync (owner requirement): a single press does it all, once, then leaves the deck free —
+        // no continuous latch fighting the DJ. First it auto-SETs PHASE (snaps this deck's grid onto the
+        // real kick nearest the playhead, via EmitGridHere) so alignment lands on the true transient even
+        // when analysis put the grid a hair off; then DeckSyncOnce beatmatches + phase-aligns to the other
+        // deck, preserving the musical key (the engine engages key-lock). The DeckSetFirstBeat from the
+        // snap is dispatched first, so the engine's align uses the corrected grid. Momentary; a latching
+        // "Sync Lock" (DeckSyncToggle) stays available as a MIDI mapping target for controllers.
         SyncCommand = ReactiveCommand.Create(
-            () => _dispatcher?.Dispatch(new PerformanceAction(
-                PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot)),
+            () =>
+            {
+                EmitGridHere(); // auto SET PHASE to the nearest kick before matching
+                _dispatcher?.Dispatch(new PerformanceAction(
+                    PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot));
+            },
             canEmit);
 
         // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
@@ -268,8 +278,24 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             _dispatcher?.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: 0, Slot: slot));
         };
-        NudgeBendDownCommand = ReactiveCommand.Create(() => PitchBendTap(-PitchBendFraction), canEmit);
-        NudgeBendUpCommand = ReactiveCommand.Create(() => PitchBendTap(+PitchBendFraction), canEmit);
+        NudgeBendDownCommand = ReactiveCommand.Create(() => EmitBend(-PitchBendFraction), canEmit);
+        NudgeBendUpCommand = ReactiveCommand.Create(() => EmitBend(+PitchBendFraction), canEmit);
+
+        // Platter drag WHILE PLAYING (the on-screen jog): the drag's angular velocity (rev/s, clockwise
+        // positive) becomes a temporary pitch-bend for beat-matching — never a seek. The velocity→bend
+        // policy is the shared JogMath (identical to the hardware jog). Each move re-arms the restore
+        // window, so pausing the drag snaps the deck back; releasing it restores immediately.
+        JogBendCommand = ReactiveCommand.Create<double>(revPerSecond => EmitBend(JogMath.BendFraction(
+            revPerSecond,
+            JogWheelSettings.DefaultBendGainPerRevPerSecond,
+            JogWheelSettings.DefaultDeadzoneRevPerSecond,
+            JogWheelSettings.DefaultBendMaxFraction)), canEmit);
+        JogBendReleaseCommand = ReactiveCommand.Create(() =>
+        {
+            _pitchBendRestore.Stop();
+            _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: 0.0, Slot: slot));
+        }, canEmit);
 
         // Grid edit: slide a beat line onto the kick under the playhead
         // (re-phase the BEAT GRID) via DeckSetFirstBeat. Changes the analyzed grid/sync phase only — never
@@ -790,13 +816,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             : Array.Empty<double>();
     }
 
-    // Slide the grid so a beat line lands on the kick under the playhead: emit DeckSetFirstBeat with the
-    // within-beat anchor derived from the current position. No-op until tempo + duration are known.
+    // Slide the grid so a beat line lands on the KICK nearest the playhead. Snaps to the analyzed kick
+    // transient (KickGridSnap) so it lands on the real kick, not on wherever the playhead happened to stop;
+    // with no kick data it falls back to folding the raw playhead. No-op until tempo + duration are known.
     private void EmitGridHere()
     {
         if (_trackBpm <= 0 || _durationSeconds <= 0)
             return;
-        double anchor = GridAnchorAtPlayhead(_progress, _durationSeconds, _trackBpm);
+        double playheadSeconds = Math.Clamp(_progress, 0.0, 1.0) * _durationSeconds;
+        double anchor = KickGridSnap.NearestKickAnchor(
+            _kickOnsets, playheadSeconds, _trackBpm,
+            fallbackAnchor: GridAnchorAtPlayhead(_progress, _durationSeconds, _trackBpm));
         _dispatcher?.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: anchor, Slot: _slot));
     }
@@ -935,6 +965,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>NUDGE ► — momentary pitch-bend UP: briefly speeds the deck so its beats drift forward.</summary>
     public ReactiveCommand<Unit, Unit> NudgeBendUpCommand { get; }
+
+    /// <summary>On-screen platter drag WHILE PLAYING — invoked with the drag's angular velocity (rev/s):
+    /// applies a temporary pitch-bend (beat-match nudge), never a seek. Paired with
+    /// <see cref="JogBendReleaseCommand"/>, which restores the deck's normal rate on release.</summary>
+    public ReactiveCommand<double, Unit> JogBendCommand { get; }
+
+    /// <summary>Ends the platter pitch-bend when the drag is released, restoring the deck's normal rate.</summary>
+    public ReactiveCommand<Unit, Unit> JogBendReleaseCommand { get; }
 
     /// <summary>True when pitch-bend can be emitted (the realtime engine is wired and a track is loaded).</summary>
     public bool CanPitchBend => IsEnabled && _hasLoadedTrack;
@@ -1177,12 +1215,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // Emit a momentary pitch-bend and (re)arm the restore window: the deck bends its rate by bendFraction
     // now and snaps back to its normal rate when the window elapses. Rapid taps re-arm the window, so a
     // press-and-tap holds the bend; this slides the deck's phase with no position skip (manual beat-match).
-    private void PitchBendTap(double bendFraction)
+    private void EmitBend(double bendFraction)
     {
         if (_dispatcher is null)
             return;
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckPitchBend, ActionInputMode.Absolute, Value: bendFraction, Slot: _slot));
+        // (Re)arm the restore window: if no further bend arrives (the platter drag pauses, or a NUDGE tap
+        // ends), the deck snaps back to its normal rate. A held drag re-arms it on every move.
         _pitchBendRestore.Stop();
         _pitchBendRestore.Start();
     }
@@ -1444,6 +1484,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
         _downbeatSeconds = 0;     // re-resolved below from analysis (or set by SET ONE / a restore)
+        _kickOnsets = Array.Empty<double>(); // the track's kick times, for SET PHASE / SYNC kick-snap
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
         UpdateTimeTexts();        // back to placeholders until the new track's duration is known
         this.RaisePropertyChanged(nameof(KickAnchorFraction));
@@ -1451,6 +1492,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
 
         BpmResult? analysis = _analysisInfo?.Invoke(trackPath);
+        _kickOnsets = analysis?.KickOnsetsSeconds ?? Array.Empty<double>();
 
         // Self-heal a load that arrived without analysis (e.g. a deck restored from a saved session whose
         // BPM predates analysis, or a queue load): pull the CURRENT catalog BPM + first-beat and apply them
@@ -1514,6 +1556,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             if (analysis is { Bpm: > 0 })
             {
+                _kickOnsets = analysis.KickOnsetsSeconds; // so SET PHASE / SYNC can kick-snap this track
                 DispatchAnalyzedGrid(analysis);
                 DispatchAnalyzedDownbeat(analysis);
             }

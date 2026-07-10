@@ -456,9 +456,7 @@ public class DeckActionHandlerTests
     public void Jog_WhilePaused_UsesPlatterScrubSensitivityAndRaisesSeekFeedback()
     {
         var engine = new FakeMultiDeckEngine();
-        var handler = new DeckActionHandler(
-            engine,
-            new JogWheelSettings(PausedSecondsPerRevolution: 1.8, PlayingSecondsPerRevolution: 0.2));
+        var handler = new DeckActionHandler(engine, new JogWheelSettings(PausedSecondsPerRevolution: 1.8));
         ActionFeedbackChanged? feedback = null;
         handler.FeedbackChanged += (_, change) =>
         {
@@ -470,23 +468,65 @@ public class DeckActionHandlerTests
             PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: 1.0, Slot: 1));
 
         Assert.Equal((1, 1.8), Assert.Single(engine.Jogs));
+        Assert.Empty(engine.Bends);           // paused = scrub, never a bend
         Assert.NotNull(feedback);
         Assert.Equal(1, feedback!.Slot);
     }
 
     [Fact]
-    public void Jog_WhilePlaying_UsesFineSensitivity()
+    public void Jog_WhilePlaying_BendsThePitchInsteadOfSeeking()
+    {
+        // Standard DJ jog: turning the wheel while playing nudges the tempo (a temporary pitch-bend), it
+        // does NOT scrub the playhead. So the engine sees a bend, no jog/seek, and no seek feedback fires.
+        var engine = new FakeMultiDeckEngine();
+        engine.SetPlaying(0, true);
+        double now = 0.0;
+        var handler = new DeckActionHandler(engine, null, () => now);
+        ActionFeedbackChanged? seekFeedback = null;
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckSeek)
+                seekFeedback = change;
+        };
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: 0.02, Slot: 0));
+        now = 0.005;
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: 0.02, Slot: 0));
+
+        Assert.Empty(engine.Jogs);            // playing = bend, never a scrub
+        Assert.NotEmpty(engine.Bends);
+        Assert.All(engine.Bends, b => Assert.Equal(0, b.Slot));
+        Assert.True(engine.Bends[^1].Bend > 0); // clockwise/forward turn speeds the deck up
+        Assert.Null(seekFeedback);            // a bend moves nothing on the transport
+    }
+
+    [Fact]
+    public void PumpJogRelease_AfterPlayingJogTicksStop_RestoresTheNormalRate()
     {
         var engine = new FakeMultiDeckEngine();
         engine.SetPlaying(0, true);
+        double now = 0.0;
         var handler = new DeckActionHandler(
-            engine,
-            new JogWheelSettings(PausedSecondsPerRevolution: 1.8, PlayingSecondsPerRevolution: 0.2));
+            engine, new JogWheelSettings(ReleaseTimeoutMs: 120.0), () => now);
 
         handler.Handle(new PerformanceAction(
-            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: -0.5, Slot: 0));
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Value: 0.02, Slot: 0)); // bend on
+        int bendsAfterJog = engine.Bends.Count;
 
-        Assert.Equal((0, -0.1), Assert.Single(engine.Jogs));
+        now = 0.05;                    // ticks still recent — no release yet
+        handler.PumpJogRelease();
+        Assert.Equal(bendsAfterJog, engine.Bends.Count);
+
+        now = 0.20;                    // ticks stopped for > 120 ms — snap back to normal rate
+        handler.PumpJogRelease();
+        Assert.Equal((0, 0.0), engine.Bends[^1]);
+
+        now = 0.50;                    // released only once — no repeated PitchBend(0) churn
+        int bendsAfterRelease = engine.Bends.Count;
+        handler.PumpJogRelease();
+        Assert.Equal(bendsAfterRelease, engine.Bends.Count);
     }
 
     [Fact]

@@ -2,10 +2,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
              xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Libraries.LibrariesView"
              x:DataType="lib:LibrariesViewModel">
 
-  <Grid RowDefinitions="Auto,Auto,*">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
 
     <!-- sub-bar -->
     <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
@@ -347,5 +348,30 @@
       </Border>
 
     </Grid>
+
+    <!-- bottom: whole-track waveform of the selected track, with its hot-cue positions marked and a
+         one-click "Auto Hot-Cue" button. Display-only (no SeekCommand bound). -->
+    <Border Grid.Row="3" Classes="panel" Margin="0,16,0,0" Height="150"
+            IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <DockPanel Margin="12">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+          <TextBlock Classes="section" Text="Waveform" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Classes="accent" Content="Auto Hot-Cue"
+                  Command="{Binding AutoCueSelectedCommand}"
+                  ToolTip.Tip="Place automatic hot cues on this track (drums, drops, structure)" />
+        </Grid>
+        <Grid>
+          <controls:WaveformStrip Peaks="{Binding Waveform}" KickPeaks="{Binding KickPeaks}"
+                                  MidPeaks="{Binding MidPeaks}" HighPeaks="{Binding HighPeaks}"
+                                  HotCueMarkers="{Binding HotCueMarkers}" ZoomWindow="0"
+                                  IsVisible="{Binding WaveformStatus, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+          <!-- Why there's no waveform (loading / offline / undecodable) — shown instead of a blank strip. -->
+          <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     TextWrapping="Wrap" TextAlignment="Center" MaxWidth="380"
+                     Text="{Binding WaveformStatus}"
+                     IsVisible="{Binding WaveformStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </Grid>
+      </DockPanel>
+    </Border>
   </Grid>
 </UserControl>

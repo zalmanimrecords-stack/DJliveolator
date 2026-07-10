@@ -589,7 +589,14 @@ public static class ServiceConfig
         };
         if (realtimeUp)
         {
-            handlers.Add(new DeckActionHandler(deckEngine!));
+            var deckHandler = new DeckActionHandler(deckEngine!);
+            handlers.Add(deckHandler);
+            // An endless jog encoder sends no "release", so a playing-jog pitch-bend is snapped back once
+            // the ticks stop by polling the handler off the UI thread (doc 11 / jog-bend). Registered as a
+            // singleton so it shares the provider's lifetime and is disposed on shutdown with the engine.
+            services.AddSingleton(new JogReleasePump(
+                deckHandler.PumpJogRelease,
+                logger: loggerFactory.CreateLogger<JogReleasePump>()));
         }
 
         var dispatcher = new PerformanceActionDispatcher(
@@ -743,6 +750,7 @@ public static class ServiceConfig
             sp.GetRequiredService<TrackContextActions>(),
             autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
             hotCueStore: sp.GetService<IHotCueStore>(),
+            waveformProvider: sp.GetService<IWaveformProvider>(),
             importService: sp.GetService<LibraryImportService>(),
             importers: sp.GetServices<ILibraryImporter>().ToList(),
             folderImporters: sp.GetServices<IFolderLibraryImporter>().ToList(),
@@ -895,6 +903,7 @@ public static class ServiceConfig
         foreach (PlaylistAudioPlayer player in provider.GetServices<PlaylistAudioPlayer>())
             _ = player;
         provider.GetService<MasterClockPump>()?.Start();
+        provider.GetService<JogReleasePump>()?.Start();
         return provider;
     }
 
