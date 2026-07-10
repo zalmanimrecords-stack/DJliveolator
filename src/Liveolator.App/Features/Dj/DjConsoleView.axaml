@@ -40,7 +40,8 @@
             </Border>
           </Grid>
           <Grid ColumnDefinitions="20,*">
-            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+            <TextBlock Grid.Column="0" Classes="mono" FontWeight="SemiBold"
+                       Foreground="{DynamicResource DeckBIdentity}"
                        VerticalAlignment="Center" Text="B" />
             <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
                     BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">

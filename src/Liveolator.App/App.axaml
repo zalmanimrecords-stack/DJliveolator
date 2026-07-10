@@ -27,6 +27,13 @@
     <Color x:Key="AccentDarkColor">#1E5EC5</Color>
     <Color x:Key="AccentWellColor">#10294E</Color>
     <Color x:Key="AccentInkColor">#FFFFFF</Color>
+    <!-- Deck B identity accent: a deliberate SECOND hue on top of the single house accent, purely for A/B
+         deck identity — so the two decks never read the same under pressure (the Traktor/Engine deck-colour
+         convention). Deck A keeps the house Accent; deck B is this cool teal. No theme overrides these keys,
+         so identity stays stable across skins. Swap this one family to restyle deck B. -->
+    <Color x:Key="DeckBIdentityColor">#35C4D6</Color>
+    <Color x:Key="DeckBIdentityLightColor">#6FDDEA</Color>
+    <Color x:Key="DeckBIdentityDarkColor">#1E8C99</Color>
     <Color x:Key="RedColor">#E5544A</Color>      <!-- the one reserved — blackout / strobe -->
     <Color x:Key="GreenColor">#2F80F6</Color>    <!-- unified to the blue accent -->
     <Color x:Key="AmberColor">#2F80F6</Color>    <!-- unified to the blue accent -->
@@ -93,6 +100,9 @@
     <SolidColorBrush x:Key="Faint" Color="{DynamicResource FaintColor}" />
     <SolidColorBrush x:Key="Accent" Color="{DynamicResource AccentColor}" />
     <SolidColorBrush x:Key="AccentInk" Color="{DynamicResource AccentInkColor}" />
+    <SolidColorBrush x:Key="DeckBIdentity" Color="{DynamicResource DeckBIdentityColor}" />
+    <SolidColorBrush x:Key="DeckBIdentityLight" Color="{DynamicResource DeckBIdentityLightColor}" />
+    <SolidColorBrush x:Key="DeckBIdentityDark" Color="{DynamicResource DeckBIdentityDarkColor}" />
     <SolidColorBrush x:Key="Red" Color="{DynamicResource RedColor}" />
     <SolidColorBrush x:Key="Green" Color="{DynamicResource GreenColor}" />
     <SolidColorBrush x:Key="Amber" Color="{DynamicResource AmberColor}" />

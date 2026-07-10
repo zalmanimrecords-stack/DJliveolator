@@ -16,6 +16,34 @@
       <Setter Property="Foreground" Value="{DynamicResource Green}" />
       <Setter Property="FontWeight" Value="Bold" />
     </Style>
+
+    <!-- Deck colour identity: deck A wears the house Accent, deck B a cool teal (the root's .deck-b class is
+         bound to IsDeckB). Applied to the jog ring and the A/B badge so the two decks never read the same at
+         a glance. Set here — not inline on the controls — so the .deck-b selector can override. -->
+    <Style Selector="controls|Jog.platter">
+      <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Grid.deck-b controls|Jog.platter">
+      <Setter Property="ArcBrush" Value="{DynamicResource DeckBIdentity}" />
+    </Style>
+    <Style Selector="Border.deck-badge">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentLightColor}" />
+      <Setter Property="Background">
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+          <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+          <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
+        </LinearGradientBrush>
+      </Setter>
+    </Style>
+    <Style Selector="Grid.deck-b Border.deck-badge">
+      <Setter Property="BorderBrush" Value="{DynamicResource DeckBIdentityLightColor}" />
+      <Setter Property="Background">
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+          <GradientStop Color="{DynamicResource DeckBIdentityLightColor}" Offset="0" />
+          <GradientStop Color="{DynamicResource DeckBIdentityDarkColor}" Offset="1" />
+        </LinearGradientBrush>
+      </Setter>
+    </Style>
   </UserControl.Styles>
 
   <!-- DJ-tab deck: the same DeckViewModel as the LIVE tab, but laid out jog-first (the platter is the
@@ -27,21 +55,14 @@
          big screen. The fixed rows (header/transport/key/bpm) keep their natural size. Width is
          tier-dependent (Theme/ResponsiveLayout.axaml via .deck-root): a centered 460 column on
          laptops, stretching to fill on wide/4K. VerticalAlignment=Stretch lets the * row claim the slack. -->
-    <Grid Classes="deck-root" Margin="10,8"
+    <Grid Classes="deck-root" Classes.deck-b="{Binding IsDeckB}" Margin="10,8"
           RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
 
       <!-- header: badge · title/meta · elapsed/remaining (bottom margins stand in for the old StackPanel
            Spacing=8, since Grid has no RowSpacing in this Avalonia version) -->
       <Grid Grid.Row="0" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
-        <Border Grid.Column="0" Width="34" Height="34" CornerRadius="3"
-                BorderBrush="{DynamicResource AccentLightColor}" BorderThickness="1"
-                VerticalAlignment="Center">
-          <Border.Background>
-            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-              <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
-              <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
-            </LinearGradientBrush>
-          </Border.Background>
+        <Border Grid.Column="0" Classes="deck-badge" Width="34" Height="34" CornerRadius="3"
+                BorderThickness="1" VerticalAlignment="Center">
           <TextBlock Foreground="{DynamicResource AccentInk}" FontWeight="SemiBold" FontSize="14"
                      HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
         </Border>
@@ -104,7 +125,7 @@
         <controls:Jog Grid.Column="1" Classes="platter" Margin="8,0"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       MinWidth="240" MinHeight="240" Width="{Binding $self.Bounds.Height}"
-                      ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
+                      BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
                       BendCommand="{Binding JogBendCommand}" BendReleaseCommand="{Binding JogBendReleaseCommand}"

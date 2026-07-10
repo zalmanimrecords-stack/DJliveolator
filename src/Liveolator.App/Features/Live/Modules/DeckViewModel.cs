@@ -437,6 +437,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Deck label, "A" or "B".</summary>
     public string DeckId { get; }
 
+    /// <summary>True for deck B — drives the deck-B colour identity in the UI (jog ring, badge, waveform
+    /// label) so the two decks never read the same under pressure (the Traktor/Engine deck-colour convention).</summary>
+    public bool IsDeckB => DeckId == "B";
+
     /// <summary>The loaded track's name, or the no-track placeholder.</summary>
     public string Title
     {

@@ -43,6 +43,16 @@ public sealed class DeckViewModelTests
     }
 
     [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    public void IsDeckB_IsTrueOnlyForTheSecondSlot(int slot, bool expected)
+    {
+        var vm = new DeckViewModel(slot, new FakeDispatcher());
+
+        Assert.Equal(expected, vm.IsDeckB);
+    }
+
+    [Theory]
     [InlineData("High")]
     [InlineData("Mid")]
     [InlineData("Low")]
