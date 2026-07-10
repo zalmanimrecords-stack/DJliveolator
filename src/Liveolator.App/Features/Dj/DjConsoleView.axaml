@@ -16,8 +16,8 @@
 
     <!-- WAVEFORMS — two compressed rows; the amber kick band shows each track's kicks so the downbeats
          line up by eye for sync. Click a strip to seek that deck. ZOOM knob (right) zooms BOTH strips. -->
-    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,10">
-      <Grid ColumnDefinitions="*,Auto" Margin="14,8">
+    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,6">
+      <Grid ColumnDefinitions="*,Auto" Margin="10,6">
         <StackPanel Grid.Column="0" Spacing="5">
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
@@ -76,9 +76,9 @@
          The mixer column is Auto (sizes to the tier-capped cluster) rather than a fixed 300px, so the decks
          take the rest of the width and the whole console scales with the window instead of leaving a fixed
          gap on big screens. -->
-    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="0,0,0,10">
-      <dj:DjDeckView Grid.Column="0" DataContext="{Binding DeckA}" Margin="0,0,16,0" />
-      <dj:DjMixerView Grid.Column="1" DataContext="{Binding Mixer}" Margin="0,0,16,0" />
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="0,0,0,6">
+      <dj:DjDeckView Grid.Column="0" DataContext="{Binding DeckA}" Margin="0,0,10,0" />
+      <dj:DjMixerView Grid.Column="1" DataContext="{Binding Mixer}" Margin="0,0,10,0" />
       <dj:DjDeckView Grid.Column="2" DataContext="{Binding DeckB}" />
     </Grid>
   </Grid>

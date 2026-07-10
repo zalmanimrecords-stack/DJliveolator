@@ -107,6 +107,14 @@
     <Setter Property="CornerRadius" Value="{DynamicResource PanelRadius}" />
   </Style>
 
+  <!-- Settings section group: a fixed-width header+panel pair that flows into columns inside a WrapPanel,
+       so the Settings tabs fill the window width instead of a narrow left column. The Margin is the wrap gap. -->
+  <Style Selector="StackPanel.settings-group">
+    <Setter Property="Width" Value="440" />
+    <Setter Property="Margin" Value="0,0,12,12" />
+    <Setter Property="Spacing" Value="8" />
+  </Style>
+
   <Style Selector="Border.hardware-well">
     <Setter Property="Background" Value="{DynamicResource S2}" />
     <Setter Property="BorderBrush" Value="{DynamicResource Hair}" />

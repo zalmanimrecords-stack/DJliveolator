@@ -51,8 +51,16 @@
     <!-- CornerRadius (not x:Double): the control styles bind these to a CornerRadius property, and a theme
          overwrites them with a CornerRadius. Keeping the default the same type avoids a Double->CornerRadius
          cast on style re-evaluation, which Avalonia does directly and would crash the app. -->
-    <CornerRadius x:Key="PanelRadius">16</CornerRadius>
+    <CornerRadius x:Key="PanelRadius">12</CornerRadius>
     <CornerRadius x:Key="ControlRadius">3</CornerRadius>
+
+    <!-- Density gap tokens: the app-wide spacing rhythm in one place, so "make it tighter" is a one-line
+         edit here instead of hunting literal Spacing= across every view. Doubles (bind to StackPanel.Spacing
+         as DynamicResources); directional margins stay literal since one token can't express e.g. 0,0,8,0. -->
+    <x:Double x:Key="GapXs">4</x:Double>
+    <x:Double x:Key="GapS">8</x:Double>
+    <x:Double x:Key="GapM">12</x:Double>
+    <x:Double x:Key="GapL">16</x:Double>
 
     <!-- Responsive size tokens (doubles): baseline (scale 1.0) values for knob/fader sizes and the readout
          fonts the DJ reads across a booth. Controls reference these as DynamicResources; MainWindow rewrites

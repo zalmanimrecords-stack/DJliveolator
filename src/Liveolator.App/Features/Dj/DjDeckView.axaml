@@ -27,7 +27,7 @@
          big screen. The fixed rows (header/transport/key/bpm) keep their natural size. Width is
          tier-dependent (Theme/ResponsiveLayout.axaml via .deck-root): a centered 460 column on
          laptops, stretching to fill on wide/4K. VerticalAlignment=Stretch lets the * row claim the slack. -->
-    <Grid Classes="deck-root" Margin="14,10"
+    <Grid Classes="deck-root" Margin="10,8"
           RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
 
       <!-- header: badge · title/meta · elapsed/remaining (bottom margins stand in for the old StackPanel
@@ -102,16 +102,17 @@
              to its own measured height, so it grows with the panel on a big screen (height-driven) instead
              of being pinned to the column width. Centered in the column; a per-tier MaxHeight
              (Theme/ResponsiveLayout.axaml via .platter) keeps it sane. The Jog draws off min(width,height). -->
-        <controls:Jog Grid.Column="1" Classes="platter"
+        <controls:Jog Grid.Column="1" Classes="platter" Margin="8,0"
                       HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       MinWidth="120" MinHeight="120" Width="{Binding $self.Bounds.Height}"
                       ArcBrush="{DynamicResource Accent}" BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
+                      BendCommand="{Binding JogBendCommand}" BendReleaseCommand="{Binding JogBendReleaseCommand}"
                       IsEnabled="{Binding IsEnabled}"
                       KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
                       IsSpinning="{Binding IsPlaying}"
-                      ToolTip.Tip="Drag the platter to seek — clockwise advances, counter-clockwise rewinds" />
+                      ToolTip.Tip="Playing: drag to pitch-bend (beat-match nudge — no skip). Paused: drag to scrub/cue — clockwise advances, counter-clockwise rewinds" />
 
         <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="84">
           <TextBlock Classes="section" Text="LOOP" />

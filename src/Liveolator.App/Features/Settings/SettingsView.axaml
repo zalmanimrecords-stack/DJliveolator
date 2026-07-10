@@ -13,10 +13,14 @@
 
       <TabItem Header="Audio">
         <ScrollViewer>
-          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+          <!-- Sections flow into columns (WrapPanel) so the panels fill the window width instead of
+               stacking in a narrow left column with a dead right half. Each group is a fixed-width
+               header+panel pair; the wrap gap is the child Margin. -->
+          <WrapPanel Margin="14" MaxWidth="1180">
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="MAIN OUTPUT" />
             <Border Classes="panel">
-              <StackPanel Spacing="12" Margin="14">
+              <StackPanel Spacing="12" Margin="10">
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Sound card / output device — drives the master mix" />
                   <ComboBox ItemsSource="{Binding OutputDevices}"
@@ -51,10 +55,12 @@
                 </StackPanel>
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="HEADPHONES (CUE)" />
             <Border Classes="panel">
-              <StackPanel Spacing="12" Margin="14">
+              <StackPanel Spacing="12" Margin="10">
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Headphone output device — same card as the master, or a separate one" />
                   <ComboBox ItemsSource="{Binding CueOutputDevices}"
@@ -69,7 +75,7 @@
                 </StackPanel>
 
                 <StackPanel Spacing="4">
-                  <TextBlock Classes="faint" Text="Headphone channels — e.g. outputs 3/4 on a CMD STUDIO 2A while the master uses 1/2" />
+                  <TextBlock Classes="faint" TextWrapping="Wrap" Text="Headphone channels — e.g. outputs 3/4 on a CMD STUDIO 2A while the master uses 1/2" />
                   <ComboBox ItemsSource="{Binding CueOutputPairs}"
                             SelectedItem="{Binding SelectedCueOutputPair}"
                             HorizontalAlignment="Stretch">
@@ -82,10 +88,12 @@
                 </StackPanel>
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="LIVE CAPTURE" />
             <Border Classes="panel">
-              <StackPanel Spacing="4" Margin="14">
+              <StackPanel Spacing="4" Margin="10">
                 <TextBlock Classes="faint" Text="Capture source (system loopback / line-in) — feeds the live engine" />
                 <ComboBox ItemsSource="{Binding CaptureDevices}"
                           SelectedItem="{Binding SelectedCaptureDevice}"
@@ -98,16 +106,18 @@
                 </ComboBox>
               </StackPanel>
             </Border>
-          </StackPanel>
+           </StackPanel>
+          </WrapPanel>
         </ScrollViewer>
       </TabItem>
 
       <TabItem Header="MIDI">
         <ScrollViewer>
-          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+          <!-- Single column, but wide: the mapping/learn list below wants width, not a second column. -->
+          <StackPanel Margin="14" Spacing="12" MaxWidth="900" HorizontalAlignment="Left">
             <TextBlock Classes="section" Text="MIDI CONTROLLERS" />
             <Border Classes="panel">
-              <StackPanel Spacing="12" Margin="14">
+              <StackPanel Spacing="12" Margin="10">
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Controller input (Push / CMD STUDIO 2A)" />
                   <ComboBox ItemsSource="{Binding MidiInputDevices}"
@@ -141,26 +151,31 @@
 
       <TabItem Header="Appearance">
         <ScrollViewer>
-          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+          <WrapPanel Margin="14" MaxWidth="1180">
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="THEME" />
             <Border Classes="panel">
-              <StackPanel Spacing="8" Margin="14">
+              <StackPanel Spacing="8" Margin="10">
                 <TextBlock Classes="faint" Text="UI theme — the whole look (colours, surfaces, background)." />
                 <ComboBox ItemsSource="{Binding UiThemeIds}"
                           SelectedItem="{Binding ActiveUiThemeId}"
                           HorizontalAlignment="Stretch" />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                  <Button Classes="accent" Content="Apply" Command="{Binding ApplyThemeCommand}" />
-                  <TextBlock Classes="faint" VerticalAlignment="Center"
+                <Grid ColumnDefinitions="Auto,*">
+                  <Button Grid.Column="0" Classes="accent" Content="Apply" Command="{Binding ApplyThemeCommand}" />
+                  <TextBlock Grid.Column="1" Classes="faint" VerticalAlignment="Center" Margin="10,0,0,0"
+                             TextWrapping="Wrap"
                              Text="Loads the selected theme now — no restart. Save to keep it for next launch." />
-                </StackPanel>
+                </Grid>
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="CONTROLS (ADVANCED)" />
             <Border Classes="panel">
-              <StackPanel Spacing="12" Margin="14">
+              <StackPanel Spacing="12" Margin="10">
                 <TextBlock Classes="faint"
+                           TextWrapping="Wrap"
                            Text="Optional per-control skins, on top of the theme. Leave on (built-in) to follow the theme." />
                 <StackPanel Spacing="4">
                   <TextBlock Classes="faint" Text="Knob skin (applies on Save)" />
@@ -176,7 +191,8 @@
                 </StackPanel>
               </StackPanel>
             </Border>
-          </StackPanel>
+           </StackPanel>
+          </WrapPanel>
         </ScrollViewer>
       </TabItem>
 
@@ -207,10 +223,11 @@
 
       <TabItem Header="Extensions">
         <ScrollViewer>
-          <StackPanel Margin="14" Spacing="20" MaxWidth="560" HorizontalAlignment="Left">
+          <WrapPanel Margin="14" MaxWidth="1180">
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="EXTENSIONS" />
             <Border Classes="panel">
-              <StackPanel Spacing="10" Margin="14">
+              <StackPanel Spacing="10" Margin="10">
                 <TextBlock Classes="faint" Text="Local signed package (.liveolator-pack)" />
                 <TextBox Classes="spartan"
                          Watermark="C:\path\to\pack.liveolator-pack"
@@ -245,10 +262,12 @@
                 </StackPanel>
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="ADVANCED ANALYSIS" />
             <Border Classes="panel">
-              <StackPanel Spacing="10" Margin="14">
+              <StackPanel Spacing="10" Margin="10">
                 <Button Classes="accent" Content="Enable advanced analysis"
                         Command="{Binding EnableAdvancedAnalysisCommand}"
                         IsEnabled="{Binding CanEnableAdvancedAnalysis}" />
@@ -259,10 +278,12 @@
                            Text="Load tracks as 4 separated stems (drums / bass / vocals / other) so each can be muted. Requires advanced analysis and per-track &quot;Separate stems&quot; (right-click a track). Four FLAC stems per track use extra disk. Takes effect on the next launch." />
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="ONLINE ENRICHMENT" />
             <Border Classes="panel">
-              <StackPanel Spacing="10" Margin="14">
+              <StackPanel Spacing="10" Margin="10">
                 <TextBlock Classes="faint" Text="GetSongBPM API key (fills missing genre/BPM/key during a scan)" />
                 <TextBox Classes="spartan"
                          Watermark="getsongbpm.com API key"
@@ -271,7 +292,8 @@
                            Text="Free courtesy key from getsongbpm.com. Takes effect on the next launch." />
               </StackPanel>
             </Border>
-          </StackPanel>
+           </StackPanel>
+          </WrapPanel>
         </ScrollViewer>
       </TabItem>
 

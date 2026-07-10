@@ -34,7 +34,7 @@
     <Border DockPanel.Dock="Top"
             BorderBrush="{DynamicResource Hair}"
             BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,8">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,6">
 
         <!-- LEFT: passive routing / connectivity / telemetry status (one quiet tier) -->
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -222,7 +222,7 @@
     </Border>
 
     <!-- selected page (resolved by ViewLocator) -->
-    <ContentControl Margin="16" Content="{Binding CurrentTab.Page}" />
+    <ContentControl Margin="12" Content="{Binding CurrentTab.Page}" />
 
   </DockPanel>
 </Window>

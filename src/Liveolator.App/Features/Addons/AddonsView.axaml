@@ -4,10 +4,10 @@
              xmlns:addons="clr-namespace:Liveolator.App.Features.Addons"
              x:Class="Liveolator.App.Features.Addons.AddonsView"
              x:DataType="addons:AddonsViewModel">
-  <Grid ColumnDefinitions="320,*" Margin="24">
+  <Grid ColumnDefinitions="300,*" Margin="14">
 
     <!-- Add-on list -->
-    <DockPanel Grid.Column="0" Margin="0,0,20,0">
+    <DockPanel Grid.Column="0" Margin="0,0,12,0">
       <TextBlock DockPanel.Dock="Top" Classes="section" Text="ADD-ONS" Margin="0,0,0,12" />
       <ListBox Classes="rows"
                ItemsSource="{Binding Addons}"
@@ -32,17 +32,18 @@
 
     <!-- Selected add-on settings -->
     <ScrollViewer Grid.Column="1">
-      <StackPanel Spacing="20" MaxWidth="640" HorizontalAlignment="Left">
+      <StackPanel MaxWidth="1180" HorizontalAlignment="Left">
 
-        <!-- VU meter: swap the dial-face background image -->
+        <!-- VU meter: swap the dial-face background image. Sections flow into columns (WrapPanel) so the
+             cards fill the width instead of a tall narrow ribbon with a dead right half. -->
         <StackPanel IsVisible="{Binding ShowVuMeterSettings}">
-          <StackPanel Spacing="20"
-                      DataContext="{Binding VuMeterSettings}"
-                      x:DataType="addons:VuMeterBackgroundSettingsViewModel">
+          <WrapPanel DataContext="{Binding VuMeterSettings}"
+                     x:DataType="addons:VuMeterBackgroundSettingsViewModel">
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="VU METER — NEEDLE ORIGIN" />
             <Border Classes="panel">
-              <StackPanel Spacing="8" Margin="14">
+              <StackPanel Spacing="8" Margin="10">
                 <TextBlock Classes="faint" TextWrapping="Wrap"
                            Text="Where the needle pivots from. Bottom is the classic VU look (needle points up); Top hangs the needle down. The dial face follows your choice." />
                 <ComboBox ItemsSource="{Binding Origins}"
@@ -50,10 +51,12 @@
                           HorizontalAlignment="Left" MinWidth="220" />
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <TextBlock Classes="section" Text="VU METER — BACKGROUND IMAGE" />
             <Border Classes="panel">
-              <StackPanel Spacing="12" Margin="14">
+              <StackPanel Spacing="12" Margin="10">
                 <TextBlock Classes="faint" Text="Current face (background) image — the needle stays standard" />
                 <SelectableTextBlock Classes="mono" Text="{Binding ImagePath}" TextWrapping="Wrap" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -67,7 +70,9 @@
                 <TextBlock Classes="faint" Text="{Binding Status}" />
               </StackPanel>
             </Border>
+           </StackPanel>
 
+           <StackPanel Classes="settings-group">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Grid.Column="0" Classes="section" Text="AI IMAGE PROMPT (BACKGROUND)"
                          VerticalAlignment="Center" />
@@ -75,13 +80,14 @@
                       Tag="{Binding ImagePrompt}" Click="OnCopyText" />
             </Grid>
             <Border Classes="panel">
-              <StackPanel Spacing="8" Margin="14">
+              <StackPanel Spacing="8" Margin="10">
                 <TextBlock Classes="faint" TextWrapping="Wrap"
                            Text="Paste this into an AI image generator to create a matching background. The app draws the moving needle on top — the prompt tells the tool to leave it out and where the needle pivots." />
                 <SelectableTextBlock Text="{Binding ImagePrompt}" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
-          </StackPanel>
+           </StackPanel>
+          </WrapPanel>
         </StackPanel>
 
         <!-- Add-on with no configurable settings yet -->

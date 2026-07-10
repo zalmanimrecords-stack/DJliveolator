@@ -12,17 +12,17 @@
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <!-- MaxWidth is tier-dependent (Theme/ResponsiveLayout.axaml via the .live-root class) so the page uses
          the full width on large/4K screens instead of the old fixed 1440 cap. -->
-    <StackPanel Classes="live-root" Spacing="16" Margin="0,0,0,8">
+    <StackPanel Classes="live-root" Spacing="8" Margin="0,0,0,6">
 
       <!-- ── DJ ─────────────────────────────────────────────────────────────────────────────────────── -->
       <dj:DjConsoleView DataContext="{Binding Decks}" />
 
       <!-- ── VISUALS ────────────────────────────────────────────────────────────────────────────────── -->
-      <TextBlock Classes="section accent" Margin="2,6,2,0" Text="VISUALS" />
+      <TextBlock Classes="section accent" Margin="2,2,2,0" Text="VISUALS" />
 
       <!-- PROGRAM OUT + VISUAL CONTROL -->
       <Grid ColumnDefinitions="*,320">
-        <ContentControl Grid.Column="0" Content="{Binding ProgramOut}" Margin="0,0,16,0" />
+        <ContentControl Grid.Column="0" Content="{Binding ProgramOut}" Margin="0,0,10,0" />
         <ContentControl Grid.Column="1" Content="{Binding VisualControl}" />
       </Grid>
 

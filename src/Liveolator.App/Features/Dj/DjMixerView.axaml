@@ -15,7 +15,7 @@
     <StackPanel Classes="mixer-root" Margin="14,8" Spacing="6"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
 
-      <Border Classes="hardware-well" Padding="10,8">
+      <Border Classes="hardware-well" Padding="8,6">
         <StackPanel Spacing="6">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <Button Grid.Column="0" Classes="key mixer" Content="A" FontSize="12" Padding="8,3" MinWidth="28"
@@ -35,8 +35,8 @@
       <!-- The MIXER frame: the channel strip (EQ · faders · CUT · CUE) plus the cue LEVEL/MIX, gathered
            inside one well instead of separate sub-frames. The master smart-limiter knobs now live in the
            global top bar (MainWindow.axaml) next to the OS-volume knob. -->
-      <Border Classes="hardware-well" Padding="8,10">
-       <StackPanel Spacing="10">
+      <Border Classes="hardware-well" Padding="8,6">
+       <StackPanel Spacing="8">
         <!-- [A EQ/FLT] · A fader · shared dB scale · B fader · [B EQ/FLT] — the channel EQ + filter knobs
              flank each volume fader, the way a hardware mixer stacks them on the channel strip. The knobs
              are compact (28px) so the strip stays inside the DJ-mixer column without scrolling. -->
