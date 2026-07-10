@@ -22,9 +22,16 @@
          a glance. Set here — not inline on the controls — so the .deck-b selector can override. -->
     <Style Selector="controls|Jog.platter">
       <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
     </Style>
+    <!-- Deck B mirrors deck A: the control flank flips to the right column and the platter hugs the left,
+         so both platters sit inboard against the centre mixer. -->
     <Style Selector="Grid.deck-b controls|Jog.platter">
       <Setter Property="ArcBrush" Value="{DynamicResource DeckBIdentity}" />
+      <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Grid.deck-b StackPanel.deck-flank">
+      <Setter Property="(Grid.Column)" Value="2" />
     </Style>
     <Style Selector="Border.deck-badge">
       <Setter Property="BorderBrush" Value="{DynamicResource AccentLightColor}" />
@@ -85,45 +92,81 @@
            and drags to seek (DeckSeek), flanking the platter the way a controller lays pads beside it.
            This is the elastic (*) row — the platter fills the vertical slack on a big screen. -->
       <Grid Grid.Row="1" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" Width="104">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Classes="key" Content="{Binding HotCueBankLabel}" Height="20"
-                    Padding="6,0" Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
-                    ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />
-          </Grid>
-          <Button Classes="key" Content="AUTO-CUE" Height="20" HorizontalAlignment="Stretch"
-                  Command="{Binding AutoCueCommand}" IsVisible="{Binding CanAutoCue}"
-                  ToolTip.Tip="Auto-place hot cues for the loaded track (drop, breakdown, build, phrases)" />
-          <ItemsControl ItemsSource="{Binding VisibleHotCues}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <UniformGrid Columns="2" />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="m:HotCuePadViewModel">
-                <!-- Shows the cue's name (or pad number) + color strip; auto cues render ghosted. -->
-                <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
-                        Height="34" Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}"
-                        Margin="0,0,4,4" ToolTip.Tip="{Binding CueLabel}">
-                  <Grid RowDefinitions="*,3">
-                    <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
-                               Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
-                  </Grid>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+        <!-- One control column beside the platter (HOT CUES, then LOOP, then NUDGE stacked). It sits on the
+             OUTER edge of each deck and the platter fills the rest toward the centre mixer: deck A → column on
+             the left; deck B → the .deck-b style flips it to the right (Grid.Column 2). The unused Auto column
+             collapses to 0 so there is no dead air on the platter's inner side. -->
+        <StackPanel Classes="deck-flank" Spacing="10" VerticalAlignment="Center" Width="104">
+          <StackPanel Spacing="6">
+            <!-- Bank toggle + AUTO-CUE buttons removed per owner (2026-07-10); both remain reachable via
+                 MIDI/hardware (ToggleHotCueBankCommand / AutoCueCommand still on the VM). -->
+            <TextBlock Classes="section" Text="HOT CUES" />
+            <ItemsControl ItemsSource="{Binding VisibleHotCues}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Columns="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="m:HotCuePadViewModel">
+                  <!-- Shows the cue's name (or pad number) + color strip; auto cues render ghosted. -->
+                  <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                          Height="34" Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}"
+                          Margin="0,0,4,4" ToolTip.Tip="{Binding CueLabel}">
+                    <Grid RowDefinitions="*,3">
+                      <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                                 Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="section" Text="LOOP" />
+            <!-- Loop length knob (1/64 … 8 bars, 12 detents): turn to select the armed length; the value
+                 shows under the knob and on the LOOP key, which arms a loop of that length. -->
+            <StackPanel Spacing="2" HorizontalAlignment="Center">
+              <controls:Knob Width="44" Height="44" Detents="12" HorizontalAlignment="Center"
+                             Value="{Binding LoopLengthKnob, Mode=TwoWay}"
+                             ToolTip.Tip="Loop length — turn to set 1/64 beat up to 8 bars" />
+              <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
+                         Text="{Binding LoopLengthLabel}" />
+            </StackPanel>
+            <!-- Arm a loop of the selected length beside its release (✕). The arm key only ever sets a loop,
+                 so the release is the deck's loop-exit; it lights only while a loop is active. -->
+            <Grid ColumnDefinitions="*,*">
+              <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}"
+                      Content="{Binding LoopLengthLabel}" Height="34"
+                      Margin="0,0,3,0" Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
+                      ToolTip.Tip="Arm a loop of the selected length" />
+              <Button Grid.Column="1" Classes="key" Content="✕" Height="34" Margin="3,0,0,0"
+                      Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
+                      ToolTip.Tip="Release the loop" />
+            </Grid>
+          </StackPanel>
+
+          <StackPanel Spacing="6">
+            <TextBlock Classes="section" Text="NUDGE" />
+            <Grid ColumnDefinitions="*,*">
+              <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
+                      Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
+                      ToolTip.Tip="Nudge — tap to bend the deck slower (beats drift back); tap repeatedly to beat-match. No skip." />
+              <Button Grid.Column="1" Classes="key" Content="►" Height="30"
+                      Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
+                      ToolTip.Tip="Nudge — tap to bend the deck faster (beats drift forward); tap repeatedly to beat-match. No skip." />
+            </Grid>
+          </StackPanel>
         </StackPanel>
 
         <!-- Responsive platter: height-driven (Width tracks its own measured height) so it fills the elastic
-             jog row vertically and stays square + centered. The flanks are widened to shrink the middle column
-             down to the platter's size, so there's no dead air on either side. Per-tier MaxHeight caps it. -->
+             jog row vertically and stays square. It sits in the * column beside the single control flank and
+             is pulled toward the centre mixer (right on deck A, left on deck B via the .deck-b jog style). -->
         <controls:Jog Grid.Column="1" Classes="platter" Margin="8,0"
-                      HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      VerticalAlignment="Stretch"
                       MinWidth="240" MinHeight="240" Width="{Binding $self.Bounds.Height}"
                       BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
@@ -133,39 +176,6 @@
                       KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
                       IsSpinning="{Binding IsPlaying}"
                       ToolTip.Tip="Playing: drag to pitch-bend (beat-match nudge — no skip). Paused: drag to scrub/cue — clockwise advances, counter-clockwise rewinds" />
-
-        <StackPanel Grid.Column="2" Spacing="6" VerticalAlignment="Center" Width="104">
-          <TextBlock Classes="section" Text="LOOP" />
-          <!-- Loop length knob (1/64 … 8 bars, 12 detents): turn to select the armed length; the value
-               shows under the knob and on the LOOP key, which arms a loop of that length. -->
-          <StackPanel Spacing="2" HorizontalAlignment="Center">
-            <controls:Knob Width="44" Height="44" Detents="12" HorizontalAlignment="Center"
-                           Value="{Binding LoopLengthKnob, Mode=TwoWay}"
-                           ToolTip.Tip="Loop length — turn to set 1/64 beat up to 8 bars" />
-            <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
-                       Text="{Binding LoopLengthLabel}" />
-          </StackPanel>
-          <!-- Arm a loop of the selected length beside its release (✕). The arm key only ever sets a loop,
-               so the release is the deck's loop-exit; it lights only while a loop is active. -->
-          <Grid ColumnDefinitions="*,*">
-            <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}"
-                    Content="{Binding LoopLengthLabel}" Height="34"
-                    Margin="0,0,3,0" Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
-                    ToolTip.Tip="Arm a loop of the selected length" />
-            <Button Grid.Column="1" Classes="key" Content="✕" Height="34" Margin="3,0,0,0"
-                    Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
-                    ToolTip.Tip="Release the loop" />
-          </Grid>
-          <TextBlock Classes="section" Text="NUDGE" Margin="0,4,0,0" />
-          <Grid ColumnDefinitions="*,*">
-            <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
-                    Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
-                    ToolTip.Tip="Nudge — tap to bend the deck slower (beats drift back); tap repeatedly to beat-match. No skip." />
-            <Button Grid.Column="1" Classes="key" Content="►" Height="30"
-                    Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
-                    ToolTip.Tip="Nudge — tap to bend the deck faster (beats drift forward); tap repeatedly to beat-match. No skip." />
-          </Grid>
-        </StackPanel>
       </Grid>
 
       <!-- transport: CUE · PLAY · SYNC — the three primary deck actions, TEXT-LABELLED (no hover needed in
