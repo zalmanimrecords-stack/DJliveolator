@@ -63,7 +63,7 @@
          tier-dependent (Theme/ResponsiveLayout.axaml via .deck-root): a centered 460 column on
          laptops, stretching to fill on wide/4K. VerticalAlignment=Stretch lets the * row claim the slack. -->
     <Grid Classes="deck-root" Classes.deck-b="{Binding IsDeckB}" Margin="10,8"
-          RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
+          RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Top">
 
       <!-- header: badge · title/meta · elapsed/remaining (bottom margins stand in for the old StackPanel
            Spacing=8, since Grid has no RowSpacing in this Avalonia version) -->
@@ -96,7 +96,7 @@
              OUTER edge of each deck and the platter fills the rest toward the centre mixer: deck A → column on
              the left; deck B → the .deck-b style flips it to the right (Grid.Column 2). The unused Auto column
              collapses to 0 so there is no dead air on the platter's inner side. -->
-        <StackPanel Classes="deck-flank" Spacing="10" VerticalAlignment="Center" Width="104">
+        <StackPanel Classes="deck-flank" Spacing="10" VerticalAlignment="Center" Width="90">
           <StackPanel Spacing="6">
             <!-- Bank toggle + AUTO-CUE buttons removed per owner (2026-07-10); both remain reachable via
                  MIDI/hardware (ToggleHotCueBankCommand / AutoCueCommand still on the VM). -->
@@ -110,7 +110,7 @@
                 <DataTemplate x:DataType="m:HotCuePadViewModel">
                   <!-- Shows the cue's name (or pad number) + color strip; auto cues render ghosted. -->
                   <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
-                          Height="34" Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}"
+                          Height="30" Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}"
                           Margin="0,0,4,4" ToolTip.Tip="{Binding CueLabel}">
                     <Grid RowDefinitions="*,3">
                       <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
@@ -164,7 +164,7 @@
              is pulled toward the centre mixer (right on deck A, left on deck B via the .deck-b jog style). -->
         <controls:Jog Grid.Column="1" Classes="platter" Margin="8,0"
                       VerticalAlignment="Stretch"
-                      MinWidth="240" MinHeight="240" Width="{Binding $self.Bounds.Height}"
+                      MinWidth="210" MinHeight="210" Width="{Binding $self.Bounds.Height}"
                       BassTintBrush="{DynamicResource Red}"
                       CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
                       Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
