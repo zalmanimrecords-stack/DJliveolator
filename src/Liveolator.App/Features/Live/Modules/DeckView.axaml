@@ -68,7 +68,6 @@
            (slots 1-4) and bank B (slots 5-8) so every stored cue is reachable. -->
       <StackPanel Spacing="6">
         <Grid ColumnDefinitions="*,Auto,Auto">
-          <TextBlock Grid.Column="0" Classes="section" Text="HOT CUES" VerticalAlignment="Center" />
           <Button Grid.Column="1" Classes="key" Content="AUTO" Margin="0,0,6,0"
                   Command="{Binding AutoCueCommand}" IsVisible="{Binding CanAutoCue}"
                   Padding="6,2"
@@ -157,7 +156,6 @@
            deck commands as the DJ tab, so loops are available on the LIVE performance surface too. -->
       <StackPanel Spacing="6">
         <Grid ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Classes="section" VerticalAlignment="Center" Text="LOOP" />
           <TextBlock Grid.Column="2" Classes="mono accent" VerticalAlignment="Center"
                      Text="{Binding LoopLengthLabel}" />
         </Grid>
@@ -183,7 +181,6 @@
            Settings (default 0.1 s). -->
       <StackPanel Spacing="6">
         <Grid ColumnDefinitions="Auto,*,Auto">
-          <TextBlock Classes="section" VerticalAlignment="Center" Text="NUDGE" />
           <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="WAVE" />
         </Grid>
         <UniformGrid Columns="2">

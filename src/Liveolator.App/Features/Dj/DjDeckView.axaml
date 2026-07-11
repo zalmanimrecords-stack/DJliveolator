@@ -100,7 +100,6 @@
           <StackPanel Spacing="6">
             <!-- Bank toggle + AUTO-CUE buttons removed per owner (2026-07-10); both remain reachable via
                  MIDI/hardware (ToggleHotCueBankCommand / AutoCueCommand still on the VM). -->
-            <TextBlock Classes="section" Text="HOT CUES" />
             <ItemsControl ItemsSource="{Binding VisibleHotCues}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -126,7 +125,6 @@
           </StackPanel>
 
           <StackPanel Spacing="6">
-            <TextBlock Classes="section" Text="LOOP" />
             <!-- Loop length knob (1/64 … 8 bars, 12 detents): turn to select the armed length; the value
                  shows under the knob and on the LOOP key, which arms a loop of that length. -->
             <StackPanel Spacing="2" HorizontalAlignment="Center">
@@ -150,7 +148,6 @@
           </StackPanel>
 
           <StackPanel Spacing="6">
-            <TextBlock Classes="section" Text="NUDGE" />
             <Grid ColumnDefinitions="*,*">
               <Button Grid.Column="0" Classes="key" Content="◄" Height="30" Margin="0,0,3,0"
                       Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
