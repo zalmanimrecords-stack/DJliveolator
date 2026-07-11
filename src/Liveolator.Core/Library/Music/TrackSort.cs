@@ -37,6 +37,9 @@ public static class TrackSort
             TrackSortKey.Bpm => ThenByValue(ordered, t => t.Bpm?.Bpm, descending),
             TrackSortKey.Key => ThenByValue(ordered, t => (double)Camelot.SortIndex(t.Key?.Camelot), descending),
             TrackSortKey.Duration => ThenByValue(ordered, t => t.Duration?.TotalSeconds, descending),
+            TrackSortKey.Rating => ThenByValue(ordered, t => t.Rating > 0 ? t.Rating : (double?)null, descending),
+            TrackSortKey.DateAdded => ThenByValue(ordered, t => t.DateAdded?.Ticks, descending),
+            TrackSortKey.PlayCount => ThenByValue(ordered, t => (double)t.PlayCount, descending),
             _ => ordered,
         };
 
@@ -49,6 +52,8 @@ public static class TrackSort
             TrackSortKey.Bpm => t.Bpm is not null,
             TrackSortKey.Key => Camelot.SortIndex(t.Key?.Camelot) != int.MaxValue,
             TrackSortKey.Duration => t.Duration is not null,
+            TrackSortKey.Rating => t.Rating > 0,
+            TrackSortKey.DateAdded => t.DateAdded is not null,
             _ => true,
         };
     }

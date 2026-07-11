@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Visual;
-using Liveolator.Media;
+using Liveolator.Core.Persistence;
 using Liveolator.Mcp.Contracts;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +16,7 @@ namespace Liveolator.Mcp.Session;
 public sealed class VisualSession
 {
     private readonly VisualMediaLibrary _library;
-    private readonly JsonCatalogStore _store;
+    private readonly IVisualCatalogStore _store;
     private readonly ILogger<VisualSession> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SortedSet<string> _folders = new(StringComparer.OrdinalIgnoreCase);
@@ -25,7 +25,7 @@ public sealed class VisualSession
     public VisualSession(
         IFileEnumerator enumerator,
         IVisualMediaProbe probe,
-        JsonCatalogStore store,
+        IVisualCatalogStore store,
         ILogger<VisualSession> logger)
     {
         _library = new VisualMediaLibrary(enumerator, probe);
@@ -105,7 +105,7 @@ public sealed class VisualSession
                          .Select(d => d!)
                          .Distinct(StringComparer.OrdinalIgnoreCase))
                 _folders.Add(folder);
-            _logger.LogInformation("Loaded {Count} visual assets from cache at {Path}.", cached.Count, _store.VisualCatalogPath);
+            _logger.LogInformation("Loaded {Count} visual assets from the catalog cache.", cached.Count);
         }
         _loaded = true;
     }

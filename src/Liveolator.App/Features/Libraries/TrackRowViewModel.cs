@@ -51,6 +51,25 @@ public sealed class TrackRowViewModel
 
     public MediaAnalysisStatus Status => Track.Status;
 
+    // --- library-management fields (the prepare workflow) ---
+
+    /// <summary>The user's 0–5 star rating (0 = unrated).</summary>
+    public int Rating => Track.Rating;
+
+    /// <summary>Rating as filled/empty stars for a compact display, e.g. "★★★☆☆"; blank when unrated.</summary>
+    public string RatingStars =>
+        Track.Rating <= 0 ? string.Empty : new string('★', Track.Rating) + new string('☆', 5 - Track.Rating);
+
+    /// <summary>True once the track has been loaded to a deck at least once (drives a "played" marker).</summary>
+    public bool IsPlayed => Track.PlayCount > 0;
+
+    /// <summary>"Played N×" when the track has plays, otherwise blank.</summary>
+    public string PlayCountText => Track.PlayCount > 0 ? $"Played {Track.PlayCount}×" : string.Empty;
+
+    /// <summary>When the track was added to the library (local date), or blank if never stamped.</summary>
+    public string DateAddedText =>
+        Track.DateAdded is { } added ? $"Added {added.ToLocalTime():yyyy-MM-dd}" : string.Empty;
+
     public string StatusText => Track.Status switch
     {
         MediaAnalysisStatus.Ok => "OK",

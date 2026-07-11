@@ -16,6 +16,14 @@ public partial class LibrariesView : UserControl
 
     public LibrariesView() => InitializeComponent();
 
+    // Double-click a track to load it onto Deck A (the standard DJ-browser gesture). The first click
+    // selects the row, so the second acts on the now-selected track. No-op when deck A isn't backed.
+    private void OnTrackDoubleTapped(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LibrariesViewModel vm)
+            vm.LoadSelectedToDeckA();
+    }
+
     // Folder picking is inherently view-bound (needs the TopLevel); the chosen paths are
     // handed to the view-model, which stays UI-free.
     private async void OnAddFolder(object? sender, RoutedEventArgs e)

@@ -317,9 +317,14 @@ public static class ServiceConfig
         WireOnlineEnrichment(services, appSettings.Online.GetSongBpmApiKey);
         WireUpdateCheck(services, loggerFactory);
         // Persists the analyzed catalog + scan folders under %APPDATA%/Liveolator so state survives
-        // restarts (doc 13). The seams live in Core; one JsonCatalogStore binds both the music
-        // (IMusicCatalogStore) and the visual (IVisualCatalogStore, Track C C1) catalog domains.
-        var catalogStore = new JsonCatalogStore(
+        // restarts (doc 13). The per-row SqliteCatalogStore (doc 31 M1) replaces the whole-file JSON
+        // rewrite: each scanned track is upserted on its own, so the incremental scan persists O(1) per
+        // track (partial progress survives a mid-scan crash), and the app + MCP server can share one
+        // catalog without clobbering each other's rows. One store binds both the music
+        // (IMusicCatalogStore) and the visual (IVisualCatalogStore) catalog domains. A one-time migration
+        // carries an existing JSON catalog over so users don't re-scan on first launch after the switch.
+        CatalogMigration.JsonToSqliteIfNeeded(persistenceRoot, w => System.Diagnostics.Trace.TraceWarning(w));
+        var catalogStore = new SqliteCatalogStore(
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IMusicCatalogStore>(catalogStore);
         services.AddSingleton<IVisualCatalogStore>(catalogStore);

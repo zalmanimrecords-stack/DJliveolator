@@ -54,6 +54,10 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
     /// <summary>Full path of the SQLite catalog database file.</summary>
     public string DatabasePath => _dbPath;
 
+    private const string UpsertTrackSql =
+        @"INSERT INTO tracks(path, schema_version, data) VALUES($path, $ver, $data)
+          ON CONFLICT(path) DO UPDATE SET schema_version = excluded.schema_version, data = excluded.data;";
+
     public async Task SaveMusicAsync(IEnumerable<MusicTrack> tracks, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(tracks);
@@ -66,9 +70,7 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
             using SqliteTransaction transaction = connection.BeginTransaction();
             using SqliteCommand command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText =
-                @"INSERT INTO tracks(path, schema_version, data) VALUES($path, $ver, $data)
-                  ON CONFLICT(path) DO UPDATE SET schema_version = excluded.schema_version, data = excluded.data;";
+            command.CommandText = UpsertTrackSql;
             SqliteParameter path = command.Parameters.Add("$path", SqliteType.Text);
             SqliteParameter ver = command.Parameters.Add("$ver", SqliteType.Integer);
             SqliteParameter data = command.Parameters.Add("$data", SqliteType.Text);
@@ -80,6 +82,31 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             transaction.Commit();
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Upserts a single track in its own transaction — the incremental-scan write (one cheap row write,
+    /// not an O(catalog) rewrite), so each scanned track is durable the instant it is analyzed.
+    /// </summary>
+    public async Task SaveTrackAsync(MusicTrack track, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using SqliteConnection connection = OpenConnection();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = UpsertTrackSql;
+            command.Parameters.AddWithValue("$path", track.File.Path);
+            command.Parameters.AddWithValue("$ver", MusicCatalogSnapshot.CurrentVersion);
+            command.Parameters.AddWithValue("$data", JsonSerializer.Serialize(track, SerializerOptions));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {

@@ -79,8 +79,10 @@ public static class TrackQuery
 
         if (!string.IsNullOrWhiteSpace(filter.Text))
         {
-            string needle = filter.Text.Trim();
-            query = query.Where(t => MatchesText(t, needle));
+            // Multi-term AND: each whitespace-separated term must match some field, so "house 124" finds
+            // house tracks around 124 BPM. A single term behaves exactly as a plain substring search.
+            string[] terms = filter.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            query = query.Where(t => terms.All(term => MatchesTerm(t, term)));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Artist))
@@ -114,10 +116,17 @@ public static class TrackQuery
             .ToList();
     }
 
-    private static bool MatchesText(MusicTrack track, string needle)
-        => Contains(track.Title, needle)
-           || Contains(track.Artist, needle)
-           || Contains(Path.GetFileName(track.File.Path), needle);
+    // One search term matches a track if it is a substring of any searchable field: title, artist, file
+    // name, album, genre, comment/notes, Camelot key, or the whole-number BPM (so "124" finds ~124 BPM).
+    private static bool MatchesTerm(MusicTrack track, string term)
+        => Contains(track.Title, term)
+           || Contains(track.Artist, term)
+           || Contains(Path.GetFileName(track.File.Path), term)
+           || Contains(track.Metadata?.Album, term)
+           || Contains(track.Metadata?.Genre, term)
+           || Contains(track.Metadata?.Comment, term)
+           || Contains(track.Key?.Camelot, term)
+           || (track.Bpm is { } bpm && Contains(bpm.Bpm.ToString("0"), term));
 
     private static bool Contains(string? haystack, string needle)
         => haystack is not null && haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reactive.Concurrency;
+using System.Reactive.Threading.Tasks;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Tests.Fakes;
@@ -70,6 +71,57 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
         _created.Add(vm);
         await vm.InitializeAsync();
         return vm;
+    }
+
+    [Fact]
+    public async Task ResultSummary_reports_all_then_shown_of_total_when_filtered()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        Assert.Equal("5 tracks", vm.ResultSummary);
+
+        vm.SelectedArtist = "M83"; // narrows to 2 of the 5
+        Assert.Equal("2 of 5", vm.ResultSummary);
+    }
+
+    [Fact]
+    public async Task SetRating_persists_the_track_per_row_and_updates_the_row()
+    {
+        var store = new FakeMusicCatalogStore(seedTracks: Catalog, seedFolders: new[] { "/music" });
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        var vm = new LibrariesViewModel(library, store: store);
+        _created.Add(vm);
+        await vm.InitializeAsync();
+        vm.SelectedTrack = vm.Tracks.First(t => t.Track.File.Path == "/music/a.mp3");
+
+        await vm.SetRatingCommand.Execute(4).ToTask();
+
+        Assert.Equal(4, vm.SelectedTrack!.Rating); // the row reflects the new rating
+        // Persisted per-row (incremental) — the saved copy carries the rating.
+        Assert.Equal(4, store.SavedTracks.Single(t => t.File.Path == "/music/a.mp3").Rating);
+    }
+
+    [Fact]
+    public async Task BpmRange_filter_narrows_to_tracks_within_bounds()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        vm.BpmMinText = "120";
+        vm.BpmMaxText = "125";
+
+        // Catalog BPMs: 128, 122, 90, (none), 128 → only the 122 track is within [120,125].
+        Assert.Equal(new[] { "/music/b.wav" }, vm.Tracks.Select(t => t.Track.File.Path));
+    }
+
+    [Fact]
+    public async Task BpmRange_ignores_blank_and_nonnumeric_bounds()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        vm.BpmMinText = "  ";   // blank → no lower bound
+        vm.BpmMaxText = "abc";  // non-numeric → no upper bound
+
+        Assert.Equal(5, vm.Tracks.Count); // unfiltered
     }
 
     [Fact]

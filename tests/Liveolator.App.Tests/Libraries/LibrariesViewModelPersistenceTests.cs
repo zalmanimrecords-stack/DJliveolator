@@ -34,7 +34,26 @@ public sealed class LibrariesViewModelPersistenceTests
 
         Assert.Equal(2, store.SavedTracks.Count);
         Assert.Contains("/music", store.SavedFolders);
-        Assert.Equal(1, store.SaveMusicCalls);
+        // Incremental scan (owner ask, 2026-07): each track is persisted per-row as it is analyzed, not
+        // in one whole-catalog save at the end — so a mid-scan crash keeps the work already done.
+        Assert.Equal(2, store.SavedTrackByTrack.Count);
+        Assert.Equal(0, store.SaveMusicCalls);
+    }
+
+    [Fact]
+    public async Task RemoveFolder_deletes_the_pruned_tracks_from_the_store_per_path()
+    {
+        var store = new FakeMusicCatalogStore();
+        var vm = new LibrariesViewModel(EmptyLibrary("/music/Alpha.wav", "/music/Beta.wav"), store: store);
+        vm.AddFolder("/music");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.RemoveFolder("/music");
+
+        // Pruned tracks are removed by explicit per-path delete (the per-row store is upsert-only, so a
+        // re-save would leave their rows behind).
+        Assert.Equal(2, store.DeletedPaths.Count);
+        Assert.Empty(store.SavedTracks);
     }
 
     [Fact]

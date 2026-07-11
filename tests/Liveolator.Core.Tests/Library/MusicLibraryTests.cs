@@ -48,6 +48,96 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task Scan_ReportsEachNewEntry_ForIncrementalPersistence()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"), File("b.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["b.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        var processed = new List<string>();
+
+        await library.ScanAsync(
+            new[] { "music" }, progress: null, cancellationToken: default,
+            onEntryProcessed: (entry, _) => { processed.Add(entry.File.Path); return Task.CompletedTask; });
+
+        // Every analyzed track is reported once, as it lands — the hook the incremental scan persists on.
+        Assert.Equal(new[] { "a.mp3", "b.mp3" }, processed.OrderBy(p => p));
+    }
+
+    [Fact]
+    public async Task Scan_ReportsRemovedFile_SoPersistenceCanDropIt()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"), File("gone.mp3"));
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["gone.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
+        });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        enumerator.Files.RemoveAll(f => f.Path == "gone.mp3"); // the file vanished from disk
+        var removed = new List<string>();
+
+        await library.ScanAsync(
+            new[] { "music" }, progress: null, cancellationToken: default,
+            onEntryRemoved: (path, _) => { removed.Add(path); return Task.CompletedTask; });
+
+        Assert.Equal(new[] { "gone.mp3" }, removed);
+        Assert.Null(library.TryGet("gone.mp3"));
+    }
+
+    [Fact]
+    public async Task Scan_StampsDateAdded_AndRatingPlayCountWork()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        Assert.NotNull(library.TryGet("a.mp3")!.DateAdded); // a new track is stamped when it enters the catalog
+
+        MusicTrack? rated = library.SetRating("a.mp3", 4);
+        Assert.Equal(4, rated!.Rating);
+
+        MusicTrack? played = library.MarkPlayed("a.mp3");
+        Assert.Equal(1, played!.PlayCount);
+        Assert.NotNull(played.LastPlayed);
+        Assert.Equal(2, library.MarkPlayed("a.mp3")!.PlayCount); // increments
+    }
+
+    [Fact]
+    public async Task Rescan_And_ForceReanalyze_PreserveUserLibraryFields()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+
+        library.SetRating("a.mp3", 5);
+        library.MarkPlayed("a.mp3");
+        DateTime? addedAt = library.TryGet("a.mp3")!.DateAdded;
+
+        // The file changes on disk (new fingerprint) → a rescan rebuilds it from the decoder.
+        enumerator.Files[0] = new ScannedFile("a.mp3", 2000, T.AddMinutes(1));
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack afterRescan = library.TryGet("a.mp3")!;
+        Assert.Equal(5, afterRescan.Rating);         // rating survives a re-decode (it's user data, not analysis)
+        Assert.Equal(1, afterRescan.PlayCount);       // play history survives
+        Assert.Equal(addedAt, afterRescan.DateAdded); // date-added is stable across rescans
+
+        await library.ForceReanalyzeAsync("a.mp3");
+        MusicTrack afterForce = library.TryGet("a.mp3")!;
+        Assert.Equal(5, afterForce.Rating);
+        Assert.Equal(1, afterForce.PlayCount);
+        Assert.Equal(addedAt, afterForce.DateAdded);
+    }
+
+    [Fact]
     public async Task ForceReanalyze_RebuildsAnAlreadyAnalyzedTrack()
     {
         var enumerator = new FakeFileEnumerator(File("a.mp3"));

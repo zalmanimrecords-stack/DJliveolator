@@ -3,6 +3,7 @@
              xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
              xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:sys="using:System"
              x:Class="Liveolator.App.Features.Libraries.LibrariesView"
              x:DataType="lib:LibrariesViewModel">
 
@@ -21,6 +22,17 @@
             <MenuItem Header="Manage folders…" Click="OnShowFolders" />
             <Separator />
             <MenuItem Header="Playlists / sets…" Click="OnShowPlaylists" />
+            <Separator />
+            <!-- Maintenance actions the one-click "Scan" doesn't do: a full force re-map, a health check,
+                 and a library-wide auto-cue. Built long ago but previously unreachable from this screen. -->
+            <MenuItem Header="Re-map all tracks (force)" Command="{Binding RescanAllCommand}"
+                      ToolTip.Tip="Re-decode every track for fresh BPM / key / beat grid / cues, keeping manually-corrected tracks" />
+            <MenuItem Header="Auto-cue whole library" Command="{Binding AutoCueLibraryCommand}"
+                      IsEnabled="{Binding CanAutoCueLibrary}"
+                      ToolTip.Tip="Place automatic hot cues on every scanned track" />
+            <MenuItem Header="Check library health" Command="{Binding ScanHealthCommand}"
+                      IsEnabled="{Binding CanUseLibraryDoctor}"
+                      ToolTip.Tip="Find missing files, duplicates and broken analysis (Library Doctor)" />
             <Separator />
             <MenuItem Header="Import library" IsEnabled="{Binding CanImportLibrary}"
                       ToolTip.Tip="Import tracks, cues, beat grids and playlists from another DJ app">
@@ -67,6 +79,16 @@
         </ComboBox.ItemTemplate>
       </ComboBox>
 
+      <!-- BPM range filter (blank = unbounded) -->
+      <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
+        <TextBox Classes="spartan" Width="52" Watermark="min" Text="{Binding BpmMinText}"
+                 ToolTip.Tip="Only tracks at or above this BPM" />
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="–" />
+        <TextBox Classes="spartan" Width="52" Watermark="max" Text="{Binding BpmMaxText}"
+                 ToolTip.Tip="Only tracks at or below this BPM" />
+      </StackPanel>
+
       <CheckBox IsChecked="{Binding ShowShortClips}" VerticalAlignment="Center"
                 Content="{Binding ShortClipCount, StringFormat='Short clips ({0})'}"
                 ToolTip.Tip="Show tracks under 1 minute (edits, stings, acapellas, loops)" />
@@ -95,7 +117,12 @@
       <!-- track table -->
       <Border Grid.Column="0" Classes="panel">
         <DockPanel Margin="12">
-          <TextBlock DockPanel.Dock="Top" Classes="section" Text="Tracks" Margin="0,0,0,10" />
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
+            <TextBlock Grid.Column="0" Classes="section" Text="Tracks" VerticalAlignment="Center" />
+            <!-- how many of the whole catalog the filter shows (flags a capped result) -->
+            <TextBlock Grid.Column="2" Classes="mono faint" VerticalAlignment="Center"
+                       Text="{Binding ResultSummary}" />
+          </Grid>
           <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" Margin="11,0,9,8">
             <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
             <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
@@ -106,7 +133,9 @@
           </Grid>
           <ListBox Classes="rows"
                    ItemsSource="{Binding Tracks}"
-                   SelectedItem="{Binding SelectedTrack}">
+                   SelectedItem="{Binding SelectedTrack}"
+                   DoubleTapped="OnTrackDoubleTapped"
+                   ToolTip.Tip="Double-click a track to load it onto Deck A">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
                 <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" VerticalAlignment="Center">
@@ -224,6 +253,45 @@
                 <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Duration}" />
               </StackPanel>
             </Grid>
+
+            <!-- rating + prepare facts: cull tracks by stars, see when added / how often played -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="faint" Text="RATING" />
+              <StackPanel Orientation="Horizontal" Spacing="2">
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 1">
+                  <Button.CommandParameter><sys:Int32>1</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 2">
+                  <Button.CommandParameter><sys:Int32>2</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 3">
+                  <Button.CommandParameter><sys:Int32>3</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 4">
+                  <Button.CommandParameter><sys:Int32>4</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 5">
+                  <Button.CommandParameter><sys:Int32>5</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="✕" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        Margin="6,0,0,0" ToolTip.Tip="Clear rating">
+                  <Button.CommandParameter><sys:Int32>0</sys:Int32></Button.CommandParameter>
+                </Button>
+                <TextBlock Classes="mono accent" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Text="{Binding SelectedTrack.RatingStars}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Classes="faint" Text="{Binding SelectedTrack.DateAddedText}"
+                           IsVisible="{Binding SelectedTrack.DateAddedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="faint" Text="{Binding SelectedTrack.PlayCountText}"
+                           IsVisible="{Binding SelectedTrack.PlayCountText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </StackPanel>
 
             <!-- file / tag info -->
             <StackPanel Spacing="8">

@@ -14,4 +14,13 @@ public enum TrackSortKey
 
     /// <summary>Playing length; tracks without a known duration sort last.</summary>
     Duration,
+
+    /// <summary>User's 0–5 star rating; unrated (0) tracks sort last.</summary>
+    Rating,
+
+    /// <summary>When the track was added to the library; never-stamped tracks sort last (for "recently added").</summary>
+    DateAdded,
+
+    /// <summary>How many times the track was loaded to a deck (0 = never played).</summary>
+    PlayCount,
 }

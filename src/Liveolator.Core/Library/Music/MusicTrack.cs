@@ -22,7 +22,14 @@ public sealed record MusicTrack(
     // Optional offline song-structure segmentation (doc 32). Null when not yet analyzed; an older
     // catalog JSON simply lacks the property and deserializes to null (backward compatible — the
     // snapshot version is NOT bumped, so existing caches still load).
-    SongStructure? Structure = null) : IMediaEntry
+    SongStructure? Structure = null,
+    // Library-management fields (the prepare workflow). All added the same backward-compatible way as
+    // Structure — optional, so an older cache defaults them and existing catalogs still load with no
+    // schema bump. They are USER/library data, not analysis, so a re-decode must preserve them.
+    int Rating = 0,                 // 0 = unrated, 1–5 stars
+    DateTime? DateAdded = null,     // when the track first entered the catalog
+    DateTime? LastPlayed = null,    // when it was last loaded to a deck
+    int PlayCount = 0) : IMediaEntry
 {
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>

@@ -100,6 +100,29 @@ public sealed class JsonCatalogStore : IMusicCatalogStore, IVisualCatalogStore
         return snapshot.Tracks;
     }
 
+    // The JSON store keeps no in-memory catalog, so a per-track write is read-merge-write of the whole
+    // file — correct but O(catalog). It exists only so this legacy store still satisfies the seam; the
+    // app wires the per-row SqliteCatalogStore for the incremental scan, where these are O(1).
+    public async Task SaveTrackAsync(MusicTrack track, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(track);
+        List<MusicTrack> tracks = (await LoadMusicAsync(cancellationToken).ConfigureAwait(false)).ToList();
+        int i = tracks.FindIndex(t => string.Equals(t.File.Path, track.File.Path, StringComparison.OrdinalIgnoreCase));
+        if (i >= 0)
+            tracks[i] = track;
+        else
+            tracks.Add(track);
+        await SaveMusicAsync(tracks, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task DeleteTrackAsync(string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        List<MusicTrack> tracks = (await LoadMusicAsync(cancellationToken).ConfigureAwait(false)).ToList();
+        if (tracks.RemoveAll(t => string.Equals(t.File.Path, path, StringComparison.OrdinalIgnoreCase)) > 0)
+            await SaveMusicAsync(tracks, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task SaveVisualAsync(IEnumerable<VisualAsset> assets, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(assets);

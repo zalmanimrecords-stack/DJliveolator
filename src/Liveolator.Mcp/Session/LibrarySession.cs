@@ -3,7 +3,7 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
-using Liveolator.Media;
+using Liveolator.Core.Persistence;
 using Liveolator.Mcp.Contracts;
 using Microsoft.Extensions.Logging;
 
@@ -17,7 +17,7 @@ namespace Liveolator.Mcp.Session;
 public sealed class LibrarySession
 {
     private readonly MusicLibrary _library;
-    private readonly JsonCatalogStore _store;
+    private readonly IMusicCatalogStore _store;
     private readonly ILogger<LibrarySession> _logger;
     private readonly IReadOnlyList<ILibraryImporter> _importers;
     private readonly IReadOnlyList<IFolderLibraryImporter> _folderImporters;
@@ -31,7 +31,7 @@ public sealed class LibrarySession
         IAudioDecoder decoder,
         TrackAnalyzer analyzer,
         ITrackMetadataReader metadataReader,
-        JsonCatalogStore store,
+        IMusicCatalogStore store,
         IEnumerable<ILibraryImporter> importers,
         IEnumerable<IFolderLibraryImporter> folderImporters,
         LibraryImportService importService,
@@ -237,7 +237,7 @@ public sealed class LibrarySession
                          .Select(d => d!)
                          .Distinct(StringComparer.OrdinalIgnoreCase))
                 _folders.Add(folder);
-            _logger.LogInformation("Loaded {Count} tracks from catalog cache at {Path}.", cached.Count, _store.MusicCatalogPath);
+            _logger.LogInformation("Loaded {Count} tracks from the catalog cache.", cached.Count);
         }
         _loaded = true;
     }

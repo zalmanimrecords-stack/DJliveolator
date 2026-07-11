@@ -185,10 +185,22 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
     /// Scans the folders and updates the catalog incrementally: unchanged files are kept as-is
     /// (not re-processed), removed files are dropped, new/changed files are (re)built.
     /// </summary>
+    /// <param name="onEntryProcessed">
+    /// Invoked (and awaited) right after each new/changed entry is added to the catalog, so a caller can
+    /// persist that one track the moment it is analyzed — the incremental scan. Removed and preserved
+    /// entries are reported too (they changed the catalog). A handler must not throw (it should guard its
+    /// own IO); an exception from it aborts the scan.
+    /// </param>
+    /// <param name="onEntryRemoved">
+    /// Invoked (and awaited) for each file that vanished since the last scan, so the caller can drop it
+    /// from persistence (a per-row store is upsert-only and won't forget it otherwise).
+    /// </param>
     public async Task ScanAsync(
         IReadOnlyList<string> folders,
         IProgress<ScanProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<TEntry, CancellationToken, Task>? onEntryProcessed = null,
+        Func<string, CancellationToken, Task>? onEntryRemoved = null)
     {
         ArgumentNullException.ThrowIfNull(folders);
 
@@ -204,8 +216,12 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
 
         foreach (ScanDelta delta in deltas)
             if (delta.Change == ScanChange.Removed)
+            {
                 lock (_gate)
                     _byPath.Remove(delta.File.Path);
+                if (onEntryRemoved is not null)
+                    await onEntryRemoved(delta.File.Path, cancellationToken).ConfigureAwait(false);
+            }
 
         var toProcess = deltas
             .Where(d => d.Change is ScanChange.Added or ScanChange.Modified)
@@ -229,6 +245,8 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
                 {
                     lock (_gate)
                         _byPath[delta.File.Path] = preserved;
+                    if (onEntryProcessed is not null)
+                        await onEntryProcessed(preserved, cancellationToken).ConfigureAwait(false);
                     done++;
                     continue;
                 }
@@ -251,6 +269,8 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
 
             lock (_gate)
                 _byPath[delta.File.Path] = entry;
+            if (onEntryProcessed is not null)
+                await onEntryProcessed(entry, cancellationToken).ConfigureAwait(false);
             done++;
         }
 

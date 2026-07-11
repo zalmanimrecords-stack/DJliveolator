@@ -64,6 +64,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private TrackCueRecord? _selectedCueRecord;
     private List<TrackRowViewModel> _all = new();
     private string? _searchText;
+    private string? _bpmMinText;
+    private string? _bpmMaxText;
     private string? _selectedArtist;
     private string? _selectedGenre;
     private int? _selectedYear;
@@ -82,9 +84,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private string _doctorSummary = "Run Scan health to inspect the library.";
     private bool _isScanning;
     private bool _isAutoCueing;
+    // Set once when a per-track incremental-scan save first fails, so the error is surfaced a single time
+    // (not once per track) and the scan is never aborted (global #16/#26).
+    private bool _scanPersistFailed;
     private double _scanProgressValue;
     private string _liveBpm = "—";
     private string _loadStatus = string.Empty;
+    private string _resultSummary = string.Empty;
 
     // Lifetime control for the fire-and-forget background re-analysis: Dispose() cancels it and waits for
     // it to wind down, so the pass never outlives the view-model. Without this the task leaks past its
@@ -216,6 +222,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         // unit signals because WhenAnyValue caps at a few typed selectors.
         Observable.Merge(
                 this.WhenAnyValue(x => x.SearchText).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.BpmMinText).Select(_ => Unit.Default),
+                this.WhenAnyValue(x => x.BpmMaxText).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedArtist).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedGenre).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedYear).Select(_ => Unit.Default),
@@ -237,6 +245,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         MarkCueCommand = ReactiveCommand.CreateFromTask<double>(
             MarkCueAtFractionAsync,
             this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null && _hotCueStore is not null));
+
+        SetRatingCommand = ReactiveCommand.CreateFromTask<int>(
+            SetSelectedRatingAsync,
+            this.WhenAnyValue(x => x.SelectedTrack).Select(t => t is not null));
 
         this.WhenAnyValue(x => x.SelectedTrack).Subscribe(_ =>
         {
@@ -294,6 +306,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     public IReadOnlyList<TrackSortKey> SortKeys { get; } = new[]
     {
         TrackSortKey.Title, TrackSortKey.Bpm, TrackSortKey.Key, TrackSortKey.Duration,
+        TrackSortKey.Rating, TrackSortKey.DateAdded, TrackSortKey.PlayCount,
     };
 
     /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
@@ -324,6 +337,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <summary>Adds a manual hot cue at a clicked 0..1 waveform position (the strip's click seam), placing
     /// it in the next free slot and persisting it. The parameter is the clicked track fraction.</summary>
     public ReactiveCommand<double, Unit> MarkCueCommand { get; }
+
+    /// <summary>Sets the selected track's 0–5 star rating (the parameter is the star count) and persists it.</summary>
+    public ReactiveCommand<int, Unit> SetRatingCommand { get; }
 
     /// <summary>
     /// Force re-maps the whole catalog — re-decodes every track for fresh BPM/key/downbeat/cues,
@@ -384,6 +400,20 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get => _searchText;
         set => this.RaiseAndSetIfChanged(ref _searchText, value);
+    }
+
+    /// <summary>Lower BPM bound for the filter (blank = no lower bound). Free text so a DJ can type "124".</summary>
+    public string? BpmMinText
+    {
+        get => _bpmMinText;
+        set => this.RaiseAndSetIfChanged(ref _bpmMinText, value);
+    }
+
+    /// <summary>Upper BPM bound for the filter (blank = no upper bound).</summary>
+    public string? BpmMaxText
+    {
+        get => _bpmMaxText;
+        set => this.RaiseAndSetIfChanged(ref _bpmMaxText, value);
     }
 
     /// <summary>Selected artist facet (null = all artists).</summary>
@@ -469,6 +499,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get => _scanStatus;
         private set => this.RaiseAndSetIfChanged(ref _scanStatus, value);
+    }
+
+    /// <summary>How many tracks the current filter shows out of the whole catalog (e.g. "137 of 4502"),
+    /// flagging when the result set is capped — so a large library never silently drops rows.</summary>
+    public string ResultSummary
+    {
+        get => _resultSummary;
+        private set => this.RaiseAndSetIfChanged(ref _resultSummary, value);
     }
 
     public string DoctorSummary
@@ -734,7 +772,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         {
             try
             {
-                await _store.SaveMusicAsync(_library.All, _lifetime.Token).ConfigureAwait(false);
+                // Delete just this one path — the per-row store is upsert-only, so re-saving the catalog
+                // would leave the removed track's row behind.
+                await _store.DeleteTrackAsync(issue.Path, _lifetime.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -804,7 +844,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
         bool wasSampleFolder = _sampleFolders.Remove(folder);
 
+        // Capture which tracks the prune drops so they can be deleted from the per-row store: SaveMusic
+        // is upsert-only (doc 31 M1), so re-saving the survivors would NOT remove the pruned rows.
+        var before = _library.All.Select(t => t.File.Path).ToList();
         _library.PruneToFolders(Folders.ToList());
+        var surviving = new HashSet<string>(
+            _library.All.Select(t => t.File.Path), StringComparer.OrdinalIgnoreCase);
+        List<string> prunedPaths = before.Where(p => !surviving.Contains(p)).ToList();
+
         // A removed samples folder changes the classifier set, so reclassify the survivors in place.
         if (wasSampleFolder)
             _library.SetSampleFolders(_sampleFolders);
@@ -815,7 +862,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         RefreshFolderStatuses();
 
         // Fire-and-forget but fully guarded: a save failure is logged to the status line, never thrown.
-        _ = PersistAfterRemoveAsync(wasSampleFolder);
+        _ = PersistAfterRemoveAsync(wasSampleFolder, prunedPaths);
     }
 
     // Rebuilds the per-folder status rows from the current catalog, seeding each with its sample-folder
@@ -963,6 +1010,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         IsScanning = true;
         ScanProgressValue = 0;
+        _scanPersistFailed = false;
         // Snapshot the folder set on the calling thread so the persisted copy matches what was scanned
         // and we never read the UI-owned ObservableCollection off-thread.
         List<string> folders = Folders.ToList();
@@ -986,17 +1034,26 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                     RxApp.MainThreadScheduler.Schedule(RefreshRows);
             });
 
-            await _library.ScanAsync(folders, progress).ConfigureAwait(false);
+            // Persist each track the moment it is analyzed and drop each removed file as it is seen — the
+            // incremental scan (owner ask, 2026-07): a crash / close / network drop mid-scan keeps every
+            // track scanned so far, instead of one whole-catalog save at the end that loses it all. Cheap
+            // on the per-row store (SQLite). The handlers are self-guarded (ScanAsync forbids throwing).
+            await _library.ScanAsync(
+                folders, progress, CancellationToken.None,
+                onEntryProcessed: PersistScannedTrackAsync,
+                onEntryRemoved: DeleteScannedTrackAsync).ConfigureAwait(false);
 
             // Re-apply the sample designations so newly-scanned files under a samples folder are
-            // classified as Samples (reclassifies the catalog in place; no-op when none are set).
+            // classified as Samples (reclassifies the catalog in place; no-op when none are set). New
+            // files were already classified with this set at analysis time, so no re-persist is needed.
             if (_sampleFolders.Count > 0)
                 _library.SetSampleFolders(_sampleFolders);
 
             List<TrackRowViewModel> rows = BuildRows();
 
-            // Persist the fresh catalog + the folders that produced it, so the next run restores them.
-            await PersistCatalogAsync(folders).ConfigureAwait(false);
+            // Tracks were persisted per-track above; now just record the folder set so the next run
+            // restores it.
+            await PersistScanFoldersAsync(folders).ConfigureAwait(false);
 
             // Collection mutations must happen on the UI scheduler (immediate in tests).
             RxApp.MainThreadScheduler.Schedule(() =>
@@ -1248,6 +1305,57 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
     }
 
+    // Sets the selected track's star rating, persists just that row (cheap per-row upsert), and refreshes
+    // the list so the rating column/sort update — keeping the selection so the detail panel stays put.
+    // Guarded: a persist failure surfaces on the status line, never crashes (global #16/#26).
+    private async Task SetSelectedRatingAsync(int rating)
+    {
+        string? path = _selectedTrack?.Track.File.Path;
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        MusicTrack? updated = _library.SetRating(path, rating);
+        if (updated is null)
+            return;
+
+        if (_store is not null)
+        {
+            try
+            {
+                await _store.SaveTrackAsync(updated, _lifetime.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Rating set; saving it failed: {ex.Message}");
+            }
+        }
+
+        RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            RefreshRows();
+            SelectedTrack = Tracks.FirstOrDefault(
+                r => string.Equals(r.Track.File.Path, path, StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    // Records a deck load as a play (bumps play count + last-played) and persists that one row. Fire-and-
+    // forget from LoadToDeck: it must not block or disrupt the load. The row's play badge updates on the
+    // next list refresh — no RefreshRows here, so loading a track never drops the browse selection.
+    private async Task RecordPlayAsync(string path)
+    {
+        MusicTrack? updated = _library.MarkPlayed(path);
+        if (updated is null || _store is null)
+            return;
+        try
+        {
+            await _store.SaveTrackAsync(updated, _lifetime.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Play recorded; saving it failed: {ex.Message}");
+        }
+    }
+
     /// <summary>The sample offset for a 0..1 track <paramref name="fraction"/> on a track of
     /// <paramref name="durationSeconds"/> at <paramref name="sampleRate"/> Hz; the fraction is clamped to
     /// 0..1 so a click can't land a negative or past-the-end cue. Pure so it unit-tests without a decode.</summary>
@@ -1362,28 +1470,69 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Saves the analyzed catalog and the scan folders. Guarded: a persistence failure surfaces on the
-    // status line but never aborts a completed scan (the in-memory results are still shown).
-    private async Task PersistCatalogAsync(IReadOnlyList<string> folders)
+    // The incremental-scan persist hooks (passed to MediaLibrary.ScanAsync): each analyzed track is saved
+    // the instant it lands, and each removed file is dropped — so partial progress survives a crash/close
+    // mid-scan (no whole-folder batch at the end). Self-guarded because ScanAsync forbids a throwing
+    // handler; the first failure is surfaced once, and the scan is never aborted (global #16/#26).
+    private async Task PersistScannedTrackAsync(MusicTrack track, CancellationToken cancellationToken)
+    {
+        if (_store is null)
+            return;
+        try
+        {
+            await _store.SaveTrackAsync(track, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            ReportScanPersistError(ex);
+        }
+    }
+
+    private async Task DeleteScannedTrackAsync(string path, CancellationToken cancellationToken)
+    {
+        if (_store is null)
+            return;
+        try
+        {
+            await _store.DeleteTrackAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            ReportScanPersistError(ex);
+        }
+    }
+
+    private void ReportScanPersistError(Exception ex)
+    {
+        if (_scanPersistFailed)
+            return;
+        _scanPersistFailed = true;
+        RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Scanning; a track failed to save: {ex.Message}");
+    }
+
+    // Records the folder set after a scan (the tracks were already persisted per-track). Guarded: a
+    // persistence failure surfaces on the status line but never aborts a completed scan.
+    private async Task PersistScanFoldersAsync(IReadOnlyList<string> folders)
     {
         if (_store is null)
             return;
 
         try
         {
-            await _store.SaveMusicAsync(_library.All).ConfigureAwait(false);
             await _store.SaveScanFoldersAsync(folders).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Scan done; saving the catalog failed: {ex.Message}");
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Scan done; saving the folder list failed: {ex.Message}");
         }
     }
 
-    // Persists the trimmed folder set + the pruned catalog after a folder removal (and the sample-folder
-    // set when the removed folder had been a samples source). Guarded so a save failure surfaces on the
-    // status line but never crashes the removal.
-    private async Task PersistAfterRemoveAsync(bool sampleFoldersChanged)
+    // Persists the trimmed folder set + drops the pruned tracks after a folder removal (and the
+    // sample-folder set when the removed folder had been a samples source). Deletes the pruned tracks
+    // per-path rather than re-saving the whole catalog: the per-row store is upsert-only, so only an
+    // explicit delete removes them. Guarded so a save failure surfaces on the status line but never
+    // crashes the removal.
+    private async Task PersistAfterRemoveAsync(bool sampleFoldersChanged, IReadOnlyList<string> prunedPaths)
     {
         if (_store is null)
             return;
@@ -1391,7 +1540,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         try
         {
             await _store.SaveScanFoldersAsync(Folders.ToList()).ConfigureAwait(false);
-            await _store.SaveMusicAsync(_library.All).ConfigureAwait(false);
+            foreach (string path in prunedPaths)
+                await _store.DeleteTrackAsync(path).ConfigureAwait(false);
             if (sampleFoldersChanged)
                 await _store.SaveSampleFoldersAsync(_sampleFolders.ToList()).ConfigureAwait(false);
         }
@@ -1430,6 +1580,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             Text: SearchText,
             Artist: SelectedArtist,
             Genre: SelectedGenre,
+            MinBpm: ParseBpm(BpmMinText),
+            MaxBpm: ParseBpm(BpmMaxText),
             Year: SelectedYear,
             FileType: SelectedFileType,
             Status: SelectedStatus,
@@ -1441,6 +1593,16 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Tracks.Clear();
         foreach (MusicTrack track in ordered)
             Tracks.Add(rowByTrack[track]);
+
+        // Surface how many of the whole catalog are shown, and flag when TrackQuery capped the result
+        // (the cap used to drop rows with no indication — doc advisor note).
+        int total = _all.Count;
+        int shown = Tracks.Count;
+        ResultSummary = total == 0
+            ? string.Empty
+            : shown == total ? $"{total} tracks"
+            : shown >= TrackQuery.MaxResults ? $"{shown} of {total} (capped)"
+            : $"{shown} of {total}";
     }
 
     // Recomputes the facet dropdowns from the current catalog (after a scan or restore) and drops any
@@ -1476,6 +1638,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         try
         {
             SearchText = null;
+            BpmMinText = null;
+            BpmMaxText = null;
             SelectedArtist = null;
             SelectedGenre = null;
             SelectedYear = null;
@@ -1489,6 +1653,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
         ApplyFilter();
     }
+
+    // Parses a BPM bound the user typed; blank or non-numeric input means "no bound" (the filter simply
+    // ignores it) rather than an error — a half-typed value never throws mid-keystroke.
+    private static double? ParseBpm(string? text)
+        => double.TryParse(text, System.Globalization.NumberStyles.Float,
+               System.Globalization.CultureInfo.InvariantCulture, out double bpm) && bpm > 0
+            ? bpm
+            : null;
 
     private void RebuildMatches()
     {
@@ -1718,16 +1890,29 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     // Stage the selected track on a deck slot (A = 0, B = 1) via the action layer — no auto-play
     // (load ≠ play; the performer beat-matches, then brings the deck in). A playing deck queues the
     // track instead; an unreachable file dispatches nothing and reports why (global #26).
+    /// <summary>Loads the selected track onto Deck A — the double-click-to-load action every DJ browser
+    /// has. No-op when nothing is selected or deck A isn't backed by the engine.</summary>
+    public void LoadSelectedToDeckA()
+    {
+        if (SelectedTrack is not null && CanLoadToDeckA)
+            LoadToDeck(0);
+    }
+
     private void LoadToDeck(int slot)
     {
         if (_deckLoader is null || _selectedTrack is null)
             return;
 
+        string path = _selectedTrack.Track.File.Path;
         LoadStatus = _deckLoader.Load(
             slot,
-            _selectedTrack.Track.File.Path,
+            path,
             bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
             firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0).Message; // doc 22 A1
+
+        // Count the load as a play (play count + last-played), persisted per-row. Fire-and-forget so it
+        // never delays the load.
+        _ = RecordPlayAsync(path);
     }
 
     // A deck slot is loadable only if the engine backs it — discovered via the feedback seam

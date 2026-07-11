@@ -80,6 +80,23 @@ public class TrackQueryTests
         => Assert.Empty(TrackQuery.Search(new[] { Track("a.mp3", title: "Alpha") }, text: "zzz"));
 
     [Fact]
+    public void Search_MultiTerm_MatchesAcrossGenreAndBpm()
+    {
+        MusicTrack house124 = WithGenre("a.mp3", "Groove", "House", 124.0);
+        MusicTrack techno128 = WithGenre("b.mp3", "Pulse", "Techno", 128.0);
+
+        // "house 124" = two terms; each must match some field (genre "House" AND ~124 BPM).
+        IReadOnlyList<MusicTrack> result = TrackQuery.Search(new[] { house124, techno128 }, text: "house 124");
+
+        Assert.Equal("Groove", Assert.Single(result).Title);
+    }
+
+    private static MusicTrack WithGenre(string path, string title, string genre, double bpm)
+        => new(new ScannedFile(path, 1000, T), new BpmResult(bpm, 0.9), null,
+               TimeSpan.FromMinutes(4), TrackCues.None, MediaAnalysisStatus.Ok, null,
+               TrackMetadata.Empty with { Title = title, Genre = genre });
+
+    [Fact]
     public void Search_BpmRange_ExcludesOutOfRangeAndUnknownTempo()
     {
         var tracks = new[]

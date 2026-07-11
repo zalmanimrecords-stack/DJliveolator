@@ -42,16 +42,37 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             .ConfigureAwait(false);
         MediaAnalysisStatus status = TrackStatusPolicy.For(result);
         MusicMediaKind kind = SampleClassifier.Classify(file.Path, result.Duration, _sampleFolders);
-        return new MusicTrack(
-            file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind,
-            TrackAnalyzer.CurrentVersion) with { Structure = result.Structure };
+        return CarryLibraryFields(
+            new MusicTrack(
+                file, result.Bpm, result.Key, result.Duration, result.Cues, status, null, metadata, kind,
+                TrackAnalyzer.CurrentVersion) with { Structure = result.Structure },
+            file.Path);
     }
 
     // A track that fails to decode can still have readable tags, so capture metadata here too. With no
     // duration it classifies as a Track unless the file sits under a designated samples folder.
     protected override MusicTrack CreateFailedEntry(ScannedFile file, string error)
-        => new(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error,
-               ReadMetadata(file.Path), SampleClassifier.Classify(file.Path, null, _sampleFolders));
+        => CarryLibraryFields(
+            new MusicTrack(file, null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, error,
+                ReadMetadata(file.Path), SampleClassifier.Classify(file.Path, null, _sampleFolders)),
+            file.Path);
+
+    // A rebuild (scan-modified or re-analyze) creates a fresh entry from the decoder and would drop the
+    // user/library fields (rating, date-added, play history) — they are NOT analysis and must survive a
+    // re-decode (global #7). Carry them from the still-catalogued prior entry; a genuinely new file has
+    // no prior, so DateAdded is stamped now. (ForceReanalyze/online/manual edits use `existing with {…}`
+    // and already keep these.)
+    private MusicTrack CarryLibraryFields(MusicTrack rebuilt, string path)
+    {
+        MusicTrack? prior = TryGet(path);
+        return rebuilt with
+        {
+            Rating = prior?.Rating ?? 0,
+            DateAdded = prior?.DateAdded ?? DateTime.UtcNow,
+            LastPlayed = prior?.LastPlayed,
+            PlayCount = prior?.PlayCount ?? 0,
+        };
+    }
 
     // A user-locked beat grid / BPM / key (AnalysisIsManual) must survive a re-tag or any other file
     // change: rebuilding from the decoder would silently discard the DJ's manual correction (global
@@ -120,6 +141,45 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             AnalysisIsManual = true,
         });
         return true;
+    }
+
+    /// <summary>
+    /// Sets the user's 0–5 star rating on a catalogued track (0 clears it). Returns the updated track so
+    /// the caller can persist just that one row, or null if the path isn't catalogued. Rating is user
+    /// data — preserved across re-analysis.
+    /// </summary>
+    public MusicTrack? SetRating(string path, int rating)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (rating is < 0 or > 5)
+            throw new ArgumentOutOfRangeException(nameof(rating), "Rating must be 0–5.");
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return null;
+
+        MusicTrack updated = existing with { Rating = rating };
+        Upsert(updated);
+        return updated;
+    }
+
+    /// <summary>
+    /// Records that a track was loaded to a deck: bumps its play count and stamps the last-played time.
+    /// Returns the updated track (so the caller can persist that one row), or null if the path — matched
+    /// by exact path or file name (the same fallback the deck load uses) — isn't catalogued.
+    /// </summary>
+    public MusicTrack? MarkPlayed(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        MusicTrack? existing = TryGetByPathOrName(path);
+        if (existing is null)
+            return null;
+
+        MusicTrack updated = existing with { PlayCount = existing.PlayCount + 1, LastPlayed = DateTime.UtcNow };
+        Upsert(updated);
+        return updated;
     }
 
     /// <summary>Paths of the catalogued tracks that still need analysis (Failed / no BPM).</summary>

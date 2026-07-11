@@ -185,6 +185,12 @@ internal sealed class RecordingCatalogStore : IMusicCatalogStore
         return Task.CompletedTask;
     }
 
+    public Task SaveTrackAsync(MusicTrack track, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task DeleteTrackAsync(string path, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
     public Task<IReadOnlyList<MusicTrack>> LoadMusicAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<MusicTrack>>(Array.Empty<MusicTrack>());
 

@@ -12,6 +12,22 @@ namespace Liveolator.Media.Tests;
 public class JsonCatalogStoreTests
 {
     [Fact]
+    public async Task SaveTrack_UpsertsOneTrack_AndDeleteTrack_DropsIt()
+    {
+        using var dir = new TempDirectory();
+        var store = new JsonCatalogStore(dir.Path);
+
+        await store.SaveTrackAsync(TestTracks.Analyzed("a.wav", 120.0, 0, KeyMode.Major));
+        await store.SaveTrackAsync(TestTracks.Analyzed("b.wav", 128.0, 0, KeyMode.Major));
+        await store.SaveTrackAsync(TestTracks.Analyzed("a.wav", 140.0, 0, KeyMode.Major)); // upsert in place
+        await store.DeleteTrackAsync("b.wav");
+
+        MusicTrack only = Assert.Single(await store.LoadMusicAsync());
+        Assert.Equal("a.wav", only.File.Path);
+        Assert.Equal(140.0, only.Bpm!.Bpm);
+    }
+
+    [Fact]
     public async Task SaveThenLoad_RoundTripsTracks()
     {
         using var dir = new TempDirectory();

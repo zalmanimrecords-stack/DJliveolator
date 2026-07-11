@@ -73,6 +73,22 @@ public sealed class SqliteCatalogStoreTests
     }
 
     [Fact]
+    public async Task SaveTrack_UpsertsOneRow_ForTheIncrementalScan()
+    {
+        using var dir = new TempDirectory();
+        using var store = new SqliteCatalogStore(dir.Path);
+
+        // Each scanned track persisted on its own, then one updated in place — the incremental scan write.
+        await store.SaveTrackAsync(TestTracks.Analyzed("a.wav", 120.0, 0, KeyMode.Major));
+        await store.SaveTrackAsync(TestTracks.Analyzed("b.wav", 128.0, 0, KeyMode.Major));
+        await store.SaveTrackAsync(TestTracks.Analyzed("a.wav", 140.0, 0, KeyMode.Major));
+
+        IReadOnlyList<MusicTrack> loaded = await store.LoadMusicAsync();
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal(140.0, loaded.Single(t => t.File.Path == "a.wav").Bpm!.Bpm);
+    }
+
+    [Fact]
     public async Task Load_EmptyDatabase_ReturnsEmpty()
     {
         using var dir = new TempDirectory();

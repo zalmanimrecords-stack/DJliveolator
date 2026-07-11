@@ -30,9 +30,17 @@ internal static class ServiceRegistration
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();
         services.AddSingleton<IFileEnumerator, FileSystemFileEnumerator>();
         services.AddSingleton(new TrackAnalyzer());
-        services.AddSingleton(sp => new JsonCatalogStore(
-            config.DataDirectory,
-            onWarning: msg => sp.GetRequiredService<ILogger<JsonCatalogStore>>().LogWarning("{Warning}", msg)));
+        // Per-row SQLite catalog store (doc 31 M1) — the SAME database the app writes, so an agent's scans
+        // and the app share one catalog without clobbering each other's rows. A one-time migration carries
+        // a legacy JSON catalog over. One store serves both the music and visual catalog seams.
+        string dataDirectory = config.DataDirectory ?? JsonCatalogStore.DefaultRoot();
+        CatalogMigration.JsonToSqliteIfNeeded(
+            dataDirectory, msg => System.Diagnostics.Trace.TraceWarning(msg));
+        services.AddSingleton(sp => new SqliteCatalogStore(
+            dataDirectory,
+            onWarning: msg => sp.GetRequiredService<ILogger<SqliteCatalogStore>>().LogWarning("{Warning}", msg)));
+        services.AddSingleton<IMusicCatalogStore>(sp => sp.GetRequiredService<SqliteCatalogStore>());
+        services.AddSingleton<IVisualCatalogStore>(sp => sp.GetRequiredService<SqliteCatalogStore>());
         services.AddSingleton<PlaylistWriter>();
 
         // DJ-library import (doc: import) for agents: file-based (Rekordbox/Traktor/VirtualDJ) + folder-based

@@ -24,6 +24,51 @@ public class TrackSortTests
     }
 
     [Fact]
+    public void Rating_descending_orders_by_stars_unrated_last()
+    {
+        var tracks = new[]
+        {
+            Track("A") with { Rating = 3 },
+            Track("B") with { Rating = 0 }, // unrated → last
+            Track("C") with { Rating = 5 },
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Rating, descending: true);
+
+        Assert.Equal(new[] { "C", "A", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void PlayCount_descending_orders_by_plays()
+    {
+        var tracks = new[]
+        {
+            Track("A") with { PlayCount = 2 },
+            Track("B") with { PlayCount = 9 },
+            Track("C") with { PlayCount = 0 },
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.PlayCount, descending: true);
+
+        Assert.Equal(new[] { "B", "A", "C" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void DateAdded_descending_puts_most_recent_first_unstamped_last()
+    {
+        var tracks = new[]
+        {
+            Track("A") with { DateAdded = T.AddDays(1) },
+            Track("B") with { DateAdded = null },        // never stamped → last
+            Track("C") with { DateAdded = T.AddDays(5) },
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.DateAdded, descending: true);
+
+        Assert.Equal(new[] { "C", "A", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
     public void Bpm_ascending_orders_by_tempo()
     {
         var tracks = new[] { Track("A", bpm: 128), Track("B", bpm: 90), Track("C", bpm: 110) };
