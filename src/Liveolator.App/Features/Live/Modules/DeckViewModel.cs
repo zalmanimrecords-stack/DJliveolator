@@ -428,9 +428,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// <summary>Default loop length emitted by the LOOP button, in beats (a 1-bar loop in 4/4).</summary>
     private const double DefaultLoopBeats = 4.0;
 
-    // Selectable auto-loop lengths in BEATS: 1/64 up to 32 (= 8 bars in 4/4). LOOP arms the selected one.
-    private static readonly double[] LoopLengthsBeats =
-        { 1 / 64.0, 1 / 32.0, 1 / 16.0, 1 / 8.0, 1 / 4.0, 1 / 2.0, 1, 2, 4, 8, 16, 32 };
+    // Selectable auto-loop lengths in BEATS: whole bars only — 1/2/4/8 bars (4/8/16/32 beats). Sub-bar loops
+    // are dropped because their region is smaller than the mixer block, so the position-sync wrap can't hold
+    // them cleanly; only lengths that actually loop are offered. LOOP arms the selected one.
+    private static readonly double[] LoopLengthsBeats = { 4, 8, 16, 32 };
     private double _loopBeats = DefaultLoopBeats;
     private double _loopLengthKnob = (double)ClosestLoopIndex(DefaultLoopBeats) / (LoopLengthsBeats.Length - 1);
 
@@ -847,15 +848,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         return best;
     }
 
-    /// <summary>A loop length (beats) as a deck label: "1/8", "2", "1 BAR", "8 BAR" (4 beats = 1 bar). Pure.</summary>
+    /// <summary>A loop length (beats) as a deck label: "1 BAR", "8 BAR" (4 beats = 1 bar); "—" when cleared.
+    /// Loop lengths are whole bars only (1/2/4/8), so the label is always in bars. Pure.</summary>
     public static string FormatLoopLength(double beats)
     {
         if (beats <= 0)
             return "—";
-        if (beats < 1)
-            return $"1/{(int)Math.Round(1.0 / beats)}";
-        if (beats < 4)
-            return ((int)beats).ToString();
         return $"{(int)Math.Round(beats / 4.0)} BAR";
     }
 
@@ -983,13 +981,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Grid edit: slide the grid so a beat line lands on the kick under the playhead (sets the
     /// within-beat first-beat anchor from the current position).</summary>
-    /// <summary>The armed loop length as a deck label (e.g. "1/8", "1 BAR", "8 BAR"); shown on the LOOP key.</summary>
+    /// <summary>The armed loop length as a deck label (e.g. "1 BAR", "8 BAR"); shown on the LOOP key.</summary>
     public string LoopLengthLabel => FormatLoopLength(_loopBeats);
 
     /// <summary>
-    /// The loop-length KNOB position (0..1, two-way). The knob carries 12 detents (1/64 … 8 bars); turning
-    /// it selects the length the LOOP key arms. While a loop is running it resizes that loop in real time —
-    /// the engine pins the in-point, so only the out-point moves (down to sub-bar sizes).
+    /// The loop-length KNOB position (0..1, two-way). The knob carries 4 detents (1/2/4/8 bars); turning it
+    /// selects the length the LOOP key arms. While a loop is running it resizes that loop in real time — the
+    /// engine pins the in-point and re-seats the playhead when the region shrinks behind it, so only the
+    /// out-point moves.
     /// </summary>
     public double LoopLengthKnob
     {

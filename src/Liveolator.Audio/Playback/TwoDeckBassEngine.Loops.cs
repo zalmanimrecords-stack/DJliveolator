@@ -93,17 +93,42 @@ public sealed partial class TwoDeckBassEngine
     }
 
     // Caller holds _gate. Arms the backend loop region for <beats> beats from <startSeconds> and records
-    // the in-point so a later halve/double resizes from the same start.
+    // the in-point so a later halve/double resizes from the same start. Re-seats the playhead when a live
+    // resize shrinks the region behind it, so the loop reshapes in real time instead of "escaping".
     private void ApplyLoopLocked(int slot, LoadedDeck deck, double startSeconds, double beats)
     {
         DeckSlot s = _slots[slot];
         LoopRegion region = BeatLoopCalculator.Region(startSeconds, beats, s.BaseBpm);
-        _backend.SetDeckLoop(deck.Handle, region.StartSeconds, region.EndSeconds);
+
+        // Near the track end a bar-loop can run past the file; clamp the out-point so the wrap sync still
+        // fires (a sync armed beyond the stream length never triggers, and the loop would silently not hold).
+        double trackLength = _backend.GetDeckLengthSeconds(deck.Handle);
+        double endSeconds = region.EndSeconds;
+        if (trackLength > 0.0 && endSeconds > trackLength)
+            endSeconds = trackLength;
+        if (endSeconds <= region.StartSeconds)
+        {
+            _logger.LogWarning("SetLoop deck slot {Slot} ignored: region collapses against the track end.", slot);
+            return;
+        }
+
+        _backend.SetDeckLoop(deck.Handle, region.StartSeconds, endSeconds);
         s.LoopBeats = beats;
         s.LoopStartSeconds = region.StartSeconds;
+
+        // A shrink (knob/halve while playing) can leave the playhead PAST the new out-point; the forward wrap
+        // sync would then never fire and the loop would run off the end. Pull the playhead back into the
+        // region, preserving beat phase, so resizing a running loop takes effect immediately (doc 11).
+        double position = _backend.GetDeckPositionSeconds(deck.Handle);
+        if (position >= endSeconds && trackLength > 0.0)
+        {
+            double wrapped = BeatLoopCalculator.WrapIntoRegion(position, region.StartSeconds, endSeconds - region.StartSeconds);
+            _backend.SetDeckPositionFraction(deck.Handle, wrapped / trackLength);
+        }
+
         _logger.LogInformation(
             "Deck slot {Slot} loop: {Beats} beats -> [{Start:F3}s, {End:F3}s).",
-            slot, beats, region.StartSeconds, region.EndSeconds);
+            slot, beats, region.StartSeconds, endSeconds);
     }
 
     public void ClearLoop(int slot)

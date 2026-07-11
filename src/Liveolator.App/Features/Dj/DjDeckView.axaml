@@ -125,12 +125,12 @@
           </StackPanel>
 
           <StackPanel Spacing="6">
-            <!-- Loop length knob (1/64 … 8 bars, 12 detents): turn to select the armed length; the value
+            <!-- Loop length knob (1/2/4/8 bars, 4 detents): turn to select the armed length; the value
                  shows under the knob and on the LOOP key, which arms a loop of that length. -->
             <StackPanel Spacing="2" HorizontalAlignment="Center">
-              <controls:Knob Width="44" Height="44" Detents="12" HorizontalAlignment="Center"
+              <controls:Knob Width="44" Height="44" Detents="4" HorizontalAlignment="Center"
                              Value="{Binding LoopLengthKnob, Mode=TwoWay}"
-                             ToolTip.Tip="Loop length — turn to set 1/64 beat up to 8 bars" />
+                             ToolTip.Tip="Loop length — turn to set 1 up to 8 bars" />
               <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
                          Text="{Binding LoopLengthLabel}" />
             </StackPanel>

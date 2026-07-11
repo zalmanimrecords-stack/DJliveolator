@@ -1707,18 +1707,14 @@ public sealed class DeckViewModelTests
         Assert.Equal(expected, DeckViewModel.NudgedFirstBeat(current, delta, bpm), precision: 6);
     }
 
-    // --- Loop-length selector (1/64 … 8 bars) ---
+    // --- Loop-length selector (1/2/4/8 bars) ---
 
     [Theory]
-    [InlineData(1 / 64.0, "1/64")]
-    [InlineData(1 / 8.0, "1/8")]
-    [InlineData(1 / 2.0, "1/2")]
-    [InlineData(1.0, "1")]
-    [InlineData(2.0, "2")]
     [InlineData(4.0, "1 BAR")]
     [InlineData(8.0, "2 BAR")]
+    [InlineData(16.0, "4 BAR")]
     [InlineData(32.0, "8 BAR")]
-    public void FormatLoopLength_LabelsBeatsAndBars(double beats, string expected)
+    public void FormatLoopLength_LabelsBarLengths(double beats, string expected)
     {
         Assert.Equal(expected, DeckViewModel.FormatLoopLength(beats));
     }
@@ -1727,13 +1723,14 @@ public sealed class DeckViewModelTests
     public void LoopLengthKnob_DefaultsToOneBar()
     {
         var vm = new DeckViewModel(slot: 0, new FakeDispatcher());
-        Assert.Equal("1 BAR", vm.LoopLengthLabel); // default 4 beats (index 8 of 12)
+        Assert.Equal("1 BAR", vm.LoopLengthLabel); // default 4 beats (index 0 of 4)
     }
 
     [Theory]
-    [InlineData(0.0, "1/64")]   // knob fully left → shortest
-    [InlineData(1.0, "8 BAR")]  // fully right → 32 beats
-    [InlineData(6.0 / 11, "1")] // index 6 → 1 beat
+    [InlineData(0.0, "1 BAR")]      // knob fully left → 1 bar (the floor)
+    [InlineData(1.0, "8 BAR")]      // fully right → 32 beats = 8 bars
+    [InlineData(1.0 / 3, "2 BAR")]  // second detent → 8 beats
+    [InlineData(2.0 / 3, "4 BAR")]  // third detent → 16 beats
     public void LoopLengthKnob_MapsPositionToLength(double knob, string expectedLabel)
     {
         var vm = new DeckViewModel(slot: 0, new FakeDispatcher()) { LoopLengthKnob = knob };
@@ -1741,8 +1738,8 @@ public sealed class DeckViewModelTests
     }
 
     [Theory]
-    [InlineData(-0.5, "1/64")] // below range clamps to shortest
-    [InlineData(2.0, "8 BAR")] // above range clamps to longest
+    [InlineData(-0.5, "1 BAR")] // below range clamps to shortest (1 bar)
+    [InlineData(2.0, "8 BAR")]  // above range clamps to longest
     public void LoopLengthKnob_ClampsOutOfRange(double knob, string expectedLabel)
     {
         var vm = new DeckViewModel(slot: 0, new FakeDispatcher()) { LoopLengthKnob = knob };
@@ -1769,15 +1766,15 @@ public sealed class DeckViewModelTests
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 1, dispatcher);
         dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetLoop, 1,
-            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 4.0)); // a loop is running
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 4.0)); // a 1-bar loop is running
         dispatcher.Dispatched.Clear();
 
-        vm.LoopLengthKnob = 5.0 / 11; // index 5 → 1/2 beat (a sub-bar size)
+        vm.LoopLengthKnob = 1.0 / 3; // second detent → 8 beats (2 bars)
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.DeckSetLoop, action.Kind);
         Assert.Equal(1, action.Slot);
-        Assert.Equal(0.5, action.Value, precision: 6);
+        Assert.Equal(8.0, action.Value, precision: 6);
     }
 
     [Fact]
@@ -1786,10 +1783,10 @@ public sealed class DeckViewModelTests
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
 
-        vm.LoopLengthKnob = 0.0; // shortest — changes the armed length but no loop is running
+        vm.LoopLengthKnob = 1.0; // longest — changes the armed length but no loop is running
 
         Assert.Empty(dispatcher.Dispatched);
-        Assert.Equal("1/64", vm.LoopLengthLabel);
+        Assert.Equal("8 BAR", vm.LoopLengthLabel);
     }
 
 

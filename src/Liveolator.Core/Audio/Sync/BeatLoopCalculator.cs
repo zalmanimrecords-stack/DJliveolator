@@ -14,9 +14,11 @@ namespace Liveolator.Core.Audio.Sync;
 /// </remarks>
 public static class BeatLoopCalculator
 {
-    /// <summary>The shortest loop allowed, in beats — 1/64 supports a beat-roll/stutter and matches the
-    /// deck loop-length knob's floor; below this a loop request is treated as "clear".</summary>
-    public const double MinBeats = 1.0 / 64.0;
+    /// <summary>The shortest loop allowed, in beats — 4 (= one bar in 4/4). Sub-bar regions are smaller than
+    /// the mixer's processing block, so the position-sync wrap clicks/skips instead of holding cleanly; the
+    /// deck loop control therefore only offers bar lengths (1/2/4/8 bars). Below this floor a loop request is
+    /// treated as "clear".</summary>
+    public const double MinBeats = 4.0;
 
     /// <summary>The longest loop allowed, in beats (32 = eight bars in 4/4) — the ceiling for loop double.</summary>
     public const double MaxBeats = 32.0;
@@ -75,6 +77,26 @@ public static class BeatLoopCalculator
         if (snapped < 0.0)
             snapped += Math.Ceiling(-snapped / beatSeconds) * beatSeconds;
         return snapped;
+    }
+
+    /// <summary>
+    /// Phase-preserving wrap of a playhead back into an active loop region — used when a loop is RESIZED
+    /// smaller while playing and the playhead now sits past the new out-point. Keeps the same position within
+    /// the loop cycle (<c>in + ((pos - in) mod length)</c>) so a halved bar-loop lands on the same beat phase
+    /// instead of jumping to the top. A playhead already inside the region is returned unchanged; one before
+    /// the in-point is clamped to it.
+    /// </summary>
+    /// <param name="positionSeconds">The current playhead (seconds from track start).</param>
+    /// <param name="startSeconds">The loop in-point (seconds).</param>
+    /// <param name="lengthSeconds">The (new) loop length (seconds); non-positive returns the in-point.</param>
+    public static double WrapIntoRegion(double positionSeconds, double startSeconds, double lengthSeconds)
+    {
+        if (lengthSeconds <= 0.0)
+            return startSeconds;
+        double relative = positionSeconds - startSeconds;
+        if (relative <= 0.0)
+            return startSeconds;
+        return startSeconds + (relative % lengthSeconds);
     }
 }
 

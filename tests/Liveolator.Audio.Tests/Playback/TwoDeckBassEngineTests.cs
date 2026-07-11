@@ -1029,21 +1029,24 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
-    public void HalveLoop_KeepsTheInPoint_AndHalvesTheBeatLength_EvenAfterThePlayheadMoves()
+    public void HalveLoop_KeepsTheInPoint_AndHalvesTheBeatLength_ReSeatingThePlayheadIntoTheRegion()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
         engine.Load(0, @"C:\a.wav");
         engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
         backend.PositionFraction[100] = 0.1;  // 10 s
-        engine.SetLoop(0, 4.0);               // [10, 12]
+        engine.SetLoop(0, 8.0);               // [10, 14] (4 beats is the one-bar floor, so start from 8)
 
-        backend.PositionFraction[100] = 0.5;  // playhead runs on inside the loop
-        engine.HalveLoop(0);                  // 2 beats, in-point pinned at 10 s
+        backend.PositionFraction[100] = 0.134; // 13.4 s — past where the halved out-point will land
+        engine.HalveLoop(0);                  // 4 beats, in-point pinned at 10 s → [10, 12]
 
         (double start, double end) = backend.Loops[100];
         Assert.Equal(10.0, start, precision: 6);  // NOT the moved playhead
-        Assert.Equal(11.0, end, precision: 6);    // 10 + 2 beats * 0.5 s
-        Assert.Equal(2.0, engine.LoopBeats(0), precision: 6);
+        Assert.Equal(12.0, end, precision: 6);    // 10 + 4 beats * 0.5 s
+        Assert.Equal(4.0, engine.LoopBeats(0), precision: 6);
+        // Playhead was past the new out-point → re-seated back into the region, phase preserved:
+        // 13.4 s is 3.4 s past the in-point; wrapped by length 2 s → 1.4 s in = 11.4 s = fraction 0.114.
+        Assert.Equal(0.114, backend.PositionFraction[100], precision: 6);
     }
 
     [Fact]
@@ -1064,21 +1067,54 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
-    public void SetLoop_WhileLooping_ResizesToSubBarKeepingTheInPoint_EvenAfterThePlayheadMoves()
+    public void SetLoop_WhileLooping_ShrinksKeepingTheInPoint_AndReSeatsThePlayheadPhasePreserving()
     {
         using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
         engine.Load(0, @"C:\a.wav");
         engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
         backend.PositionFraction[100] = 0.1;  // 10 s
-        engine.SetLoop(0, 4.0);               // fresh loop [10, 12]
+        engine.SetLoop(0, 16.0);              // fresh loop [10, 18] (4 bars)
 
-        backend.PositionFraction[100] = 0.5;  // playhead runs on inside the loop
-        engine.SetLoop(0, 0.5);               // knob → 1/2 beat, a sub-bar size
+        backend.PositionFraction[100] = 0.153; // 15.3 s — playhead runs past where the smaller out-point lands
+        engine.SetLoop(0, 8.0);               // knob → 2 bars, a smaller loop [10, 14]
 
         (double start, double end) = backend.Loops[100];
         Assert.Equal(10.0, start, precision: 6);   // in-point pinned, NOT the moved playhead
-        Assert.Equal(10.25, end, precision: 6);     // 10 + 0.5 beats * 0.5 s
-        Assert.Equal(0.5, engine.LoopBeats(0), precision: 6);
+        Assert.Equal(14.0, end, precision: 6);      // 10 + 8 beats * 0.5 s
+        Assert.Equal(8.0, engine.LoopBeats(0), precision: 6);
+        // 15.3 s is 5.3 s past the in-point; wrapped by the new 4 s length → 1.3 s in = 11.3 s = fraction 0.113.
+        Assert.Equal(0.113, backend.PositionFraction[100], precision: 6);
+    }
+
+    [Fact]
+    public void SetLoop_WhileLooping_Growing_LeavesThePlayheadWhereItIs()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        backend.PositionFraction[100] = 0.1;  // 10 s
+        engine.SetLoop(0, 4.0);               // fresh loop [10, 12] (1 bar)
+
+        backend.PositionFraction[100] = 0.11; // 11 s — inside the loop
+        engine.SetLoop(0, 8.0);               // grow to 2 bars [10, 14]; playhead still inside → no re-seat
+
+        Assert.Equal(0.11, backend.PositionFraction[100], precision: 6);
+        Assert.Equal(14.0, backend.Loops[100].End, precision: 6);
+    }
+
+    [Fact]
+    public void SetLoop_NearTrackEnd_ClampsTheOutPointToTheTrackLength()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        backend.LengthSeconds[100] = 100.0;   // track is 100 s
+        engine.SetDeckBaseBpm(0, 120.0);      // 0.5 s/beat
+        backend.PositionFraction[100] = 0.99; // 99 s
+
+        engine.SetLoop(0, 32.0);              // 8 bars = 16 s → [99, 115] runs past the file
+
+        Assert.Equal(99.0, backend.Loops[100].Start, precision: 6);
+        Assert.Equal(100.0, backend.Loops[100].End, precision: 6); // clamped to the track length
     }
 
     [Fact]
