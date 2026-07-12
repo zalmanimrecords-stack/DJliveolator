@@ -12,6 +12,7 @@ using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
 using Xunit;
@@ -2135,4 +2136,61 @@ public sealed class DeckViewModelTests
         Assert.False(canExecute);
         Assert.Empty(service.Requested);
     }
+
+    // --- SYNC "can't sync" (OutOfRange) surfaced from DeckSyncToggle feedback ---
+
+    [Fact]
+    public void IsSyncOutOfRange_LightsUp_OnOutOfRangeSyncFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        Assert.False(vm.IsSyncOutOfRange);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, SyncFeedback(SyncLockState.OutOfRange));
+
+        Assert.True(vm.IsSyncOutOfRange);
+    }
+
+    [Theory]
+    [InlineData(SyncLockState.Off)]
+    [InlineData(SyncLockState.Active)]
+    [InlineData(SyncLockState.Locked)]
+    public void IsSyncOutOfRange_Clears_OnAnyInRangeState(SyncLockState state)
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, SyncFeedback(SyncLockState.OutOfRange));
+        Assert.True(vm.IsSyncOutOfRange);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, SyncFeedback(state));
+
+        Assert.False(vm.IsSyncOutOfRange);
+    }
+
+    [Fact]
+    public void IsSyncOutOfRange_IgnoresOtherDecksFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 1, SyncFeedback(SyncLockState.OutOfRange));
+
+        Assert.False(vm.IsSyncOutOfRange); // deck B's state must not leak onto deck A
+    }
+
+    [Fact]
+    public void IsSyncOutOfRange_IsSeededFromInitialFeedback()
+    {
+        // Re-entering the DJ tab on a deck the engine already reports as OutOfRange must show it at once.
+        var dispatcher = new FakeDispatcher();
+        dispatcher.SeedFeedback(PerformanceActionKind.DeckSyncToggle, 0, SyncFeedback(SyncLockState.OutOfRange));
+
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        Assert.True(vm.IsSyncOutOfRange);
+    }
+
+    // Mirrors DeckActionHandler.SyncFeedback: the lock-state name rides in Argument, ordinal in Value.
+    private static ActionFeedbackState SyncFeedback(SyncLockState state)
+        => new(IsActive: state != SyncLockState.Off, IsAvailable: true, Value: (double)state, Argument: state.ToString());
 }

@@ -36,4 +36,24 @@ public static class BpmMatch
             folded /= 2.0;
         return Math.Abs(bpmA - folded) <= toleranceBpm;
     }
+
+    /// <summary>
+    /// The octave factor relating <paramref name="bpm"/> to <paramref name="referenceBpm"/> when the two are
+    /// octave-matched — the nearest power of two to <c>bpm / referenceBpm</c>, folded by the same √2 boundary
+    /// <see cref="AreMatched"/> uses. <c>1</c> = unison, <c>0.5</c> = this deck runs at half-time,
+    /// <c>2</c> = double-time (and so on for deeper octaves). Returns <c>1</c> (unison → no badge) when
+    /// either tempo is non-positive or non-finite. Lets the UI tag a half/double-time lock without
+    /// re-deriving the fold or coupling the two decks.
+    /// </summary>
+    public static double OctaveFactor(double bpm, double referenceBpm)
+    {
+        if (!double.IsFinite(bpm) || !double.IsFinite(referenceBpm) || bpm <= 0.0 || referenceBpm <= 0.0)
+            return 1.0;
+
+        double folded = bpm / referenceBpm;
+        double factor = 1.0;
+        while (folded < LowerFold) { folded *= 2.0; factor *= 0.5; }
+        while (folded >= UpperFold) { folded /= 2.0; factor *= 2.0; }
+        return factor;
+    }
 }

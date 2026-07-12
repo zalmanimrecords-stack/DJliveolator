@@ -15,6 +15,7 @@ using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Audio.Effects;
+using Liveolator.Core.Audio.Sync;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Waveform;
 using ReactiveUI;
@@ -142,6 +143,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private readonly DispatcherTimer _pitchBendRestore;
     private decimal _bpm;
     private bool _isBpmMatched;
+    private string _bpmOctaveLabel = "";
+    private bool _isSyncOutOfRange;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
@@ -389,6 +392,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckBpm, slot) is { } bpmFeedback)
             ApplyBpmFeedback(bpmFeedback);
+
+        // Re-entering the DJ tab on a deck the engine already reports as OutOfRange must show "can't sync"
+        // immediately, not only after the next lock-state transition — so seed it from current feedback.
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot) is { } syncFeedback)
+            _isSyncOutOfRange = IsSyncOutOfRangeFeedback(syncFeedback);
 
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot)
             is { IsAvailable: true, Argument: { Length: > 0 } trackPath } loadedTrack)
@@ -682,6 +690,45 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
     /// <summary>Applies the cross-deck beatmatch result computed by <see cref="PerformanceDeckSet"/>.</summary>
     internal void SetBpmMatched(bool matched) => IsBpmMatched = matched;
+
+    /// <summary>
+    /// A compact octave tag shown next to the BPM counter when this deck is beatmatched at an OCTAVE rather
+    /// than unison ("½×" at half-time, "2×" at double-time; "" for unison / no match). Lets a 140-vs-70
+    /// lock read as a deliberate half-time match instead of "broken". Set by <see cref="PerformanceDeckSet"/>,
+    /// which owns both decks and so knows the other deck's tempo.
+    /// </summary>
+    public string BpmOctaveLabel
+    {
+        get => _bpmOctaveLabel;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _bpmOctaveLabel, value);
+            this.RaisePropertyChanged(nameof(HasBpmOctaveLabel));
+        }
+    }
+
+    /// <summary>True while an octave tag is present (drives the tag's visibility next to the BPM readout).</summary>
+    public bool HasBpmOctaveLabel => _bpmOctaveLabel.Length > 0;
+
+    /// <summary>Applies the cross-deck octave tag computed by <see cref="PerformanceDeckSet"/>.</summary>
+    internal void SetBpmOctaveLabel(string label) => BpmOctaveLabel = label ?? "";
+
+    /// <summary>
+    /// True when the engine reports this deck's sync as <see cref="SyncLockState.OutOfRange"/> — the two
+    /// tracks' tempos are more than the sync stretch ceiling (±15%) apart, so SYNC can't beatmatch and holds
+    /// the deck's own rate. Drives a distinct "can't sync" look on the SYNC button so the decline isn't a
+    /// silent no-op. Fed by <see cref="PerformanceActionKind.DeckSyncToggle"/> feedback.
+    /// </summary>
+    public bool IsSyncOutOfRange
+    {
+        get => _isSyncOutOfRange;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncOutOfRange, value);
+    }
+
+    // DeckSyncToggle feedback carries the deck's SyncLockState (name in Argument, ordinal in Value);
+    // OutOfRange is the "tempos too far apart to beatmatch" state the SYNC button surfaces as "can't sync".
+    private static bool IsSyncOutOfRangeFeedback(ActionFeedbackState state)
+        => string.Equals(state.Argument, nameof(SyncLockState.OutOfRange), StringComparison.Ordinal);
 
     /// <summary>
     /// BPM expressed as a 0..1 fader position (0 = MinimumBpm, 1 = MaximumBpm).
@@ -1289,6 +1336,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     // One-shot SYNC engages key-lock to preserve the key while it beatmatches, so this
                     // feedback also lights the KEY LOCK key after a SYNC — not just a manual key-lock press.
                     IsKeyLock = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.DeckSyncToggle:
+                    // The engine reports the deck's beat-lock state here; surface OutOfRange as "can't sync"
+                    // on the SYNC button so a declined sync (tempo gap > ±15%) isn't a silent no-op.
+                    IsSyncOutOfRange = IsSyncOutOfRangeFeedback(e.State);
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);

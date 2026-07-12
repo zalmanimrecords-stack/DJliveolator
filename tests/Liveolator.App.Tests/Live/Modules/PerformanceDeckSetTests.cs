@@ -198,4 +198,56 @@ public sealed class PerformanceDeckSetTests
         Assert.False(decks.DeckA.IsBpmMatched);
         Assert.False(decks.DeckB.IsBpmMatched);
     }
+
+    // --- Octave (half/double-time) tag: each deck shows how its counter relates to the other's ---
+
+    [Fact]
+    public void OctaveTag_TagsHalfAndDoubleTime_WhenMatchedAtAnOctave()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 140.0);
+        PlayAt(dispatcher, slot: 1, bpm: 70.0); // exact half-time — a genuine beatmatch
+
+        Assert.True(decks.DeckA.IsBpmMatched);
+        Assert.Equal("2×", decks.DeckA.BpmOctaveLabel);  // A runs at double the other deck
+        Assert.Equal("½×", decks.DeckB.BpmOctaveLabel);  // B runs at half
+        Assert.True(decks.DeckA.HasBpmOctaveLabel);
+        Assert.True(decks.DeckB.HasBpmOctaveLabel);
+    }
+
+    [Fact]
+    public void OctaveTag_IsEmpty_AtUnison()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 128.0);
+        PlayAt(dispatcher, slot: 1, bpm: 128.05); // matched at unison — no octave tag
+
+        Assert.True(decks.DeckA.IsBpmMatched);
+        Assert.Equal("", decks.DeckA.BpmOctaveLabel);
+        Assert.False(decks.DeckA.HasBpmOctaveLabel);
+        Assert.False(decks.DeckB.HasBpmOctaveLabel);
+    }
+
+    [Fact]
+    public void OctaveTag_Clears_WhenNoLongerMatched()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        PlayAt(dispatcher, slot: 0, bpm: 140.0);
+        PlayAt(dispatcher, slot: 1, bpm: 70.0);
+        Assert.True(decks.DeckB.HasBpmOctaveLabel);
+
+        // The DJ pitches deck B off the half-time grid — no longer an octave lock, so the tag drops.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckBpm, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 75.0, Argument: "60|200"));
+
+        Assert.False(decks.DeckB.IsBpmMatched);
+        Assert.Equal("", decks.DeckA.BpmOctaveLabel);
+        Assert.Equal("", decks.DeckB.BpmOctaveLabel);
+    }
 }
