@@ -80,10 +80,30 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     // tempo aren't "locked" in the mix yet, and a stopped deck must drop the highlight.
     private void RefreshBpmMatch()
     {
-        bool matched = DeckA.IsPlaying && DeckB.IsPlaying
-            && BpmMatch.AreMatched(decimal.ToDouble(DeckA.Bpm), decimal.ToDouble(DeckB.Bpm));
+        double bpmA = decimal.ToDouble(DeckA.Bpm);
+        double bpmB = decimal.ToDouble(DeckB.Bpm);
+        bool matched = DeckA.IsPlaying && DeckB.IsPlaying && BpmMatch.AreMatched(bpmA, bpmB);
         DeckA.SetBpmMatched(matched);
         DeckB.SetBpmMatched(matched);
+        // When the lock is at an OCTAVE (half/double time), tag each deck with how its counter relates to the
+        // other's, so a 140-vs-70 match reads as a deliberate half-time lock rather than "broken". Each deck's
+        // tag is its own tempo's octave factor against the other's; unison (or no match) shows no tag.
+        DeckA.SetBpmOctaveLabel(matched ? OctaveLabel(BpmMatch.OctaveFactor(bpmA, bpmB)) : "");
+        DeckB.SetBpmOctaveLabel(matched ? OctaveLabel(BpmMatch.OctaveFactor(bpmB, bpmA)) : "");
+    }
+
+    // A power-of-two octave factor as a compact deck tag: 1 → none (unison), 0.5 → "½×", 0.25 → "¼×",
+    // 2 → "2×", 4 → "4×". Thresholds (not float ==) keep it robust to the fold's rounding.
+    private static string OctaveLabel(double factor)
+    {
+        if (factor >= 1.5)
+            return $"{(int)Math.Round(factor)}×";
+        if (factor <= 0.75)
+        {
+            int denom = (int)Math.Round(1.0 / factor);
+            return denom == 2 ? "½×" : denom == 4 ? "¼×" : $"1/{denom}×";
+        }
+        return ""; // unison
     }
 
     /// <summary>Applies a new track-nudge step (seconds per ◄/► press) to both decks at runtime — called

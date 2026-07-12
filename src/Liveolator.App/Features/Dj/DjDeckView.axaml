@@ -16,6 +16,26 @@
       <Setter Property="Foreground" Value="{DynamicResource Green}" />
       <Setter Property="FontWeight" Value="Bold" />
     </Style>
+    <!-- Octave tag beside the BPM readout: shown only for a half/double-time lock (½× / 2×) so a 140-vs-70
+         match reads as a deliberate octave beatmatch, not a broken one. Amber pill, distinct from the green
+         unison highlight. -->
+    <Style Selector="Border.octave-tag">
+      <Setter Property="Background" Value="{DynamicResource S2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Amber}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="4,0" />
+    </Style>
+    <Style Selector="Border.octave-tag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource Amber}" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+    <!-- SYNC declined (tempos > ±15% apart → OutOfRange): a distinct red-outlined "can't sync" state so the
+         decline isn't a silent no-op. Paired with a "✕ SYNC" label (never colour-only, per the design line). -->
+    <Style Selector="Button.key.cantsync">
+      <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    </Style>
 
     <!-- Deck colour identity: deck A wears the house Accent, deck B a cool teal (the root's .deck-b class is
          bound to IsDeckB). Applied to the jog ring and the A/B badge so the two decks never read the same at
@@ -187,10 +207,19 @@
           <Path Data="M 0,0 L 17,10 L 0,20 Z" Fill="{DynamicResource Accent}" />
         </Button>
         <!-- One-shot SYNC: single-press beatmatch + kick-phase snap to the other deck, key preserved,
-             then free. Momentary, no latch. -->
-        <Button Grid.Column="2" Classes="key" Content="SYNC" Height="42"
+             then free. Momentary, no latch. When the engine reports OutOfRange (tempos > ±15% apart) the
+             button flips to a red "✕ SYNC" so the decline is visible, not a silent no-op. -->
+        <Button Grid.Column="2" Classes="key" Classes.cantsync="{Binding IsSyncOutOfRange}" Height="42"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
-                ToolTip.Tip="Match tempo + phase to the other deck once (key preserved)" />
+                ToolTip.Tip="Match tempo + phase to the other deck once (key preserved)">
+          <Panel>
+            <TextBlock Text="SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding !IsSyncOutOfRange}" />
+            <TextBlock Text="✕ SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Red}" IsVisible="{Binding IsSyncOutOfRange}"
+                       ToolTip.Tip="Tempos too far apart to beatmatch (more than ±15%)" />
+          </Panel>
+        </Button>
       </Grid>
 
       <!-- KEY · KEY-LOCK · pitch%: the loaded track's musical key (from the catalog) on the left, the KEY LOCK
@@ -216,13 +245,23 @@
         <StackPanel Spacing="6">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
-            <TextBlock Grid.Column="1" Classes="mono bpm"
-                       Classes.matched="{Binding IsBpmMatched}"
-                       FontSize="{DynamicResource FontBpmReadout}"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
-                       IsEnabled="{Binding IsBpmEnabled}"
-                       ToolTip.Tip="Live BPM (analyzed tempo × pitch); green when matched to the other deck" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                        HorizontalAlignment="Center" VerticalAlignment="Center">
+              <TextBlock Classes="mono bpm"
+                         Classes.matched="{Binding IsBpmMatched}"
+                         FontSize="{DynamicResource FontBpmReadout}"
+                         VerticalAlignment="Center"
+                         Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
+                         IsEnabled="{Binding IsBpmEnabled}"
+                         ToolTip.Tip="Live BPM (analyzed tempo × pitch); green when matched to the other deck" />
+              <!-- Half/double-time tag: only shown when the beatmatch is at an octave, so 140-vs-70 reads
+                   as a deliberate half-time lock rather than a broken match. -->
+              <Border Classes="octave-tag" VerticalAlignment="Center"
+                      IsVisible="{Binding HasBpmOctaveLabel}">
+                <TextBlock Classes="mono" Text="{Binding BpmOctaveLabel}"
+                           ToolTip.Tip="Beatmatched at an octave (half/double time) to the other deck" />
+              </Border>
+            </StackPanel>
             <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="±8%" />
           </Grid>
           <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
