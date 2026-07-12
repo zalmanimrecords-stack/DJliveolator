@@ -107,6 +107,31 @@ public sealed class LibrariesViewModelLiveTests
     }
 
     [Fact]
+    public async Task PlaySelected_WhenDeckAlreadyPlaying_ReplacesAndPlays_DoesNotQueue()
+    {
+        // The reported bug: play a track, then Play another → the second was ignored (queued behind the
+        // playing deck). An audition must replace the playing deck, not queue.
+        var dispatcher = new RecordingDispatcher();
+        var vm = BuildLiveViewModel(dispatcher, new FakeBeatClock(), "/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+
+        vm.SelectedTrack = vm.Tracks.First(t => t.Track.File.Path.EndsWith("Alpha.wav"));
+        await vm.PlaySelectedCommand.Execute().ToTask();
+
+        // Deck A is now playing; audition a different track.
+        dispatcher.PlayingSlots.Add(0);
+        dispatcher.Dispatched.Clear();
+        vm.SelectedTrack = vm.Tracks.First(t => t.Track.File.Path.EndsWith("Beta.wav"));
+
+        await vm.PlaySelectedCommand.Execute().ToTask();
+
+        // The second track loads (replaces the playing deck) — it is NOT appended to the deck's queue.
+        Assert.Contains(dispatcher.Dispatched,
+            a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Argument!.Contains("Beta.wav"));
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.PlaylistAppendTrack);
+    }
+
+    [Fact]
     public async Task Stop_DispatchesTransportStop()
     {
         var dispatcher = new RecordingDispatcher();

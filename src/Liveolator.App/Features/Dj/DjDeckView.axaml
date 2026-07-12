@@ -114,7 +114,7 @@
                           Margin="0,0,4,4" ToolTip.Tip="{Binding CueLabel}">
                     <Grid RowDefinitions="*,3">
                       <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                 FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
                       <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
                                  Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
                     </Grid>

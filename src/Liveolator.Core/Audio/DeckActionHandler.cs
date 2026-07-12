@@ -182,11 +182,13 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 _engine.SetPitch(slot, action.Value, action.InputMode == ActionInputMode.Relative);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
+                RaiseSyncedFollowerBpm(slot);
                 break;
             case PerformanceActionKind.DeckBpm:
                 _engine.SetDeckBpm(slot, action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
+                RaiseSyncedFollowerBpm(slot);
                 break;
             case PerformanceActionKind.DeckSetGridBpm:
                 // Re-tempo the GRID/sync reference (a hand-corrected analyzed BPM), NOT the audible rate:
@@ -194,6 +196,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 // position is left untouched, so editing the grid never changes what the floor hears.
                 _engine.SetDeckBaseBpm(slot, action.Value);
                 RaiseBpmFeedback(slot);
+                RaiseSyncedFollowerBpm(slot);
                 break;
             case PerformanceActionKind.DeckPitchBend:
                 // Momentary rate bend for manual beat-matching (Value = signed fraction, 0 = release). No
@@ -207,6 +210,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 _engine.SetDeckBpm(slot, _engine.DeckBpm(slot) + action.Value);
                 RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
                 RaiseBpmFeedback(slot);
+                RaiseSyncedFollowerBpm(slot);
                 break;
             case PerformanceActionKind.DeckCuePlay:
                 _engine.CuePlay(slot, action.IsPressed);
@@ -440,6 +444,18 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
 
     private void RaiseBpmFeedback(int slot)
         => RaiseFeedback(PerformanceActionKind.DeckBpm, slot, BpmFeedback(slot));
+
+    // A tempo change on one deck re-tempos every deck sync-locked to it (the engine's
+    // ReapplySyncedFollowers). The engine recomputes a synced follower's audible BPM live, but nothing
+    // re-emits its DeckBpm feedback — so the follower's on-screen counter freezes at its engage value
+    // while its audio tracks the leader (the counter then lies about what's playing). Mirror the engine's
+    // follower pull on the feedback side: after the moved slot, re-raise BPM for every OTHER synced deck.
+    private void RaiseSyncedFollowerBpm(int movedSlot)
+    {
+        for (int slot = 0; slot < _engine.DeckCount; slot++)
+            if (slot != movedSlot && _engine.IsSyncLocked(slot))
+                RaiseBpmFeedback(slot);
+    }
 
     private ActionFeedbackState BpmFeedback(int slot)
         => new(

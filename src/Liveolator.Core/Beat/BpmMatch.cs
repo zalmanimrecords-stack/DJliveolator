@@ -11,15 +11,29 @@ public static class BpmMatch
     /// when the tempos are genuinely locked, not merely close.</summary>
     public const double DefaultToleranceBpm = 0.1;
 
+    // √2 is the geometric midpoint of an octave: fold bpmB by ×2 / ÷2 until it sits within a √2 factor of
+    // bpmA and it lands in bpmA's octave — the same fold SYNC applies (TempoSyncCalculator). This makes a
+    // half/double-time lock (a 140 leader with a 70 follower) read as matched, matching pro-app behavior.
+    private static readonly double UpperFold = Math.Sqrt(2.0);
+    private static readonly double LowerFold = Math.Sqrt(0.5);
+
     /// <summary>
-    /// True when both tempos are real (finite and positive) and differ by no more than
-    /// <paramref name="toleranceBpm"/>. A non-positive tempo means "no track / un-analyzed", which never
-    /// matches — so two empty decks don't read as locked.
+    /// True when both tempos are real (finite and positive) and beatmatched — either at unison or at an
+    /// octave (half/double time). <paramref name="toleranceBpm"/> is applied after folding <paramref name="bpmB"/>
+    /// into <paramref name="bpmA"/>'s octave, so the window is a genuine tempo lock, not merely close. A
+    /// non-positive tempo means "no track / un-analyzed", which never matches — so two empty decks don't
+    /// read as locked.
     /// </summary>
     public static bool AreMatched(double bpmA, double bpmB, double toleranceBpm = DefaultToleranceBpm)
     {
         if (!double.IsFinite(bpmA) || !double.IsFinite(bpmB) || bpmA <= 0.0 || bpmB <= 0.0)
             return false;
-        return Math.Abs(bpmA - bpmB) <= toleranceBpm;
+
+        double folded = bpmB;
+        while (folded / bpmA < LowerFold)
+            folded *= 2.0;
+        while (folded / bpmA >= UpperFold)
+            folded /= 2.0;
+        return Math.Abs(bpmA - folded) <= toleranceBpm;
     }
 }

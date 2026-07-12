@@ -48,7 +48,13 @@ public sealed class DeckTrackLoader
     /// the analyzed tempo (0 = unknown) fed as the deck's Sync reference; <paramref name="firstBeatSeconds"/>
     /// is the analyzed downbeat anchor fed to phase-match (doc 22 A1).
     /// </summary>
-    public DeckLoadResult Load(int slot, string trackPath, double bpm, double firstBeatSeconds = 0)
+    /// <param name="replacePlaying">
+    /// When true, load onto the deck even if it is playing (replacing the current track) instead of
+    /// queueing behind it — for an <b>audition</b> where the user explicitly asked to hear THIS track now
+    /// (the library "Play" button). The default (false) keeps the never-cut-off-a-playing-deck policy for
+    /// the staging surfaces ("Load → Deck", "Add to Deck").
+    /// </param>
+    public DeckLoadResult Load(int slot, string trackPath, double bpm, double firstBeatSeconds = 0, bool replacePlaying = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(trackPath);
         string deck = slot == 0 ? "A" : "B";
@@ -61,7 +67,7 @@ public sealed class DeckTrackLoader
                 $"Cannot load \"{title}\" — the file is missing or its drive is offline ({trackPath}).");
         }
 
-        if (_dispatcher.GetFeedback(PerformanceActionKind.DeckPlayPause, slot).IsActive)
+        if (!replacePlaying && _dispatcher.GetFeedback(PerformanceActionKind.DeckPlayPause, slot).IsActive)
         {
             _dispatcher.Dispatch(new PerformanceAction(
                 PerformanceActionKind.PlaylistAppendTrack, Slot: slot, Argument: trackPath));

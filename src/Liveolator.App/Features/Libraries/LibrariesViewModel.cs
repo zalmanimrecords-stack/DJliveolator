@@ -1874,14 +1874,25 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         if (_dispatcher is null || _deckLoader is null || _selectedTrack is null)
             return;
 
+        // The library "Play" is an AUDITION: the user asked to hear THIS track now, so replace whatever is
+        // on Deck A rather than queueing behind it (the default loader policy queues a playing deck, which
+        // made a second Play do nothing — the reported "it ignores me" bug). The engine leaves a freshly
+        // loaded deck paused, so we then play it — but only if it isn't already playing (DeckPlayPause is a
+        // toggle, so an unconditional dispatch could pause a deck the load left running).
         Core.Playlist.DeckLoadResult result = _deckLoader.Load(
             slot: 0,
             _selectedTrack.Track.File.Path,
             bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0); // downbeat anchor → phase-match (doc 22 A1)
-        if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded)
+            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0, // downbeat anchor → phase-match (doc 22 A1)
+            replacePlaying: true);
+        if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded
+            && !_dispatcher.GetFeedback(PerformanceActionKind.DeckPlayPause, 0).IsActive)
             _dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
         LoadStatus = result.Message;
+
+        // An audition counts as a play (play count + last-played), persisted per-row.
+        if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded)
+            _ = RecordPlayAsync(_selectedTrack.Track.File.Path);
     }
 
     private void Stop()

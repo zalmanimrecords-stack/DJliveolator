@@ -74,6 +74,22 @@ public sealed class DeckTrackLoaderTests
     }
 
     [Fact]
+    public void Load_WithReplacePlaying_LoadsOverAPlayingDeck_InsteadOfQueueing()
+    {
+        // An audition (the library "Play"): the deck is already playing, but replacePlaying replaces it
+        // rather than queueing behind it — the fix for a second Play being ignored.
+        var dispatcher = new RecordingDispatcher();
+        dispatcher.SetPlaying(0);
+        var loader = new DeckTrackLoader(dispatcher, _ => true);
+
+        DeckLoadResult result = loader.Load(0, "/m/b.wav", bpm: 120.0, replacePlaying: true);
+
+        Assert.Equal(DeckLoadOutcome.Loaded, result.Outcome);
+        Assert.Equal(PerformanceActionKind.DeckLoadTrack, dispatcher.Dispatched[0].Kind);
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.PlaylistAppendTrack);
+    }
+
+    [Fact]
     public void Load_WhileTheOtherDeckPlays_StillLoadsDirectly()
     {
         var dispatcher = new RecordingDispatcher();
