@@ -36,12 +36,14 @@ $srcDir   = Join-Path $repoRoot 'artifacts/ui-shots'
 $destDir  = Join-Path $repoRoot 'website/public/screenshots'
 
 # Canonical capture name -> website filename. Edit if the tab set changes.
+# LIVE and DJ use the "loaded console" captures (ShowcaseUiShots) — tracks + waveforms + a beatmatch — so
+# the site shows the app in use rather than empty decks; STUDIO/VJ/LIBRARIES use the plain tab captures.
 $map = [ordered]@{
-    '00-LIVE.png'      = 'live.png'
-    '01-DJ.png'        = 'dj.png'
-    '02-STUDIO.png'    = 'studio.png'
-    '03-VJ.png'        = 'vj.png'
-    '04-LIBRARIES.png' = 'libraries.png'
+    '00-LIVE-loaded.png' = 'live.png'
+    '01-DJ-loaded.png'   = 'dj.png'
+    '02-STUDIO.png'      = 'studio.png'
+    '03-VJ.png'          = 'vj.png'
+    '04-LIBRARIES.png'   = 'libraries.png'
 }
 
 # --- Optional re-capture --------------------------------------------------------

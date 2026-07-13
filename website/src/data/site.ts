@@ -23,6 +23,10 @@ export const site = {
   version: "0.5.0",
   downloadUrl: "/downloads/LiveolatorSetup-0.5.0.exe",
   downloadSize: "38 MB",
+  // Cache-buster for the screenshots specifically. Bump this when the images are
+  // re-rendered WITHOUT a version bump, so Cloudflare's edge (which keys on the query)
+  // serves the fresh files instead of the cached ones (see website/DEPLOY.md).
+  shotRev: "2",
   // Email-gated download: the button posts the visitor's email here and the WP
   // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
   // `productSlug` must match a product key in the newsletter plugin settings.

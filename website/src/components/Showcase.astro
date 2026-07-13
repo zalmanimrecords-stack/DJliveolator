@@ -34,7 +34,7 @@ import { shots, site } from "../data/site";
           shots.map((s, i) => (
             <figure class:list={["frame", { active: i === 0 }]} data-frame={i}>
               <img
-                src={`${s.src}?v=${site.version}`}
+                src={`${s.src}?v=${site.version}-${site.shotRev}`}
                 alt={s.alt}
                 width="1440"
                 height="900"
