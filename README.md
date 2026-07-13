@@ -1,8 +1,9 @@
 # Liveolator
 
-A **cross-platform (Windows + Mac) DJ + VJ performance application**, controlled from
-hardware (Ableton Push 1 + Behringer CMD STUDIO 2A), that plays and mixes music *and*
-drives a real-time, beat-synced visual engine.
+A **cross-platform DJ + VJ performance application** (runs on Windows today; macOS is
+the design target), controlled from hardware (Ableton Push 1 + Behringer CMD STUDIO 2A)
+or any class-compliant MIDI controller, that plays and mixes music *and* drives a
+real-time, beat-synced visual engine.
 
 > Liveolator is the cross-platform successor to the Windows-only Zalmanolator. It keeps
 > the platform-agnostic architecture designed for Zalmanolator's "Live Mode" and drops
@@ -28,7 +29,7 @@ drives a real-time, beat-synced visual engine.
 | Graphics / effects | **OpenGL via Silk.NET** (fragment shaders on textures) |
 | Video decode | **FFmpeg** (frame → GL texture); libVLC as a faster-start alternative |
 | Camera / capture | FFmpeg (dshow on Windows, avfoundation on Mac) or OpenCV |
-| Audio (DJ) | **BASS / ManagedBass** (decided 2026-06-05; commercial license accepted for distribution) |
+| Audio (DJ) | **BASS / ManagedBass** (decided 2026-06-05; used under un4seen's free license — free while Liveolator is; see [`LICENSE`](LICENSE) / [`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt)) |
 | MIDI | **RtMidi / libremidi** (cross-platform) |
 
 ASIO (Windows) and CoreAudio (Mac) are reached through the chosen audio library;
@@ -63,3 +64,22 @@ For the current state, verified bug map, and prioritized next steps see
 [`docs/22-status-and-roadmap.md`](docs/22-status-and-roadmap.md);
 [`docs/00-LIVEOLATOR-CONTEXT.md`](docs/00-LIVEOLATOR-CONTEXT.md) holds the direction and what carries
 over from Zalmanolator. Still open: keylock, the VJ authoring UI, and cross-platform packaging.
+
+## License
+
+Liveolator is free software, licensed under the **GNU General Public License,
+version 3 or later (GPLv3+)** — see [`LICENSE`](LICENSE). It is and always will
+be free of charge.
+
+**Important — the BASS audio library is not GPL and not included here.** The
+native BASS libraries (un4seen Developments Ltd.) are a separate, proprietary
+dependency that this repository does *not* contain. They are fetched from
+un4seen at build time (`scripts/fetch-bass.*`) and are used under un4seen's own
+license. BASS is free only while the product using it is also free of charge and
+generates no revenue; anyone who sells or otherwise monetizes Liveolator or a
+derivative must obtain their own BASS license from <https://www.un4seen.com/>.
+To keep this arrangement lawful under the GPL, `LICENSE` grants an additional
+permission (GPLv3 §7) allowing Liveolator to be combined with BASS.
+
+All bundled third-party components and their licenses are listed in
+[`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt).
