@@ -17,39 +17,57 @@ real-time, beat-synced visual engine.
   live camera/capture input**, composited in layers and synced to the beat
   (Resolume-style). **No MilkDrop/projectM.**
 - **Hardware control:** Ableton Push 1 (visuals) + Behringer CMD STUDIO 2A (DJ
-  transport + its built-in 4-channel audio interface).
+  transport + its built-in 4-channel audio interface), or any class-compliant
+  MIDI controller — MIDI-learn maps any control to any action.
 - **One action layer:** hardware, UI, and automation all emit the same serializable
   `PerformanceAction`s; engines are driven only through a dispatcher.
 
-## Platform & stack (proposed)
+## Platform & stack
 
 | Concern | Choice |
 |---------|--------|
 | Runtime / UI | .NET 8 + **Avalonia** (cross-platform XAML/MVVM) |
-| Graphics / effects | **OpenGL via Silk.NET** (fragment shaders on textures) |
-| Video decode | **FFmpeg** (frame → GL texture); libVLC as a faster-start alternative |
-| Camera / capture | FFmpeg (dshow on Windows, avfoundation on Mac) or OpenCV |
-| Audio (DJ) | **BASS / ManagedBass** (decided 2026-06-05; used under un4seen's free license — free while Liveolator is; see [`LICENSE`](LICENSE) / [`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt)) |
-| MIDI | **RtMidi / libremidi** (cross-platform) |
+| Graphics / effects | **OpenGL via Silk.NET** + **SkiaSharp** (GLSL fragment shaders on textures) |
+| Video / camera decode | **FFmpeg** CLI (frame → GL texture; dshow on Windows, avfoundation on macOS) |
+| Audio (DJ) | **BASS / ManagedBass** — used under un4seen's free license (free while Liveolator is; see [`LICENSE`](LICENSE) / [`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt)) |
+| MIDI | **RtMidi.Core** (cross-platform) |
 
-ASIO (Windows) and CoreAudio (Mac) are reached through the chosen audio library;
+ASIO (Windows) and CoreAudio (macOS) are reached through the audio library;
 the app code only sees the platform-agnostic seam interfaces.
 
-## Repository layout (planned)
+## Repository layout
 
 ```text
 Liveolator/
-  docs/            # architecture & design (inherited from Zalmanolator's Live design)
+  docs/            # architecture & design
   src/
-    Liveolator.Core/        # platform-agnostic: seams, beat engine, actions, mapping,
-                            # playlist, autopilot, visual scene model  (no UI, no native)
-    Liveolator.App/         # Avalonia UI
-    Liveolator.Audio/       # audio I/O binding (BASS/ManagedBass) + offline decode
-    Liveolator.Midi/        # RtMidi/libremidi binding
-    Liveolator.Visuals/     # OpenGL/Silk.NET compositor + shader effects + FFmpeg decode
-  native/          # native dependency setup scripts / binaries (gitignored)
-  tests/           # xUnit tests for Core (pure logic)
+    Liveolator.Core/      # platform-agnostic: seams, beat engine, actions, mapping,
+                          # playlist, autopilot, visual scene model  (no UI, no native)
+    Liveolator.App/       # Avalonia UI
+    Liveolator.Audio/     # audio I/O binding (BASS/ManagedBass) + offline decode
+    Liveolator.Media/     # filesystem enumerator + catalog cache (JSON / SQLite)
+    Liveolator.Midi/      # RtMidi binding
+    Liveolator.Visuals/   # Silk.NET/OpenGL compositor + GLSL effects + FFmpeg decode
+    Liveolator.Mcp/       # MCP server: music-intelligence tools for external AI agents
+    Liveolator.Online/    # optional online metadata enrichment
+    Liveolator.Platform/  # platform integration helpers
+  tests/           # xUnit tests (Core is pure logic; runs without hardware)
 ```
+
+## Getting started
+
+```sh
+# 1. Fetch the BASS native libraries from un4seen (not bundled — see LICENSE).
+pwsh scripts/fetch-bass.ps1        # Windows / PowerShell
+./scripts/fetch-bass.sh            # macOS / Linux
+
+# 2. Build and run.
+dotnet build Liveolator.sln -c Release
+pwsh scripts/run.ps1               # or:  ./scripts/run.sh
+```
+
+FFmpeg is optional and invoked as a separate process; put `ffmpeg` on your
+`PATH` (or set `LIVEOLATOR_FFMPEG_PATH`) to enable video/camera decode.
 
 ## Status
 
