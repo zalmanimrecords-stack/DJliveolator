@@ -34,8 +34,11 @@ public sealed class TrackAnalyzer
     /// mis-gridded fast tracks re-analyze.
     /// v7: persist the individual kick strike times (<see cref="Bpm.BpmResult.KickOnsetsSeconds"/>) so a
     /// deck can snap its grid onto the real kick nearest the playhead (SET PHASE / one-shot SYNC auto-align).
-    /// Additive; existing tracks re-analyze on next scan to populate the kick list.</remarks>
-    public const int CurrentVersion = 7;
+    /// Additive; existing tracks re-analyze on next scan to populate the kick list.
+    /// v8: windowed + half-beat-harmonic grid refinement (<see cref="Bpm.GridRefiner"/>) — an offbeat
+    /// bass or a mid-track arrangement edit no longer collapses the kick fit back to the quantized coarse
+    /// bin (a true 145.0 read as 143.55, wrecking two-deck sync); mis-gridded tracks re-analyze.</remarks>
+    public const int CurrentVersion = 8;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
