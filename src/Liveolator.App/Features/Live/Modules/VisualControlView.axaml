@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Live.Modules.VisualControlView"
+             x:DataType="m:VisualControlViewModel">
+
+  <Border Classes="panel">
+    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="section" Text="VISUAL CONTROL" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Classes="mono faint" FontSize="9" Padding="8,2"
+                Content="RELOAD PRESETS" Command="{Binding ReloadPresetsCommand}"
+                ToolTip.Tip="Re-scan the preset folder so newly-authored presets appear in the layer sources without restart" />
+      </Grid>
+
+      <!-- One card per layer. The source dropdown selects the layer's generator/image; when the chosen
+           generator is a controllable preset (doc 28) its up-to-5 knobs appear in the same card and emit
+           VisualSetMacro, the same path a learned MIDI knob uses. -->
+      <ItemsControl Grid.Row="1" ItemsSource="{Binding Channels}" Margin="0,12">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="m:VisualChannelViewModel">
+            <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}"
+                    BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="70,*,Auto">
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Classes="mono accent" FontWeight="SemiBold" Text="{Binding LayerLabel}" />
+                    <TextBlock Classes="mono faint" FontSize="10" Text="{Binding DepthLabel}" />
+                  </StackPanel>
+                  <ComboBox Grid.Column="1" ItemsSource="{Binding Sources}"
+                            SelectedItem="{Binding SelectedSource}" MinWidth="150">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="m:VisualChannelSourceOption">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Label}" />
+                          <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Group}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <StackPanel Grid.Column="2" Margin="12,0,0,0" Spacing="2"
+                              VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <controls:Knob Width="44" Height="44" HorizontalAlignment="Center"
+                                   DefaultValue="1"
+                                   Value="{Binding Opacity.Value}" IsEnabled="{Binding Opacity.IsEnabled}" />
+                    <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                               Text="{Binding Opacity.Value, StringFormat='0.00'}" />
+                    <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="OPACITY" />
+                  </StackPanel>
+                </Grid>
+
+                <!-- Controllable preset knobs for this layer (shown only when the source is a preset). -->
+                <ItemsControl ItemsSource="{Binding Preset.Controls}"
+                              IsVisible="{Binding Preset.HasControls}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="m:ContinuousControlViewModel">
+                      <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <controls:Knob Width="40" Height="40" HorizontalAlignment="Center"
+                                       Value="{Binding Value}" IsEnabled="{Binding IsEnabled}" />
+                        <TextBlock Classes="mono accent" FontSize="10" HorizontalAlignment="Center"
+                                   Text="{Binding Value, StringFormat='0.00'}" />
+                        <TextBlock Classes="mono faint" FontSize="9" HorizontalAlignment="Center" Text="{Binding Label}" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <StackPanel Grid.Row="2" Spacing="10">
+        <!-- Off/Beat/Bar quantize for scene-pad launches: snaps the swap to the shared beat clock (doc 31). -->
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Classes="faint" VerticalAlignment="Center" Text="LAUNCH QUANTIZE" />
+          <ComboBox ItemsSource="{Binding LaunchQuantizeOptions}" SelectedIndex="{Binding LaunchQuantizeMode}"
+                    MinWidth="80"
+                    ToolTip.Tip="Snap scene launches to the next beat/bar on the shared clock" />
+        </StackPanel>
+
+        <Button Classes="accent" Content="SHOW VISUAL SCREEN"
+                Command="{Binding ShowVisualsCommand}" />
+
+        <TextBlock Classes="mono faint" FontSize="10" Text="{Binding Status}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

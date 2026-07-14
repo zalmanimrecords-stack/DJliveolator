@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Live.Modules.ProgramOutView"
+             x:DataType="m:ProgramOutViewModel">
+
+  <Border Background="{DynamicResource S2}" BorderBrush="{DynamicResource Hair}" BorderThickness="1"
+          CornerRadius="16" MinHeight="180">
+    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
+      <TextBlock Classes="faint" Text="{Binding ResolutionLabel}" />
+
+      <Border Grid.Row="1" Margin="0,12" Background="Black" CornerRadius="8" ClipToBounds="True">
+        <Grid>
+          <Image Source="{Binding Preview}" Stretch="Uniform" />
+          <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Classes="faint"
+                     IsVisible="{Binding !CanShowVisuals}" Text="visuals unavailable" />
+        </Grid>
+      </Border>
+
+      <TextBlock Grid.Row="2" Classes="mono faint" Text="LIVE VISUAL OUTPUT" />
+    </Grid>
+  </Border>
+</UserControl>

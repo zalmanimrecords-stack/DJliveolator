@@ -1,0 +1,449 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:sys="using:System"
+             x:Class="Liveolator.App.Features.Libraries.LibrariesView"
+             x:DataType="lib:LibrariesViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+    <!-- sub-bar -->
+    <Grid Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,12">
+      <!-- LIBRARY menu: folder + playlist management folded into one dropdown so the everyday
+           Scan + search stay prominent (the same menu-bar pattern as the STUDIO tab). The window-
+           opening actions keep their code-behind Click handlers (they need the TopLevel). -->
+      <Button Grid.Column="0" Classes="spartan" Content="LIBRARY  ▾" Margin="0,0,8,0"
+              ToolTip.Tip="Manage music folders and playlists">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Add folder…" Click="OnAddFolder" />
+            <MenuItem Header="Manage folders…" Click="OnShowFolders" />
+            <Separator />
+            <MenuItem Header="Playlists / sets…" Click="OnShowPlaylists" />
+            <Separator />
+            <!-- Maintenance actions the one-click "Scan" doesn't do: a full force re-map, a health check,
+                 and a library-wide auto-cue. Built long ago but previously unreachable from this screen. -->
+            <MenuItem Header="Re-map all tracks (force)" Command="{Binding RescanAllCommand}"
+                      ToolTip.Tip="Re-decode every track for fresh BPM / key / beat grid / cues, keeping manually-corrected tracks" />
+            <MenuItem Header="Auto-cue whole library" Command="{Binding AutoCueLibraryCommand}"
+                      IsEnabled="{Binding CanAutoCueLibrary}"
+                      ToolTip.Tip="Place automatic hot cues on every scanned track" />
+            <MenuItem Header="Check library health" Command="{Binding ScanHealthCommand}"
+                      IsEnabled="{Binding CanUseLibraryDoctor}"
+                      ToolTip.Tip="Find missing files, duplicates and broken analysis (Library Doctor)" />
+            <Separator />
+            <MenuItem Header="Import library" IsEnabled="{Binding CanImportLibrary}"
+                      ToolTip.Tip="Import tracks, cues, beat grids and playlists from another DJ app">
+              <MenuItem Header="From Rekordbox (XML)…" Click="OnImportRekordbox" />
+              <MenuItem Header="From Traktor (NML)…" Click="OnImportTraktor" />
+              <MenuItem Header="From VirtualDJ (XML)…" Click="OnImportVirtualDj" />
+              <MenuItem Header="From Serato (folder)…" Click="OnImportSerato" />
+              <MenuItem Header="From Mixxx (folder)…" Click="OnImportMixxx" />
+              <MenuItem Header="From Engine DJ (folder)…" Click="OnImportEngine" />
+            </MenuItem>
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button Classes="accent" Content="Scan" Command="{Binding ScanAllCommand}"
+                ToolTip.Tip="Scan folders, re-map every track (BPM, key, beat grid, cues) and place automatic hot cues — keeps manually-corrected tracks" />
+      </StackPanel>
+      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
+               Watermark="Search title or key…" Text="{Binding SearchText}" />
+      <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
+                 Text="{Binding ScanStatus}" />
+    </Grid>
+
+    <!-- filter / sort bar (B1): facet dropdowns + status filter + sort -->
+    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+      <ComboBox ItemsSource="{Binding Artists}" SelectedItem="{Binding SelectedArtist}"
+                PlaceholderText="Artist" MinWidth="120"
+                ToolTip.Tip="Filter by artist" />
+      <ComboBox ItemsSource="{Binding Genres}" SelectedItem="{Binding SelectedGenre}"
+                PlaceholderText="Genre" MinWidth="110"
+                ToolTip.Tip="Filter by genre" />
+      <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding SelectedYear}"
+                PlaceholderText="Year" MinWidth="80"
+                ToolTip.Tip="Filter by year" />
+      <ComboBox ItemsSource="{Binding FileTypes}" SelectedItem="{Binding SelectedFileType}"
+                PlaceholderText="Type" MinWidth="80"
+                ToolTip.Tip="Filter by file type" />
+      <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatus}"
+                MinWidth="110" ToolTip.Tip="Filter by analysis status">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+
+      <!-- BPM range filter (blank = unbounded) -->
+      <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
+        <TextBox Classes="spartan" Width="52" Watermark="min" Text="{Binding BpmMinText}"
+                 ToolTip.Tip="Only tracks at or above this BPM" />
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="–" />
+        <TextBox Classes="spartan" Width="52" Watermark="max" Text="{Binding BpmMaxText}"
+                 ToolTip.Tip="Only tracks at or below this BPM" />
+      </StackPanel>
+
+      <CheckBox IsChecked="{Binding ShowShortClips}" VerticalAlignment="Center"
+                Content="{Binding ShortClipCount, StringFormat='Short clips ({0})'}"
+                ToolTip.Tip="Show tracks under 1 minute (edits, stings, acapellas, loops)" />
+
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
+
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />
+      <ComboBox ItemsSource="{Binding SortKeys}" SelectedItem="{Binding SortKey}"
+                MinWidth="100" ToolTip.Tip="Sort tracks by">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <ToggleButton Classes="spartan" IsChecked="{Binding SortDescending}"
+                    Content="↓" ToolTip.Tip="Descending order" />
+
+      <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
+              ToolTip.Tip="Reset all filters" />
+    </StackPanel>
+
+    <!-- main: table | detail -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,320">
+
+      <!-- track table -->
+      <Border Grid.Column="0" Classes="panel">
+        <DockPanel Margin="12">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
+            <TextBlock Grid.Column="0" Classes="section" Text="Tracks" VerticalAlignment="Center" />
+            <!-- how many of the whole catalog the filter shows (flags a capped result) -->
+            <TextBlock Grid.Column="2" Classes="mono faint" VerticalAlignment="Center"
+                       Text="{Binding ResultSummary}" />
+          </Grid>
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" Margin="11,0,9,8">
+            <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
+            <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
+            <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="4" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
+            <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" Margin="0,0,12,0" />
+            <TextBlock Grid.Column="6" Classes="faint" Text="ANALYSIS" />
+          </Grid>
+          <ListBox Classes="rows"
+                   ItemsSource="{Binding Tracks}"
+                   SelectedItem="{Binding SelectedTrack}"
+                   DoubleTapped="OnTrackDoubleTapped"
+                   ToolTip.Tip="Double-click a track to load it onto Deck A">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="lib:TrackRowViewModel">
+                <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" VerticalAlignment="Center">
+                  <Grid.ContextFlyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
+                      <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
+                                IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                      <Separator />
+                      <MenuItem Header="Analyze again + online lookup"
+                                Command="{Binding Menu.AnalyzeAgainCommand}" />
+                      <MenuItem Header="Edit BPM / key / genre / notes"
+                                Command="{Binding Menu.EditMetadataCommand}" />
+                      <MenuItem Header="Auto-cue track"
+                                Command="{Binding Menu.AutoCueCommand}"
+                                IsVisible="{Binding Menu.CanAutoCue}" />
+                      <MenuItem Header="Separate stems (experimental)"
+                                Command="{Binding Menu.SeparateStemsCommand}"
+                                IsVisible="{Binding Menu.CanSeparateStems}"
+                                ToolTip.Tip="Split into drums / bass / vocals / other for stem decks. Takes several minutes and heavy CPU — do it before your set." />
+                      <Separator />
+                      <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
+                        <MenuItem.ItemContainerTheme>
+                          <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                                        BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="Header" Value="{Binding Header}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                          </ControlTheme>
+                        </MenuItem.ItemContainerTheme>
+                      </MenuItem>
+                    </MenuFlyout>
+                  </Grid.ContextFlyout>
+                  <Ellipse Grid.Column="0" Width="6" Height="6" VerticalAlignment="Center"
+                           Fill="{Binding Status, Converter={x:Static lib:StatusToBrushConverter.Instance}}" />
+                  <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="2" Classes="muted" Text="{Binding Artist}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Column="3" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="4" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                  <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" Margin="0,0,12,0" />
+                  <!-- Per-component analysis badges: lit when present, dim when absent (theme tokens only). -->
+                  <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                              ToolTip.Tip="What's analyzed: BPM, key, hot cues, genre, structure">
+                    <TextBlock Classes="mono" FontSize="9" Text="BPM"
+                               Foreground="{Binding HasBpm, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="KEY"
+                               Foreground="{Binding HasKey, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="CUE"
+                               Foreground="{Binding HasCues, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Green}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="GEN"
+                               Foreground="{Binding HasGenre, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Amber}" />
+                    <TextBlock Classes="mono" FontSize="9" Text="STR"
+                               Foreground="{Binding HasStructure, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Violet}" />
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+
+      <!-- detail -->
+      <Border Grid.Column="1" Classes="panel" Margin="16,0,0,0">
+        <StackPanel Margin="16" Spacing="16">
+          <TextBlock Classes="section" Text="Track" />
+
+          <TextBlock Classes="faint"
+                     Text="Select a track to see details."
+                     IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNull}}" />
+
+          <StackPanel Spacing="16"
+                      IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="2">
+              <TextBlock FontSize="14" Text="{Binding SelectedTrack.Title}" TextWrapping="Wrap" />
+              <TextBlock Classes="mono faint" Text="{Binding SelectedTrack.SubLine}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- live transport (Live Mode only) -->
+            <StackPanel Spacing="8" IsVisible="{Binding IsLiveModeEnabled}">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="accent" Content="▶ Play" Command="{Binding PlaySelectedCommand}" />
+                <Button Classes="spartan" Content="■ Stop" Command="{Binding StopCommand}" />
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <TextBlock Classes="faint" VerticalAlignment="Center" Text="LIVE" />
+                  <TextBlock Classes="mono accent" VerticalAlignment="Center" Text="{Binding LiveBpm}" />
+                </StackPanel>
+              </StackPanel>
+              <!-- stage the track on a deck (load only, no auto-play) -->
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Classes="spartan" Content="Load → A" Command="{Binding LoadToDeckACommand}" />
+                <Button Classes="spartan" Content="Load → B" Command="{Binding LoadToDeckBCommand}"
+                        IsVisible="{Binding CanLoadToDeckB}" />
+              </StackPanel>
+              <TextBlock Classes="mono faint" Text="{Binding LoadStatus}"
+                         IsVisible="{Binding LoadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+
+            <!-- analysis facts -->
+            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+              <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+                <TextBlock Classes="faint" Text="TEMPO" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Bpm}" />
+                  <TextBlock Classes="mono faint" VerticalAlignment="Bottom" Text="{Binding SelectedTrack.Confidence}" />
+                </StackPanel>
+              </StackPanel>
+              <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
+                <TextBlock Classes="faint" Text="KEY" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Key}" />
+                  <TextBlock Classes="mono faint" VerticalAlignment="Bottom" Text="{Binding SelectedTrack.KeyName}" />
+                </StackPanel>
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,14,0,0">
+                <TextBlock Classes="faint" Text="LENGTH" />
+                <TextBlock Classes="mono" FontSize="14" Text="{Binding SelectedTrack.Duration}" />
+              </StackPanel>
+            </Grid>
+
+            <!-- rating + prepare facts: cull tracks by stars, see when added / how often played -->
+            <StackPanel Spacing="6">
+              <TextBlock Classes="faint" Text="RATING" />
+              <StackPanel Orientation="Horizontal" Spacing="2">
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 1">
+                  <Button.CommandParameter><sys:Int32>1</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 2">
+                  <Button.CommandParameter><sys:Int32>2</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 3">
+                  <Button.CommandParameter><sys:Int32>3</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 4">
+                  <Button.CommandParameter><sys:Int32>4</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="★" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        ToolTip.Tip="Rate 5">
+                  <Button.CommandParameter><sys:Int32>5</sys:Int32></Button.CommandParameter>
+                </Button>
+                <Button Classes="spartan" Content="✕" Padding="7,1" Command="{Binding SetRatingCommand}"
+                        Margin="6,0,0,0" ToolTip.Tip="Clear rating">
+                  <Button.CommandParameter><sys:Int32>0</sys:Int32></Button.CommandParameter>
+                </Button>
+                <TextBlock Classes="mono accent" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Text="{Binding SelectedTrack.RatingStars}" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Classes="faint" Text="{Binding SelectedTrack.DateAddedText}"
+                           IsVisible="{Binding SelectedTrack.DateAddedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="faint" Text="{Binding SelectedTrack.PlayCountText}"
+                           IsVisible="{Binding SelectedTrack.PlayCountText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </StackPanel>
+
+            <!-- file / tag info -->
+            <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="INFO" />
+              <StackPanel Spacing="5">
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Album" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Album}" TextTrimming="CharacterEllipsis" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Genre" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Genre}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Year" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.Year}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Track #" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.TrackNo}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Sample rate" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.SampleRate}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Channels" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Channels}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Codec" />
+                  <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding SelectedTrack.Codec}" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Notes" />
+                  <TextBlock Grid.Column="1" Classes="muted" Text="{Binding SelectedTrack.Notes}"
+                             TextWrapping="Wrap" />
+                </Grid>
+                <Grid ColumnDefinitions="96,*">
+                  <TextBlock Grid.Column="0" Classes="faint" Text="Path" />
+                  <TextBlock Grid.Column="1" Classes="mono faint" Text="{Binding SelectedTrack.Track.File.Path}"
+                             TextWrapping="Wrap" />
+                </Grid>
+              </StackPanel>
+              <Button Classes="spartan" HorizontalAlignment="Left"
+                      Content="Online metadata: GetSongBPM.com"
+                      Click="OnOpenGetSongBpm" />
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="HOT CUES" />
+              <TextBlock Classes="faint" Text="No hot cues set."
+                         IsVisible="{Binding !HasHotCues}" />
+              <ItemsControl ItemsSource="{Binding HotCues}" IsVisible="{Binding HasHotCues}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="lib:HotCueDisplayViewModel">
+                    <Grid ColumnDefinitions="10,24,*,Auto,Auto,Auto,Auto" Margin="0,3">
+                      <Ellipse Grid.Column="0" Width="8" Height="8" VerticalAlignment="Center"
+                               Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                      <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding Number}" Margin="8,0,0,0" />
+                      <TextBlock Grid.Column="2" Classes="muted" Text="{Binding Label}" TextTrimming="CharacterEllipsis" Margin="8,0" />
+                      <TextBlock Grid.Column="3" Classes="faint" Text="{Binding Tag}" VerticalAlignment="Center"
+                                 IsVisible="{Binding Tag, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      <TextBlock Grid.Column="4" Classes="mono faint" Text="{Binding Time}" HorizontalAlignment="Right" Margin="8,0,0,0" />
+                      <!-- Confirm a suggestion (commit it so re-analysis keeps it); reject/delete any cue. -->
+                      <Button Grid.Column="5" Classes="spartan" Content="✓" Padding="6,1" Margin="6,0,0,0"
+                              Command="{Binding ConfirmCommand}" IsVisible="{Binding CanConfirm}"
+                              ToolTip.Tip="Confirm this suggested cue (keeps it across re-analysis)" />
+                      <Button Grid.Column="6" Classes="spartan" Content="✕" Padding="6,1" Margin="4,0,0,0"
+                              Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}"
+                              ToolTip.Tip="Remove this hot cue" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Spacing="8">
+              <TextBlock Classes="faint" Text="HARMONIC MATCHES" />
+              <ItemsControl ItemsSource="{Binding HarmonicMatches}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="lib:TrackRowViewModel">
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,3">
+                      <Grid.ContextFlyout>
+                        <MenuFlyout>
+                          <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
+                          <MenuItem Header="Add to Deck B" Command="{Binding Menu.LoadToDeckBCommand}"
+                                    IsVisible="{Binding Menu.CanLoadToDeckB}" />
+                          <Separator />
+                          <MenuItem Header="Analyze again + online lookup"
+                                    Command="{Binding Menu.AnalyzeAgainCommand}" />
+                          <MenuItem Header="Edit BPM / key / genre / notes"
+                                    Command="{Binding Menu.EditMetadataCommand}" />
+                          <MenuItem Header="Auto-cue track"
+                                    Command="{Binding Menu.AutoCueCommand}"
+                                    IsVisible="{Binding Menu.CanAutoCue}" />
+                          <MenuItem Header="Separate stems (experimental)"
+                                    Command="{Binding Menu.SeparateStemsCommand}"
+                                    IsVisible="{Binding Menu.CanSeparateStems}"
+                                    ToolTip.Tip="Split into drums / bass / vocals / other for stem decks. Takes several minutes and heavy CPU — do it before your set." />
+                          <Separator />
+                          <MenuItem Header="Add to playlist" ItemsSource="{Binding Menu.AddToPlaylistItems}">
+                            <MenuItem.ItemContainerTheme>
+                              <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                                            BasedOn="{StaticResource {x:Type MenuItem}}">
+                                <Setter Property="Header" Value="{Binding Header}" />
+                                <Setter Property="Command" Value="{Binding Command}" />
+                              </ControlTheme>
+                            </MenuItem.ItemContainerTheme>
+                          </MenuItem>
+                        </MenuFlyout>
+                      </Grid.ContextFlyout>
+                      <TextBlock Grid.Column="0" Classes="muted" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="1" Classes="mono accent" Text="{Binding Key}" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+
+    <!-- bottom: whole-track waveform of the selected track, with its hot-cue positions marked and a
+         one-click "Auto Hot-Cue" button. Display-only (no SeekCommand bound). -->
+    <Border Grid.Row="3" Classes="panel" Margin="0,16,0,0" Height="150"
+            IsVisible="{Binding SelectedTrack, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <DockPanel Margin="12">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,10">
+          <TextBlock Classes="section" Text="Waveform" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Classes="faint" VerticalAlignment="Center" Margin="0,0,12,0"
+                     Text="Click the waveform to add a hot cue" />
+          <Button Grid.Column="2" Classes="accent" Content="Auto Hot-Cue"
+                  Command="{Binding AutoCueSelectedCommand}"
+                  ToolTip.Tip="Place automatic hot cues on this track (drums, drops, structure)" />
+        </Grid>
+        <Grid>
+          <controls:WaveformStrip Peaks="{Binding Waveform}" KickPeaks="{Binding KickPeaks}"
+                                  MidPeaks="{Binding MidPeaks}" HighPeaks="{Binding HighPeaks}"
+                                  HotCueMarkers="{Binding HotCueMarkers}" ZoomWindow="0"
+                                  SeekCommand="{Binding MarkCueCommand}"
+                                  ToolTip.Tip="Click to drop a hot cue at that position"
+                                  IsVisible="{Binding WaveformStatus, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+          <!-- Why there's no waveform (loading / offline / undecodable) — shown instead of a blank strip. -->
+          <TextBlock Classes="faint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     TextWrapping="Wrap" TextAlignment="Center" MaxWidth="380"
+                     Text="{Binding WaveformStatus}"
+                     IsVisible="{Binding WaveformStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </Grid>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

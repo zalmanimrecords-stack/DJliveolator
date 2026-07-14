@@ -1,0 +1,152 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Liveolator.App"
+             x:Class="Liveolator.App.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.DataTemplates>
+    <local:ViewLocator />
+  </Application.DataTemplates>
+
+  <Application.Resources>
+    <!-- Design tokens — single blue performance line (the reference DJ deck the user supplied):
+         deep navy chrome, ONE blue accent for all active/signal state, one reserved red for
+         destructive (blackout/strobe). The former multi-signal keys (Green/Amber/Violet) are kept so
+         existing views still resolve, but unified to the blue accent so the whole app reads as one line. -->
+    <Color x:Key="BgColor">#0A0D13</Color>
+    <Color x:Key="S1Color">#141A26</Color>   <!-- module surface -->
+    <Color x:Key="S2Color">#0C1017</Color>   <!-- inset / well (waveform, meters) -->
+    <Color x:Key="S3Color">#1A2130</Color>   <!-- control well -->
+    <Color x:Key="S4Color">#26303F</Color>   <!-- control hover / knob track -->
+    <Color x:Key="HairColor">#232B38</Color> <!-- hairline border -->
+    <Color x:Key="TextColor">#E7ECF3</Color>
+    <Color x:Key="DimColor">#8B95A7</Color>
+    <Color x:Key="FaintColor">#5A6573</Color>
+    <Color x:Key="AccentColor">#2F80F6</Color>   <!-- the one accent — active / signal (blue) -->
+    <Color x:Key="AccentLightColor">#69A7FF</Color>
+    <Color x:Key="AccentDarkColor">#1E5EC5</Color>
+    <Color x:Key="AccentWellColor">#10294E</Color>
+    <Color x:Key="AccentInkColor">#FFFFFF</Color>
+    <!-- Deck B identity accent: a deliberate SECOND hue on top of the single house accent, purely for A/B
+         deck identity — so the two decks never read the same under pressure (the Traktor/Engine deck-colour
+         convention). Deck A keeps the house Accent; deck B is this cool teal. No theme overrides these keys,
+         so identity stays stable across skins. Swap this one family to restyle deck B. -->
+    <Color x:Key="DeckBIdentityColor">#35C4D6</Color>
+    <Color x:Key="DeckBIdentityLightColor">#6FDDEA</Color>
+    <Color x:Key="DeckBIdentityDarkColor">#1E8C99</Color>
+    <Color x:Key="RedColor">#E5544A</Color>      <!-- the one reserved — blackout / strobe -->
+    <Color x:Key="GreenColor">#2F80F6</Color>    <!-- unified to the blue accent -->
+    <Color x:Key="AmberColor">#2F80F6</Color>    <!-- unified to the blue accent -->
+    <Color x:Key="VioletColor">#2F80F6</Color>   <!-- unified to the blue accent -->
+    <!-- Deliberate exception to the single-blue line: a true green reserved for live MIDI activity
+         (the top-bar signal LED), so an incoming controller signal reads at a glance. -->
+    <Color x:Key="MidiActiveColor">#29C467</Color>
+    <!-- Deck waveform — the VirtualDJ 3-band scheme (deliberate exception to the single-blue line, by owner
+         request): the low/kick band is RED (drawn LAST in front, with a glow, so kick transients pop for
+         beat-align by eye), the mid body is GREEN, and the high caps are BLUE/CYAN. The beat marking lives
+         in a bottom CBG comb — short grey BeatMark teeth + broad red DownbeatMark blocks every 4th beat —
+         and the playhead is near-white. WaveformColor is only the broadband fallback body (no band data);
+         WaveHighColor carries its translucency in the alpha so theme overrides keep it. -->
+    <Color x:Key="WaveformColor">#2F80F6</Color>
+    <Color x:Key="KickColor">#E23B2E</Color>
+    <Color x:Key="WaveMidColor">#39C24A</Color>
+    <Color x:Key="WaveHighColor">#A036A6E8</Color>
+    <Color x:Key="WavePlayheadColor">#F2F6FF</Color>
+    <Color x:Key="BeatMarkColor">#8E9AA8</Color>
+    <Color x:Key="DownbeatMarkColor">#E5403A</Color>
+
+    <!-- CornerRadius (not x:Double): the control styles bind these to a CornerRadius property, and a theme
+         overwrites them with a CornerRadius. Keeping the default the same type avoids a Double->CornerRadius
+         cast on style re-evaluation, which Avalonia does directly and would crash the app. -->
+    <CornerRadius x:Key="PanelRadius">12</CornerRadius>
+    <CornerRadius x:Key="ControlRadius">3</CornerRadius>
+
+    <!-- Density gap tokens: the app-wide spacing rhythm in one place, so "make it tighter" is a one-line
+         edit here instead of hunting literal Spacing= across every view. Doubles (bind to StackPanel.Spacing
+         as DynamicResources); directional margins stay literal since one token can't express e.g. 0,0,8,0. -->
+    <x:Double x:Key="GapXs">4</x:Double>
+    <x:Double x:Key="GapS">8</x:Double>
+    <x:Double x:Key="GapM">12</x:Double>
+    <x:Double x:Key="GapL">16</x:Double>
+
+    <!-- Responsive size tokens (doubles): baseline (scale 1.0) values for knob/fader sizes and the readout
+         fonts the DJ reads across a booth. Controls reference these as DynamicResources; MainWindow rewrites
+         the values per size-class (LayoutSizeTokens) so they grow on Wide/4K and hold the live floor on
+         laptops. Defined here so they always resolve, including in control-only headless render tests. -->
+    <x:Double x:Key="UiScale">1.0</x:Double>
+    <x:Double x:Key="SizeKnobEq">24</x:Double>
+    <x:Double x:Key="SizeKnobCue">32</x:Double>
+    <x:Double x:Key="SizeKnobCut">34</x:Double>
+    <x:Double x:Key="SizeKnobZoom">40</x:Double>
+    <x:Double x:Key="SizeFaderChannelWidth">44</x:Double>
+    <x:Double x:Key="SizeFaderChannelHeight">108</x:Double>
+    <x:Double x:Key="SizeWaveformHeight">62</x:Double>
+    <x:Double x:Key="FontDeckTitle">14</x:Double>
+    <x:Double x:Key="FontBpmReadout">12</x:Double>
+    <x:Double x:Key="FontTimeReadout">12</x:Double>
+    <x:Double x:Key="FontTrackKey">14</x:Double>
+
+    <SolidColorBrush x:Key="Bg" Color="{DynamicResource BgColor}" />
+    <!-- The main-window background (doc 30): defaults to the solid Bg; a theme with a BackgroundImage
+         (e.g. Analog chrome+wood) makes UiThemeApplier replace this with an ImageBrush at runtime. -->
+    <SolidColorBrush x:Key="AppBackground" Color="{DynamicResource BgColor}" />
+    <SolidColorBrush x:Key="S1" Color="{DynamicResource S1Color}" />
+    <SolidColorBrush x:Key="S2" Color="{DynamicResource S2Color}" />
+    <SolidColorBrush x:Key="S3" Color="{DynamicResource S3Color}" />
+    <SolidColorBrush x:Key="S4" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="Hair" Color="{DynamicResource HairColor}" />
+    <SolidColorBrush x:Key="Text" Color="{DynamicResource TextColor}" />
+    <SolidColorBrush x:Key="Dim" Color="{DynamicResource DimColor}" />
+    <SolidColorBrush x:Key="Faint" Color="{DynamicResource FaintColor}" />
+    <SolidColorBrush x:Key="Accent" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentInk" Color="{DynamicResource AccentInkColor}" />
+    <SolidColorBrush x:Key="DeckBIdentity" Color="{DynamicResource DeckBIdentityColor}" />
+    <SolidColorBrush x:Key="DeckBIdentityLight" Color="{DynamicResource DeckBIdentityLightColor}" />
+    <SolidColorBrush x:Key="DeckBIdentityDark" Color="{DynamicResource DeckBIdentityDarkColor}" />
+    <SolidColorBrush x:Key="Red" Color="{DynamicResource RedColor}" />
+    <SolidColorBrush x:Key="Green" Color="{DynamicResource GreenColor}" />
+    <SolidColorBrush x:Key="Amber" Color="{DynamicResource AmberColor}" />
+    <SolidColorBrush x:Key="Violet" Color="{DynamicResource VioletColor}" />
+    <SolidColorBrush x:Key="MidiActive" Color="{DynamicResource MidiActiveColor}" />
+    <SolidColorBrush x:Key="Kick" Color="{DynamicResource KickColor}" />
+    <!-- Waveform body: opaque for the played portion, half-transparent for the part still ahead of the playhead. -->
+    <SolidColorBrush x:Key="Waveform" Color="{DynamicResource WaveformColor}" />
+    <SolidColorBrush x:Key="WaveformAhead" Color="{DynamicResource WaveformColor}" Opacity="0.5" />
+    <SolidColorBrush x:Key="WaveMid" Color="{DynamicResource WaveMidColor}" />
+    <SolidColorBrush x:Key="WaveHigh" Color="{DynamicResource WaveHighColor}" />
+    <!-- VirtualDJ beat marking: a near-white playhead over a bottom CBG comb of grey beat teeth and broad
+         red downbeat blocks. -->
+    <SolidColorBrush x:Key="WavePlayhead" Color="{DynamicResource WavePlayheadColor}" />
+    <SolidColorBrush x:Key="BeatMark" Color="{DynamicResource BeatMarkColor}" />
+    <SolidColorBrush x:Key="DownbeatMark" Color="{DynamicResource DownbeatMarkColor}" />
+
+    <!-- Control-skin brushes (doc 30): the Knob/Fader styles bind to THESE (not the raw tokens) so a
+         parametric control skin can override just the controls. They default to the theme tokens, so the
+         built-in look is unchanged; ControlSkinApplier replaces them from the active knob/slider skin. -->
+    <SolidColorBrush x:Key="KnobArc" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="KnobTrack" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="KnobCap" Color="{DynamicResource S2Color}" />
+    <SolidColorBrush x:Key="KnobPointer" Color="{DynamicResource TextColor}" />
+    <SolidColorBrush x:Key="FaderFill" Color="{DynamicResource AccentColor}" />
+    <SolidColorBrush x:Key="FaderTrack" Color="{DynamicResource S4Color}" />
+    <SolidColorBrush x:Key="FaderThumb" Color="{DynamicResource TextColor}" />
+
+    <!-- Retint Fluent's accent so standard controls (combobox, scrollbar, selection, etc.) follow the blue line. -->
+    <Color x:Key="SystemAccentColor">#2F80F6</Color>
+    <Color x:Key="SystemAccentColorDark1">#2A73DD</Color>
+    <Color x:Key="SystemAccentColorDark2">#2563C0</Color>
+    <Color x:Key="SystemAccentColorDark3">#1E4F9C</Color>
+    <Color x:Key="SystemAccentColorLight1">#5598F8</Color>
+    <Color x:Key="SystemAccentColorLight2">#80B2FA</Color>
+    <Color x:Key="SystemAccentColorLight3">#ABCCFC</Color>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+    <StyleInclude Source="avares://Liveolator.App/Theme/Spartan.axaml" />
+    <!-- Responsive width caps keyed on the shell Window size-class (compact/standard/wide/ultra). Must come
+         after Spartan so its tier selectors win over any baseline setters. -->
+    <StyleInclude Source="avares://Liveolator.App/Theme/ResponsiveLayout.axaml" />
+  </Application.Styles>
+
+</Application>

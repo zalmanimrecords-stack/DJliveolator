@@ -1,0 +1,363 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:studio="clr-namespace:Liveolator.App.Features.Studio"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Studio.StudioView"
+             x:DataType="studio:StudioViewModel">
+
+  <!-- Timeline undo/redo: Ctrl+Z undoes, Ctrl+Y / Ctrl+Shift+Z redo (standard DAW shortcuts). -->
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="Ctrl+Z" Command="{Binding UndoCommand}" />
+    <KeyBinding Gesture="Ctrl+Y" Command="{Binding RedoCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}" />
+  </UserControl.KeyBindings>
+
+  <DockPanel LastChildFill="True">
+
+    <!-- project + transport bar (single compact row) -->
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+      <!-- FILE / EDIT / VIEW menus: the project, edit, and view commands are folded into three dropdowns
+           (a desktop-app menu bar) so the transport bar stays uncluttered. Continuous controls that don't
+           belong in a menu (project name, transport, scrub, zoom slider, BPM) stay inline. -->
+      <Button Classes="spartan" Content="FILE  ▾" ToolTip.Tip="Project: new, open, save, delete, render">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="New project" Command="{Binding NewCommand}" />
+            <Separator />
+            <MenuItem Header="Open" ItemsSource="{Binding OpenItems}" IsEnabled="{Binding HasSavedProjects}">
+              <MenuItem.ItemContainerTheme>
+                <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                              BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Setter Property="Header" Value="{Binding Header}" />
+                  <Setter Property="Command" Value="{Binding Command}" />
+                </ControlTheme>
+              </MenuItem.ItemContainerTheme>
+            </MenuItem>
+            <MenuItem Header="Save" Command="{Binding SaveCommand}" />
+            <MenuItem Header="Delete saved" ItemsSource="{Binding DeleteItems}" IsEnabled="{Binding HasSavedProjects}">
+              <MenuItem.ItemContainerTheme>
+                <ControlTheme TargetType="MenuItem" x:DataType="shared:MenuActionViewModel"
+                              BasedOn="{StaticResource {x:Type MenuItem}}">
+                  <Setter Property="Header" Value="{Binding Header}" />
+                  <Setter Property="Command" Value="{Binding Command}" />
+                </ControlTheme>
+              </MenuItem.ItemContainerTheme>
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="Render to WAV…" Command="{Binding RenderCommand}" IsVisible="{Binding CanRender}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <Button Classes="spartan" Content="EDIT  ▾" ToolTip.Tip="Undo, redo, remove clip, harmonize">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Undo" Command="{Binding UndoCommand}" InputGesture="Ctrl+Z" />
+            <MenuItem Header="Redo" Command="{Binding RedoCommand}" InputGesture="Ctrl+Y" />
+            <Separator />
+            <MenuItem Header="Remove clip" Command="{Binding RemoveClipCommand}" />
+            <Separator />
+            <MenuItem Header="Harmonize timeline" Command="{Binding HarmonizeCommand}"
+                      ToolTip.Tip="Auto-arrange the timeline's tracks into a harmonic set (Camelot + tempo) on alternating decks with crossfades" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <Button Classes="spartan" Content="VIEW  ▾" ToolTip.Tip="Automation mode, envelope draw, zoom">
+        <Button.Flyout>
+          <MenuFlyout Placement="BottomEdgeAlignedLeft">
+            <MenuItem Header="Automation edit" ToggleType="CheckBox" IsChecked="{Binding AutomationEditMode}"
+                      ToolTip.Tip="Edit the per-lane automation envelopes (clips lock while on)" />
+            <MenuItem Header="Draw envelope (pencil)" ToggleType="CheckBox" IsChecked="{Binding AutomationDrawMode}"
+                      ToolTip.Tip="Freehand-draw the envelope by dragging (Ableton pencil)" />
+            <Separator />
+            <MenuItem Header="Zoom in" Command="{Binding ZoomInCommand}" />
+            <MenuItem Header="Zoom out" Command="{Binding ZoomOutCommand}" />
+            <MenuItem Header="Reset zoom" Command="{Binding ResetZoomCommand}" />
+          </MenuFlyout>
+        </Button.Flyout>
+      </Button>
+
+      <TextBox Classes="spartan" Width="170" Watermark="Project name" Text="{Binding Name}"
+               ToolTip.Tip="Current project name — used when you Save" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <Button Classes="play" Classes.on="{Binding IsPlaying}" Content="&#x25B6; Play"
+              Command="{Binding PlayCommand}" IsEnabled="{Binding CanPlay}" />
+      <Button Classes="key" Content="&#x25A0; Stop" Command="{Binding StopCommand}" IsEnabled="{Binding CanPlay}" />
+      <TextBlock Classes="mono" VerticalAlignment="Center" Text="{Binding PositionText}" />
+      <Slider Width="150" Minimum="0" Maximum="{Binding ProjectDurationSeconds}"
+              Value="{Binding ScrubSeconds}" VerticalAlignment="Center" />
+      <Border Width="1" Background="{DynamicResource Hair}" Margin="3,2" />
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="Zoom" />
+      <Slider Width="110" Minimum="2" Maximum="200" Value="{Binding PixelsPerSecond}" VerticalAlignment="Center" />
+      <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
+      <TextBox Classes="spartan" Width="56" Text="{Binding Bpm}" />
+    </StackPanel>
+
+    <!-- status -->
+    <TextBlock DockPanel.Dock="Bottom" Classes="mono faint" Margin="0,6,0,0" Text="{Binding Status}" />
+
+    <!-- TIMELINE (content-sized, full width) on top; LIBRARY + CLIP inspector fill below -->
+    <!-- Timeline takes the star row so the arrangement grows with the window (DAW-style); the
+         LIBRARY + inspector row below is a fixed height. -->
+    <Grid RowDefinitions="*,8,260">
+
+      <!-- TIMELINE -->
+      <Border Grid.Row="0" Classes="panel" MinHeight="240">
+        <DockPanel Margin="8">
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,6">
+            <TextBlock Classes="section" Text="TIMELINE" />
+            <TextBlock Classes="faint" VerticalAlignment="Center"
+                       Text="· drag a track onto a lane · drag a clip to move · edge = trim, top corner = fade · right-click a clip to sync/warp · drag empty space to pan" />
+          </StackPanel>
+
+          <!-- DAW layout: a FIXED left header column (deck labels + automation pickers) beside the
+               horizontally-scrolling timeline content. One outer vertical scroller wraps both columns so
+               the header rows and the clip rows scroll vertically together and stay row-aligned; only the
+               content column scrolls horizontally and zooms, so the channel names stay put at a constant
+               width at every zoom level. -->
+          <ScrollViewer MinHeight="200"
+                        HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <Grid>
+              <!-- 110 = the fixed header-column width; a constant UI-layout value (not zoom-scaled), wide
+                   enough to show the deck label and the longest automation-target name ("DeckGain"). -->
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="110" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+
+              <!-- COL 0: fixed lane headers (outside the horizontal scroll) -->
+              <Grid Grid.Column="0" RowDefinitions="Auto,*" Margin="0,0,5,0">
+                <!-- TEMPO header — height + bottom margin match the TEMPO content row so they line up -->
+                <Border Grid.Row="0" Background="{DynamicResource S3}" CornerRadius="2" Height="58" Margin="0,0,0,6">
+                  <TextBlock Classes="mono accent" FontSize="10"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" Text="TEMPO" />
+                </Border>
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding Lanes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="studio:StudioLaneViewModel">
+                      <!-- height + margin MUST match the content lane row (62 + 4) so headers align -->
+                      <DockPanel Height="62" Margin="0,0,0,4">
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource S3}" CornerRadius="2" Height="22">
+                          <TextBlock Classes="mono accent" FontSize="11" HorizontalAlignment="Center"
+                                     VerticalAlignment="Center" Text="{Binding Label}" />
+                        </Border>
+                        <ComboBox Margin="0,2,0,0" FontSize="10" Padding="4,1" HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding AutomationTargets}"
+                                  SelectedItem="{Binding SelectedAutomationTarget}" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Grid>
+
+              <!-- hair divider so the header column reads as a separate panel from the timeline -->
+              <Border Grid.Column="0" HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                      Width="1" Background="{DynamicResource Hair}" />
+
+              <!-- COL 1: horizontally-scrolling, zoomable timeline content. Its origin is time-0, so the
+                   playhead and clips share one coordinate space (X = seconds * zoom). -->
+              <ScrollViewer Grid.Column="1" x:Name="LanesScroll"
+                            HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <!-- MinWidth (not Width) so the lane backgrounds fill the viewport when the project is
+                     shorter than the window, yet still grow past it (and scroll) when the material is longer.
+                     Clips/playhead position by absolute X = seconds * zoom, so the extra trailing width is
+                     purely the empty lane background. -->
+                <Grid RowDefinitions="Auto,*" MinWidth="{Binding TimelineContentWidth}" HorizontalAlignment="Stretch">
+
+                  <!-- TEMPO lane content: the project BPM curve (warped clips follow it); always editable -->
+                  <Border Grid.Row="0" Background="{DynamicResource S2}" CornerRadius="2"
+                          Height="58" Margin="0,0,0,6">
+                    <controls:AutomationCurveEditor Height="52" VerticalAlignment="Center"
+                                                    Lane="{Binding TempoLane}"
+                                                    PixelsPerSecond="{Binding PixelsPerSecond}"
+                                                    DrawMode="{Binding AutomationDrawMode}" />
+                  </Border>
+
+                  <ItemsControl Grid.Row="1" x:Name="LanesItems" ItemsSource="{Binding Lanes}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="studio:StudioLaneViewModel">
+                        <!-- clips + automation overlay -->
+                        <Border Height="62" Margin="0,0,0,4"
+                                Background="{DynamicResource S2}" CornerRadius="2" ClipToBounds="True">
+                          <Grid>
+                            <ItemsControl ItemsSource="{Binding Clips}">
+                              <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                  <Canvas Height="58" />
+                                </ItemsPanelTemplate>
+                              </ItemsControl.ItemsPanel>
+                              <ItemsControl.Styles>
+                                <Style Selector="ContentPresenter" x:DataType="studio:StudioClipViewModel">
+                                  <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                  <Setter Property="Canvas.Top" Value="2" />
+                                  <Setter Property="Width" Value="{Binding Width}" />
+                                </Style>
+                              </ItemsControl.Styles>
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="studio:StudioClipViewModel">
+                                  <Border Classes="clip" Height="54"
+                                          PointerPressed="OnClipPointerPressed"
+                                          PointerMoved="OnClipPointerMoved"
+                                          PointerReleased="OnClipPointerReleased">
+                                    <!-- Right-click clip menu. The flyout inherits the clip VM as its
+                                         DataContext, so these bind to the clip's own commands. -->
+                                    <Border.ContextFlyout>
+                                      <MenuFlyout>
+                                        <MenuItem Header="Sync to project BPM" Command="{Binding SyncToGridCommand}"
+                                                  ToolTip.Tip="Warp this clip to the project tempo and snap its downbeat onto the grid, in phase with the other tracks — nearest to where it sits now" />
+                                        <MenuItem Header="Warp to tempo" ToggleType="CheckBox" IsChecked="{Binding WarpEnabled}" />
+                                        <Separator />
+                                        <MenuItem Header="Duplicate" Command="{Binding DuplicateCommand}" />
+                                        <MenuItem Header="Reset trim" Command="{Binding ResetTrimCommand}" />
+                                        <Separator />
+                                        <MenuItem Header="Remove" Command="{Binding RemoveCommand}" />
+                                      </MenuFlyout>
+                                    </Border.ContextFlyout>
+                                    <Grid RowDefinitions="Auto,*">
+                                      <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="3,1,3,0">
+                                        <TextBlock Grid.Column="0" Classes="mono" FontSize="9"
+                                                   Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="1" Classes="mono accent" FontSize="8"
+                                                   Text="{Binding WarpBadge}" />
+                                      </Grid>
+                                      <controls:WaveformStrip Grid.Row="1" Margin="2,0,2,1"
+                                                              Peaks="{Binding Peaks}"
+                                                              KickPeaks="{Binding KickPeaks}"
+                                                              MidPeaks="{Binding MidPeaks}"
+                                                              HighPeaks="{Binding HighPeaks}" />
+                                      <!-- fade envelope (drag the top corners to set fade in/out) -->
+                                      <controls:ClipFadeOverlay Grid.Row="0" Grid.RowSpan="2"
+                                                                FadeInSeconds="{Binding FadeInSeconds}"
+                                                                FadeOutSeconds="{Binding FadeOutSeconds}"
+                                                                PixelsPerSecond="{Binding PixelsPerSecond}" />
+                                    </Grid>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- per-lane automation envelope (Ableton/Cubase): drawn over the clips; interactive
+                                 only while Automation mode is on, so clips stay draggable otherwise -->
+                            <controls:AutomationCurveEditor
+                                Lane="{Binding CurrentAutomation}"
+                                PixelsPerSecond="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).PixelsPerSecond}"
+                                DrawMode="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).AutomationDrawMode}"
+                                IsHitTestVisible="{Binding $parent[UserControl].((studio:StudioViewModel)DataContext).AutomationEditMode}" />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <!-- bar/beat grid overlay: faint vertical lines on the project grid (bright on bars +
+                       a bar number, fainter on beats) so beat-snapping and sync-to-BPM are visible. Drawn
+                       over the lanes but under the playhead; non-interactive. Shares the time-0 origin. -->
+                  <controls:TimelineGridStrip Grid.Row="0" Grid.RowSpan="2"
+                                              PixelsPerSecond="{Binding PixelsPerSecond}"
+                                              Bpm="{Binding Bpm}" />
+
+                  <!-- playhead overlay: a thin accent line over the content. Its X is seconds * zoom from
+                       the content origin (time-0); spans both rows so the cursor is continuous, and the
+                       line height tracks the canvas so it follows the lanes as they grow. -->
+                  <Canvas x:Name="PlayheadCanvas" Grid.Row="0" Grid.RowSpan="2"
+                          IsHitTestVisible="False" VerticalAlignment="Stretch">
+                    <Rectangle Canvas.Left="{Binding PlayheadX}" Canvas.Top="0"
+                               Width="2" Height="{Binding #PlayheadCanvas.Bounds.Height}"
+                               Fill="{DynamicResource Accent}" />
+                  </Canvas>
+                </Grid>
+              </ScrollViewer>
+            </Grid>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+
+      <!-- bottom row: LIBRARY + CLIP inspector share the remaining space -->
+      <Grid Grid.Row="2" ColumnDefinitions="*,12,300">
+
+        <!-- LIBRARY (drag a track onto a lane to add it) -->
+        <Border Grid.Column="0" Classes="panel">
+          <DockPanel Margin="8">
+            <TextBlock DockPanel.Dock="Top" Classes="section" Text="LIBRARY · drag a track onto a lane" Margin="0,0,0,6" />
+            <TextBox DockPanel.Dock="Top" Classes="spartan" Margin="0,0,0,6"
+                     Watermark="Search title, artist, key…" Text="{Binding LibrarySearch}" />
+            <ListBox x:Name="LibraryList" Classes="rows" ItemsSource="{Binding Library}"
+                     SelectedItem="{Binding SelectedLibraryTrack}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="lib:TrackRowViewModel">
+                  <Grid ColumnDefinitions="*,46,40" VerticalAlignment="Center">
+                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="1" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
+                    <TextBlock Grid.Column="2" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </Border>
+
+        <!-- CLIP INSPECTOR -->
+        <Border Grid.Column="2" Classes="panel">
+          <StackPanel Margin="8" Spacing="8">
+            <TextBlock Classes="section" Text="CLIP" />
+            <TextBlock Classes="faint" TextWrapping="Wrap"
+                       Text="Select a clip on the timeline to move it between decks or trim it."
+                       IsVisible="{Binding !HasSelectedClip}" />
+            <StackPanel Spacing="8" IsVisible="{Binding HasSelectedClip}">
+              <TextBlock FontSize="13" Text="{Binding SelectedClip.Title}" TextWrapping="Wrap" />
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="DECK" />
+                <ComboBox HorizontalAlignment="Stretch" SelectedIndex="{Binding SelectedClipDeck}">
+                  <ComboBoxItem>A</ComboBoxItem>
+                  <ComboBoxItem>B</ComboBoxItem>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="START (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.TimelineStartSeconds}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="SOURCE IN (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.SourceInSeconds}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <CheckBox Content="Warp to tempo" IsChecked="{Binding SelectedClip.WarpEnabled}" />
+                <TextBlock Classes="faint" FontSize="10"
+                           Text="Time-stretch the clip to the project grid (pitch preserved / keylock)." TextWrapping="Wrap" />
+                <TextBlock Classes="mono accent" Text="{Binding SelectedClip.WarpBadge}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="GAIN" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.Gain}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="FADE IN (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.FadeInSeconds}" />
+              </StackPanel>
+              <StackPanel Spacing="3">
+                <TextBlock Classes="faint" Text="FADE OUT (S)" />
+                <TextBox Classes="spartan" Text="{Binding SelectedClip.FadeOutSeconds}" />
+              </StackPanel>
+              <Button Classes="spartan" HorizontalAlignment="Left" Content="Remove clip"
+                      Command="{Binding RemoveClipCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+      </Grid>
+    </Grid>
+  </DockPanel>
+
+  <UserControl.Styles>
+    <Style Selector="Border.clip">
+      <Setter Property="Background" Value="{DynamicResource S3}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="2" />
+      <Setter Property="Cursor" Value="SizeWestEast" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

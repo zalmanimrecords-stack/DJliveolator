@@ -1,0 +1,86 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Dj.DjConsoleView"
+             x:DataType="m:PerformanceDeckSet">
+
+  <!-- The shared DJ console: a thin dual-waveform strip on top and the two decks + mixer below. Bound to
+       the shared PerformanceDeckSet (the SAME instance the DJ tab and the LIVE tab both hold), so a track
+       loaded or a knob moved is reflected identically wherever the console is hosted (one source of truth,
+       doc 12). Embedded by both DjView and LiveView so the DJ surface is literally the same control, never
+       a look-alike copy. Row layout (Auto,*) lets the decks fill the height when the host bounds it (DJ
+       single-screen) and size to content when the host scrolls (LIVE stack). -->
+  <Grid RowDefinitions="Auto,*">
+
+    <!-- WAVEFORMS — two compressed rows; the amber kick band shows each track's kicks so the downbeats
+         line up by eye for sync. Click a strip to seek that deck. ZOOM knob (right) zooms BOTH strips. -->
+    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,6">
+      <Grid ColumnDefinitions="*,Auto" Margin="10,6">
+        <StackPanel Grid.Column="0" Spacing="5">
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="A" />
+            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
+                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
+                                      MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
+                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
+                                      KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
+                                      PlayheadBrush="{DynamicResource WavePlayhead}"
+                                      BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
+                                      Folded="True"
+                                      Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
+                                      BeatGrid="{Binding DeckA.BeatGrid}"
+                                      DownbeatOffset="{Binding DeckA.DownbeatBarOffset}"
+                                      KickAnchor="{Binding DeckA.KickAnchorFraction}"
+                                      SeekCommand="{Binding DeckA.SeekCommand}" />
+            </Border>
+          </Grid>
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono" FontWeight="SemiBold"
+                       Foreground="{DynamicResource DeckBIdentity}"
+                       VerticalAlignment="Center" Text="B" />
+            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
+                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+              <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
+                                      MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
+                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
+                                      KickBrush="{DynamicResource Kick}"
+                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
+                                      PlayheadBrush="{DynamicResource WavePlayhead}"
+                                      BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
+                                      CombAtTop="True" Folded="True"
+                                      Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
+                                      BeatGrid="{Binding DeckB.BeatGrid}"
+                                      DownbeatOffset="{Binding DeckB.DownbeatBarOffset}"
+                                      KickAnchor="{Binding DeckB.KickAnchorFraction}"
+                                      SeekCommand="{Binding DeckB.SeekCommand}" />
+            </Border>
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Spacing="4" Margin="14,0,0,0"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="ZOOM" />
+          <controls:Knob Width="{DynamicResource SizeKnobZoom}" Height="{DynamicResource SizeKnobZoom}" DefaultValue="0.55"
+                         ArcBrush="{DynamicResource Accent}"
+                         Value="{Binding WaveformZoom}"
+                         ToolTip.Tip="Zoom both waveforms — drag up to zoom in (see the kicks), down for the whole track" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- DECK A · MIXER · DECK B — the decks are DJ-specific (jog-first); the mixer is the shared module.
+         The mixer column is Auto (sizes to the tier-capped cluster) rather than a fixed 300px, so the decks
+         take the rest of the width and the whole console scales with the window instead of leaving a fixed
+         gap on big screens. -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" Margin="0,0,0,6">
+      <dj:DjDeckView Grid.Column="0" DataContext="{Binding DeckA}" Margin="0,0,10,0" />
+      <dj:DjMixerView Grid.Column="1" DataContext="{Binding Mixer}" Margin="0,0,10,0" />
+      <dj:DjDeckView Grid.Column="2" DataContext="{Binding DeckB}" />
+    </Grid>
+  </Grid>
+</UserControl>

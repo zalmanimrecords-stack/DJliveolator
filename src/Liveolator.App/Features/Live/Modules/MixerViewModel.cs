@@ -1,0 +1,310 @@
+using System;
+using System.Reactive;
+using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using Liveolator.App.Shell;
+using Liveolator.Core.Actions;
+using Liveolator.Core.Mixer;
+using ReactiveUI;
+
+namespace Liveolator.App.Features.Live.Modules;
+
+/// <summary>
+/// The Mixer module (the mock's centre column / doc 11): the A↔B crossfader and the two per-deck
+/// channel-gain faders. Each fader drives the <see cref="MixerActionHandler"/> through the dispatcher
+/// (doc 04). Per-deck peak meters read post-processing samples through <see cref="IDeckLevelMeter"/>.
+/// Initial fader positions are seeded from dispatcher feedback so the UI reflects the authoritative
+/// mixer state.
+/// </summary>
+public sealed class MixerViewModel : ViewModelBase, IDisposable
+{
+    private const double DefaultCrossfader = 0.5;
+    private const double DefaultGain = 1.0;
+    private const double DefaultCueLevel = 1.0;
+    private const double DefaultCueMix = 0.0; // 0 = full cue (PFL), 1 = full master
+    private const double DefaultLimiterCharacter = 0.5;
+    private const double DefaultLimiterCeilingDbTp = -1.0;
+
+    // GR meter: full deflection at 12 dB of reduction (a master brick wall rarely pulls more on a mix).
+    // The held value attacks instantly to a new peak and decays a fixed fraction per poll, giving a short
+    // peak-hold so a brief kick-driven dip stays readable instead of flickering at the UI poll rate.
+    private const double GrFullScaleDb = 12.0;
+    private const double GrReleasePerPoll = 0.2;
+
+    // Smart-limiter ceiling knob ↔ dBTP mapping: knob 0 = quietest allowed ceiling, knob 1 = hottest
+    // (mirrors the handler's clamp range). The knob stays a normalized 0..1 control; the action carries dBTP.
+    private const double CeilingHottestDbTp = -0.3;
+    private const double CeilingQuietestDbTp = -2.0;
+
+    private readonly IPerformanceActionDispatcher? _dispatcher;
+    private readonly IDeckLevelMeter? _levelMeter;
+    private readonly ILimiterMeter? _limiterMeter;
+    private bool _isCueA;
+    private bool _isCueB;
+    private bool _isSmartLimiter;
+    private double _levelA;
+    private double _levelB;
+    private double _limiterGrHeldDb;
+    private bool _disposed;
+
+    /// <param name="channelA">Deck A, exposed as the mixer's A channel so the channel-strip EQ/filter knobs
+    /// (which already emit per-slot <c>MixerEqBand</c>/<c>MixerFilter</c> actions) can live on the mixer where
+    /// a DJ expects them. Null leaves the channel-strip knobs unbound (e.g. the Live deck keeps its own).</param>
+    /// <param name="channelB">Deck B, exposed as the mixer's B channel (see <paramref name="channelA"/>).</param>
+    public MixerViewModel(
+        IPerformanceActionDispatcher? dispatcher = null,
+        IDeckLevelMeter? levelMeter = null,
+        DeckViewModel? channelA = null,
+        DeckViewModel? channelB = null,
+        ILimiterMeter? limiterMeter = null)
+    {
+        _dispatcher = dispatcher;
+        _levelMeter = levelMeter;
+        _limiterMeter = limiterMeter;
+        ChannelA = channelA;
+        ChannelB = channelB;
+        bool enabled = dispatcher is not null;
+
+        Crossfader = new ContinuousControlViewModel(
+            "A / B", Seed(PerformanceActionKind.MixerCrossfade, slot: 0, DefaultCrossfader),
+            enabled ? v => Emit(PerformanceActionKind.MixerCrossfade, v, slot: 0) : null);
+
+        ChannelGainA = new ContinuousControlViewModel(
+            "A", Seed(PerformanceActionKind.MixerChannelGain, slot: 0, DefaultGain),
+            enabled ? v => Emit(PerformanceActionKind.MixerChannelGain, v, slot: 0) : null);
+
+        ChannelGainB = new ContinuousControlViewModel(
+            "B", Seed(PerformanceActionKind.MixerChannelGain, slot: 1, DefaultGain),
+            enabled ? v => Emit(PerformanceActionKind.MixerChannelGain, v, slot: 1) : null);
+
+        IObservable<bool> canCue = Observable.Return(enabled);
+        CueACommand = ReactiveCommand.Create(() => EmitCue(slot: 0), canCue);
+        CueBCommand = ReactiveCommand.Create(() => EmitCue(slot: 1), canCue);
+
+        // Tapping the A / B label snaps the crossfader fully to that side (0 = full A, 1 = full B).
+        // Setting Crossfader.Value both moves the bound fader and emits MixerCrossfade via the seam.
+        CrossfadeToACommand = ReactiveCommand.Create(() => { Crossfader.Value = 0.0; }, canCue);
+        CrossfadeToBCommand = ReactiveCommand.Create(() => { Crossfader.Value = 1.0; }, canCue);
+
+        EqCut = new EqCutModeKnobViewModel(
+            ModeFromFeedback(_dispatcher?.GetFeedback(PerformanceActionKind.MixerEqCutMode, 0)),
+            enabled ? EmitEqCutMode : null);
+
+        CueLevel = new ContinuousControlViewModel(
+            "Cue", Seed(PerformanceActionKind.MixerCueLevel, slot: 0, DefaultCueLevel),
+            enabled ? v => Emit(PerformanceActionKind.MixerCueLevel, v, slot: 0) : null);
+
+        CueMix = new ContinuousControlViewModel(
+            "Cue / Master", Seed(PerformanceActionKind.MixerCueMix, slot: 0, DefaultCueMix),
+            enabled ? v => Emit(PerformanceActionKind.MixerCueMix, v, slot: 0) : null);
+
+        LimiterCharacter = new ContinuousControlViewModel(
+            "Character", Seed(PerformanceActionKind.MixerLimiterCharacter, slot: 0, DefaultLimiterCharacter),
+            enabled ? v => Emit(PerformanceActionKind.MixerLimiterCharacter, v, slot: 0) : null);
+
+        LimiterCeiling = new ContinuousControlViewModel(
+            "Ceiling", CeilingToKnob(Seed(PerformanceActionKind.MixerLimiterCeiling, slot: 0, DefaultLimiterCeilingDbTp)),
+            enabled ? v => Emit(PerformanceActionKind.MixerLimiterCeiling, KnobToCeiling(v), slot: 0) : null);
+
+        LimiterSmartCommand = ReactiveCommand.Create(EmitLimiterSmart, canCue);
+
+        if (_dispatcher is not null)
+        {
+            _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
+            _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
+            _isSmartLimiter = _dispatcher.GetFeedback(PerformanceActionKind.MixerLimiterSmart, 0).IsActive;
+            _dispatcher.FeedbackChanged += OnFeedback;
+        }
+    }
+
+    /// <summary>True when the mixer handler is wired; the UI disables the faders otherwise.</summary>
+    public bool IsEnabled => _dispatcher is not null;
+
+    public ContinuousControlViewModel Crossfader { get; }
+    public ContinuousControlViewModel ChannelGainA { get; }
+    public ContinuousControlViewModel ChannelGainB { get; }
+
+    /// <summary>Deck A as the mixer's A channel — the source of the A channel-strip EQ/filter knobs
+    /// (<see cref="DeckViewModel.EqHigh"/>/<see cref="DeckViewModel.EqMid"/>/<see cref="DeckViewModel.EqLow"/>/
+    /// <see cref="DeckViewModel.Filter"/>). Null when no deck was supplied (the knobs then render disabled).</summary>
+    public DeckViewModel? ChannelA { get; }
+
+    /// <summary>Deck B as the mixer's B channel (see <see cref="ChannelA"/>).</summary>
+    public DeckViewModel? ChannelB { get; }
+
+    public double LevelA
+    {
+        get => _levelA;
+        private set => this.RaiseAndSetIfChanged(ref _levelA, value);
+    }
+
+    public double LevelB
+    {
+        get => _levelB;
+        private set => this.RaiseAndSetIfChanged(ref _levelB, value);
+    }
+
+    public void UpdateLevels(bool deckAPlaying, bool deckBPlaying)
+    {
+        if (_levelMeter is not null)
+        {
+            LevelA = deckAPlaying ? _levelMeter.GetLevel(0).Peak : 0;
+            LevelB = deckBPlaying ? _levelMeter.GetLevel(1).Peak : 0;
+        }
+        UpdateLimiterGr();
+    }
+
+    // Poll the master limiter's live gain reduction (independent of which deck plays — it reflects the
+    // summed master). Attack to a new peak instantly, then decay a fixed fraction per poll for a short hold.
+    private void UpdateLimiterGr()
+    {
+        if (_limiterMeter is null)
+            return;
+        double instant = _limiterMeter.CurrentGainReductionDb;
+        if (double.IsNaN(instant) || instant < 0.0)
+            instant = 0.0;
+        LimiterGainReductionDb = instant > _limiterGrHeldDb
+            ? instant
+            : _limiterGrHeldDb + (instant - _limiterGrHeldDb) * GrReleasePerPoll;
+    }
+
+    /// <summary>Master-limiter gain reduction shown on the GR meter, in dB (0 = not limiting), with a short
+    /// peak-hold so the meter reads steadily under kick-driven dips. Drives the MASTER-cluster GR meter.</summary>
+    public double LimiterGainReductionDb
+    {
+        get => _limiterGrHeldDb;
+        private set => this.RaiseAndSetIfChanged(ref _limiterGrHeldDb, value);
+    }
+
+    /// <summary>Full-scale dB of the GR meter (its 100% deflection), so the view need not hardcode the range.</summary>
+    public double LimiterGainReductionFullScaleDb => GrFullScaleDb;
+
+    /// <summary>Headphone-cue (PFL) bus output level (MixerCueLevel).</summary>
+    public ContinuousControlViewModel CueLevel { get; }
+
+    /// <summary>Cue/master blend knob: 0 = pre-listen the cued decks, 1 = the master (MixerCueMix).</summary>
+    public ContinuousControlViewModel CueMix { get; }
+
+    /// <summary>Headphone-cue toggles per deck (MixerCueToggle — a ready handler).</summary>
+    public ReactiveCommand<Unit, Unit> CueACommand { get; }
+    public ReactiveCommand<Unit, Unit> CueBCommand { get; }
+
+    /// <summary>Snap the crossfader fully to A (0.0) / B (1.0) — the A/B buttons flanking the crossfader.</summary>
+    public ReactiveCommand<Unit, Unit> CrossfadeToACommand { get; }
+    public ReactiveCommand<Unit, Unit> CrossfadeToBCommand { get; }
+
+    /// <summary>Smart-limiter CHARACTER knob: 0 = Transparent (gentle), 1 = Punchy (faster release).</summary>
+    public ContinuousControlViewModel LimiterCharacter { get; }
+
+    /// <summary>Smart-limiter true-peak CEILING knob (normalized; maps to dBTP under the hood).</summary>
+    public ContinuousControlViewModel LimiterCeiling { get; }
+
+    /// <summary>SAFE↔SMART toggle for the master limiter (MixerLimiterSmart).</summary>
+    public ReactiveCommand<Unit, Unit> LimiterSmartCommand { get; }
+
+    /// <summary>True when the master limiter is in SMART (program-dependent release) mode.</summary>
+    public bool IsSmartLimiter
+    {
+        get => _isSmartLimiter;
+        private set => this.RaiseAndSetIfChanged(ref _isSmartLimiter, value);
+    }
+
+    /// <summary>The mixer-wide EQ cut-depth control as a 3-detent knob (EQ → DEEP → KILL), seated between
+    /// the CUE buttons. A user turn emits <see cref="PerformanceActionKind.MixerEqCutMode"/> with the
+    /// selected mode; the handler re-applies the new cut floor to every channel and echoes the mode back.</summary>
+    public EqCutModeKnobViewModel EqCut { get; }
+
+    /// <summary>True while deck A/B is routed to the headphone cue bus (from dispatcher feedback).</summary>
+    public bool IsCueA
+    {
+        get => _isCueA;
+        private set => this.RaiseAndSetIfChanged(ref _isCueA, value);
+    }
+
+    public bool IsCueB
+    {
+        get => _isCueB;
+        private set => this.RaiseAndSetIfChanged(ref _isCueB, value);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        if (_dispatcher is not null)
+            _dispatcher.FeedbackChanged -= OnFeedback;
+    }
+
+    private double Seed(PerformanceActionKind kind, int slot, double fallback)
+    {
+        ActionFeedbackState? feedback = _dispatcher?.GetFeedback(kind, slot);
+        return feedback is { IsAvailable: true } ? feedback.Value : fallback;
+    }
+
+    private void Emit(PerformanceActionKind kind, double value, int slot)
+        => _dispatcher?.Dispatch(new PerformanceAction(kind, ActionInputMode.Absolute, Value: value, Slot: slot));
+
+    private void EmitCue(int slot)
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerCueToggle, Slot: slot));
+
+    private void EmitLimiterSmart()
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart));
+
+    // Knob (0..1) ↔ ceiling (dBTP) — a linear map between the hottest and quietest allowed ceilings.
+    private static double KnobToCeiling(double knob)
+        => CeilingQuietestDbTp + Math.Clamp(knob, 0.0, 1.0) * (CeilingHottestDbTp - CeilingQuietestDbTp);
+
+    private static double CeilingToKnob(double ceilingDbTp)
+        => Math.Clamp((ceilingDbTp - CeilingQuietestDbTp) / (CeilingHottestDbTp - CeilingQuietestDbTp), 0.0, 1.0);
+
+    // Absolute select: name the chosen mode so the handler sets exactly that cut depth (no cycling).
+    private void EmitEqCutMode(EqCutMode mode)
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerEqCutMode, Argument: mode.ToString()));
+
+    private static EqCutMode ModeFromFeedback(ActionFeedbackState? feedback)
+        => feedback is { IsAvailable: true } state && Enum.TryParse(state.Argument, out EqCutMode mode)
+            ? mode
+            : EqCutMode.Kill;
+
+    private void OnFeedback(object? sender, ActionFeedbackChanged e)
+        => RxApp.MainThreadScheduler.Schedule(() =>
+        {
+            switch (e.Kind)
+            {
+                case PerformanceActionKind.MixerCrossfade:
+                    Crossfader.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerChannelGain when e.Slot == 0:
+                    ChannelGainA.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerChannelGain when e.Slot == 1:
+                    ChannelGainB.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerCueToggle when e.Slot == 0:
+                    IsCueA = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerCueToggle when e.Slot == 1:
+                    IsCueB = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerCueLevel:
+                    CueLevel.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerCueMix:
+                    CueMix.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerEqCutMode:
+                    EqCut.SetFromMode(ModeFromFeedback(e.State));
+                    break;
+                case PerformanceActionKind.MixerLimiterSmart:
+                    IsSmartLimiter = e.State.IsActive;
+                    break;
+                case PerformanceActionKind.MixerLimiterCharacter:
+                    LimiterCharacter.SetFromFeedback(e.State.Value);
+                    break;
+                case PerformanceActionKind.MixerLimiterCeiling:
+                    LimiterCeiling.SetFromFeedback(CeilingToKnob(e.State.Value));
+                    break;
+            }
+        });
+}

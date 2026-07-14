@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             x:Class="Liveolator.App.Features.Dj.DjView"
+             x:DataType="dj:DjViewModel">
+
+  <!-- Single-screen DJ layout (no page scroll): the DJ console — the shared dual-waveform strip + the two
+       decks + mixer — sits content-sized at the top so the deck reads compact, exactly as it does on the
+       LIVE tab. The console is the SAME control the LIVE tab embeds (DjConsoleView, bound to the shared
+       PerformanceDeckSet), so switching tabs never shows a different-looking DJ.
+       NOTE: the SET (Now/Next/Later) bottom strip was removed temporarily — it crowded the deck layout.
+       The backing view-model (Set/DeckBQueue/Played + commands in DjViewModel) is intact so the panel
+       can be rebuilt once the deck layout is finalised.
+
+       Below the console sits the DJ track browser (the Rekordbox/Serato bottom half). Its height is
+       tier-dependent (Theme/ResponsiveLayout.axaml via .dj-browser): collapsed on small/laptop screens
+       where the deck sits alone, and a generous band on wide/4K where it fills the leftover space below
+       the compact console. -->
+  <!-- Console over browser. The console row is CONTENT-SIZED (Auto) so the deck renders compact —
+       identical to how the LIVE tab shows it (the same DjConsoleView in a content-sized stack), rather
+       than stretching the platter to fill a tall tab. The browser row (* ) is the elastic one: it
+       collapses to 0 on small/laptop tiers (set in code-behind from the window size-class) and absorbs
+       the remaining height on wide/4K. -->
+  <Grid Name="RootGrid" RowDefinitions="Auto,*">
+    <dj:DjConsoleView Grid.Row="0" DataContext="{Binding Decks}" />
+    <Border Grid.Row="1" IsVisible="{Binding HasBrowser}" Margin="0,12,0,0" ClipToBounds="True">
+      <dj:DjBrowserView DataContext="{Binding Browser}" />
+    </Border>
+  </Grid>
+</UserControl>

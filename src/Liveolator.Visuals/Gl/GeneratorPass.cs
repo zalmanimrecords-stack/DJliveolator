@@ -1,0 +1,369 @@
+using Liveolator.Core.Visuals;
+using Microsoft.Extensions.Logging;
+using Silk.NET.OpenGL;
+using System.Diagnostics;
+
+namespace Liveolator.Visuals.Gl;
+
+/// <summary>
+/// Renders a <see cref="VisualEffectRole.Generator"/> shader into a viewport-sized texture each frame
+/// (doc 26 — the basis for generative add-ons like a VU meter). The symmetric counterpart to
+/// <see cref="EffectChainRenderer"/>: where an effect samples a layer's existing texture, a generator
+/// draws its pixels from uniforms alone (beat + live audio level + its declared parameters) with no
+/// input texture. The produced texture is then composited by <see cref="LayeredQuadRenderer"/> with the
+/// layer's blend mode + opacity, exactly like an image layer.
+/// </summary>
+/// <remarks>
+/// Owns one program + one FBO/texture sized to the live viewport; the target is reallocated only when
+/// the viewport changes, not every frame. A missing/uncompilable shader degrades to
+/// <see cref="IsValid"/> = false so the layer is skipped rather than crashing the show (doc 08 rule).
+/// </remarks>
+internal sealed class GeneratorPass : IDisposable
+{
+    private static readonly float[] QuadVertices =
+    {
+        -1f,  1f, 0f, 0f,
+        -1f, -1f, 0f, 1f,
+         1f, -1f, 1f, 1f,
+        -1f,  1f, 0f, 0f,
+         1f, -1f, 1f, 1f,
+         1f,  1f, 1f, 0f,
+    };
+
+    private readonly GL _gl;
+    private readonly ILogger _logger;
+    private readonly VisualEffectDescriptor _descriptor;
+    private readonly Dictionary<string, int> _parameterLocations = new(StringComparer.Ordinal);
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+
+    private uint _program;
+    private uint _vao;
+    private uint _vbo;
+
+    // Two texture/FBO slots so a generator can sample the previous frame (uPreviousFrame) for
+    // frame-feedback trails/warp (doc 28). Ping-pong is only engaged when the shader declares the
+    // sampler; otherwise slot 0 is used exactly like the original single-buffer path (VU / psy-fractal
+    // are unaffected). _front is the slot rendered into this frame; the other holds the previous frame.
+    private readonly uint[] _textures = new uint[2];
+    private readonly uint[] _framebuffers = new uint[2];
+    private int _front;
+    private int _width = -1;
+    private int _height = -1;
+
+    private int _uPreviousFrame = -1;
+    private bool _hasFeedback;
+
+    // Optional dial/background image a generator samples as uBackground (the VU meter's face — built-in
+    // or custom). Loaded once from the descriptor; bound on texture unit 1 (unit 0 is the feedback slot).
+    private uint _backgroundTexture;
+    private int _uBackground = -1;
+
+    private int _uResolution = -1;
+    private int _uBeatPhase = -1;
+    private int _uBarPhase = -1;
+    private int _uConfidence = -1;
+    private int _uBeatFlash = -1;
+    private int _uRms = -1;
+    private int _uPeak = -1;
+    private int _uLevel = -1;
+    private int _uBass = -1;
+    private int _uLowMid = -1;
+    private int _uMid = -1;
+    private int _uHigh = -1;
+    private int _uTime = -1;
+
+    private bool _valid;
+    private bool _disposed;
+
+    public GeneratorPass(GL gl, VisualEffectDescriptor descriptor, ILogger logger)
+    {
+        _gl = gl;
+        _descriptor = descriptor;
+        _logger = logger;
+
+        try
+        {
+            string fragment = File.ReadAllText(descriptor.ShaderPath);
+            BuildProgram(fragment);
+            BuildQuad();
+            LoadBackground();
+            _valid = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ShaderCompilationException)
+        {
+            _logger.LogWarning(
+                ex, "Visual generator '{Effect}' could not be loaded; the layer will be skipped.",
+                descriptor.EffectId);
+            _valid = false;
+        }
+    }
+
+    /// <summary>True when the generator program compiled; a false generator layer is skipped.</summary>
+    public bool IsValid => _valid;
+
+    /// <summary>
+    /// Renders the generator into its own viewport-sized texture and returns the handle. Reallocates the
+    /// target only when <paramref name="width"/>/<paramref name="height"/> change. Binds no input texture.
+    /// </summary>
+    public uint Render(
+        int width,
+        int height,
+        FrameUniforms frame,
+        IReadOnlyDictionary<string, float> parameters)
+    {
+        if (!_valid)
+            return 0;
+
+        width = Math.Max(1, width);
+        height = Math.Max(1, height);
+        if (width != _width || height != _height)
+            AllocateTarget(width, height);
+
+        int target = _hasFeedback ? _front : 0;
+        int previous = _hasFeedback ? _front ^ 1 : 0;
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffers[target]);
+        _gl.Viewport(0, 0, (uint)width, (uint)height);
+        _gl.Disable(EnableCap.Blend);
+        _gl.ClearColor(0, 0, 0, 0);
+        _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
+
+        _gl.UseProgram(_program);
+
+        // Feedback generators sample last frame's output as uPreviousFrame on texture unit 0.
+        if (_hasFeedback)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _gl.BindTexture(TextureTarget.Texture2D, _textures[previous]);
+            _gl.Uniform1(_uPreviousFrame, 0);
+        }
+
+        // A generator with a background image (the VU meter's dial face) samples it as uBackground on
+        // unit 1, leaving unit 0 free for the feedback slot above.
+        if (_backgroundTexture != 0 && _uBackground >= 0)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture1);
+            _gl.BindTexture(TextureTarget.Texture2D, _backgroundTexture);
+            _gl.Uniform1(_uBackground, 1);
+            _gl.ActiveTexture(TextureUnit.Texture0);
+        }
+
+        if (_uResolution >= 0)
+            _gl.Uniform2(_uResolution, (float)width, (float)height);
+        Set(_uBeatPhase, frame.BeatPhase);
+        Set(_uBarPhase, frame.BarPhase);
+        Set(_uConfidence, frame.Confidence);
+        Set(_uBeatFlash, frame.BeatFlash);
+        Set(_uRms, frame.Rms);
+        Set(_uPeak, frame.Peak);
+        Set(_uLevel, frame.Level);
+        Set(_uBass, frame.Bass);
+        Set(_uLowMid, frame.LowMid);
+        Set(_uMid, frame.Mid);
+        Set(_uHigh, frame.High);
+        Set(_uTime, (float)_clock.Elapsed.TotalSeconds);
+
+        foreach ((string uniform, float value) in parameters)
+        {
+            if (_parameterLocations.TryGetValue(uniform, out int location) && location >= 0)
+                _gl.Uniform1(location, value);
+        }
+
+        _gl.BindVertexArray(_vao);
+        _gl.DrawArrays(PrimitiveType.Triangles, 0, 6);
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.BindVertexArray(0);
+
+        uint rendered = _textures[target];
+        // Swap so the texture just produced becomes next frame's uPreviousFrame; the compositor reads
+        // 'rendered' this frame before we render into the other slot next frame, so nothing is clobbered.
+        if (_hasFeedback)
+            _front ^= 1;
+        return rendered;
+    }
+
+    private void Set(int location, float value)
+    {
+        if (location >= 0)
+            _gl.Uniform1(location, value);
+    }
+
+    private void BuildProgram(string fragment)
+    {
+        uint vertex = Compile(ShaderType.VertexShader, LayeredQuadShaderSource.Vertex);
+        uint pixel = Compile(ShaderType.FragmentShader, fragment);
+        uint program = _gl.CreateProgram();
+        _gl.AttachShader(program, vertex);
+        _gl.AttachShader(program, pixel);
+        _gl.LinkProgram(program);
+        _gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
+        string log = _gl.GetProgramInfoLog(program);
+        _gl.DetachShader(program, vertex);
+        _gl.DetachShader(program, pixel);
+        _gl.DeleteShader(vertex);
+        _gl.DeleteShader(pixel);
+        if (linked == 0)
+        {
+            _gl.DeleteProgram(program);
+            throw new ShaderCompilationException($"Generator program failed to link: {log}");
+        }
+
+        _program = program;
+        _uResolution = _gl.GetUniformLocation(program, "uResolution");
+        _uBeatPhase = _gl.GetUniformLocation(program, "uBeatPhase");
+        _uBarPhase = _gl.GetUniformLocation(program, "uBarPhase");
+        _uConfidence = _gl.GetUniformLocation(program, "uConfidence");
+        _uBeatFlash = _gl.GetUniformLocation(program, "uBeatFlash");
+        _uRms = _gl.GetUniformLocation(program, "uRms");
+        _uPeak = _gl.GetUniformLocation(program, "uPeak");
+        _uLevel = _gl.GetUniformLocation(program, "uLevel");
+        _uBass = _gl.GetUniformLocation(program, "uBass");
+        _uLowMid = _gl.GetUniformLocation(program, "uLowMid");
+        _uMid = _gl.GetUniformLocation(program, "uMid");
+        _uHigh = _gl.GetUniformLocation(program, "uHigh");
+        _uTime = _gl.GetUniformLocation(program, "uTime");
+        _uPreviousFrame = _gl.GetUniformLocation(program, "uPreviousFrame");
+        _hasFeedback = _uPreviousFrame >= 0;
+        _uBackground = _gl.GetUniformLocation(program, "uBackground");
+        foreach (VisualEffectParameter parameter in _descriptor.Parameters)
+            _parameterLocations[parameter.Uniform] = _gl.GetUniformLocation(program, parameter.Uniform);
+    }
+
+    private uint Compile(ShaderType type, string source)
+    {
+        uint shader = _gl.CreateShader(type);
+        _gl.ShaderSource(shader, ShaderText.Sanitize(source));
+        _gl.CompileShader(shader);
+        _gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
+        if (compiled == 0)
+        {
+            string log = _gl.GetShaderInfoLog(shader);
+            _gl.DeleteShader(shader);
+            throw new ShaderCompilationException($"{type} failed to compile: {log}");
+        }
+        return shader;
+    }
+
+    // Loads the descriptor's optional dial/background image into a GL texture (sampled as uBackground).
+    // Best-effort: a missing/undecodable file leaves the generator without a background (the shader then
+    // samples an unbound sampler → black), logged rather than failing the whole generator.
+    private unsafe void LoadBackground()
+    {
+        if (_uBackground < 0 || string.IsNullOrWhiteSpace(_descriptor.BackgroundImagePath))
+            return;
+
+        try
+        {
+            RgbaImage image = new SkiaImageLoader().Load(_descriptor.BackgroundImagePath);
+            uint texture = _gl.GenTexture();
+            _gl.BindTexture(TextureTarget.Texture2D, texture);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+            _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+            fixed (byte* pixels = image.Pixels)
+            {
+                _gl.TexImage2D(
+                    TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
+                    (uint)image.Width, (uint)image.Height, 0,
+                    PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+            }
+            _gl.BindTexture(TextureTarget.Texture2D, 0);
+            _backgroundTexture = texture;
+        }
+        catch (ImageLoadException ex)
+        {
+            _logger.LogWarning(
+                ex, "Visual generator '{Effect}' background image could not be loaded; rendering without it.",
+                _descriptor.EffectId);
+        }
+    }
+
+    private unsafe void BuildQuad()
+    {
+        _vao = _gl.GenVertexArray();
+        _gl.BindVertexArray(_vao);
+        _vbo = _gl.GenBuffer();
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
+        fixed (float* data = QuadVertices)
+        {
+            _gl.BufferData(
+                BufferTargetARB.ArrayBuffer,
+                (nuint)(QuadVertices.Length * sizeof(float)),
+                data,
+                BufferUsageARB.StaticDraw);
+        }
+        const uint stride = 4 * sizeof(float);
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, stride, (void*)0);
+        _gl.EnableVertexAttribArray(1);
+        _gl.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, (void*)(2 * sizeof(float)));
+        _gl.BindVertexArray(0);
+    }
+
+    private unsafe void AllocateTarget(int width, int height)
+    {
+        // Allocate slot 0 always; slot 1 only for feedback generators (it holds the previous frame).
+        int slots = _hasFeedback ? 2 : 1;
+        for (int slot = 0; slot < slots; slot++)
+            AllocateSlot(slot, width, height);
+
+        _front = 0;
+        _width = width;
+        _height = height;
+    }
+
+    private unsafe void AllocateSlot(int slot, int width, int height)
+    {
+        if (_textures[slot] != 0)
+            _gl.DeleteTexture(_textures[slot]);
+        if (_framebuffers[slot] != 0)
+            _gl.DeleteFramebuffer(_framebuffers[slot]);
+
+        uint texture = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+        _gl.TexImage2D(
+            TextureTarget.Texture2D, 0, (int)InternalFormat.Rgba8,
+            (uint)width, (uint)height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, null);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        uint framebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D, texture, 0);
+        if (_gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != GLEnum.FramebufferComplete)
+            throw new InvalidOperationException("Visual generator framebuffer is incomplete.");
+
+        // Clear to transparent so a feedback shader's first sample of the previous frame is black, not
+        // garbage (and a freshly resized buffer shows no stale trails).
+        _gl.ClearColor(0, 0, 0, 0);
+        _gl.Clear((uint)ClearBufferMask.ColorBufferBit);
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+
+        _textures[slot] = texture;
+        _framebuffers[slot] = framebuffer;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        for (int slot = 0; slot < _textures.Length; slot++)
+        {
+            if (_textures[slot] != 0) _gl.DeleteTexture(_textures[slot]);
+            if (_framebuffers[slot] != 0) _gl.DeleteFramebuffer(_framebuffers[slot]);
+        }
+        if (_backgroundTexture != 0) _gl.DeleteTexture(_backgroundTexture);
+        if (_vbo != 0) _gl.DeleteBuffer(_vbo);
+        if (_vao != 0) _gl.DeleteVertexArray(_vao);
+        if (_program != 0) _gl.DeleteProgram(_program);
+    }
+}

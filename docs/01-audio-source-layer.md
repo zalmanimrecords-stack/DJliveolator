@@ -1,0 +1,311 @@
+# 01 — Audio Source Layer
+
+> **Revision status (doc 00):** the **audio library decision is RESOLVED — BASS/ManagedBass**
+> (2026-06-05), and the first realtime slice is built. The `IAudioSource` seam now lives in
+> `Liveolator.Core/Audio/`; the BASS backend (`DeckAudioSource` / `BassPlayback` / `BassAudioEngine`)
+> lives in `Liveolator.Audio/Playback/`. Treat the NAudio-specific types in the rest of this doc as
+> **historical placeholders** — the live seam shapes are those in `Liveolator.Core/Audio/` and
+> `docs/18`. Still on BASS but not yet built: ASIO/CoreAudio device selection + multi-channel cue
+> output (Phase 1b / doc 11) and system-loopback capture.
+>
+> **Built `IAudioSource` (Core):** `string Name`, `bool IsRunning`, `Start()`, `Stop()`, and
+> `event EventHandler<AudioSamplesAvailable> SamplesAvailable`, where
+> `AudioSamplesAvailable(ReadOnlyMemory<float> Interleaved, int Channels, int SampleRate)` carries
+> source-native interleaved float samples. Conversion to analysis frames is the frame pipeline's job
+> (doc 02). The **latency targets and real-time-thread rules** below are library-independent.
+
+## BASS native library & licensing (realtime playback)
+
+Realtime playback uses **BASS** via the managed **ManagedBass** P/Invoke wrapper. ManagedBass is
+a thin binding only — at runtime it loads the platform-native **BASS** library, which un4seen
+ships separately as a per-platform binary.
+
+### Licensing (must read before distribution)
+
+- **ManagedBass** (the managed wrapper) is MIT-licensed.
+- **BASS itself** (the native library, © un4seen) is **free for non-commercial use only**.
+  **Distributing Liveolator to users requires a commercial BASS license** from un4seen
+  (<https://www.un4seen.com/>). This was accepted as a project decision on 2026-06-05
+  (see `CLAUDE.md` → Key decisions and `docs/18`).
+- The native binaries are **never committed** to this repository (`.gitignore`: `/runtimes/`).
+  Each developer fetches them locally; release packaging fetches them under the held license.
+
+### Fetching the native library (developer setup)
+
+The binaries live under `runtimes/<rid>/native/` and are pulled by a cross-platform script:
+
+```bash
+# auto-detects the current platform (win-x64 / osx-x64 / osx-arm64 / linux-x64)
+pwsh ./scripts/fetch-bass.ps1          # Windows / cross-platform PowerShell
+./scripts/fetch-bass.sh                # macOS / Linux (bash)
+
+# force a specific target:
+pwsh ./scripts/fetch-bass.ps1 -Rid osx-arm64
+./scripts/fetch-bass.sh osx-arm64
+```
+
+Each script downloads the right un4seen archive (`bassNN.zip` / `-osx` / `-linux`), extracts the
+single native lib, and writes it as the canonical name ManagedBass probes for:
+
+| RID | Output | un4seen archive |
+|-----|--------|-----------------|
+| `win-x64`   | `runtimes/win-x64/native/bass.dll`     | `bass24.zip` (x64 entry) |
+| `osx-x64`   | `runtimes/osx-x64/native/libbass.dylib`  | `bass24-osx.zip` (universal dylib) |
+| `osx-arm64` | `runtimes/osx-arm64/native/libbass.dylib` | `bass24-osx.zip` (universal dylib) |
+| `linux-x64` | `runtimes/linux-x64/native/libbass.so`  | `bass24-linux.zip` (`x86_64` entry) |
+
+The App build (`Liveolator.App.csproj`, target `CopyBassNative`) copies the lib for the active RID
+next to the App output. If it is absent, the build prints a warning and `ServiceConfig.WireLiveAudio`
+disables Live Mode at runtime — the app still runs as a catalog browser. The archive version tag is
+parameterised (`-Version` / `BASS_VERSION`) so a future un4seen bump needs no code change.
+
+### Manual hardware verification checklist (Live Mode end-to-end)
+
+Automated tests cover the wiring/fallback path but **cannot prove real sound output** — that needs
+hardware and a human. After running the fetch script on a real machine, verify:
+
+- [ ] `scripts/fetch-bass.*` placed the native lib under `runtimes/<rid>/native/`.
+- [ ] `dotnet run --project src/Liveolator.App` starts and the build logs "Copied BASS native lib".
+- [ ] Live Mode is **enabled** (transport controls visible, not the catalog-only fallback).
+- [ ] Select a real track in the Libraries tab and press play → **audio comes out the speakers**.
+- [ ] Pause/stop silences output; play resumes it.
+- [ ] The **LIVE BPM** readout updates and settles near the track's true tempo within a few seconds.
+- [ ] No audio glitches/xruns at idle; UI stays responsive during playback.
+- [ ] (Phase 1b, when built) the CMD STUDIO 2A can be selected as the output/cue device.
+
+## Purpose
+
+Provide a normalized stream of audio frames regardless of origin, so the
+visualizer and beat engine no longer assume "audio == a file being played."
+
+## Existing code this touches
+
+- `MilkDropVisualizer.App/Audio/AudioPlayer.cs` — NAudio `WaveOutEvent`/`WasapiOut`
+  file playback. Stays as the deck output; wrapped, not replaced.
+- `MilkDropVisualizer.App/Audio/AudioAnalyzer.cs` — currently re-reads the file
+  stream on demand to compute FFT/PCM. This becomes one *consumer* of the new
+  frame pipeline rather than the sole audio entry point.
+- `MilkDropVisualizer.App/Audio/PlaylistAudioPlayer.cs` — playlist wrapper over
+  `AudioPlayer`; becomes the backing of `DeckAudioSource`.
+
+NAudio 2.2.1 is already referenced and provides `WasapiLoopbackCapture` and
+`MMDeviceEnumerator` — no new audio dependency is required for Phase 1.
+
+## Proposed interfaces
+
+```csharp
+public interface IAudioSource : IDisposable
+{
+    string Name { get; }
+    bool IsRunning { get; }
+    WaveFormat Format { get; }      // NAudio.Wave.WaveFormat
+    void Start();
+    void Stop();
+
+    // Raised on the capture/playback thread with newly available samples.
+    event EventHandler<AudioSamplesAvailable>? SamplesAvailable;
+}
+
+public sealed record AudioSamplesAvailable(
+    ReadOnlyMemory<float> Interleaved,  // source-native channels/sample rate
+    int Channels,
+    int SampleRate);
+```
+
+`IAudioSource` only *produces* raw samples. Conversion to analysis-ready frames is
+the frame pipeline's job (doc 02) — strict layer separation (global standard #4).
+
+## Initial sources
+
+### `DeckAudioSource`
+
+Wraps `PlaylistAudioPlayer`. Emits the samples currently being played by the
+internal deck. This is the default source and preserves today's behavior: with
+Live Mode off, the deck is the only source.
+
+### `SystemLoopbackAudioSource`
+
+Captures the Windows system output mix via NAudio `WasapiLoopbackCapture`.
+
+```csharp
+public sealed class SystemLoopbackAudioSource : IAudioSource
+{
+    // ctor takes the selected MMDevice (render endpoint) to capture.
+    // Start():  create WasapiLoopbackCapture, subscribe DataAvailable,
+    //           convert byte[] -> float[] per WaveFormat, raise SamplesAvailable.
+    // Stop():   StopRecording + dispose capture.
+}
+```
+
+Responsibilities:
+
+- Enumerate render endpoints (`MMDeviceEnumerator.EnumerateAudioEndPoints(Render,
+  Active)`) and expose them for device selection in the UI.
+- Convert captured bytes to `float` PCM according to the capture `WaveFormat`
+  (loopback is typically 32-bit IEEE float, but handle 16-bit PCM defensively).
+- Surface "device changed / default device moved" via NAudio notifications so the
+  UI can prompt re-selection. Never crash the render loop on device loss
+  (global standard #16, #26).
+
+### `SoundCardInputAudioSource` (WASAPI or ASIO backend)
+
+Captures audio from an external sound card / audio interface input (line-in), as
+opposed to the system output mix. This is the path for capturing a hardware DJ
+mixer's output, or the master of an external DJ app, into Liveolator's visuals.
+
+Two backends behind one source, selectable per device (see "Audio I/O backends"
+below):
+
+- **WASAPI capture** (`WasapiCapture` on a capture `MMDevice`) — works with any
+  Windows sound card, shared or exclusive mode.
+- **ASIO capture** (NAudio `AsioOut`) — low-latency path for pro/DJ interfaces that
+  ship an ASIO driver (the **Behringer CMD STUDIO 2A** built-in 4-channel interface
+  is such a device — see doc 07). Required when latency matters for tight visuals.
+
+## Audio I/O backends: WASAPI vs ASIO
+
+The audio layer must support real sound cards, including low-latency **ASIO**. The
+backend is an implementation detail behind `IAudioSource` (input) and the deck output
+path (doc 11) — the rest of the app never sees it.
+
+```csharp
+public enum AudioBackend { WasapiShared, WasapiExclusive, Asio }
+
+public interface IAudioDeviceCatalog
+{
+    IReadOnlyList<AudioDeviceInfo> EnumerateRenderEndpoints();   // WASAPI render
+    IReadOnlyList<AudioDeviceInfo> EnumerateCaptureEndpoints();  // WASAPI capture
+    IReadOnlyList<AudioDeviceInfo> EnumerateAsioDrivers();       // AsioOut.GetDriverNames()
+}
+
+public sealed record AudioDeviceInfo(
+    string Id, string Name, AudioBackend Backend, int InputChannels, int OutputChannels);
+```
+
+ASIO specifics (NAudio `AsioOut`):
+
+- Drivers enumerated via `AsioOut.GetDriverNames()`; the user selects one in the
+  Mappings/Audio UI (doc 12).
+- Input capture subscribes to `AsioOut.AudioAvailable` and reads interleaved float
+  samples for the selected input channels.
+- ASIO is **exclusive** — one application owns the driver at a time. If an external
+  DJ app holds the CMD STUDIO 2A's ASIO driver, Zalmanolator cannot also open it;
+  the UI must detect this and fall back to a loopback/system-mix capture or another
+  input. This trade-off is documented for the performer.
+- ASIO buffer size is driver-controlled; surface the reported latency in the UI as a
+  diagnostic (doc 14 metric).
+
+The same backend abstraction serves **output** for the deck/headphone-cue path in
+doc 11. Because the user confirmed **Liveolator is the DJ player**, multi-channel
+**output** (master on ch 1/2, headphone cue on ch 3/4 of the CMD STUDIO 2A) over the
+low-latency backend is a **confirmed requirement**, not conditional.
+
+> When Liveolator plays its **own** deck through a low-latency output device, the beat
+> engine already has the deck samples directly (via `DeckAudioSource`) — no capture
+> is needed. Capture (loopback/line-in) is for audio that originates outside the app.
+
+## Future sources (designed for, not built in Phase 1)
+
+- `ProcessLoopbackAudioSource` — per-process capture via the newer Windows
+  process-loopback API (Windows 10 2004+). Behind capability detection.
+- `NetworkClockAudioSource` — not a PCM source; an external tempo/clock source for
+  Ableton Link or DJ-link sync. Implements a separate `IExternalClock` rather than
+  `IAudioSource`. Noted here for completeness; see doc 03.
+
+## Ring buffer
+
+A single-producer/multi-consumer ring buffer decouples the capture thread from the
+render loop and beat analysis (per the threading model in doc 00).
+
+```csharp
+public sealed class AudioRingBuffer   // float samples, mono or interleaved
+{
+    public AudioRingBuffer(int capacitySamples);
+    public void Write(ReadOnlySpan<float> samples);   // producer (capture thread)
+    public int Read(Span<float> destination);          // consumer; returns count
+    public int Available { get; }
+}
+```
+
+- Capacity sized for the worst-case analysis window (beat engine wants 8–12 s of
+  history — see doc 03) plus headroom.
+- Overwrites oldest samples when full; capture must never block (dropping stale
+  audio is correct for a live visualizer).
+
+## Low-latency targets & the real-time audio thread
+
+> Library-independent; from `docs/research/dj-gaps-keydetect-latency-automix-avsync.md`.
+> Drives the doc 00 "low-latency audio" requirement and the deck output path (doc 11).
+
+**The callback model.** The OS audio backend requests a buffer of samples on a **realtime,
+performance-sensitive callback thread**, hundreds of times per second. Each buffer must be
+fully computed within **one buffer period** or the audio glitches (xrun / under-run). For a
+256-sample buffer at 44.1 kHz that deadline is **< 5.8 ms**, every time, no exceptions.
+
+**Targets (both platforms):**
+
+- Aim for **< 10 ms** output latency; default buffer **~256–512 samples**, exposed as a
+  user setting (Mixxx ships 23–64 ms as "safe", < 10 ms for tight/timecode use).
+- Latency floor cannot go below one callback buffer period.
+- Total latency = the **sum of stacked buffer layers** (driver + backend + app), so keep
+  the chain short, not just the buffer small.
+- Backends: **Windows** ASIO / WDM-KS (good) › WASAPI (acceptable); **macOS** CoreAudio
+  (single option, behaves like a clean double-buffer). Reach them through the seam; app code
+  never sees the backend.
+
+**Hard rules for the audio callback thread (non-negotiable):**
+
+- **No memory allocation/free** (`new`/`delete`/`malloc`) on the audio thread.
+- **No locks/mutexes**, no blocking on semaphores, disk, or network.
+- **No calls into OS/3rd-party code that may block internally**, and no unbounded-time ops.
+- Cross-thread communication (UI/MIDI/`PerformanceAction` → audio) is **lock-free**:
+  pre-allocated ring buffers / atomics (see "Ring buffer" above). The dispatcher (doc 04)
+  hands actions to the audio thread via a lock-free queue; it never mutates audio state
+  under a lock.
+- Pre-allocate all buffers; size worst-case up front.
+
+These rules apply to the deck mixer/DSP (doc 11) and any per-sample work, regardless of the
+chosen audio library.
+
+## Source selection
+
+A small `AudioSourceManager` owns the active `IAudioSource`, exposes the available
+sources/devices, and handles switching at runtime (Deck ↔ System loopback ↔ Input)
+without tearing down the frame pipeline. Switching is itself a `PerformanceAction`
+(`Beat.SetSource` / a `Source.Select` action) — see doc 04.
+
+## Error handling & logging
+
+- Wrap `Start()/Stop()` and the WASAPI/ASIO callback in try/catch with contextual
+  logging (device name, backend, format) — never an empty catch (global standard #16).
+- On capture failure, stop cleanly, raise a surfaced error event, and fall back to
+  the deck source so visuals keep running.
+- ASIO driver already in use (exclusive) → surface a clear, actionable message and
+  offer WASAPI loopback as the fallback; do not throw into the render loop.
+- Never log raw audio buffers or device identifiers that could be sensitive.
+
+## Phase
+
+- Phase 1 (Live Audio Capture MVP): `DeckAudioSource` + `SystemLoopbackAudioSource` +
+  WASAPI device enumeration + ring buffer + signal meter.
+- Phase 1b (sound card / ASIO): `SoundCardInputAudioSource` with the WASAPI/ASIO
+  backend abstraction + `IAudioDeviceCatalog` (incl. `AsioOut.GetDriverNames()`).
+  Lands alongside or just after the loopback MVP so real interfaces (CMD STUDIO 2A)
+  are supported early.
+
+Success criteria (from the plan): Spotify/YouTube/system audio drives the visuals with
+no file loaded; deck playback still works; no UI freeze during capture; a low-latency
+interface can be selected as the capture/output device.
+
+## Risks
+
+- Loopback captures the **selected output mix**, not a single app, unless the
+  process-loopback API is used. Document this clearly in the UI.
+- ASIO is exclusive: capturing from the same interface an external DJ app is using is
+  impossible; the WASAPI-loopback fallback must be obvious to the performer.
+- ASIO driver quality varies; report driver-reported latency and validate the channel
+  layout before relying on it.
+- Some audio drivers misbehave with loopback (exclusive-mode streams, odd formats).
+  Validate format and degrade gracefully.
+- Sample-rate mismatch between source and the FFT expectation is handled in the
+  frame pipeline (doc 02), not here.

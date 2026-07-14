@@ -1,0 +1,13 @@
+{
+  "name": "CYBER RAIN",
+  "author": "Liveolator",
+  "description": "Digital rain columns with bass ripples and neon scanlines.",
+  "parameters": [
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 1.2 },
+    { "id": "density", "uniform": "uDensity", "label": "DENSE", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "trail", "uniform": "uTrail", "label": "TRAIL", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 0.0 },
+    { "id": "glitch", "uniform": "uGlitch", "label": "GLITCH", "min": 0.0, "max": 1.0, "default": 0.25 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uBass;\nuniform float uHigh;\nuniform float uSpeed;\nuniform float uDensity;\nuniform float uTrail;\nuniform float uColor;\nuniform float uGlitch;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);} \nvec3 pal(float t){return 0.5+0.5*cos(6.28318*(t+vec3(0.0,0.33,0.67)+floor(uColor+0.5)*0.16));}\nvoid main(){\n  vec2 uv=vTexCoord;\n  float cols=28.0+uDensity*56.0;\n  float col=floor(uv.x*cols);\n  float seed=hash(vec2(col,3.1));\n  float y=fract(uv.y + uTime*(0.18+uSpeed*0.42)*(0.35+seed));\n  float head=exp(-fract(y+seed)*18.0/(0.4+uTrail));\n  float glyph=step(0.58,hash(vec2(col,floor((uv.y+uTime*uSpeed)*42.0))))*(0.4+uHigh*0.8);\n  float line=head*glyph;\n  float scan=sin(uv.y*uResolution.y*0.75+uTime*18.0)*0.04;\n  float glitch=step(0.98-uGlitch*0.04-uBeatFlash*0.03,hash(vec2(floor(uv.y*38.0),floor(uTime*12.0))))*0.35;\n  vec3 colr=pal(seed+uBass*0.15)*line*(0.55+uLevel+uBeatFlash*0.7);\n  colr+=vec3(0.02,0.18,0.10)*(scan+glitch);\n  colr=colr/(1.0+colr*0.55);\n  fragColor=vec4(colr,1.0);\n}\n"
+}

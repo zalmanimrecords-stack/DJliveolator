@@ -1,0 +1,13 @@
+{
+  "name": "GLASS SHARDS",
+  "author": "Liveolator",
+  "description": "Angular glass fragments with prism highlights and beat cracks.",
+  "parameters": [
+    { "id": "fracture", "uniform": "uFracture", "label": "CRACK", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.5, "default": 0.7 },
+    { "id": "prism", "uniform": "uPrism", "label": "PRISM", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "density", "uniform": "uDensity", "label": "DENSE", "min": 0.0, "max": 1.0, "default": 0.7 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 0.8 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uMid;\nuniform float uHigh;\nuniform float uFracture;\nuniform float uSpeed;\nuniform float uPrism;\nuniform float uDensity;\nuniform float uGlow;\nmat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);} \nfloat shard(vec2 p,float a,float off){ vec2 q=rot(a)*p; float d=max(abs(q.x+off)*0.65+q.y*0.35, abs(q.y-off)*0.75-q.x*0.15); return exp(-abs(d)*28.0); }\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.15+uSpeed*0.8);\n  vec3 col=vec3(0.002,0.004,0.012);\n  float sum=0.0;\n  for(int i=0;i<10;i++){\n    float fi=float(i); float enabled=step(fi,4.0+floor(uDensity*5.0));\n    vec2 q=p+vec2(sin(fi*2.3+t)*0.12, cos(fi*1.7-t)*0.10);\n    float s=shard(q, fi*0.63+t*0.18, sin(fi)*0.2)*enabled;\n    sum+=s;\n    vec3 prism=0.5+0.5*cos(6.28318*(vec3(0.0,0.28,0.66)+fi*0.11+uPrism*0.08+uMid*0.1));\n    col+=prism*s*(0.08+uGlow*0.18+uLevel*0.10);\n  }\n  float crack=exp(-abs(sin((p.x+p.y+t)*9.0))*20.0)*(uBeatFlash+uHigh*0.3)*uFracture;\n  col+=vec3(0.75,0.95,1.0)*(crack+pow(sum,2.0)*0.04);\n  col=col/(1.0+col*0.5);\n  fragColor=vec4(col,1.0);\n}\n"
+}

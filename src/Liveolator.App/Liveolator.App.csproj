@@ -1,0 +1,120 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Distribution identity: the installer (installer/windows) reads Version from here,
+         so the exe metadata, setup filename, and Add/Remove Programs entry always agree. -->
+    <Version>0.5.0</Version>
+    <ApplicationIcon>Liveolator.ico</ApplicationIcon>
+    <Product>Liveolator</Product>
+    <Company>Zalman Im Records</Company>
+    <Copyright>© 2026 Zalman Im Records</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.1" />
+    <PackageReference Include="Avalonia.ReactiveUI" Version="11.2.1" />
+    <!-- DevTools only in Debug builds -->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.1" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Liveolator.App.Tests" />
+  </ItemGroup>
+
+  <!--
+    Stamp the short git commit as the build identifier: the SDK appends "+$(SourceRevisionId)" to the
+    AssemblyInformationalVersion, which Settings → Diagnostics shows as the build number. Best-effort —
+    outside a git checkout (e.g. an unpacked source release) the Exec yields nothing and the build reports
+    as a local build, so this never fails the build.
+  -->
+  <Target Name="StampGitCommit" BeforeTargets="GetAssemblyVersion;CoreCompile">
+    <Exec Command="git rev-parse --short HEAD"
+          ConsoleToMSBuild="true"
+          ContinueOnError="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitHash" />
+    </Exec>
+    <PropertyGroup>
+      <SourceRevisionId Condition="'$(GitCommitHash)' != ''">$(GitCommitHash.Trim())</SourceRevisionId>
+    </PropertyGroup>
+  </Target>
+
+  <!-- UI skin assets (doc 30): filmstrip PNGs for skinnable knobs/faders, loaded via avares://. -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Ship the third-party license notices next to the exe (and into the publish folder the
+       installer copies wholesale), so the MIT/BSD/OFL attribution requirements are met. -->
+  <ItemGroup>
+    <Content Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
+    <ProjectReference Include="..\Liveolator.Audio\Liveolator.Audio.csproj" />
+    <ProjectReference Include="..\Liveolator.Media\Liveolator.Media.csproj" />
+    <ProjectReference Include="..\Liveolator.Online\Liveolator.Online.csproj" />
+    <ProjectReference Include="..\Liveolator.Platform\Liveolator.Platform.csproj" />
+    <ProjectReference Include="..\Liveolator.Visuals\Liveolator.Visuals.csproj" />
+    <ProjectReference Include="..\Liveolator.Midi\Liveolator.Midi.csproj" />
+  </ItemGroup>
+
+  <!--
+    Realtime audio (BASS) needs its per-platform native library next to the App output.
+    The binaries are NOT in source control (commercial license; see docs/01); they are
+    fetched into runtimes/<rid>/native/ by scripts/fetch-bass.(ps1|sh). This target copies
+    the lib for the active RID when present, and is a silent no-op when absent — matching
+    ServiceConfig.WireLiveAudio, which disables Live Mode if native BASS is missing.
+  -->
+  <PropertyGroup>
+    <!-- RID for native-lib selection. Honour an explicit RID; otherwise infer from the OS. -->
+    <BassRid Condition="'$(BassRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">osx-arm64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</BassRid>
+    <BassNativeDir>$(MSBuildThisFileDirectory)..\..\runtimes\$(BassRid)\native\</BassNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BassNativeLib Include="$(BassNativeDir)*" Condition="Exists('$(BassNativeDir)')" />
+  </ItemGroup>
+
+  <Target Name="CopyBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(OutDir)" />
+  </Target>
+
+  <Target Name="WarnMissingBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' == ''">
+    <Message Importance="high"
+             Text="BASS native lib not found under runtimes\$(BassRid)\native\ — Live Mode will be disabled at runtime. Run scripts/fetch-bass to enable realtime audio." />
+  </Target>
+
+  <!-- Publish copies only ResolvedFileToPublish items, so the Build-time copy above never
+       reaches the publish folder — without this, installed builds would silently lose Live Mode. -->
+  <Target Name="CopyBassNativeToPublish" AfterTargets="Publish" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(PublishDir)" />
+  </Target>
+
+</Project>

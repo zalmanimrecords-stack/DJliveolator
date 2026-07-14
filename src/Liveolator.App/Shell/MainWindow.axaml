@@ -1,0 +1,228 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
+        xmlns:controls="clr-namespace:Liveolator.App.Controls"
+        xmlns:shell="clr-namespace:Liveolator.App.Shell"
+        x:Class="Liveolator.App.Shell.MainWindow"
+        x:DataType="shell:MainWindowViewModel"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        WindowState="FullScreen"
+        SystemDecorations="None"
+        Title="Liveolator"
+        Background="{DynamicResource AppBackground}">
+
+  <Window.Styles>
+    <!-- Connection LED: faint when no device, dim when linked-idle, green on live MIDI signal.
+         .live is listed last so it wins over .linked when a message is arriving. -->
+    <Style Selector="Ellipse.led">
+      <Setter Property="Fill" Value="{DynamicResource Faint}" />
+    </Style>
+    <Style Selector="Ellipse.led.linked">
+      <Setter Property="Fill" Value="{DynamicResource Dim}" />
+    </Style>
+    <Style Selector="Ellipse.led.live">
+      <Setter Property="Fill" Value="{DynamicResource MidiActive}" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel LastChildFill="True">
+
+    <!-- Top status strip, grouped by MEANING: STATUS (left) · MASTER (centre) · system/window
+         utilities (right). The OS volume is deliberately kept on the right, away from the master
+         limiter, so the two "loudness" concepts are not mistaken for one another (doc 19/UX review). -->
+    <Border DockPanel.Dock="Top"
+            BorderBrush="{DynamicResource Hair}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,6">
+
+        <!-- LEFT: passive routing / connectivity / telemetry status (one quiet tier) -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <!-- audio routing -->
+          <TextBlock Classes="mono faint" Text="OUT" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.AudioOutputName}" />
+
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center" />
+
+          <!-- MIDI connectivity + activity (green on signal) -->
+          <TextBlock Classes="mono faint" Text="MIDI" />
+          <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                   Classes="led"
+                   Classes.linked="{Binding Status.MidiInputConnected}"
+                   Classes.live="{Binding Status.MidiActive}" />
+          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MidiInputName}" />
+          <TextBlock Classes="mono faint"
+                     Text="{Binding Status.MidiFeedbackName, StringFormat='· LED {0}'}"
+                     IsVisible="{Binding Status.MidiFeedbackName, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+          <!-- CPU / memory of the running app (only when metrics are available) -->
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
+                  IsVisible="{Binding Status.HasMetrics}" />
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                      IsVisible="{Binding Status.HasMetrics}">
+            <TextBlock Classes="mono faint" Text="CPU" />
+            <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.CpuText}" />
+            <TextBlock Classes="mono faint" Text="RAM" Margin="8,0,0,0" />
+            <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MemoryText}" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- CENTRE: the master output stage — the one live-critical control in this bar.
+             Master "smart limiter" (relocated from the DJ mixer frame): CHARACTER knob, the brain
+             SMART toggle, CEILING knob. Bound to the DJ mixer VM (the only one with a limiter). The
+             brick-wall peak guarantee always holds; SMART only reshapes the release (doc 11). -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+          <TextBlock Classes="tick" VerticalAlignment="Center" Margin="0,0,4,0" Text="MASTER" />
+
+          <StackPanel Spacing="1" VerticalAlignment="Center"
+                      ToolTip.Tip="Gentle ↔ Hard: how aggressively the smart release reacts">
+            <controls:Knob Width="26" Height="26" HorizontalAlignment="Center"
+                           Value="{Binding Limiter.LimiterCharacter.Value}"
+                           IsEnabled="{Binding Limiter.LimiterCharacter.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CHARACTER" />
+          </StackPanel>
+
+          <Button Classes="key mixer" Classes.on="{Binding Limiter.IsSmartLimiter}"
+                  Width="32" Height="32" Padding="0"
+                  VerticalAlignment="Center"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  Command="{Binding Limiter.LimiterSmartCommand}"
+                  ToolTip.Tip="SMART = release adapts to what is playing; SAFE = fixed brick-wall release">
+            <!-- Brain glyph: two lobes + central fissure + cortex folds. Stroke follows the button
+                 Foreground so it flips with the .on state (Dim when SAFE, AccentInk when SMART). -->
+            <Viewbox Width="18" Height="18">
+              <Canvas Width="24" Height="24">
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                      StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                      Data="M12 20 C 8 22, 4 20, 5 16 C 2 15, 2 10, 5 9 C 4 5, 9 3, 12 6
+                            C 15 3, 20 5, 19 9 C 22 10, 22 15, 19 16 C 20 20, 16 22, 12 20 Z" />
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                      StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                      Data="M12 6 L 12 20" />
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                      StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                      Data="M8 9 C 10 10, 10 12, 8.5 13" />
+                <Path Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                      StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                      Data="M16 9 C 14 10, 14 12, 15.5 13" />
+              </Canvas>
+            </Viewbox>
+          </Button>
+
+          <StackPanel Spacing="1" VerticalAlignment="Center"
+                      ToolTip.Tip="True-peak output ceiling (low ↔ hot)">
+            <controls:Knob Width="26" Height="26" HorizontalAlignment="Center"
+                           Value="{Binding Limiter.LimiterCeiling.Value}"
+                           IsEnabled="{Binding Limiter.LimiterCeiling.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CEILING" />
+          </StackPanel>
+
+          <!-- Gain-reduction meter: the only feedback that the (inaudible-by-design) brick wall is working,
+               and how hard. The LED lights when it engages; the bar shows the dB of reduction (peak-held in
+               the VM). Lets the DJ see the effect of CHARACTER / SMART / CEILING without trusting the ear. -->
+          <StackPanel Spacing="1" VerticalAlignment="Center"
+                      ToolTip.Tip="Master limiter gain reduction — lights when the brick wall engages (peak-held)">
+            <controls:GainReductionMeter Width="64" Height="14" VerticalAlignment="Center"
+                                         GainReductionDb="{Binding Limiter.LimiterGainReductionDb}"
+                                         FullScaleDb="{Binding Limiter.LimiterGainReductionFullScaleDb}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="GR" />
+          </StackPanel>
+        </StackPanel>
+
+        <!-- RIGHT: system / window utilities (not DJ-output controls) -->
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <!-- Global computer master volume: drives the OS system volume (affects every app), NOT the
+               DJ master. Labelled SYS VOL and kept apart from the limiter so it is never mistaken for
+               the master output. Hidden on hosts where the OS volume cannot be controlled. -->
+          <StackPanel Spacing="1" VerticalAlignment="Center"
+                      IsVisible="{Binding SystemVolume.IsAvailable}"
+                      ToolTip.Tip="Computer master volume (affects every app, not the DJ master)">
+            <controls:Knob Width="26" Height="26" HorizontalAlignment="Center"
+                           Value="{Binding SystemVolume.Volume.Value}"
+                           IsEnabled="{Binding SystemVolume.Volume.IsEnabled}"
+                           ArcBrush="{DynamicResource Accent}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="SYS VOL" />
+          </StackPanel>
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
+                  IsVisible="{Binding SystemVolume.IsAvailable}" />
+
+          <Button Classes="spartan"
+                  Width="32" Height="32" Padding="0"
+                  VerticalAlignment="Center"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  ToolTip.Tip="MIDI Learn — bind a control to the next hardware message"
+                  Command="{Binding MidiLearn.ToggleCommand}">
+            <!-- 5-pin DIN connector: the universal MIDI glyph (ring + pins) -->
+            <Viewbox Width="18" Height="18">
+              <Canvas Width="24" Height="24">
+                <Ellipse Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
+                         Stroke="{DynamicResource Accent}" StrokeThickness="2" />
+                <Ellipse Width="3" Height="3" Canvas.Left="10.5" Canvas.Top="4"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="5"    Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="16"   Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="7"    Canvas.Top="14" Fill="{DynamicResource Accent}" />
+                <Ellipse Width="3" Height="3" Canvas.Left="14"   Canvas.Top="14" Fill="{DynamicResource Accent}" />
+              </Canvas>
+            </Viewbox>
+          </Button>
+          <Button x:Name="FullScreenButton"
+                  Classes="spartan"
+                  Width="32" Height="32" Padding="0"
+                  VerticalAlignment="Center"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  ToolTip.Tip="Toggle borderless full screen (F11)"
+                  Click="OnFullScreenClick">
+            <!-- expand-corners: toggle borderless full screen -->
+            <Viewbox Width="18" Height="18">
+              <Path Data="M2,6 L2,2 L6,2 M14,6 L14,2 L10,2 M2,10 L2,14 L6,14 M14,10 L14,14 L10,14"
+                    Stroke="{DynamicResource Accent}" StrokeThickness="2"
+                    StrokeLineCap="Round" StrokeJoin="Round" />
+            </Viewbox>
+          </Button>
+        </StackPanel>
+
+      </Grid>
+    </Border>
+
+    <!-- tab strip -->
+    <Border DockPanel.Dock="Top"
+            BorderBrush="{DynamicResource Hair}"
+            BorderThickness="0,0,0,1">
+      <ListBox Classes="tabs"
+               ItemsSource="{Binding Tabs}"
+               SelectedItem="{Binding CurrentTab, Mode=TwoWay}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="shell:TabItemViewModel">
+            <TextBlock Text="{Binding Title}" />
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom"
+            Background="{DynamicResource Accent}"
+            Padding="14,8"
+            IsVisible="{Binding MidiLearn.IsEnabled}">
+      <TextBlock Foreground="{DynamicResource AccentInk}"
+                 HorizontalAlignment="Center"
+                 Text="{Binding MidiLearn.Status}" />
+    </Border>
+
+    <!-- audio-engine warning: a missing native library (bass_fx / BASS) makes every track load fail, so
+         playback and SYNC silently do nothing. Surface it up front instead of leaving dead controls. -->
+    <Border DockPanel.Dock="Top"
+            Background="{DynamicResource Amber}"
+            Padding="14,8"
+            IsVisible="{Binding HasAudioEngineWarning}">
+      <TextBlock Foreground="{DynamicResource AccentInk}"
+                 HorizontalAlignment="Center"
+                 TextWrapping="Wrap"
+                 Text="{Binding AudioEngineWarning}" />
+    </Border>
+
+    <!-- selected page (resolved by ViewLocator) -->
+    <ContentControl Margin="12" Content="{Binding CurrentTab.Page}" />
+
+  </DockPanel>
+</Window>

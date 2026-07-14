@@ -1,0 +1,13 @@
+{
+  "name": "SMOKE VORTEX",
+  "author": "Liveolator",
+  "description": "Soft smoky spiral vortex with rolling fog and bass suction.",
+  "parameters": [
+    { "id": "swirl", "uniform": "uSwirl", "label": "SWIRL", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.7 },
+    { "id": "density", "uniform": "uDensity", "label": "DENSE", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "color", "uniform": "uColor", "label": "COLOR", "min": 0.0, "max": 3.0, "default": 3.0 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 0.6 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uBass;\nuniform float uLowMid;\nuniform float uSwirl;\nuniform float uSpeed;\nuniform float uDensity;\nuniform float uColor;\nuniform float uGlow;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(269.5,183.3)))*43758.5453);} \nfloat noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);} \nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.08+uSpeed*0.35);\n  float r=length(p); float a=atan(p.y,p.x)+uSwirl*2.5/(0.25+r)+t;\n  vec2 q=vec2(cos(a),sin(a))*r*3.0 + vec2(t,-t*0.6);\n  float n=0.0; float amp=0.55;\n  for(int i=0;i<5;i++){ n+=noise(q)*amp; q*=1.9; amp*=0.5; }\n  float smoke=smoothstep(0.25,0.85,n*uDensity)*smoothstep(1.25,0.05,r);\n  float core=exp(-r*r*(5.0+uBass*2.0))*(0.12+uBeatFlash*0.22);\n  vec3 tint=0.5+0.5*cos(6.28318*(vec3(0.0,0.32,0.66)+floor(uColor+0.5)*0.11+uLowMid*0.08));\n  vec3 col=vec3(0.002,0.002,0.006)+tint*smoke*(0.16+uGlow*0.25+uLevel*0.18)+vec3(0.55,0.75,1.0)*core;\n  col=col/(1.0+col*0.45);\n  fragColor=vec4(col,1.0);\n}\n"
+}

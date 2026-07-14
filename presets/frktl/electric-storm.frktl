@@ -1,0 +1,13 @@
+{
+  "name": "ELECTRIC STORM",
+  "author": "Liveolator",
+  "description": "Branching lightning bolts with beat-reactive flashes and feedback glow.",
+  "parameters": [
+    { "id": "energy", "uniform": "uEnergy", "label": "ENERGY", "min": 0.0, "max": 2.0, "default": 1.1 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.5, "default": 1.0 },
+    { "id": "branches", "uniform": "uBranches", "label": "BRANCH", "min": 0.0, "max": 1.0, "default": 0.65 },
+    { "id": "flash", "uniform": "uFlash", "label": "FLASH", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "decay", "uniform": "uDecay", "label": "DECAY", "min": 0.80, "max": 0.99, "default": 0.91 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uPeak;\nuniform float uBass;\nuniform float uHigh;\nuniform sampler2D uPreviousFrame;\nuniform float uEnergy;\nuniform float uSpeed;\nuniform float uBranches;\nuniform float uFlash;\nuniform float uDecay;\nfloat hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }\nfloat noise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }\nfloat bolt(vec2 p, float seed, float width){ float y = 0.22*sin(p.x*8.0+seed) + 0.11*sin(p.x*17.0-seed*1.7) + (noise(vec2(p.x*9.0+seed, seed))*2.0-1.0)*0.16; float d = abs(p.y-y); return exp(-d*d/(width*width)); }\nvoid main(){\n  vec2 uv=vTexCoord;\n  vec3 prev=texture(uPreviousFrame, uv).rgb*clamp(uDecay,0.80,0.99);\n  vec2 p=uv*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.35+uSpeed*1.2);\n  float gate=smoothstep(0.35,1.0,noise(vec2(floor(t*5.0),13.2))) + uBeatFlash*uFlash;\n  float mainBolt=bolt(p, floor(t*3.0)+uBass*2.0, 0.010+0.010*uEnergy);\n  float branch=0.0;\n  for(int i=0;i<5;i++){ float fi=float(i); vec2 q=p; q.x=q.x*1.25-fi*0.18+0.35; q.y=q.y+(fi-2.0)*0.18; branch += bolt(q, fi*11.3+t, 0.006+0.006*uBranches)*step(fi, 1.0+floor(uBranches*4.0)); }\n  float electric=(mainBolt*1.6 + branch*0.65) * gate * (0.45+uEnergy*0.9) * (0.55+uLevel+uPeak*0.5);\n  vec3 col=prev + vec3(0.12,0.55,1.0)*electric + vec3(0.65,0.95,1.0)*pow(electric,2.0)*0.35;\n  col += vec3(0.02,0.05,0.12)*(0.2+uHigh*0.4);\n  col=col/(1.0+col*0.55);\n  fragColor=vec4(col,1.0);\n}\n"
+}

@@ -1,0 +1,70 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+artifacts/
+
+# Parallel-agent scratch worktrees (embedded git repos — never commit)
+.claude/worktrees/
+
+# .NET
+*.user
+*.suo
+*.userprefs
+project.lock.json
+.vs/
+
+# Rider / IDE
+.idea/
+*.DotSettings.user
+
+# Native build artifacts
+*.o
+*.obj
+*.dll.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+
+# Native dependency binaries (shipped per-platform, fetched by setup scripts)
+/native/**/bin/
+/runtimes/
+
+# Local smoke-test artifacts (generated catalogs / sample media)
+/smoke-data/
+/smoke-music/
+
+# MCP smoke-test transcripts
+smoke*.jsonl
+smoke*.out
+smoke*.err
+
+# Python bytecode cache (analysis scripts)
+__pycache__/
+*.pyc
+
+# graphify was removed from this project (2026-06-12); its output dir must not return
+graphify-out/
+
+# AI / agent scaffolding — kept local, not part of the public repo.
+# These stay on the maintainer's machine; they are dev tooling, not the product.
+.agents/
+.claude/
+.codex/
+orchestration/
+AGENTS.md
+CLAUDE.md
+dj-software-auditor.zip
+
+# Website — now lives in its own private repo (SimonRoseDorix/LiveolatorWebsite).
+# Kept local because the release-sync scripts below still operate on it in-tree;
+# reworking that into a cross-repo flow is a follow-up.
+website/
+scripts/publish-website-release.ps1
+scripts/sync-website-screenshots.ps1

@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Liveolator.App.Features.Shared.TrackEditorWindow"
+        Width="440" Height="430"
+        MinWidth="400" MinHeight="390"
+        WindowStartupLocation="CenterOwner"
+        Title="Edit track metadata">
+  <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" ColumnDefinitions="110,*">
+    <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Classes="section"
+               Text="MANUAL TRACK METADATA" Margin="0,0,0,16" />
+
+    <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="BPM" />
+    <TextBox x:Name="BpmBox" Grid.Row="1" Grid.Column="1" Classes="spartan" />
+
+    <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Key / scale" Margin="0,12,0,0" />
+    <ComboBox x:Name="KeyBox" Grid.Row="2" Grid.Column="1" Margin="0,12,0,0"
+              x:CompileBindings="False"
+              DisplayMemberBinding="{Binding Label}" />
+
+    <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Genre" Margin="0,12,0,0" />
+    <TextBox x:Name="GenreBox" Grid.Row="3" Grid.Column="1" Classes="spartan" Margin="0,12,0,0" />
+
+    <TextBlock Grid.Row="4" VerticalAlignment="Top" Text="Notes" Margin="0,12,0,0" />
+    <TextBox x:Name="NotesBox" Grid.Row="4" Grid.Column="1" Classes="spartan"
+             Margin="0,12,0,0" AcceptsReturn="True" TextWrapping="Wrap"
+             VerticalContentAlignment="Top" />
+
+    <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal"
+                HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+      <TextBlock x:Name="ErrorText" Classes="faint" VerticalAlignment="Center" />
+      <Button Classes="spartan" Content="Cancel" Click="OnCancel" />
+      <Button Classes="accent" Content="Save" Click="OnSave" />
+    </StackPanel>
+  </Grid>
+</Window>

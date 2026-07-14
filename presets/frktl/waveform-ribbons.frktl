@@ -1,0 +1,13 @@
+{
+  "name": "WAVEFORM RIBBONS",
+  "author": "Liveolator",
+  "description": "Layered oscilloscope ribbons that twist around the beat.",
+  "parameters": [
+    { "id": "amplitude", "uniform": "uAmplitude", "label": "AMP", "min": 0.0, "max": 2.0, "default": 1.0 },
+    { "id": "speed", "uniform": "uSpeed", "label": "SPEED", "min": 0.0, "max": 2.5, "default": 1.0 },
+    { "id": "twist", "uniform": "uTwist", "label": "TWIST", "min": 0.0, "max": 1.0, "default": 0.4 },
+    { "id": "bands", "uniform": "uBands", "label": "BANDS", "min": 0.0, "max": 1.0, "default": 0.7 },
+    { "id": "glow", "uniform": "uGlow", "label": "GLOW", "min": 0.0, "max": 2.0, "default": 1.0 }
+  ],
+  "shader": "#version 330 core\nin vec2 vTexCoord;\nout vec4 fragColor;\nuniform vec2 uResolution;\nuniform float uTime;\nuniform float uBeatFlash;\nuniform float uLevel;\nuniform float uBass;\nuniform float uMid;\nuniform float uHigh;\nuniform float uAmplitude;\nuniform float uSpeed;\nuniform float uTwist;\nuniform float uBands;\nuniform float uGlow;\nfloat line(float d, float w){ return exp(-d*d/(w*w)); }\nvoid main(){\n  vec2 p=vTexCoord*2.0-1.0; p.x*=uResolution.x/max(uResolution.y,1.0);\n  float t=uTime*(0.25+uSpeed);\n  vec3 col=vec3(0.002,0.003,0.012);\n  float count=3.0+floor(uBands*5.0);\n  for(int i=0;i<8;i++){\n    float fi=float(i);\n    float enabled=step(fi,count);\n    float phase=t*(0.7+fi*0.05)+fi*0.8;\n    float y=sin(p.x*(3.0+fi*0.7)+phase)*0.18*uAmplitude*(0.45+uLevel+uBass*0.35);\n    y+=sin(p.x*9.0-phase*0.7)*0.045*uTwist;\n    y+=(fi-(count*0.5))*0.12;\n    float r=line(p.y-y,0.012+0.006*uGlow+uHigh*0.01)*enabled;\n    vec3 pal=0.5+0.5*cos(6.28318*(vec3(0.0,0.35,0.7)+fi*0.08+t*0.02+uMid*0.1));\n    col+=pal*r*(0.35+uGlow*0.45+uBeatFlash*0.25);\n  }\n  float center=exp(-dot(p,p)*4.0)*uBeatFlash*0.12;\n  col+=vec3(0.4,0.75,1.0)*center;\n  col=col/(1.0+col*0.5);\n  fragColor=vec4(col,1.0);\n}\n"
+}

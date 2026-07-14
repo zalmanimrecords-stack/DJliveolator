@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Cross-platform MIDI (doc 05). RtMidi.Core (MIT) wraps thestk/rtmidi via managed P/Invoke
+         and bundles native binaries for Windows + macOS — the two supported targets. Picked over
+         DryWetMidi (Windows-leaning device layer) because the project requires Mac (root CLAUDE.md).
+         The native library loads only when a device is opened/enumerated, so the message-translation
+         logic references the message types but unit-tests with no native present (see Tests). -->
+    <PackageReference Include="RtMidi.Core" Version="1.0.53" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Liveolator.Midi.Tests" />
+  </ItemGroup>
+
+</Project>

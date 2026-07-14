@@ -1,0 +1,233 @@
+# 31 — System Review (music-library focus) — 2026-06-27
+
+> **Purpose:** a full-system gap review run as a panel of domain experts (DSP, tempo/sync,
+> professional DJ, VJ/graphics, controller, music-library/metadata, UX, architecture), each
+> reading the **actual current code** (including the uncommitted in-flight `BassPluginLoader`
+> extraction), with every High/Critical bug **adversarially re-verified** against the source.
+> This run was **focused on the music library** (`תתרכז בספריית המוזיקה`): catalog scan,
+> JSON/SQLite stores, metadata reader, analysis cache keying & re-analysis, hot-cue/live-set
+> stores, harmonic playlists, online enrichment, the Libraries UI, and the MCP library tools.
+> Supersedes [doc 27](27-system-review-2026-06-10.md) and [doc 24](24-system-review-2026-06-07.md)
+> for the next wave. Where this doc and `docs/18`/`docs/22` disagree on a code fact, **this doc wins**.
+
+> **Baseline measured for this review (ground truth, not memory):**
+> - Solution **compiles clean** (every project builds; the only build error is a `Liveolator.Mcp`
+>   output-copy blocked by a live `.NET Host` process — the MCP server/app was running — not a
+>   compile error; `Liveolator.Media` + `Core` build clean in isolation).
+> - Full test suite **GREEN: 2784 passed / 2 skipped / 0 failed.** Per project:
+>   Core **1322** · App **798** (+2 intentional filmstrip-baker skips) · Audio **239** ·
+>   Media **196** · Visuals **128** · Midi **44** · Online **31** · Integration **26**.
+> - Uncommitted in-flight work: `Liveolator.Audio/BassPluginLoader.cs` (new) + edits to
+>   `BassAudioDecoder.cs` / `BassMixerBackend.cs` — a clean dedup of FLAC/AAC plugin probing,
+>   reviewed as **solid, no defects** (out of library scope).
+
+> **Panel coverage caveat (honesty note):** 7 of 10 reviewers returned full findings
+> (dsp-audio-engine, beat-sync-clock, decks-mixer-transport, visuals-vj, midi-controller,
+> **library-analysis-mcp**, ui-ux). `testing-build-ci` **errored** (model hit the structured-output
+> retry cap). `architecture` and `product-design-roadmap` returned **degenerate "schema-test"
+> payloads** — architecture still surfaced one genuine, verified bug (the App↔MCP catalog race);
+> product-design-roadmap produced nothing usable. Re-run those three lenses next time for a
+> complete picture. The library focus itself was fully covered.
+
+---
+
+> **Update (2026-06-27, same day) — fix wave landed (TDD-first).** All three verified High bugs +
+> both verified Mediums + the cheap Lows + the dead-code cleanup are fixed and green:
+> **H1** `JsonLiveSetStore` now routes through `JsonFileSnapshotIo` (gated unique-temp; new overlapping-save
+> test); **H2** short clips show by default with a `ShowShortClips` toggle + `ShortClipCount`; **H3** hot
+> cues play-on-jump from a paused deck; **M2** `RelativeEncoding` threads through MIDI learn end-to-end
+> (seam + a Mappings encoding picker); **L1** `ApplyOnlineDetails` preserves `DownbeatSeconds`; **L2** it
+> stamps `AnalyzerVersion` so enriched tracks leave the pending queue; **L4** BPM editor clamped to 40–300;
+> **L5** MCP lookups use `TryGetByPathOrName`; **cleanup** removed the DIAG mixer-leak probe + `SetDeckGain`
+> DIAG log + the `[MIDI-RAW]` TEMP log. Suites green: Core 1324, Audio 241, Media 197, App 800 (Mcp build
+> blocked only by a running server lock; its change compiles + tests build clean). **Still open (need an
+> owner decision, coupled):** **M1** App↔MCP cross-process catalog race and **L3** resampler anti-alias,
+> both best resolved alongside the **SQLite catalog store** (step 10) — see "next 10 steps".
+
+> **Update (2026-06-27) — SQLite catalog store, Phase A landed (owner chose SQLite as the full fix for M1).**
+> `SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore` (`Liveolator.Media`, WAL mode, no new
+> dependency — `Microsoft.Data.Sqlite` already present). Tracks are stored one row per path as a JSON
+> blob tagged with the catalog schema version; **`SaveMusicAsync` is upsert-only in one transaction**, so
+> the App and MCP can share one `catalog.db` without last-writer-wins clobbering each other's rows — the
+> M1 race fix at the source, proved by a two-instances-on-one-DB test. Folder lists + visual assets also
+> covered. **9 tests green.** Schema design choice (per owner): blob-hybrid (not fully normalized) — zero
+> per-field migration when `MusicTrack` evolves; indexed query columns deferred until a SQL-query path exists.
+>
+> **Integration still to do (Phases B–D), needs runtime verification (app + MCP server) before going live:**
+> (B) add `DeleteTrackAsync` to the `IMusicCatalogStore` seam + wire every removal — incl. **scan-detected
+> removals, which `ScanAsync` does not surface** (compute removed = before−after in the App and delete
+> explicitly, since upsert-only no longer drops missing rows); (C) one-time JSON→SQLite migration on first
+> load so the existing ~1000-track catalog isn't lost; (D) swap the DI registration in App `ServiceConfig`
+> + MCP `ServiceRegistration` from `JsonCatalogStore` to `SqliteCatalogStore`. The store is not wired into
+> DI yet, so current runtime behavior is unchanged (zero risk until B–D land and are verified).
+
+> **Update (2026-06-27) — FEATURE: beat-quantized visual launch (the audio↔visual differentiator).**
+> The only missing infra was a real clock-driven scheduler; the math (`QuantizedLaunch`/`BeatQuantizer`)
+> and seam (`IBeatScheduler`) already existed. Landed TDD-first:
+> **(1)** `ClockBeatScheduler : IBeatScheduler` (Core) — defers an action to the next beat/bar on the one
+> shared `IBeatClock` via its `IsBeat`/`IsDownbeat` flags, with the low-confidence→immediate guard; replaced
+> the interim `ImmediateBeatScheduler` in DI, so **`PlaylistSkipOnNextBar` now genuinely quantizes** (was
+> immediate). **(2)** `VisualActionHandler` gained a `LaunchQuantize` mode (Off/NextBeat/NextBar, reusing
+> the `Quantize` enum) — a scene-pad launch defers through the scheduler so it drops on the boundary.
+> **(3)** `VisualSetLaunchQuantize` action kind (Value 0/1/2) makes the mode reachable through the dispatcher
+> (MIDI-mappable). 14 new tests; full Core 1336 green; App compiles clean. **Remaining (small, unverifiable
+> here):** a dedicated Live-tab Off/Beat/Bar toggle UI emitting the action (it's reachable via the dispatcher
+> today); and `engine.Transition` scene-crossfade is still a no-op (separate GL build-out, out of scope).
+
+> **Update (2026-06-27) — feature wave (7 commits, TDD-first, each its own commit on master).**
+> Worked the review's missing-features list across the Core/Audio layers (App/Visuals/Mcp couldn't be
+> rebuilt — the app + MCP server were running and lock those outputs):
+> `b05211d` beat-quantized visual launch · `41bf980` soft-takeover on the CMD STUDIO 2A absolute controls ·
+> `4cda002` loop halve/double (in-point pinned) · `73b3b1b` hot-cue clear/delete · `a9a0409` **press/release
+> on the action seam** (opt-in `ControllerBinding.ReportRelease` + `PerformanceAction.IsPressed`; zero
+> behavior change until a binding opts in) · `5e0550c` momentary EQ kill · `dc18040` cue-play preview
+> (press-and-hold). The seam unlocked the last two. Then (app closed → full build verified): `b2e5ff0`
+> Live-tab Off/Beat/Bar launch-quantize toggle (beat-quantized visuals now complete end-to-end); `6d66945`
+> Push 1 User-mode on connect via a new profile-activation SysEx seam (`ControllerMappingProfile.ActivationSysEx`/
+> `DeactivationSysEx`, sent by `MidiControlSession`) so the Push's pads/encoders actually emit MIDI.
+> **Full build green: Core 1349 · Audio 247 · App 819 · Visuals 128 · Midi 44 · Integration 26** (+ Media/
+> Online); only Mcp unverified (its `--stdio` servers lock its bin). Live feel of the deck/mixer gestures
+> (cue-play, EQ kill, loop resize) wants a real-hardware pass.
+>
+> **Push 1 is now complete** — `6d66945` User-mode on connect + `23c48fa` colored-LED feedback (which
+> turned out NOT to need a Core/Midi move: Push pads are colour-addressed by NoteOn velocity, so it's just
+> a `UsesColorFeedback` profile flag + lit/dim/off palette index in `MidiFeedbackPublisher`).
+> **Still open** (need a decision, hardware, or are L): multi-select + bulk library actions; video/camera
+> sources, VJ authoring, downbeat-anchored grid, Ableton Link (all L/GL); the SQLite integration Phases B–D;
+> a live-feel hardware pass of the deck/mixer gestures.
+
+## Headline verdict
+
+The **music library is the most mature, end-to-end-wired subsystem in the app.** Core scan/catalog
+(`MediaLibrary` → `IncrementalScan` → `MusicLibrary`) isolates per-file failures into queryable
+`Failed` entries, cache keying correctly couples re-analysis to the analyzer version, the JSON
+stores (mostly) use atomic temp-then-move + a save gate, harmonic logic (Camelot + greedy chain) is
+correct and deterministic, online enrichment is properly offline-first, and the MCP tools are thin
+adapters per the iron rule. The Libraries UI is fully bound through the dispatcher seam with no dead
+buttons and no binding loops.
+
+The defects are **not crashes** — they are **silent data loss / silent exclusion** patterns that a
+DJ would discover at the worst time: a live set that fails to persist on rapid edits, short edits/
+acapellas that vanish from the browser with no affordance, and a re-analyze/online cross-check that
+quietly drops the v4 downbeat anchor. None block a build; all are fixable in small TDD-first steps.
+
+---
+
+## System map (one row per subsystem)
+
+| Subsystem | State | One-line |
+|---|---|---|
+| **library-analysis-mcp** *(focus)* | **solid, 2 real bugs** | Mature & layered; `JsonLiveSetStore` dropped the atomic/gated IO discipline; `ApplyOnlineDetails` discards `DownbeatSeconds`. `SqliteCatalogStore` named in scope **does not exist**. |
+| ui-ux (Libraries) | solid, 1 High | Most end-to-end-wired surface; silent <1 min track exclusion; unbounded BPM editor. |
+| dsp-audio-engine | very solid | Realtime path production-grade; weak spots are offline analysis (resampler aliasing, coarse chroma). |
+| decks-mixer-transport | solid, 1 High | Pro-grade two-stage sync; hot cues never play-on-jump; no loop halve/double/roll. |
+| beat-sync-clock | solid | Link-style clock correct; bar-phase alignment exists but is **orphaned** (beat-only lock). |
+| midi-controller | more complete than assumed | Push1 profile + soft-takeover + SysEx all exist but several are **orphaned/unreachable**; learn forces TwosComplement. |
+| visuals-vj | working compositor, gaps | Real multi-layer GLSL compositor; quantized launch / video / camera / transitions are no-ops. |
+| architecture | *(partial)* | One verified bug (App↔MCP catalog race); `ServiceConfig.Build` is a ~1300-line god-method. |
+| testing-build-ci | *(lost)* | Reviewer errored — re-run. |
+| product-design-roadmap | *(lost)* | Reviewer returned no usable output — re-run. |
+
+---
+
+## Verified bugs (adversarially confirmed against code)
+
+### High
+
+| # | Title | File:line | Fix | Verdict |
+|---|---|---|---|---|
+| **H1** *(library)* | **`JsonLiveSetStore` abandons atomic/gated IO — concurrent autosaves race on a fixed temp path and fail silently** | [JsonLiveSetStore.cs:69](../src/Liveolator.Media/JsonLiveSetStore.cs) (driven by [ServiceConfig.cs:902](../src/Liveolator.App/Composition/ServiceConfig.cs)) | Route through `JsonFileSnapshotIo` (unique temp + `SemaphoreSlim` gate) like every other store; add an overlapping-save test. | **confirmed High** |
+| **H2** *(library UI)* | **Library silently hides every track under 1 minute** — no toggle, no badge, no "N hidden" count | [LibrariesViewModel.cs:28](../src/Liveolator.App/Features/Libraries/LibrariesViewModel.cs) → `MinDuration` in [TrackQuery.cs:108](../src/Liveolator.Core/Library/Music/TrackQuery.cs) | Make it a user-toggleable filter (default show), or surface short items with a "short/sample" badge; at minimum show a hidden count. | **confirmed High** |
+| **H3** *(decks)* | **Hot cues never play-on-jump** — pressing a pad on a paused deck seeks but stays silent | [TwoDeckBassEngine.HotCues.cs:48](../src/Liveolator.Audio/Playback/TwoDeckBassEngine.HotCues.cs) | After the jump seek, start playback when the deck was paused (Serato/RB default); model momentary-vs-latch once the action seam carries press/release. | **confirmed High** |
+
+### Medium (confirmed, severity corrected down by the verifier)
+
+| # | Title | File:line | Fix |
+|---|---|---|---|
+| **M1** *(library/arch)* | **App and MCP race on the shared catalog file** — both processes default to `%APPDATA%/Liveolator`; per-instance `SemaphoreSlim` doesn't lock cross-process → last-writer-wins | [JsonCatalogStore.cs](../src/Liveolator.Media/JsonCatalogStore.cs) (App [ServiceConfig.cs:261](../src/Liveolator.App/Composition/ServiceConfig.cs) + MCP `ServiceRegistration.cs`) | Named OS `Mutex` around the save, or merge-on-save; document/enforce `LIVEOLATOR_DATA` for a separate MCP data dir. Atomic rename already prevents torn bytes. |
+| **M2** *(midi)* | **Learned relative encoders always forced to `TwosComplement`** — `BeginLearn` has no `relativeEncoding` param; OffsetBinary/SignedBit can't be captured via learn | [IMidiControlSession.cs:21](../src/Liveolator.Core/Mapping/IMidiControlSession.cs) | Thread `RelativeEncoding` through `BeginLearn` → `_learn.Begin(...)` and add an encoding selector in the learn UI. Decode already supports all three. |
+
+## Library Medium/Low (evidenced, not separately re-verified)
+
+| # | Title | File:line | Fix |
+|---|---|---|---|
+| **L1** *(med)* | **`ApplyOnlineDetails` rebuilds `BpmResult` without `DownbeatSeconds`** — running "Analyze again"/online cross-check on an already-analyzed track silently drops its v4 downbeat anchor | [MusicLibrary.cs:251](../src/Liveolator.Core/Library/Music/MusicLibrary.cs) | `existing.Bpm with { Confidence = enriched.Confidence }` (preserve the record), or construct with `{ DownbeatSeconds = existing.Bpm?.DownbeatSeconds ?? 0 }`; add a test. |
+| **L2** *(low)* | **`ApplyOnlineDetails` doesn't re-stamp `AnalyzerVersion`** — online-enriched (previously-Failed) tracks stay version-stale, so a later re-analysis can overwrite the online data and they churn in the pending queue forever | [MusicLibrary.cs:270](../src/Liveolator.Core/Library/Music/MusicLibrary.cs) | When enrichment yields usable Bpm/Key, stamp `AnalyzerVersion = CurrentVersion` (and/or `AnalysisIsManual`), mirroring `UpdateManualDetails`. |
+| **L3** *(med)* | **`LinearResampler` downsamples with no anti-alias filter** — 48k/96k masters alias HF into the analysis band, lowering key accuracy → degrades harmonic playlists | [LinearResampler.cs:68](../src/Liveolator.Core/Dsp/LinearResampler.cs) | Analyze at source rate (scale `envelopeRateHz`), or one-pole LP at ~0.45·targetRate before decimating (reuse `MixerMath.LowPass`). |
+| **L4** *(low)* | **Track metadata editor accepts an unbounded BPM** — a typo'd `9999` saves as a manual override and becomes the deck's Sync reference | [TrackEditorWindow.axaml.cs:39](../src/Liveolator.App/Features/Shared/TrackEditorWindow.axaml.cs) | Clamp/validate to a musical range (e.g. 40–300) in `OnSave`. |
+| **L5** *(rec)* | **MCP catalog lookups are exact-path only** — agents get "not catalogued" for tracks the App finds via `TryGetByPathOrName` (mapped-drive `S:\` vs UNC mismatch) | [LibrarySession.cs](../src/Liveolator.Mcp/Session/LibrarySession.cs) | Switch the MCP read paths to `TryGetByPathOrName` to match the UI's resilience. |
+
+---
+
+## Cross-cutting recommendations
+
+- **Unify version-mismatch + atomic-IO handling into `JsonFileSnapshotIo`.** `JsonCatalogStore`,
+  `JsonHotCueStore`, and `JsonLiveSetStore` each re-implement load-version-check-warn-empty by hand,
+  and `JsonLiveSetStore` diverged on the save side (the root of H1). Consolidating kills this whole
+  drift class.
+- **Surface re-analysis/import/persistence failures to the user**, not just `ReportStatus`/`Trace`.
+  The rolling app log exists (`%APPDATA%/Liveolator/logs`); route faults there + a visible toast.
+- **Document that catalog-snapshot version (3) and analyzer version (4) are distinct counters** — a
+  one-line invariant comment in `JsonCatalogStore` + a test stops it reading as an off-by-one.
+- **Drop the dead DIAG mixer-leak probe** in `BassMixerChannel` (marked "remove once resolved"; the
+  jog-both-decks leak is fixed) and the **TEMP per-message `[MIDI-RAW]` Info log** in
+  `MidiControllerRouter` (floods the log during a set).
+
+## Missing features by track (library-weighted)
+
+**Library / analysis**
+- **SQLite catalog store** (named in scope, **does not exist**). The current whole-file JSON rewrite
+  per save (`SaveMusicAsync` writes the entire catalog every 25 tracks during reanalysis) is O(catalog)
+  and is also *why the cross-process race (M1) is destructive*. JSON-vs-SQLite is still an open decision.
+- **Expose `DuplicateFinder`** (exists in Core) via an MCP tool + a Libraries action — high value on a
+  slskd-fed network drive, engine already built.
+- **`BpmProvenance` persistence** — record whether key/BPM came from file analysis vs online so a later
+  weak local guess can't overwrite an online-confirmed value.
+- **Content fingerprint in the cache key** — a SHA-256 hasher already exists in `Media`; wiring a
+  decoded-PCM-prefix hash into the analysis key makes re-analysis robust to in-place re-encodes.
+- **Confidence floor in the pending-analysis selection** — `BpmResult.Confidence`/`DownbeatConfidence`
+  exist but `NeedsAnalysis` only checks Failed/null/version; low-confidence grids (the ones that drift)
+  are never flagged.
+- **Library UX:** add/re-time a hot cue from the detail panel; multi-select + bulk actions; album-art /
+  overview-waveform thumbnail (visual tab already has a preview); persisted filter/sort; an empty-state
+  on the track table; themed Spartan ComboBox/Toggle/CheckBox; click-to-sort column headers.
+
+**Other tracks (from the full-system lenses, for context):** play-on-jump + loop halve/double/roll +
+cue-play hold (decks); bar-phase alignment wired into sync + Ableton-Link external clock (beat-sync);
+video clip + camera sources + beat-quantized launch + a VJ authoring tab (visuals); Push User-mode
+SysEx on connect + a Push-aware colored-LED feedback publisher + mode/bank layers (midi).
+
+---
+
+## The next 10 steps, ordered by ROI
+
+> Quick "make built features actually work" first, then differentiator-correctness + safety net,
+> then the large build-out. Most can run on separate worktrees (see parallel notes).
+
+1. **H1 — `JsonLiveSetStore` → `JsonFileSnapshotIo`** (S, `Media`). Stops silent live-set loss on
+   rapid queue edits. TDD: two overlapping `SaveAsync` calls. *Highest ROI; the focus subsystem's one
+   data-loss bug, trivially fixed by reusing the existing helper.* — **parallel-safe**
+2. **H2 — un-hide short tracks** (S, `App`). Toggle (default show) + hidden-count, or a "short" badge.
+   Removes a baffling silent exclusion of edits/acapellas/jingles. — **parallel-safe**
+3. **L1+L2 — `ApplyOnlineDetails` preserve `DownbeatSeconds` + stamp `AnalyzerVersion`/provenance**
+   (S, `Core`). One method, two silent-data-loss bugs. TDD: assert downbeat survives an online
+   cross-check and the track leaves the pending queue. — **parallel-safe**
+4. **H3 — hot cues play-on-jump** (S, `Audio`). Jump-and-play when paused. The single most jarring
+   deck-feel gap. — **parallel-safe**
+5. **L4 — clamp BPM editor to 40–300** (S, `App`). Protects the deck Sync reference from a typo. —
+   **parallel-safe**
+6. **L5 — MCP lookups use `TryGetByPathOrName`** (S, `Mcp`). Fixes agent "not catalogued" misses on
+   the network-drive path-form mismatch. — **parallel-safe**
+7. **M2 — thread `RelativeEncoding` through MIDI learn** (S, `Core`+`App`). Makes "learn, don't
+   hardcode" actually work for offset-binary/sign-magnitude encoders. — **parallel-safe**
+8. **Cleanup pass** (S): delete the DIAG mixer-leak probe (`BassMixerChannel`) + the TEMP `[MIDI-RAW]`
+   Info log (`MidiControllerRouter`). Dead-code/no-TODO hygiene. — **parallel-safe**
+9. **M1 + L3 — cross-process catalog safety + resampler anti-alias** (M, `Media`+`Core`). Named
+   `Mutex`/merge-on-save around the catalog write (or enforce `LIVEOLATOR_DATA`), and a pre-decimation
+   LP for analysis. *Touches `JsonCatalogStore` — keep on one worktree with step 10.*
+10. **SQLite catalog store** (L, `Media`). Incremental row updates + indexed queries; removes the
+    whole-file-rewrite cost and makes M1 non-destructive at the source. The big build-out; do last,
+    after the open JSON-vs-SQLite decision is confirmed. *Same worktree as step 9.*
+
+Steps **1–7** are independent files and can fan out across worktrees in parallel; **8** is trivial;
+**9–10** share `JsonCatalogStore` and should be serialized on one worktree.

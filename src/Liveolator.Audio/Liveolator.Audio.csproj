@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="z440.atl.core" Version="7.15.3" />
+    <!-- Realtime playback backend (doc 01). Managed P/Invoke; the native bass library ships
+         per-platform via runtimes/ and is fetched by setup scripts (see .gitignore). -->
+    <PackageReference Include="ManagedBass" Version="3.1.1" />
+    <!-- Two-deck software mixer (doc 11): BASSmix master channel. EQ/filter run as managed DSP from
+         the Core BiquadCoefficients (BassMixerChannel), so BASS_FX is not needed. The native bassmix
+         library is fetched per-platform alongside core bass (see scripts/fetch-bass). -->
+    <PackageReference Include="ManagedBass.Mix" Version="3.1.1" />
+    <!-- BASS_FX (SoundTouch): pitch-preserving time-stretch. Used by the offline renderer
+         (BassFxRenderDecoder) AND the realtime engine — BassMixerBackend.PlugDeck wraps every deck in a
+         BASS_FX tempo stream for live key-lock, so the native bass_fx is REQUIRED for any track to load
+         (scripts/bass-libraries.manifest fetches it per-platform; without it every deck load throws). -->
+    <PackageReference Include="ManagedBass.Fx" Version="3.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Liveolator.Audio.Tests" />
+  </ItemGroup>
+
+</Project>

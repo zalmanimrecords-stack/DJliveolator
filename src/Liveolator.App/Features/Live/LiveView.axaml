@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:live="clr-namespace:Liveolator.App.Features.Live"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             x:Class="Liveolator.App.Features.Live.LiveView"
+             x:DataType="live:LiveViewModel">
+
+  <!-- LIVE = the performance screen, grouped by topic: the DJ console (identical to the DJ tab — it is the
+       SAME DjConsoleView control over the shared decks) on top, then the VISUALS group. Only approved,
+       active modules appear here; the on-screen Push macro-encoder strip was dropped (the Push encoders
+       still drive visual macros through the controller mapping, not this panel). -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <!-- MaxWidth is tier-dependent (Theme/ResponsiveLayout.axaml via the .live-root class) so the page uses
+         the full width on large/4K screens instead of the old fixed 1440 cap. -->
+    <StackPanel Classes="live-root" Spacing="8" Margin="0,0,0,6">
+
+      <!-- ── DJ ─────────────────────────────────────────────────────────────────────────────────────── -->
+      <dj:DjConsoleView DataContext="{Binding Decks}" />
+
+      <!-- ── VISUALS ────────────────────────────────────────────────────────────────────────────────── -->
+      <TextBlock Classes="section accent" Margin="2,2,2,0" Text="VISUALS" />
+
+      <!-- PROGRAM OUT + VISUAL CONTROL -->
+      <Grid ColumnDefinitions="*,320">
+        <ContentControl Grid.Column="0" Content="{Binding ProgramOut}" Margin="0,0,10,0" />
+        <ContentControl Grid.Column="1" Content="{Binding VisualControl}" />
+      </Grid>
+
+      <!-- Live Mode state cue — collapses to nothing when live; the static device chrome was decorative
+           (the real MIDI/audio status lives in the top status bar) and was removed to reclaim vertical space. -->
+      <TextBlock Classes="mono faint" Margin="2,0" IsVisible="{Binding !IsLiveModeEnabled}"
+                 Text="Live Mode off — controls disabled" />
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

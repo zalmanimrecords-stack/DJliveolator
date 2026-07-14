@@ -1,0 +1,279 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             x:Class="Liveolator.App.Features.Live.Modules.DeckView"
+             x:DataType="m:DeckViewModel">
+
+  <UserControl.Styles>
+    <!-- A still-suggested (auto-placed) hot cue is ghosted; it solidifies once the DJ presses (commits) it. -->
+    <Style Selector="Button.cuepad.suggested">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="panel">
+    <StackPanel Margin="18" Spacing="14">
+
+      <!-- header: badge · title · menu -->
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="3"
+                BorderBrush="{DynamicResource AccentLightColor}" BorderThickness="1"
+                VerticalAlignment="Center">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+              <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+              <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
+            </LinearGradientBrush>
+          </Border.Background>
+          <TextBlock Foreground="{DynamicResource AccentInk}" FontWeight="SemiBold" FontSize="15"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
+        </Border>
+        <Panel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+          <!-- loaded: track title + artist + Key · BPM · duration -->
+          <StackPanel Spacing="1" IsVisible="{Binding HasTrackMeta}">
+            <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding Artist}" IsVisible="{Binding HasArtist}" TextTrimming="CharacterEllipsis" />
+            <TextBlock Classes="mono accent" FontSize="11" Text="{Binding Meta}" />
+          </StackPanel>
+          <!-- empty: deck id + placeholder -->
+          <StackPanel Spacing="1" IsVisible="{Binding !HasTrackMeta}">
+            <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding DeckId, StringFormat='Deck {0}'}" />
+            <TextBlock Classes="faint" FontSize="11" Text="{Binding Title}" />
+          </StackPanel>
+        </Panel>
+        <!-- time readout: elapsed over remaining (advancing with the playhead), plus the musical key of
+             the loaded track (from the catalog) sitting with the time block. -->
+        <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center">
+          <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding ElapsedText}" ToolTip.Tip="Time elapsed in the track" />
+          <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right"
+                     Text="{Binding RemainingText}" ToolTip.Tip="Time remaining in the track" />
+          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right"
+                      IsVisible="{Binding HasTrackKey}">
+            <TextBlock Classes="tick" VerticalAlignment="Center" Text="KEY" />
+            <TextBlock Classes="mono accent" FontSize="13" VerticalAlignment="Center"
+                       Text="{Binding TrackKey}" ToolTip.Tip="Musical key of the loaded track" />
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+
+      <!-- waveform now lives in the two dedicated rows above the decks (see LiveView/DjView) so the kick
+           transients of both decks sit side-by-side for beat-sync alignment. -->
+
+      <!-- Hot cues: stored jump points inside the loaded track. A pad emits DeckHotCue for its index and
+           lights from feedback once its cue is set; it shows the cue's name + color and a "suggested"
+           (ghosted) state for auto-placed cues. The A/B toggle swaps the visible 4 pads between bank A
+           (slots 1-4) and bank B (slots 5-8) so every stored cue is reachable. -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <Button Grid.Column="1" Classes="key" Content="AUTO" Margin="0,0,6,0"
+                  Command="{Binding AutoCueCommand}" IsVisible="{Binding CanAutoCue}"
+                  Padding="6,2"
+                  ToolTip.Tip="Auto-place hot cues for the loaded track (drop, breakdown, build, phrases)" />
+          <Button Grid.Column="2" Classes="key" Content="{Binding HotCueBankLabel}"
+                  Command="{Binding ToggleHotCueBankCommand}" IsEnabled="{Binding CanHotCue}"
+                  MinWidth="36" Padding="6,2"
+                  ToolTip.Tip="Switch hot-cue bank (A = cues 1-4, B = cues 5-8)" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding VisibleHotCues}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <UniformGrid Columns="4" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="m:HotCuePadViewModel">
+              <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                      Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0"
+                      ToolTip.Tip="{Binding CueLabel}">
+                <Grid RowDefinitions="*,3">
+                  <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                             Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <!-- transport: CUE · Play · Sync (tempo match) -->
+      <UniformGrid Columns="3">
+        <Button Classes="key" Content="CUE" Command="{Binding CueCommand}"
+                IsEnabled="{Binding CanCue}" Margin="0,0,4,0" />
+        <Button Classes="play" Classes.on="{Binding IsPlaying}"
+                Command="{Binding PlayPauseCommand}" Margin="0,0,4,0">
+          <Path Data="M 0,0 L 13,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
+        </Button>
+        <!-- One-shot SYNC: a single press beatmatches tempo + snaps beat-phase to the other deck's kick,
+             preserving the key (engages key-lock), then leaves the deck free. Momentary, no latch. -->
+        <Button Classes="key" Content="SYNC"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Match tempo + phase to the other deck once (key preserved)" />
+      </UniformGrid>
+
+      <!-- BPM: horizontal fader (0..1 normalised via BpmFaderValue) + nudge buttons for manual beat-sync -->
+      <Border Classes="hardware-well" Padding="10,8">
+        <StackPanel Spacing="6">
+          <!-- row 1: label · current value · pitch% · range hint -->
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+            <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />
+            <TextBlock Grid.Column="1" Classes="mono"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Text="{Binding Bpm, StringFormat='{}{0:0.0}'}"
+                       IsEnabled="{Binding IsBpmEnabled}" />
+            <TextBlock Grid.Column="2" Classes="mono" Margin="0,0,8,0" VerticalAlignment="Center"
+                       Text="{Binding PitchPercentText}"
+                       ToolTip.Tip="Pitch offset (percent of the real tempo)" />
+            <TextBlock Grid.Column="3" Classes="tick" VerticalAlignment="Center" Text="±8%" />
+          </Grid>
+          <!-- row 2: nudge left · slider · nudge right -->
+          <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsBpmEnabled}">
+            <Button Grid.Column="0" Classes="key" Content="◄" Width="34" Height="26"
+                    Command="{Binding NudgeLeftCommand}"
+                    ToolTip.Tip="Nudge BPM −0.1 (manual beat-sync)" />
+            <controls:Fader Grid.Column="1" Margin="6,0" Height="26"
+                            Orientation="Horizontal"
+                            Value="{Binding BpmFaderValue}" />
+            <Button Grid.Column="2" Classes="key" Content="►" Width="34" Height="26"
+                    Command="{Binding NudgeRightCommand}"
+                    ToolTip.Tip="Nudge BPM +0.1 (manual beat-sync)" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- KEY LOCK (master tempo): hold the musical key constant while the tempo/pitch fader moves. Toggles
+           per-deck key-lock via DeckKeyLockToggle and lights from its active-state feedback (the LED model). -->
+      <Button Classes="key" Classes.on="{Binding IsKeyLock}" Content="KEY LOCK"
+              Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              ToolTip.Tip="Key lock (master tempo): keep the pitch when changing tempo" />
+
+      <!-- LOOP: a beat-length loop knob (1/64 … 8 bars) feeds the LOOP arm; ✕ releases. Reuses the same
+           deck commands as the DJ tab, so loops are available on the LIVE performance surface too. -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Grid.Column="2" Classes="mono accent" VerticalAlignment="Center"
+                     Text="{Binding LoopLengthLabel}" />
+        </Grid>
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <controls:Knob Grid.Column="0" Width="40" Height="40" Detents="12"
+                         Value="{Binding LoopLengthKnob, Mode=TwoWay}"
+                         ToolTip.Tip="Loop length — turn to set 1/64 beat up to 8 bars" />
+          <Button Grid.Column="1" Classes="key" Classes.on="{Binding IsLooping}" Content="LOOP" Margin="6,0,3,0"
+                  Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}"
+                  HorizontalContentAlignment="Center" VerticalAlignment="Center"
+                  ToolTip.Tip="Arm a loop of the selected length at the playhead" />
+          <Button Grid.Column="2" Classes="key" Content="✕" Width="34" VerticalAlignment="Center"
+                  Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}"
+                  ToolTip.Tip="Release the loop" />
+        </Grid>
+      </StackPanel>
+
+      <!-- Track nudge: shift the waveform a small step (relative seek) for fine cueing / lining the track
+           up. Direction follows the waveform-move convention (NOT an inverted binding): the arrow points the
+           way the waveform slides, so ◄ slides the wave left = SeekForward, ► slides it right = SeekBack. The
+           "WAVE" caption + the visible arrow keep that self-explanatory, and the NUDGE section label plus the
+           waveform glyphs make this pair clearly distinct from the BPM ± nudge above. Step is configurable in
+           Settings (default 0.1 s). -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+        </Grid>
+        <UniformGrid Columns="2">
+          <Button Classes="key" Margin="0,0,4,0"
+                  Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
+                  ToolTip.Tip="Nudge — tap to bend the deck slower (beats drift back); tap repeatedly to beat-match. No skip.">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Text="◄" />
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+            </StackPanel>
+          </Button>
+          <Button Classes="key"
+                  Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
+                  ToolTip.Tip="Nudge — tap to bend the deck faster (beats drift forward); tap repeatedly to beat-match. No skip.">
+            <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+              <TextBlock Classes="tick" VerticalAlignment="Center" Text="WAVE" />
+              <TextBlock Text="►" />
+            </StackPanel>
+          </Button>
+        </UniformGrid>
+      </StackPanel>
+
+      <!-- Manual beatgrid edit (commercial-parity kick-on-kick): re-phase / re-tempo the ANALYZED grid by
+           hand when auto-detection is imperfect. None of these change the audible pitch — only where the
+           grid (and therefore sync's phase target) sits. -->
+      <StackPanel Spacing="6">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <TextBlock Classes="section" VerticalAlignment="Center" Text="GRID" />
+          <TextBlock Grid.Column="2" Classes="tick" VerticalAlignment="Center" Text="EDIT" />
+        </Grid>
+        <UniformGrid Columns="2">
+          <Button Classes="key" Margin="0,0,4,0" Content="◄ BEAT"
+                  Command="{Binding NudgeGridBackCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Nudge the beat grid earlier (fine) — slide a beat line onto the kick to lock kick-on-kick." />
+          <Button Classes="key" Content="BEAT ►"
+                  Command="{Binding NudgeGridForwardCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Nudge the beat grid later (fine) — slide a beat line onto the kick to lock kick-on-kick." />
+        </UniformGrid>
+        <UniformGrid Columns="4">
+          <Button Classes="key" Margin="0,0,4,0" Content="½"
+                  Command="{Binding HalveGridBpmCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Halve the detected grid tempo (audible pitch unchanged)." />
+          <Button Classes="key" Margin="0,0,4,0" Content="×2"
+                  Command="{Binding DoubleGridBpmCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Double the detected grid tempo (audible pitch unchanged)." />
+          <Button Classes="key" Margin="0,0,4,0" Content="SET"
+                  Command="{Binding SetGridHereCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Put a beat line on the playhead." />
+          <Button Classes="key" Content="1"
+                  Command="{Binding SetDownbeatHereCommand}" IsEnabled="{Binding CanGridEdit}"
+                  ToolTip.Tip="Mark the down-beat (bar 1) at the playhead." />
+        </UniformGrid>
+      </StackPanel>
+
+      <!-- EQ / filter knobs (pitch stays hardware/MIDI-only via DeckPitch — no on-screen knob) -->
+      <UniformGrid Columns="4">
+        <StackPanel Spacing="6" HorizontalAlignment="Center">
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
+                         Value="{Binding EqHigh.Value}" IsEnabled="{Binding EqHigh.IsEnabled}" />
+          <Grid ColumnDefinitions="*,*" Width="62">
+            <TextBlock Classes="tick" Text="−∞" />
+            <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
+          </Grid>
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="HI" />
+        </StackPanel>
+        <StackPanel Spacing="6" HorizontalAlignment="Center">
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
+                         Value="{Binding EqMid.Value}" IsEnabled="{Binding EqMid.IsEnabled}" />
+          <Grid ColumnDefinitions="*,*" Width="62">
+            <TextBlock Classes="tick" Text="−∞" />
+            <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
+          </Grid>
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="MID" />
+        </StackPanel>
+        <StackPanel Spacing="6" HorizontalAlignment="Center">
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
+                         Value="{Binding EqLow.Value}" IsEnabled="{Binding EqLow.IsEnabled}" />
+          <Grid ColumnDefinitions="*,*" Width="62">
+            <TextBlock Classes="tick" Text="−∞" />
+            <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
+          </Grid>
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="LOW" />
+        </StackPanel>
+        <StackPanel Spacing="6" HorizontalAlignment="Center">
+          <controls:Knob Width="53.8" Height="53.8" HorizontalAlignment="Center"
+                         Value="{Binding Filter.Value}" IsEnabled="{Binding Filter.IsEnabled}" />
+          <Grid ColumnDefinitions="*,*" Width="62">
+            <TextBlock Classes="tick" Text="−∞" />
+            <TextBlock Grid.Column="1" Classes="tick" HorizontalAlignment="Right" Text="+6" />
+          </Grid>
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="FLT" />
+        </StackPanel>
+      </UniformGrid>
+    </StackPanel>
+  </Border>
+</UserControl>

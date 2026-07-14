@@ -1,0 +1,310 @@
+using Liveolator.Core.Actions;
+using Liveolator.Core.Persistence;
+using Liveolator.Core.Settings;
+using Liveolator.Core.Mapping.Profiles;
+using Microsoft.Extensions.Logging;
+
+namespace Liveolator.Core.Mapping;
+
+/// <summary>
+/// Owns the live MIDI control pipeline at runtime: opens the configured controller, loads its mapping
+/// profile, and wires the router (control), the feedback publisher (LEDs), and the activity monitor
+/// (the shell's connection LED) onto one open input. This is the composition the App was missing —
+/// previously the Settings tab only enumerated devices and nothing opened a controller (doc 05/12).
+/// </summary>
+/// <remarks>
+/// Pure orchestration over Core seams (no UI, no native), so it unit-tests with fakes. Opening is
+/// best-effort and tolerant: a missing/unmatched device, an absent native library, or a load error
+/// leaves the session idle (logged) rather than crashing startup — mirroring the realtime audio
+/// engine's graceful fallback. With no saved profile, a matching shipped default is selected before
+/// falling back to an empty profile, so known controllers work immediately while unknown devices still
+/// report activity and remain ready for MIDI learn. Device changes apply whenever the session restarts.
+/// </remarks>
+public sealed class MidiControlSession : IMidiControlSession, IDisposable
+{
+    private readonly IMidiDeviceProvider _provider;
+    private readonly IPerformanceActionDispatcher _dispatcher;
+    private readonly ILiveProfileStore _profileStore;
+    private readonly IMidiLearnSession _learn;
+    private readonly IReadOnlyList<ControllerMappingProfile> _defaultProfiles;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger<MidiControlSession> _logger;
+
+    private IMidiInput? _input;
+    private IMidiOutput? _output;
+    private ControllerMapper? _mapper;
+    private MidiControllerRouter? _router;
+    private MidiFeedbackPublisher? _feedback;
+    private MidiActivityMonitor? _monitor;
+
+    public MidiControlSession(
+        IMidiDeviceProvider provider,
+        IPerformanceActionDispatcher dispatcher,
+        ILiveProfileStore profileStore,
+        IMidiLearnSession learn,
+        IEnumerable<ControllerMappingProfile> defaultProfiles,
+        ILoggerFactory loggerFactory)
+    {
+        _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
+        _learn = learn ?? throw new ArgumentNullException(nameof(learn));
+        _defaultProfiles = defaultProfiles?.ToList()
+            ?? throw new ArgumentNullException(nameof(defaultProfiles));
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _logger = loggerFactory.CreateLogger<MidiControlSession>();
+        _learn.Learned += OnLearned;
+    }
+
+    /// <summary>True once the controller input is open and routing.</summary>
+    public bool IsInputConnected { get; private set; }
+
+    /// <summary>True once a feedback (LED) output is open.</summary>
+    public bool IsOutputConnected { get; private set; }
+
+    /// <summary>The opened controller's device name, or null when idle.</summary>
+    public string? InputDeviceName { get; private set; }
+
+    /// <summary>The opened feedback device's name, or null when none.</summary>
+    public string? OutputDeviceName { get; private set; }
+
+    /// <summary>The profile currently routing (empty when none was saved for the device), or null when idle.</summary>
+    public ControllerMappingProfile? ActiveProfile => _mapper?.ActiveProfile;
+
+    public bool IsLearnArmed => _learn.IsArmed;
+
+    public event EventHandler<ControllerMappingProfile>? MappingChanged;
+
+    /// <summary>
+    /// Raised on each inbound MIDI message (re-raised from the activity monitor). Fires on the MIDI
+    /// callback thread — UI subscribers must marshal to their own thread.
+    /// </summary>
+    public event EventHandler? ActivityDetected;
+
+    /// <summary>
+    /// Opens the controller named in <paramref name="settings"/> and builds the pipeline. Tears down
+    /// any prior session first. No-op (stays idle) when no controller is selected; never throws.
+    /// </summary>
+    public async Task StartAsync(MidiSettings settings, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        Stop();
+
+        if (string.IsNullOrWhiteSpace(settings.ControllerInputName))
+            return;
+
+        try
+        {
+            IMidiInput? input = _provider.OpenInput(settings.ControllerInputName);
+            if (input is null)
+            {
+                _logger.LogWarning("MIDI controller '{Device}' was not found; control is disabled.",
+                    settings.ControllerInputName);
+                return;
+            }
+
+            ControllerMappingProfile profile =
+                await _profileStore.LoadMappingProfileAsync(input.DeviceName, cancellationToken).ConfigureAwait(false)
+                ?? (MidiProfileSelector.Select(input.DeviceName, _defaultProfiles) is { } shipped
+                    ? shipped with { Name = input.DeviceName, DeviceHint = input.DeviceName }
+                    : null)
+                ?? ControllerMappingProfile.Empty(input.DeviceName, input.DeviceName);
+
+            ControllerMappingProfile upgradedProfile = CmdStudio2AProfile.UpgradeLegacyJogBindings(profile);
+            upgradedProfile = CmdStudio2AProfile.UpgradeLegacySyncBindings(upgradedProfile);
+            if (!ReferenceEquals(upgradedProfile, profile))
+            {
+                profile = upgradedProfile;
+                await _profileStore.SaveMappingProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+            }
+
+            var mapper = new ControllerMapper(profile, _dispatcher, _loggerFactory.CreateLogger<ControllerMapper>());
+            var router = new MidiControllerRouter(input, mapper, _learn, _loggerFactory.CreateLogger<MidiControllerRouter>());
+            var monitor = new MidiActivityMonitor(input);
+            monitor.ActivityDetected += OnActivityDetected;
+
+            // Class-compliant DJ controllers commonly expose matching input/output ports under the
+            // same name. When no explicit feedback output was selected, try the connected input name
+            // so button LEDs still mirror dispatcher state; failure remains graceful.
+            string feedbackOutputName = string.IsNullOrWhiteSpace(settings.FeedbackOutputName)
+                ? input.DeviceName
+                : settings.FeedbackOutputName;
+            TryOpenFeedback(feedbackOutputName, mapper);
+
+            // Subscriptions (router + monitor) are attached before opening, so no early message is missed.
+            input.Open();
+
+            _input = input;
+            _mapper = mapper;
+            _router = router;
+            _monitor = monitor;
+            InputDeviceName = input.DeviceName;
+            IsInputConnected = true;
+            _logger.LogInformation("MIDI controller '{Device}' connected with profile '{Profile}' ({Count} binding(s)).",
+                input.DeviceName, profile.Name, profile.Bindings.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Starting the MIDI control session for '{Device}' failed.",
+                settings.ControllerInputName);
+            Stop();
+        }
+    }
+
+    private void TryOpenFeedback(string? feedbackOutputName, ControllerMapper mapper)
+    {
+        if (string.IsNullOrWhiteSpace(feedbackOutputName))
+            return;
+
+        IMidiOutput? output = _provider.OpenOutput(feedbackOutputName);
+        if (output is null)
+        {
+            _logger.LogWarning("MIDI feedback device '{Device}' was not found; LEDs are disabled.",
+                feedbackOutputName);
+            return;
+        }
+
+        _output = output;
+        _feedback = new MidiFeedbackPublisher(_dispatcher, output, mapper, _loggerFactory.CreateLogger<MidiFeedbackPublisher>());
+        OutputDeviceName = output.DeviceName;
+        IsOutputConnected = true;
+
+        // Put the device into its working mode if the profile needs it (e.g. Push -> User mode, doc 06),
+        // now that the output is open. A send failure stays graceful — feedback must never block input.
+        SendProfileSysEx(mapper.ActiveProfile.ActivationSysEx, "activation");
+    }
+
+    private void SendProfileSysEx(IReadOnlyList<byte>? payload, string what)
+    {
+        if (_output is null || payload is null || payload.Count == 0)
+            return;
+        try
+        {
+            _output.SendSysEx(payload as byte[] ?? payload.ToArray());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not send profile {What} SysEx to '{Device}'.", what, OutputDeviceName);
+        }
+    }
+
+    private void OnActivityDetected(object? sender, EventArgs e) => ActivityDetected?.Invoke(this, EventArgs.Empty);
+
+    public void BeginLearn(
+        PerformanceActionKind action,
+        int slot = 0,
+        string? argument = null,
+        ActionInputMode? preferredInputMode = null,
+        double relativeTicksPerRevolution = 1.0,
+        bool invert = false,
+        RelativeEncoding relativeEncoding = RelativeEncoding.TwosComplement)
+    {
+        if (!IsInputConnected)
+            throw new InvalidOperationException("A MIDI input must be connected before learning a control.");
+
+        // Forward the encoder encoding so a learned endless encoder using offset-binary / sign-magnitude
+        // is captured correctly instead of always defaulting to two's-complement (doc 31 M2).
+        _learn.Begin(action, slot, argument, preferredInputMode, relativeTicksPerRevolution, invert, relativeEncoding);
+    }
+
+    public void CancelLearn() => _learn.Cancel();
+
+    public async Task RemoveBindingAsync(
+        ControllerBinding binding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        if (_mapper is null || _input is null)
+            return;
+
+        ControllerMappingProfile profile = _mapper.ActiveProfile with
+        {
+            Bindings = _mapper.ActiveProfile.Bindings.Where(existing => existing != binding).ToList(),
+        };
+        await ApplyAndSaveProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async void OnLearned(object? sender, ControllerBinding learned)
+    {
+        if (_mapper is null || _input is null)
+            return;
+
+        try
+        {
+            IReadOnlyList<ControllerBinding> retained = _mapper.ActiveProfile.Bindings
+                .Where(existing => !SamePhysicalControl(existing, learned))
+                .Where(existing => !SameActionTarget(existing, learned))
+                .ToList();
+            var profile = new ControllerMappingProfile(
+                _input.DeviceName,
+                _input.DeviceName,
+                new List<ControllerBinding>(retained) { learned });
+
+            await ApplyAndSaveProfileAsync(profile).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Saving learned MIDI binding for {Action} slot {Slot} failed.",
+                learned.Action, learned.Slot);
+        }
+    }
+
+    private async Task ApplyAndSaveProfileAsync(
+        ControllerMappingProfile profile,
+        CancellationToken cancellationToken = default)
+    {
+        _mapper!.SetProfile(profile);
+        await _profileStore.SaveMappingProfileAsync(profile, cancellationToken).ConfigureAwait(false);
+        MappingChanged?.Invoke(this, profile);
+    }
+
+    private static bool SamePhysicalControl(ControllerBinding left, ControllerBinding right)
+        => left.TriggerType == right.TriggerType
+           && left.Channel == right.Channel
+           && (left.TriggerType == MidiMessageType.PitchBend || left.Data1 == right.Data1);
+
+    private static bool SameActionTarget(ControllerBinding left, ControllerBinding right)
+        => left.Action == right.Action
+           && left.Slot == right.Slot
+           && string.Equals(left.Argument, right.Argument, StringComparison.Ordinal);
+
+    /// <summary>Tears the pipeline down and releases the devices; safe to call when already idle.</summary>
+    public void Stop()
+    {
+        _router?.Dispose();
+        _feedback?.Dispose();
+        if (_monitor is not null)
+        {
+            _monitor.ActivityDetected -= OnActivityDetected;
+            _monitor.Dispose();
+        }
+
+        if (_input is not null)
+        {
+            _input.Close();
+            _input.Dispose();
+        }
+
+        // Return the device to its idle mode (e.g. Push -> Live mode) before closing the output.
+        if (_mapper is not null)
+            SendProfileSysEx(_mapper.ActiveProfile.DeactivationSysEx, "deactivation");
+        _output?.Dispose();
+
+        _router = null;
+        _feedback = null;
+        _monitor = null;
+        _mapper = null;
+        _input = null;
+        _output = null;
+        InputDeviceName = null;
+        OutputDeviceName = null;
+        IsInputConnected = false;
+        IsOutputConnected = false;
+    }
+
+    public void Dispose()
+    {
+        _learn.Learned -= OnLearned;
+        Stop();
+    }
+}
