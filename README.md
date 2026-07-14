@@ -96,8 +96,9 @@ un4seen at build time (`scripts/fetch-bass.*`) and are used under un4seen's own
 license. BASS is free only while the product using it is also free of charge and
 generates no revenue; anyone who sells or otherwise monetizes Liveolator or a
 derivative must obtain their own BASS license from <https://www.un4seen.com/>.
-To keep this arrangement lawful under the GPL, `LICENSE` grants an additional
-permission (GPLv3 §7) allowing Liveolator to be combined with BASS.
+To keep this arrangement lawful under the GPL, an additional permission
+(GPLv3 §7) allowing Liveolator to be combined with BASS is granted in
+[`LICENSE-EXCEPTION.txt`](LICENSE-EXCEPTION.txt).
 
 All bundled third-party components and their licenses are listed in
 [`THIRD-PARTY-NOTICES.txt`](THIRD-PARTY-NOTICES.txt).
