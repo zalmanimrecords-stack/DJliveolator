@@ -1,0 +1,27 @@
+Liveolator — licensing notice and additional permission
+========================================================
+
+Copyright (C) 2026 Zalmanim Records <zalmanimrecords@gmail.com>
+
+Liveolator is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. The full text of that license is in the file LICENSE.
+
+
+ADDITIONAL PERMISSION under GNU GPL version 3 section 7
+-------------------------------------------------------
+As a special exception, the copyright holder of Liveolator gives you
+permission to combine Liveolator with the BASS audio libraries and their
+add-ons (BASS, BASS_FX, BASSmix) published by un4seen Developments Ltd.
+(https://www.un4seen.com/), and to convey and/or distribute the resulting
+combined work, provided you also comply with the terms of the BASS license
+that covers your use of BASS. You may extend this exception to your version
+of Liveolator, but you are not obliged to do so. If you do not wish to do
+so, delete this exception statement from your version.
+
+The BASS libraries themselves are NOT part of Liveolator, are NOT covered by
+the GNU GPL, and are NOT distributed with the Liveolator source code. They
+are obtained separately from un4seen under un4seen's own license terms, and
+are subject to a per-user cost if Liveolator (or a derivative) is ever sold
+or otherwise monetized. See THIRD-PARTY-NOTICES.txt for details.
