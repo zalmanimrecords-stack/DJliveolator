@@ -84,6 +84,41 @@ public sealed class GridRefinerTests
     }
 
     [Fact]
+    public void Refine_SurvivesOffbeatBassAndMidTrackPhaseEdit()
+    {
+        // Real-track regression (Vibe Tribe "Beyond & Beyond", true 145.0 read as the coarse 143.55 bin):
+        // psytrance carries an offbeat bass the HPSS kick band partially keeps (antiphase events halve a
+        // beat-period fit), and a mid-track half-beat arrangement edit breaks the single global phase the
+        // old fit assumed — coherence at the TRUE tempo collapsed below the accept floor and the caller
+        // fell back to the quantized coarse estimate, wrecking two-deck sync. Windowed scoring (free phase
+        // per window) plus the half-beat harmonic must recover the true tempo with trustable coherence.
+        const double trueBpm = 145.0;
+        const double seconds = 400.0;
+        const double editSeconds = 200.0; // everything after this is shifted half a beat
+        double beat = 60.0 / trueBpm;
+        int frames = (int)(seconds * RateHz);
+        var env = new double[frames];
+        void Spike(double t, double amplitude)
+        {
+            int f = (int)Math.Round(t * RateHz);
+            if (f >= 0 && f < frames)
+                env[f] = Math.Max(env[f], amplitude);
+        }
+        for (double t = 0.0; t < seconds; t += beat)
+        {
+            double shifted = t < editSeconds ? t : t + beat / 2.0;
+            Spike(shifted, 1.0);              // kick on the beat
+            Spike(shifted + beat / 2.0, 0.8); // offbeat bass surviving the kick band
+        }
+
+        GridFit fit = new GridRefiner().Refine(env, RateHz, coarseBpm: 143.5547, coarseFirstBeatSeconds: 0.0);
+
+        Assert.InRange(fit.Bpm, trueBpm - 0.1, trueBpm + 0.1);
+        Assert.True(fit.Coherence >= GridRefiner.AcceptCoherence,
+            $"the true tempo must be trustable despite the offbeat bass and the edit, was {fit.Coherence:F3}");
+    }
+
+    [Fact]
     public void Refine_NoKickStructure_ReturnsLowCoherence_SoTheCallerFallsBack()
     {
         var rng = new Random(1);
