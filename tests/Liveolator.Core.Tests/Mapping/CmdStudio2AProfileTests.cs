@@ -132,6 +132,9 @@ public class CmdStudio2AProfileTests
         {
             ControllerBinding jog = SingleFor(PerformanceActionKind.DeckJog, slot);
             Assert.Equal(ActionInputMode.Relative, jog.InputMode);
+            // The CMD jog is offset-binary around 64, like Pioneer and every mainstream DJ deck; decoding
+            // it as two's-complement made rest (0x40) read as -64 and flipped direction (the jog bug).
+            Assert.Equal(RelativeEncoding.OffsetBinary, jog.Relative);
             Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
         }
     }
@@ -149,8 +152,42 @@ public class CmdStudio2AProfileTests
         ControllerBinding jog = Assert.Single(upgraded.Bindings);
         Assert.Equal(PerformanceActionKind.DeckJog, jog.Action);
         Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
+        // The retargeted jog must also land on the DJ-standard offset-binary encoding.
+        Assert.Equal(RelativeEncoding.OffsetBinary, jog.Relative);
         Assert.Equal(legacy.Channel, jog.Channel);
         Assert.Equal(legacy.Data1, jog.Data1);
+    }
+
+    [Fact]
+    public void UpgradeLegacyJogBindings_HealsLearnedTwosComplementJog_ToOffsetBinary_KeyedOnAction()
+    {
+        // A jog LEARNED before the fix is DeckJog/Relative/TwosComplement on the device's real CC (not the
+        // guessed default 0x21). Healing must key on the action, not the CC, and preserve the physical
+        // control so the performer never has to re-learn.
+        ControllerBinding learned = new(
+            MidiMessageType.ControlChange, Channel: 1, Data1: 0x33,
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Slot: 1,
+            Relative: RelativeEncoding.TwosComplement, RelativeTicksPerRevolution: 128.0);
+        var profile = new ControllerMappingProfile("saved", "CMD Studio 2A", [learned]);
+
+        ControllerBinding jog = Assert.Single(
+            CmdStudio2AProfile.UpgradeLegacyJogBindings(profile).Bindings);
+
+        Assert.Equal(RelativeEncoding.OffsetBinary, jog.Relative);
+        Assert.Equal(1, jog.Channel);
+        Assert.Equal(0x33, jog.Data1);
+        Assert.Equal(PerformanceActionKind.DeckJog, jog.Action);
+        Assert.Equal(128.0, jog.RelativeTicksPerRevolution);
+    }
+
+    [Fact]
+    public void UpgradeLegacyJogBindings_LeavesAHealthyProfileUntouched_SoNoNeedlessReSave()
+    {
+        // The shipped default is already offset-binary with no legacy jog, so the heal must be a no-op
+        // that returns the SAME instance — MidiControlSession only re-saves when the reference changes.
+        ControllerMappingProfile healthy = CmdStudio2AProfile.Default;
+
+        Assert.Same(healthy, CmdStudio2AProfile.UpgradeLegacyJogBindings(healthy));
     }
 
     [Fact]
