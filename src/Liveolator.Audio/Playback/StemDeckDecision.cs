@@ -1,4 +1,3 @@
-using System.IO;
 using Liveolator.Core.Analysis.Stems;
 
 namespace Liveolator.Audio.Playback;
@@ -53,8 +52,17 @@ internal static class StemDeckDecision
     /// </summary>
     public static bool IsLocalPath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+        if (string.IsNullOrWhiteSpace(path))
             return false;
-        return !(path.StartsWith(@"\\") || path.StartsWith("//"));
+        // UNC (\\host\share or //host/share) is a network path, never local.
+        if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal))
+            return false;
+        // Local AND absolute, decided separator-agnostically so it holds on any OS: a Windows drive path
+        // (X:\ or X:/) or a Unix-absolute path (/...). Path.IsPathFullyQualified is host-OS-specific — a
+        // C:\ path reads as "not qualified" on macOS — which broke this check for stems on a cross-platform
+        // build (the app must run on both Windows and macOS).
+        if (path.Length >= 3 && char.IsLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
+            return true;
+        return path[0] == '/';
     }
 }

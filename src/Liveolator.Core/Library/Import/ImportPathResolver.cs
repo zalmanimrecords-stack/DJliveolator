@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using Liveolator.Core.Library.Music;
 
@@ -33,7 +32,7 @@ public sealed class ImportPathResolver
         ArgumentNullException.ThrowIfNull(catalog);
         _stat = stat ?? throw new ArgumentNullException(nameof(stat));
         _byFileName = catalog
-            .GroupBy(t => Path.GetFileName(t.File.Path), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(t => PortablePath.GetFileName(t.File.Path), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
     }
 
@@ -46,7 +45,7 @@ public sealed class ImportPathResolver
         if (_stat(sourcePath) is { } literal)
             return literal;
 
-        string fileName = Path.GetFileName(sourcePath);
+        string fileName = PortablePath.GetFileName(sourcePath);
         if (string.IsNullOrEmpty(fileName) || !_byFileName.TryGetValue(fileName, out List<MusicTrack>? matches))
             return null;
 

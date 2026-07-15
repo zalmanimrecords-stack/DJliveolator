@@ -1,4 +1,3 @@
-using System.IO;
 using Liveolator.Core.Library.Doctor;
 
 namespace Liveolator.Core.Library;
@@ -93,10 +92,10 @@ public static class DuplicateFinder
         return groups
             .OrderByDescending(group => group.Confidence)
             .ThenBy(group => group.Entries[0].File.SizeBytes)
-            .ThenBy(group => Path.GetFileName(group.Entries[0].File.Path), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(group => PortablePath.GetFileName(group.Entries[0].File.Path), StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
     private static (long SizeBytes, string Name) IdentityKey<TEntry>(TEntry entry) where TEntry : IMediaEntry
-        => (entry.File.SizeBytes, Path.GetFileName(entry.File.Path).ToLowerInvariant());
+        => (entry.File.SizeBytes, PortablePath.GetFileName(entry.File.Path).ToLowerInvariant());
 }

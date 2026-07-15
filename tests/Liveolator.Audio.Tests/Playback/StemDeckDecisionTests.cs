@@ -62,6 +62,7 @@ public sealed class StemDeckDecisionTests
 
     [Theory]
     [InlineData(@"C:\cache\drums.flac", true)]
+    [InlineData("/Users/dj/Library/stems/drums.flac", true)] // Unix-absolute local (macOS)
     [InlineData(@"\\server\share\drums.flac", false)] // UNC
     [InlineData("//server/share/drums.flac", false)]   // forward-slash UNC
     [InlineData("relative/path.flac", false)]          // not fully qualified

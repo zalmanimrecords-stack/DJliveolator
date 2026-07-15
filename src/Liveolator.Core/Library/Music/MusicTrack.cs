@@ -34,7 +34,7 @@ public sealed record MusicTrack(
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>
         string.IsNullOrWhiteSpace(Metadata?.Title)
-            ? Path.GetFileNameWithoutExtension(File.Path)
+            ? PortablePath.GetFileNameWithoutExtension(File.Path)
             : Metadata!.Title!;
 
     /// <summary>Track artist from tags, or null when untagged.</summary>
