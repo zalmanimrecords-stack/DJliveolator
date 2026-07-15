@@ -825,9 +825,20 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             return 0.0; // knob fully out → whole-track overview (and full-track click-seek)
         if (_durationSeconds <= 0.0)
             return DefaultZoomWindow; // zoomed, but the duration isn't decoded yet → a sane default window
-        // Window as a fraction of the track. Defined in SECONDS (not a fixed fraction) so both decks at the
-        // same zoom show the same time-scale — a beat is the same width on A and B, so kicks line up by eye.
-        return Math.Clamp(_zoomSeconds / _durationSeconds, MinZoomWindow, 1.0);
+        // Draw in PLAYBACK time, not source time: a pitched/synced deck consumes source at `rate`, so the
+        // source-time window that fills the strip is _zoomSeconds × rate. Two decks matched to the same
+        // AUDIBLE tempo then show the same wall-clock span — a beat is the same pixel width and scrolls at
+        // the same speed on A and B, so their kicks stay stacked all the way across the window (beat-locked
+        // motion), not just at the playhead. At unity rate this is the original _zoomSeconds / duration.
+        return Math.Clamp(_zoomSeconds * PlaybackRate() / _durationSeconds, MinZoomWindow, 1.0);
+    }
+
+    // The deck's effective playback rate = audible tempo ÷ base (grid) tempo. 1.0 when either is unknown, so
+    // a freshly loaded / un-analyzed deck keeps the plain source-time window until a real tempo is known.
+    private double PlaybackRate()
+    {
+        double audible = (double)_bpm;
+        return _trackBpm > 0.0 && audible > 0.0 ? audible / _trackBpm : 1.0;
     }
 
     /// <summary>
@@ -1424,9 +1435,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             Bpm = state.Value > 0.0 ? (decimal)state.Value : 0;
             if (_title != "No track loaded" && state.Value > 0.0)
             {
-                _trackBpm = state.Value;
+                // state.Value is the AUDIBLE tempo (base × pitch/sync rate) — right for the counter + Meta.
+                // The grid is drawn over the SOURCE waveform, though, so it must use the BASE tempo or the
+                // lines slide off the kicks once the deck is pitched/synced. The engine's pitch range is
+                // symmetric (base×(1∓p)), so the base is exactly the midpoint of the min|max the feedback
+                // carries; fall back to the audible value if the range is missing.
+                _trackBpm = maximum >= minimum && minimum > 0m ? (double)((minimum + maximum) / 2m) : state.Value;
                 Meta = ReplaceDisplayedBpm(Meta, state.Value);
                 RecomputeBeatGrid();
+                // The audible tempo may have moved (pitch/sync) → re-window in playback time so a beat keeps
+                // the same pixel width as the other deck (ComputeZoomWindow scales the source span by rate).
+                ZoomWindow = ComputeZoomWindow();
             }
         }
         finally
