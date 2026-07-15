@@ -58,10 +58,13 @@ public sealed class WaveformStripTests
     }
 
     [Theory]
-    [InlineData(0.0, 0.0)]    // at the start the window pins to the left edge
-    [InlineData(1.0, 0.90)]   // at the end the window pins to the right edge (1 - span)
-    public void VisibleWindow_ClampsAtTheTrackEnds(double progress, double expectedStart)
+    [InlineData(0.0, -0.05)]  // at the start the window stays centred, extending before the track (drawn empty)
+    [InlineData(1.0, 0.95)]   // at the end it extends past the track — the playhead stays dead-centre
+    public void VisibleWindow_CentresPastTheTrackEnds_WithoutClamping(double progress, double expectedStart)
     {
+        // The playhead stays at screen-centre right to the ends (span/2 either side of progress), so a
+        // synced A/B pair keeps its kicks stacked through an intro/outro instead of one deck's needle
+        // sliding off-centre when its window would have clamped to the edge.
         (double start, double span) = WaveformStrip.VisibleWindow(progress, zoomWindow: 0.10);
         Assert.Equal(expectedStart, start, 6);
         Assert.Equal(0.10, span, 6);
