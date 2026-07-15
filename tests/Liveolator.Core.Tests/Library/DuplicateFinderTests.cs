@@ -123,8 +123,10 @@ public class DuplicateFinderTests
         var groups = DuplicateFinder.Find(entries);
 
         Assert.Equal(2, groups.Count);
-        // Smaller size first ("alpha" at 1000), then the larger ("zeta" at 9000).
-        Assert.Equal("alpha.mp3", System.IO.Path.GetFileName(groups[0].Entries[0].File.Path));
-        Assert.Equal("zeta.mp3", System.IO.Path.GetFileName(groups[1].Entries[0].File.Path));
+        // Smaller size first ("alpha" at 1000), then the larger ("zeta" at 9000). Use the portable
+        // file-name helper (not System.IO.Path) so the assertion holds on macOS too, where Path would
+        // not split the Windows fixture path.
+        Assert.Equal("alpha.mp3", PortablePath.GetFileName(groups[0].Entries[0].File.Path));
+        Assert.Equal("zeta.mp3", PortablePath.GetFileName(groups[1].Entries[0].File.Path));
     }
 }
