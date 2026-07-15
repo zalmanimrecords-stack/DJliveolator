@@ -128,12 +128,12 @@ public static class RelocationPlanner
             }
 
             string relative = normalized.Length == oldRoot.Length
-                ? Path.GetFileName(normalized)
+                ? PortablePath.GetFileName(normalized)
                 : normalized[(oldRoot.Length + 1)..];
             string proposed = FolderScope.Normalize(Path.Combine(newRoot, relative));
             if (byPath.TryGetValue(proposed, out ScannedFile candidate)
                 && candidate.SizeBytes == item.SizeBytes
-                && string.Equals(Path.GetFileName(candidate.Path), Path.GetFileName(item.Path), StringComparison.OrdinalIgnoreCase))
+                && string.Equals(PortablePath.GetFileName(candidate.Path), PortablePath.GetFileName(item.Path), StringComparison.OrdinalIgnoreCase))
                 matches.Add(new RelocationMatch(item.Path, candidate, LibraryRepairConfidence.Medium));
             else
                 unmatched.Add(item);
@@ -146,7 +146,7 @@ public static class RelocationPlanner
     private readonly record struct FileIdentity(string FileName, long SizeBytes)
     {
         public static FileIdentity Of(ScannedFile file)
-            => new(Path.GetFileName(file.Path).ToLowerInvariant(), file.SizeBytes);
+            => new(PortablePath.GetFileName(file.Path).ToLowerInvariant(), file.SizeBytes);
     }
 
     private static string? NormalizeSha(string? value)

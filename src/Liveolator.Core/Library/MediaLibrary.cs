@@ -71,11 +71,11 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
             if (_byPath.TryGetValue(path, out TEntry? exact))
                 return exact;
 
-            string fileName = System.IO.Path.GetFileName(path);
+            string fileName = PortablePath.GetFileName(path);
             if (string.IsNullOrEmpty(fileName))
                 return null;
             foreach (TEntry entry in _byPath.Values)
-                if (string.Equals(System.IO.Path.GetFileName(entry.File.Path), fileName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(PortablePath.GetFileName(entry.File.Path), fileName, StringComparison.OrdinalIgnoreCase))
                     return entry;
             return null;
         }

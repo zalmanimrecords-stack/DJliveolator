@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Liveolator.App.Shell;
+using Liveolator.Core;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
@@ -1504,7 +1505,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         CancelBackgroundBpmAnalysis(); // nothing playable to grid — a late result must not re-enable SYNC
         HasLoadedTrack = false;     // there is no playable track — transport stays disabled
         IsBpmEnabled = false;       // and SYNC stays disabled (nothing to beatmatch)
-        Title = $"⚠ Couldn't load {Path.GetFileNameWithoutExtension(trackPath)}";
+        Title = $"⚠ Couldn't load {PortablePath.GetFileNameWithoutExtension(trackPath)}";
         Artist = null;
         Meta = NoMeta;
         this.RaisePropertyChanged(nameof(HasTrackMeta));
@@ -1536,7 +1537,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         DeckTrackInfo? info = _trackInfo?.Invoke(trackPath);
         Title = !string.IsNullOrWhiteSpace(info?.Title)
             ? info!.Title
-            : Path.GetFileNameWithoutExtension(trackPath);
+            : PortablePath.GetFileNameWithoutExtension(trackPath);
         // Artist comes only from the catalog facts (the load action carries no artist); null when the
         // track isn't in the catalog so the line hides rather than showing a stale artist from a prior load.
         Artist = string.IsNullOrWhiteSpace(info?.Artist) ? null : info!.Artist;
