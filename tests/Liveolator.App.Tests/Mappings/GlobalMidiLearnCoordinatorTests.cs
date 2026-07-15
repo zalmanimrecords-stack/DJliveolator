@@ -36,6 +36,35 @@ public sealed class GlobalMidiLearnCoordinatorTests
     }
 
     [Fact]
+    public void LearningAJog_DefaultsToOffsetBinaryEncoding()
+    {
+        // Clicking the on-screen jog with global learn armed must capture the DJ-standard offset-binary
+        // encoding, not the generic two's-complement default (which decoded rest as a -64 lurch).
+        var session = new FakeMidiControlSession();
+        using var coordinator = new GlobalMidiLearnCoordinator(session);
+        coordinator.Enable();
+
+        coordinator.TryCaptureUiAction(new PerformanceAction(
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Slot: 0));
+
+        Assert.Equal(PerformanceActionKind.DeckJog, session.LearnedAction);
+        Assert.Equal(RelativeEncoding.OffsetBinary, session.LearnedEncoding);
+    }
+
+    [Fact]
+    public void LearningANonJogRelativeControl_KeepsTwosComplementDefault()
+    {
+        var session = new FakeMidiControlSession();
+        using var coordinator = new GlobalMidiLearnCoordinator(session);
+        coordinator.Enable();
+
+        coordinator.TryCaptureUiAction(new PerformanceAction(
+            PerformanceActionKind.BeatNudgeForward, ActionInputMode.Relative, Slot: 0));
+
+        Assert.Equal(RelativeEncoding.TwosComplement, session.LearnedEncoding);
+    }
+
+    [Fact]
     public void WaitingForMidi_SuppressesFurtherUiActions()
     {
         var session = new FakeMidiControlSession();

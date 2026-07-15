@@ -47,7 +47,7 @@ public static class CmdStudio2AProfile
     private const int EqMidCc = 0x11;
     private const int EqLowCc = 0x12;
     private const int FilterCc = 0x13;
-    private const int JogCc = 0x21;            // jog wheel (relative / endless)
+    private const int JogCc = 0x21;            // jog wheel (relative / endless, offset-binary around 64)
     private const double JogTicksPerRevolution = 128.0;
 
     /// <summary>The default CMD STUDIO 2A mapping profile.</summary>
@@ -109,17 +109,23 @@ public static class CmdStudio2AProfile
             MidiMessageType.ControlChange, channel, FilterCc,
             PerformanceActionKind.MixerFilter, ActionInputMode.Absolute, slot, SoftTakeover: true));
 
-        // The endless jog reports relative ticks. Conversion normalizes them to a fraction of a
+        // The endless jog reports relative ticks as OFFSET-BINARY around 64 (rest = 64, forward > 64,
+        // backward < 64) — the Behringer CMD hardware, like Pioneer and every mainstream DJ deck. Decoding
+        // it as two's-complement turns 0x40 (rest) into -64 and flips direction, so each tick became a
+        // near-half-revolution jump the wrong way. Conversion normalizes the offset to a fraction of a
         // wheel revolution; DeckActionHandler then applies DJ-appropriate playing/paused sensitivity.
         bindings.Add(new ControllerBinding(
             MidiMessageType.ControlChange, channel, JogCc,
             PerformanceActionKind.DeckJog, ActionInputMode.Relative, slot,
+            Relative: RelativeEncoding.OffsetBinary,
             RelativeTicksPerRevolution: JogTicksPerRevolution));
     }
 
     /// <summary>
-    /// Upgrades the shipped profile's former jog-to-beat-clock mapping without disturbing learned
-    /// controls. The exact legacy channel/CC/slot tuple identifies only the old default binding.
+    /// Heals a saved jog binding on load, without disturbing learned controls: (1) retargets the very
+    /// first shipped layout, where the jog drove the beat clock instead of the deck; and (2) rewrites a
+    /// jog still decoded as two's-complement to the DJ-standard offset-binary. Idempotent — returns the
+    /// same instance when nothing needs healing, so the session only re-saves on a real change.
     /// </summary>
     public static ControllerMappingProfile UpgradeLegacyJogBindings(ControllerMappingProfile profile)
     {
@@ -127,7 +133,9 @@ public static class CmdStudio2AProfile
         bool changed = false;
         IReadOnlyList<ControllerBinding> bindings = profile.Bindings.Select(binding =>
         {
-            bool isLegacyJog =
+            // (1) Retarget the old default where the jog CC drove BeatNudgeForward instead of the deck.
+            // The exact channel/CC/slot tuple identifies only that legacy binding.
+            bool isLegacyBeatJog =
                 binding.TriggerType == MidiMessageType.ControlChange
                 && binding.Data1 == JogCc
                 && binding.InputMode == ActionInputMode.Relative
@@ -135,15 +143,33 @@ public static class CmdStudio2AProfile
                 && ((binding.Channel == DeckAChannel && binding.Slot == DeckASlot)
                     || (binding.Channel == DeckBChannel && binding.Slot == DeckBSlot));
 
-            if (!isLegacyJog)
-                return binding;
-
-            changed = true;
-            return binding with
+            if (isLegacyBeatJog)
             {
-                Action = PerformanceActionKind.DeckJog,
-                RelativeTicksPerRevolution = JogTicksPerRevolution,
-            };
+                changed = true;
+                binding = binding with
+                {
+                    Action = PerformanceActionKind.DeckJog,
+                    RelativeTicksPerRevolution = JogTicksPerRevolution,
+                };
+            }
+
+            // (2) A DJ jog wheel is offset-binary around 64 (rest 64, forward > 64, backward < 64). A jog
+            // captured/shipped as two's-complement decoded 0x40 (rest) as -64 and flipped direction, so it
+            // "threw unrelated positions and stuck in one spot". Rewrite any deck-slot DeckJog relative
+            // binding still on two's-complement, keyed on the ACTION (not the CC) so a LEARNED jog — whose
+            // CC differs from this default — is healed too.
+            // ponytail: two's-complement DJ jogs don't exist in practice; the learn picker still offers it
+            // for a rare encoder, and re-learning overwrites this heal.
+            if (binding.Action == PerformanceActionKind.DeckJog
+                && binding.InputMode == ActionInputMode.Relative
+                && binding.Relative == RelativeEncoding.TwosComplement
+                && binding.Slot is DeckASlot or DeckBSlot)
+            {
+                changed = true;
+                binding = binding with { Relative = RelativeEncoding.OffsetBinary };
+            }
+
+            return binding;
         }).ToList();
 
         return changed ? profile with { Bindings = bindings } : profile;
