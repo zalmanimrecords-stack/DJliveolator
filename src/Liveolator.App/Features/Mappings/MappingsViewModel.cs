@@ -55,6 +55,10 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         {
             this.RaiseAndSetIfChanged(ref _selectedTarget, value);
             this.RaisePropertyChanged(nameof(SelectedTargetIsRelative));
+            // Seed the encoding picker from the target so a jog defaults to offset-binary (its real
+            // hardware encoding) rather than the generic two's-complement — the user can still override.
+            if (value is not null)
+                SelectedRelativeEncoding = value.RelativeEncoding;
         }
     }
 
@@ -283,7 +287,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Deck A: Sync", PerformanceActionKind.DeckSyncOnce, 0, ActionInputMode.Momentary),
             new("Deck A: Sync Lock", PerformanceActionKind.DeckSyncToggle, 0, ActionInputMode.Toggle),
             new("Deck A: Jog / track position", PerformanceActionKind.DeckJog, 0,
-                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
+                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0,
+                RelativeEncoding: RelativeEncoding.OffsetBinary),
             new("Deck A: Channel fader", PerformanceActionKind.MixerChannelGain, 0),
             new("Deck A: EQ High", PerformanceActionKind.MixerEqBand, 0, ActionInputMode.Absolute, Argument: "High"),
             new("Deck A: EQ Mid", PerformanceActionKind.MixerEqBand, 0, ActionInputMode.Absolute, Argument: "Mid"),
@@ -295,7 +300,8 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Deck B: Sync", PerformanceActionKind.DeckSyncOnce, 1, ActionInputMode.Momentary),
             new("Deck B: Sync Lock", PerformanceActionKind.DeckSyncToggle, 1, ActionInputMode.Toggle),
             new("Deck B: Jog / track position", PerformanceActionKind.DeckJog, 1,
-                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0),
+                ActionInputMode.Relative, RelativeTicksPerRevolution: 128.0,
+                RelativeEncoding: RelativeEncoding.OffsetBinary),
             new("Deck B: Channel fader", PerformanceActionKind.MixerChannelGain, 1),
             new("Deck B: EQ High", PerformanceActionKind.MixerEqBand, 1, ActionInputMode.Absolute, Argument: "High"),
             new("Deck B: EQ Mid", PerformanceActionKind.MixerEqBand, 1, ActionInputMode.Absolute, Argument: "Mid"),

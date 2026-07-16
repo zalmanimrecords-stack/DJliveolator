@@ -131,6 +131,28 @@ public sealed class MidiControlSessionTests
     }
 
     [Fact]
+    public async Task StartAsync_HealsSavedTwosComplementJog_ToOffsetBinary_AndReSaves()
+    {
+        // A jog learned before the fix is stored as two's-complement, which decoded the hardware's rest
+        // value (0x40) as a -64 lurch — the "throws unrelated positions, stuck in one spot" bug. Loading
+        // the profile must heal it to offset-binary in the live session AND persist the correction.
+        ControllerBinding learnedJog = new(
+            MidiMessageType.ControlChange, Channel: 0, Data1: 0x30,
+            PerformanceActionKind.DeckJog, ActionInputMode.Relative, Slot: 0,
+            Relative: RelativeEncoding.TwosComplement, RelativeTicksPerRevolution: 128.0);
+        _store.Profile = new ControllerMappingProfile("CMD Studio 2A", "CMD Studio 2A", [learnedJog]);
+        _provider.InputToReturn = new FakeMidiInput("CMD Studio 2A");
+        using var session = NewSession(new[] { CmdStudio2AProfile.Default });
+
+        await session.StartAsync(new MidiSettings { ControllerInputName = "CMD Studio 2A" });
+
+        ControllerBinding live = session.ActiveProfile!.Bindings.Single(b => b.Action == PerformanceActionKind.DeckJog);
+        Assert.Equal(RelativeEncoding.OffsetBinary, live.Relative);
+        Assert.Equal(RelativeEncoding.OffsetBinary,
+            _store.SavedProfile!.Bindings.Single(b => b.Action == PerformanceActionKind.DeckJog).Relative);
+    }
+
+    [Fact]
     public async Task Learn_ForwardsRelativeEncoding_SoAnOffsetBinaryEncoderIsCaptured()
     {
         // The learn path used to always default to TwosComplement; an offset-binary encoder could only be

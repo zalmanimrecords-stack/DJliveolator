@@ -51,7 +51,14 @@ public sealed class GlobalMidiLearnCoordinator : ViewModelBase, IDisposable
 
         try
         {
-            _session.BeginLearn(action.Kind, action.Slot, action.Argument, action.InputMode);
+            // A jog wheel is offset-binary around 64 on real DJ hardware; every other relative encoder we
+            // learn this way is two's-complement. Defaulting a jog to two's-complement made it decode each
+            // tick as a near-half-revolution jump the wrong way.
+            RelativeEncoding encoding = action.Kind == PerformanceActionKind.DeckJog
+                ? RelativeEncoding.OffsetBinary
+                : RelativeEncoding.TwosComplement;
+            _session.BeginLearn(
+                action.Kind, action.Slot, action.Argument, action.InputMode, relativeEncoding: encoding);
             IsWaitingForMidi = true;
             Status = $"Now use the controller for {Describe(action)}. Esc exits.";
         }

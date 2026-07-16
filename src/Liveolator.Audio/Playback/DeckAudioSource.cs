@@ -1,3 +1,4 @@
+using Liveolator.Core;
 using Liveolator.Core.Audio;
 using Microsoft.Extensions.Logging;
 
@@ -30,7 +31,7 @@ public sealed class DeckAudioSource : IAudioSource
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public string Name => Path.GetFileName(_filePath);
+    public string Name => PortablePath.GetFileName(_filePath);
 
     public bool IsRunning
     {

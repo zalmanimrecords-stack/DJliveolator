@@ -202,10 +202,12 @@ public sealed class WaveformStrip : Control
     }
 
     /// <summary>
-    /// The visible 0..1 track window for a given playhead <paramref name="progress"/> and
+    /// The visible track window for a given playhead <paramref name="progress"/> and
     /// <paramref name="zoomWindow"/> (fraction of the track to show). Returns the whole track
     /// <c>(0,1)</c> when the zoom is ≤0 or ≥1; otherwise a window of width <paramref name="zoomWindow"/>
-    /// centred on the playhead, clamped to stay inside the track at the ends. Pure, so the
+    /// centred on the playhead. Near the head/tail the window is NOT clamped to the track — it extends
+    /// past it (drawn empty via <see cref="ColumnInTrack"/>) so the playhead stays dead-centre right to
+    /// the ends, which keeps two synced decks beat-locked through an intro/outro blend. Pure, so the
     /// mapping unit-tests without a render.
     /// </summary>
     public static (double Start, double Span) VisibleWindow(double progress, double zoomWindow)
@@ -213,10 +215,7 @@ public sealed class WaveformStrip : Control
         if (double.IsNaN(zoomWindow) || zoomWindow <= 0 || zoomWindow >= 1)
             return (0.0, 1.0);
         double p = double.IsNaN(progress) ? 0 : Math.Clamp(progress, 0.0, 1.0);
-        double start = p - (zoomWindow / 2.0);
-        if (start < 0) start = 0;
-        else if (start + zoomWindow > 1) start = 1 - zoomWindow;
-        return (start, zoomWindow);
+        return (p - (zoomWindow / 2.0), zoomWindow);
     }
 
     public static double? MarkerX(double fraction, double start, double span, double width)
@@ -340,6 +339,15 @@ public sealed class WaveformStrip : Control
     // Maps a visible-window column x to its 0..1 track fraction.
     private static double TrackFraction(double x, double width, double start, double span)
         => start + (width <= 0 ? 0 : x / width) * span;
+
+    // True when the pixel column at x maps to a position inside the track [0,1). When the centred window
+    // extends past the head/tail (VisibleWindow no longer clamps), the out-of-track columns are skipped so
+    // the strip draws EMPTY there instead of smearing the first/last sample across the lead-in/out.
+    private static bool ColumnInTrack(double x, double width, double start, double span)
+    {
+        double f = TrackFraction(x, width, start, span);
+        return f >= 0 && f < 1;
+    }
 
     /// <summary>Beats per bar (4/4): every fourth comb tooth is a bar downbeat, drawn as a broad red block.
     /// Which line is the downbeat is set by <see cref="DownbeatOffset"/> (the analyzed/edited "one"), not a
@@ -470,6 +478,7 @@ public sealed class WaveformStrip : Control
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
+            if (!ColumnInTrack(x, b.Width, start, span)) continue; // empty past the track ends (centred window)
             double amp = geometry.MaxAmp * Math.Clamp(ColumnPeak(peaks, x, step, b.Width, start, span), 0f, 1f);
             if (amp < 0.5) amp = 0.5; // keep a hairline so silent regions still read as a strip
             (Point top, Point bottom) = geometry.Bar(x, amp);
@@ -491,6 +500,7 @@ public sealed class WaveformStrip : Control
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
+            if (!ColumnInTrack(x, b.Width, start, span)) continue; // empty past the track ends (centred window)
             float v = ColumnPeak(band, x, step, b.Width, start, span);
             if (v <= 0.004f) // skip true silence — the broadband hairline already keeps the strip readable
                 continue;
@@ -527,6 +537,7 @@ public sealed class WaveformStrip : Control
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
+            if (!ColumnInTrack(x, b.Width, start, span)) continue; // empty past the track ends (centred window)
             float k = ColumnPeak(kick, x, step, b.Width, start, span);
             if (k < floor) continue;
 

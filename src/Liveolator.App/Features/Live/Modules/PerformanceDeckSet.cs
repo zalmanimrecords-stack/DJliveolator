@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Linq;
 using Liveolator.App.Shell;
+using Liveolator.Core;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Beat;
@@ -219,10 +220,10 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
         if (track is not null)
             return track;
 
-        string fileName = System.IO.Path.GetFileName(trackPath);
+        string fileName = PortablePath.GetFileName(trackPath);
         return string.IsNullOrEmpty(fileName)
             ? null
             : _library.All.FirstOrDefault(t =>
-                string.Equals(System.IO.Path.GetFileName(t.File.Path), fileName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(PortablePath.GetFileName(t.File.Path), fileName, StringComparison.OrdinalIgnoreCase));
     }
 }

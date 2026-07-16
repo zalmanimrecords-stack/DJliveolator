@@ -27,6 +27,15 @@ public sealed class GridRefiner
     private const double SnapToleranceBpm = 0.08;  // snap to a clean integer only within this distance…
     private const double SnapCoherenceMargin = 0.01; // …and only if coherence does not drop more than this
     private const int MinOnsets = 4;
+    // Free phase per window: a single global phase collapses at the true tempo whenever a track carries a
+    // mid-track arrangement edit (psytrance half-bar cuts) or slow drift — real-track regression: Vibe
+    // Tribe "Beyond & Beyond" (true 145.0) scored 0.08 globally and fell back to the 143.55 coarse bin,
+    // wrecking two-deck sync. Long enough to still resolve tempo (~48 beats), short enough that one edit
+    // costs one window.
+    private const double WindowSeconds = 20.0;
+    // A near-empty window's resultant is ~1 by chance (one onset is always "in phase" with itself); such
+    // windows (breakdowns, silence) are excluded from the score entirely rather than inflating it.
+    private const int MinOnsetsPerWindow = 4;
     // A tempo and its double fit sparse kicks EQUALLY well (kicks on every other grid beat are still all
     // in phase), separated only by quantization jitter — so coherence differences this small are a tie,
     // not evidence, and the metrical level is decided by occupancy / the coarse estimate instead.
@@ -68,11 +77,6 @@ public sealed class GridRefiner
         if (times.Length < MinOnsets)
             return fallback;
 
-        double totalWeight = 0.0;
-        foreach (double w in weights) totalWeight += w;
-        if (totalWeight <= 0.0)
-            return fallback;
-
         // Sweep each metrical candidate to its own best fit, then pick between candidates. Within one
         // sweep coherence decides outright; between candidates a near-tie is metrical ambiguity (a tempo
         // vs its double both fit sparse kicks), resolved by grid occupancy and closeness to the coarse tempo.
@@ -84,7 +88,7 @@ public sealed class GridRefiner
             {
                 if (bpm <= 0)
                     continue;
-                (double coherence, double offset) = Score(bpm, times, weights, totalWeight);
+                (double coherence, double offset) = Score(bpm, times, weights);
                 if (coherence > cBest + 1e-9 ||
                     (coherence > cBest - 1e-9 && Math.Abs(bpm - coarseBpm) < Math.Abs(cBpm - coarseBpm)))
                 {
@@ -101,14 +105,14 @@ public sealed class GridRefiner
             return fallback;
 
         (double bestBpm, double bestOffset, double best) =
-            PickMetricalLevel(fits, coarseBpm, times, kickEnvelope.Length / envelopeRateHz);
+            PickMetricalLevel(fits, coarseBpm, times);
 
         // Snap to a clean integer tempo when it's a hair away and coherence holds (140.01 → 140.00),
         // but never when snapping would actually loosen the fit (a genuinely non-integer tempo).
         double nearest = Math.Round(bestBpm);
         if (nearest >= _minBpm && nearest <= _maxBpm && Math.Abs(bestBpm - nearest) <= SnapToleranceBpm)
         {
-            (double snapCoherence, double snapOffset) = Score(nearest, times, weights, totalWeight);
+            (double snapCoherence, double snapOffset) = Score(nearest, times, weights);
             if (snapCoherence >= best - SnapCoherenceMargin)
             {
                 bestBpm = nearest;
@@ -129,8 +133,7 @@ public sealed class GridRefiner
     private static (double Bpm, double Offset, double Coherence) PickMetricalLevel(
         List<(double Bpm, double Offset, double Coherence)> fits,
         double coarseBpm,
-        double[] onsetTimes,
-        double envelopeSeconds)
+        double[] onsetTimes)
     {
         double top = fits.Max(f => f.Coherence);
 
@@ -141,15 +144,31 @@ public sealed class GridRefiner
         (double Bpm, double Offset, double Coherence)? slowestOccupied = null;
         foreach (var fit in contenders)
         {
-            double beats = envelopeSeconds * fit.Bpm / 60.0;
-            bool occupied = beats > 0 && onsetTimes.Length / beats >= OccupiedGridFloor;
-            if (occupied && (slowestOccupied is null || fit.Bpm < slowestOccupied.Value.Bpm))
+            if (OccupiedBeatFraction(fit.Bpm, onsetTimes) >= OccupiedGridFloor
+                && (slowestOccupied is null || fit.Bpm < slowestOccupied.Value.Bpm))
                 slowestOccupied = fit;
         }
         if (slowestOccupied is not null)
             return slowestOccupied.Value;
 
         return contenders.MinBy(f => Math.Abs(f.Bpm - coarseBpm));
+    }
+
+    // The fraction of grid beats (over the onsets' span) that actually receive an onset. A raw
+    // onsets-per-beat COUNT ratio is wrong on noisy material: spurious extra onsets push the ratio past
+    // 1.0 for ANY slow candidate, so "slowest occupied" crowned tempos the kicks never played. Distinct
+    // beat slots can never exceed the beat count, so extra onsets stop counting as occupancy evidence.
+    private static double OccupiedBeatFraction(double bpm, double[] onsetTimes)
+    {
+        if (bpm <= 0 || onsetTimes.Length == 0)
+            return 0.0;
+        double period = 60.0 / bpm;
+        double first = onsetTimes[0];
+        int totalBeats = Math.Max(1, (int)Math.Round((onsetTimes[^1] - first) / period));
+        var occupiedSlots = new HashSet<long>();
+        foreach (double t in onsetTimes)
+            occupiedSlots.Add((long)Math.Round((t - first) / period));
+        return Math.Min(1.0, occupiedSlots.Count / (double)totalBeats);
     }
 
     // The coarse tempo plus its octave / 3:2 metrical relatives, kept inside the target band. Folding the
@@ -171,22 +190,57 @@ public sealed class GridRefiner
             yield return folded;
     }
 
-    // Onset-phase coherence at a trial tempo: the normalised resultant of the weighted kick phases. 1.0 =
-    // every kick lands on the same grid phase; the resultant's angle gives the best first-beat offset.
-    private static (double Coherence, double OffsetSeconds) Score(
-        double bpm, double[] times, double[] weights, double totalWeight)
+    // Onset-phase coherence at a trial tempo: the mean normalised resultant of the weighted kick phases,
+    // taken per WINDOW (each window free to have its own phase) and at BOTH the beat period and its half.
+    //
+    //  - Windowed: |sum over windows of each window's resultant magnitude| ≥ the single global resultant
+    //    (triangle inequality), and unlike it survives a mid-track phase edit or slow drift — the exact
+    //    failure that read a true 145.0 as the 143.55 coarse bin on real psytrance.
+    //  - Half-period harmonic: an offbeat bass the HPSS band keeps sits in ANTIPHASE at the beat period
+    //    and cancels the kick's resultant there; on the half-beat grid both align, so the harmonic term
+    //    restores the contrast at the true tempo without promoting the double (scored per candidate, the
+    //    metrical level is still decided by PickMetricalLevel).
+    //
+    // 1.0 = every onset in phase in every window on both grids; a clean one-spike-per-beat train still
+    // scores 1.0, so the AcceptCoherence floor keeps its meaning. The angle of the summed beat-period
+    // resultants gives the best single first-beat offset (the heaviest coherent stretch dominates).
+    private static (double Coherence, double OffsetSeconds) Score(double bpm, double[] times, double[] weights)
     {
         double period = 60.0 / bpm;
-        double re = 0.0, im = 0.0;
-        for (int i = 0; i < times.Length; i++)
+        double resultantSum = 0.0, countedWeight = 0.0;
+        double globalRe = 0.0, globalIm = 0.0;
+        int i = 0;
+        while (i < times.Length)
         {
-            double theta = 2.0 * Math.PI * times[i] / period;
-            re += weights[i] * Math.Cos(theta);
-            im += weights[i] * Math.Sin(theta);
+            double windowEnd = (Math.Floor(times[i] / WindowSeconds) + 1.0) * WindowSeconds;
+            double re1 = 0.0, im1 = 0.0, re2 = 0.0, im2 = 0.0, windowWeight = 0.0;
+            int count = 0;
+            while (i < times.Length && times[i] < windowEnd)
+            {
+                double theta = 2.0 * Math.PI * times[i] / period;
+                double w = weights[i];
+                re1 += w * Math.Cos(theta);
+                im1 += w * Math.Sin(theta);
+                re2 += w * Math.Cos(2.0 * theta);
+                im2 += w * Math.Sin(2.0 * theta);
+                windowWeight += w;
+                count++;
+                i++;
+            }
+
+            if (count < MinOnsetsPerWindow)
+                continue;
+            resultantSum += Math.Sqrt(re1 * re1 + im1 * im1) + Math.Sqrt(re2 * re2 + im2 * im2);
+            countedWeight += windowWeight;
+            globalRe += re1;
+            globalIm += im1;
         }
 
-        double coherence = Math.Sqrt(re * re + im * im) / totalWeight;
-        double frac = Math.Atan2(im, re) / (2.0 * Math.PI);
+        if (countedWeight <= 0.0)
+            return (0.0, 0.0);
+
+        double coherence = resultantSum / (2.0 * countedWeight);
+        double frac = Math.Atan2(globalIm, globalRe) / (2.0 * Math.PI);
         frac -= Math.Floor(frac); // wrap to [0,1)
         return (coherence, frac * period);
     }
