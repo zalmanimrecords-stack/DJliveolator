@@ -52,24 +52,8 @@ public static class WaveformBuilder
         float[]? midPeaks = withMidHigh ? new float[bucketCount] : null;
         float[]? highPeaks = withMidHigh ? new float[bucketCount] : null;
 
-        // Filter state is carried continuously across buckets (samples are processed in order), so each
-        // band is a true running filter rather than a per-bucket reset. Every crossover edge is a
-        // 4th-order Linkwitz-Riley (two identical Butterworth sections in series): the −24 dB/oct slope
-        // keeps basslines/vocals from ghosting into the kick layer, which a single section's −12 dB/oct
-        // measurably does not. The mid band shares the exact crossover frequencies with its neighbours.
-        BiquadFilter[]? lowChain = withLow
-            ? new[] { BiquadFilter.LowPass(LowCrossoverHz, sampleRate), BiquadFilter.LowPass(LowCrossoverHz, sampleRate) }
-            : null;
-        BiquadFilter[]? midChain = withMidHigh
-            ? new[]
-            {
-                BiquadFilter.HighPass(LowCrossoverHz, sampleRate), BiquadFilter.HighPass(LowCrossoverHz, sampleRate),
-                BiquadFilter.LowPass(HighCrossoverHz, sampleRate), BiquadFilter.LowPass(HighCrossoverHz, sampleRate),
-            }
-            : null;
-        BiquadFilter[]? highChain = withMidHigh
-            ? new[] { BiquadFilter.HighPass(HighCrossoverHz, sampleRate), BiquadFilter.HighPass(HighCrossoverHz, sampleRate) }
-            : null;
+        (BiquadFilter[]? lowChain, BiquadFilter[]? midChain, BiquadFilter[]? highChain) =
+            BuildBandChains(sampleRate, withLow, withMidHigh);
 
         for (int i = 0; i < bucketCount; i++)
         {
@@ -120,6 +104,33 @@ public static class WaveformBuilder
         }
 
         return new WaveformOverview(peaks, LowPeaks: lowPeaks, MidPeaks: midPeaks, HighPeaks: highPeaks);
+    }
+
+    /// <summary>
+    /// Builds the low/mid/high band filter chains for the overview. Every crossover edge is a 4th-order
+    /// Linkwitz-Riley (two identical Butterworth sections in series): the −24 dB/oct slope keeps
+    /// basslines/vocals from ghosting into the kick layer, which a single section's −12 dB/oct measurably
+    /// does not. The mid band shares the exact crossover frequencies with its neighbours. A null chain
+    /// means that band degraded away (its crossover doesn't fit under Nyquist). The returned filters carry
+    /// state, so the caller runs one continuous instance across the whole track rather than per bucket.
+    /// </summary>
+    private static (BiquadFilter[]? Low, BiquadFilter[]? Mid, BiquadFilter[]? High) BuildBandChains(
+        int sampleRate, bool withLow, bool withMidHigh)
+    {
+        BiquadFilter[]? lowChain = withLow
+            ? new[] { BiquadFilter.LowPass(LowCrossoverHz, sampleRate), BiquadFilter.LowPass(LowCrossoverHz, sampleRate) }
+            : null;
+        BiquadFilter[]? midChain = withMidHigh
+            ? new[]
+            {
+                BiquadFilter.HighPass(LowCrossoverHz, sampleRate), BiquadFilter.HighPass(LowCrossoverHz, sampleRate),
+                BiquadFilter.LowPass(HighCrossoverHz, sampleRate), BiquadFilter.LowPass(HighCrossoverHz, sampleRate),
+            }
+            : null;
+        BiquadFilter[]? highChain = withMidHigh
+            ? new[] { BiquadFilter.HighPass(HighCrossoverHz, sampleRate), BiquadFilter.HighPass(HighCrossoverHz, sampleRate) }
+            : null;
+        return (lowChain, midChain, highChain);
     }
 
     private static float ProcessChain(BiquadFilter[] chain, float sample)
