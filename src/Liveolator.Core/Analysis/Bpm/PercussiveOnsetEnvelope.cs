@@ -38,10 +38,7 @@ public sealed class PercussiveOnsetEnvelope : IKickOnsetEnvelope
     /// <param name="freqMedian">Percussive median length along frequency (bins, odd) — how "broadband" a strike must be to survive.</param>
     public PercussiveOnsetEnvelope(int frameSize = 1024, int hop = 512, int timeMedian = 17, int freqMedian = 17)
     {
-        if (frameSize < 2 || (frameSize & (frameSize - 1)) != 0)
-            throw new ArgumentException("frameSize must be a power of two >= 2.", nameof(frameSize));
-        if (hop < 1 || hop > frameSize)
-            throw new ArgumentOutOfRangeException(nameof(hop), "hop must be in [1, frameSize].");
+        Stft.ValidateFrameParams(frameSize, hop);
         if (timeMedian < 1 || freqMedian < 1)
             throw new ArgumentOutOfRangeException(nameof(timeMedian), "median lengths must be >= 1.");
 
@@ -62,7 +59,7 @@ public sealed class PercussiveOnsetEnvelope : IKickOnsetEnvelope
         if (sampleRate <= 2 * CrossoverHz || mono.Length < _frameSize)
             return Array.Empty<double>();
 
-        int frames = 1 + (mono.Length - _frameSize) / _hop;
+        int frames = Stft.FrameCount(mono.Length, _frameSize, _hop);
         double binHz = (double)sampleRate / _frameSize;
         int lowTopBin = Math.Min((int)(CrossoverHz / binHz), _frameSize / 2);
         // The percussive (frequency) median around a low bin reaches up by _freqRadius, so the spectrogram
@@ -71,17 +68,12 @@ public sealed class PercussiveOnsetEnvelope : IKickOnsetEnvelope
 
         // Magnitude spectrogram, low region only: spectro[frame * binsKept + bin].
         var spectro = new double[frames * binsKept];
-        var frame = new double[_frameSize];
-        for (int f = 0; f < frames; f++)
+        Stft.ForEachFrame(mono, _window, _hop, (f, mag) =>
         {
-            int start = f * _hop;
-            for (int i = 0; i < _frameSize; i++)
-                frame[i] = mono[start + i] * _window[i];
-            double[] mag = Fft.MagnitudeSpectrum(frame);
             int row = f * binsKept;
             for (int b = 0; b < binsKept; b++)
                 spectro[row + b] = mag[b];
-        }
+        });
 
         var energy = new double[frames];
         var timeWindow = new double[2 * _timeRadius + 1];
