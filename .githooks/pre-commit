@@ -1,0 +1,32 @@
+#!/bin/sh
+# Liveolator secret guard (pre-commit).
+# Blocks staged changes that add likely secrets (deploy hosts, keys, tokens).
+# Source of truth: .githooks/pre-commit  —  install with scripts/install-hooks.(sh|ps1)
+# Genuine false positive? Commit once with:  git commit --no-verify
+set -u
+
+# Added lines only, excluding the hook sources themselves (they contain the patterns).
+added=$(git diff --cached --no-color -U0 --diff-filter=ACM -- . ':(exclude).githooks' ':(exclude)scripts/install-hooks.*' 2>/dev/null \
+        | sed -n 's/^+\([^+].*\)/\1/p')
+[ -z "$added" ] && exit 0
+
+hits=""
+check() { if printf '%s\n' "$added" | grep -Eq "$2"; then hits="$hits
+  - $1"; fi; }
+
+check "private key block"               'BEGIN (OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY'
+check "GitHub token"                    '(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}'
+check "Slack token"                     'xox[baprs]-[A-Za-z0-9-]{10,}'
+check "AWS access key id"               'AKIA[0-9A-Z]{16}'
+check "SSH deploy target (root@<ip>)"   'root@([0-9]{1,3}\.){3}[0-9]{1,3}'
+check "production VPS IP"               '187\.124\.22\.93'
+check "hardcoded password/secret/token" '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'$<>{} ]{6,}'
+
+if [ -n "$hits" ]; then
+  printf '\nCOMMIT BLOCKED - possible secret(s) in staged changes:%s\n\n' "$hits" >&2
+  echo "Move it to an env var / local config (see scripts/publish-website-release.ps1" >&2
+  echo "for the LIVEOLATOR_VPS_* pattern), or if this is a false positive:" >&2
+  echo "  git commit --no-verify" >&2
+  exit 1
+fi
+exit 0

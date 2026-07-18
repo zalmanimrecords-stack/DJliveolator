@@ -53,6 +53,17 @@ dotnet test Liveolator.sln           # please run this before opening a PR
 `Liveolator.Core` is pure C# with no UI and no native dependencies, so its tests run
 anywhere without hardware. New logic in `Core` should come with tests.
 
+**Enable the git hooks once after cloning** — a secret guard that blocks committing or
+pushing deploy hosts, private keys, and tokens:
+
+```sh
+sh scripts/install-hooks.sh          # macOS / Linux / Git Bash
+pwsh scripts/install-hooks.ps1       # Windows / PowerShell
+```
+
+Never hardcode deploy targets or credentials in source; the release scripts read them
+from `LIVEOLATOR_VPS_*` environment variables.
+
 ## Coding conventions
 
 - **Match the surrounding code.** Naming, file size, and comment density should read

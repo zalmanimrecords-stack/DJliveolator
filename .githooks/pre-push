@@ -1,0 +1,29 @@
+#!/bin/sh
+# Liveolator secret guard (pre-push).
+# Blocks pushing commits that contain likely secrets - including OLD history
+# (e.g. a local branch created before the secret was scrubbed from master).
+# Source of truth: .githooks/pre-push  —  install with scripts/install-hooks.(sh|ps1)
+set -u
+
+z="0000000000000000000000000000000000000000"
+pat='187\.124\.22\.93|root@([0-9]{1,3}\.){3}[0-9]{1,3}|BEGIN (OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY|(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}'
+fail=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$z" ] && continue                       # deleting a ref
+  if [ "$remote_sha" = "$z" ]; then
+    commits=$(git rev-list "$local_sha" --not --remotes 2>/dev/null)   # new branch: only its new commits
+    [ -z "$commits" ] && commits=$(git rev-list -n 500 "$local_sha")
+  else
+    commits=$(git rev-list "$remote_sha..$local_sha")
+  fi
+  [ -z "$commits" ] && continue
+  # Scan the diffs of the outgoing commits (exclude the hook sources).
+  if git show --no-color $commits -- . ':(exclude).githooks' 2>/dev/null | grep -Eq "$pat"; then
+    echo "PUSH BLOCKED - commits headed for ${remote_ref:-remote} contain a secret" >&2
+    echo "(e.g. the production VPS IP). That history predates the secret scrub." >&2
+    echo "Rebase the branch onto clean master, or scrub it, before pushing." >&2
+    fail=1
+  fi
+done
+exit $fail
