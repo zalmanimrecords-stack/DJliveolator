@@ -17,6 +17,11 @@
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/zalmanimrecords-stack/DJliveolator/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/⬇_download-Windows%20installer-ff9f1c?logo=windows&logoColor=white"></a>
+  &nbsp;&nbsp;<a href="https://liveolator.zalmanim.com"><strong>liveolator.zalmanim.com</strong></a>
+</p>
+
 ---
 
 Liveolator is a **DJ + VJ performance instrument**: two decks with a real software
@@ -85,6 +90,12 @@ ASIO (Windows) and CoreAudio (macOS) are reached through the audio library; the 
 code only sees the platform-agnostic seam interfaces.
 
 ## Getting started
+
+**Just want to run it?** Grab the [latest Windows installer](https://github.com/zalmanimrecords-stack/DJliveolator/releases/latest)
+(self-contained — no .NET install needed), or download it from
+[liveolator.zalmanim.com](https://liveolator.zalmanim.com). macOS is in progress.
+
+**Building from source:**
 
 ```sh
 # 1. Fetch the BASS native libraries from un4seen (not bundled — see LICENSE).
