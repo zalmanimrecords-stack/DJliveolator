@@ -1,0 +1,35 @@
+name: Feature request / idea
+description: Suggest something Liveolator should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. For anything large, this is also the place to check the
+        direction fits **before** writing a big PR.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The performance/workflow need behind the idea, not just the feature.
+      placeholder: When I'm mixing live, I can't...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to help build it?
+      options:
+        - label: I'd be willing to work on a PR for this (after discussing the approach)
