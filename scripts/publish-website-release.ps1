@@ -38,9 +38,13 @@ param(
     [string]$NotesFile,
     [switch]$CaptureShots,
     [switch]$NoDeploy,
-    [string]$VpsHost = 'root@<VPS_HOST>',
-    [string]$VpsKey  = "$env:USERPROFILE\.ssh\<SSH_KEY>",
-    [string]$RemoteDir = '/docker/liveolator',
+    # VPS deploy target. Never hardcode the host/creds in source; set via env:
+    #   $env:LIVEOLATOR_VPS_HOST = 'root@<your-vps-ip>'
+    #   $env:LIVEOLATOR_VPS_KEY  = '<path-to-ssh-key>'   (optional)
+    #   $env:LIVEOLATOR_VPS_DIR  = '/docker/liveolator'  (optional)
+    [string]$VpsHost = $env:LIVEOLATOR_VPS_HOST,
+    [string]$VpsKey  = $(if ($env:LIVEOLATOR_VPS_KEY) { $env:LIVEOLATOR_VPS_KEY } else { "$env:USERPROFILE\.ssh\liveolator_deploy" }),
+    [string]$RemoteDir = $(if ($env:LIVEOLATOR_VPS_DIR) { $env:LIVEOLATOR_VPS_DIR } else { '/docker/liveolator' }),
     # How many recent installers to keep downloadable on the VPS (current build +
     # rollback buffer). Older ones are pruned. Must match DOWNLOADABLE in
     # website/src/pages/changelog.astro, which links the same count of versions.
@@ -219,6 +223,10 @@ Write-Utf8NoBom $NotesFile $template
 # --- Deploy --------------------------------------------------------------------
 if ($NoDeploy) {
     Write-Host "Local files updated. Skipping deploy (-NoDeploy)." -ForegroundColor Yellow
+    return
+}
+if (-not $VpsHost) {
+    Write-Warning "No VPS host set (`$env:LIVEOLATOR_VPS_HOST). Local files updated; skipping deploy."
     return
 }
 try {

@@ -25,9 +25,13 @@
 param(
     [switch]$Capture,
     [switch]$Deploy,
-    [string]$VpsHost = 'root@<VPS_HOST>',
-    [string]$VpsKey  = "$env:USERPROFILE\.ssh\<SSH_KEY>",
-    [string]$RemoteDir = '/docker/liveolator'
+    # VPS deploy target. Never hardcode the host/creds in source; set via env:
+    #   $env:LIVEOLATOR_VPS_HOST = 'root@<your-vps-ip>'   (required for -Deploy)
+    #   $env:LIVEOLATOR_VPS_KEY  = '<path-to-ssh-key>'    (optional)
+    #   $env:LIVEOLATOR_VPS_DIR  = '/docker/liveolator'   (optional)
+    [string]$VpsHost = $env:LIVEOLATOR_VPS_HOST,
+    [string]$VpsKey  = $(if ($env:LIVEOLATOR_VPS_KEY) { $env:LIVEOLATOR_VPS_KEY } else { "$env:USERPROFILE\.ssh\liveolator_deploy" }),
+    [string]$RemoteDir = $(if ($env:LIVEOLATOR_VPS_DIR) { $env:LIVEOLATOR_VPS_DIR } else { '/docker/liveolator' })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,6 +82,7 @@ Write-Host "Screenshots refreshed: $copied/$($map.Count) copied into website/pub
 
 # --- Optional deploy ------------------------------------------------------------
 if ($Deploy) {
+    if (-not $VpsHost) { Write-Warning "No VPS host set (`$env:LIVEOLATOR_VPS_HOST). Skipping deploy."; return }
     try {
         $sshOpts = @('-i', $VpsKey, '-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes')
         Push-Location (Join-Path $repoRoot 'website/public')
