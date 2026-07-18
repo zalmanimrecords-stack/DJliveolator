@@ -15,10 +15,7 @@ public sealed class OnsetEnvelope
 
     public OnsetEnvelope(int frameSize = 1024, int hop = 512)
     {
-        if (frameSize < 2 || (frameSize & (frameSize - 1)) != 0)
-            throw new ArgumentException("frameSize must be a power of two >= 2.", nameof(frameSize));
-        if (hop < 1 || hop > frameSize)
-            throw new ArgumentOutOfRangeException(nameof(hop), "hop must be in [1, frameSize].");
+        Stft.ValidateFrameParams(frameSize, hop);
 
         _frameSize = frameSize;
         _hop = hop;
@@ -37,18 +34,11 @@ public sealed class OnsetEnvelope
         if (mono.Length < _frameSize)
             return Array.Empty<double>();
 
-        int frames = 1 + (mono.Length - _frameSize) / _hop;
-        var flux = new double[frames];
-        var frame = new double[_frameSize];
+        var flux = new double[Stft.FrameCount(mono.Length, _frameSize, _hop)];
         double[]? prevMag = null;
 
-        for (int f = 0; f < frames; f++)
+        Stft.ForEachFrame(mono, _window, _hop, (f, mag) =>
         {
-            int start = f * _hop;
-            for (int i = 0; i < _frameSize; i++)
-                frame[i] = mono[start + i] * _window[i];
-
-            double[] mag = Fft.MagnitudeSpectrum(frame);
             if (prevMag is not null)
             {
                 double sum = 0.0;
@@ -61,7 +51,7 @@ public sealed class OnsetEnvelope
                 flux[f] = sum;
             }
             prevMag = mag;
-        }
+        });
 
         return flux;
     }

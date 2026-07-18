@@ -18,10 +18,7 @@ public sealed class ChromaExtractor
 
     public ChromaExtractor(int frameSize = 4096, int hop = 2048)
     {
-        if (frameSize < 2 || (frameSize & (frameSize - 1)) != 0)
-            throw new ArgumentException("frameSize must be a power of two >= 2.", nameof(frameSize));
-        if (hop < 1 || hop > frameSize)
-            throw new ArgumentOutOfRangeException(nameof(hop), "hop must be in [1, frameSize].");
+        Stft.ValidateFrameParams(frameSize, hop);
 
         _frameSize = frameSize;
         _hop = hop;
@@ -38,22 +35,15 @@ public sealed class ChromaExtractor
         int bins = _frameSize / 2 + 1;
         int[] pitchClassOfBin = BuildBinToPitchClassMap(bins, sampleRate);
 
-        var frame = new double[_frameSize];
-        int frames = 1 + (mono.Length - _frameSize) / _hop;
-        for (int f = 0; f < frames; f++)
+        Stft.ForEachFrame(mono, _window, _hop, (_, mag) =>
         {
-            int start = f * _hop;
-            for (int i = 0; i < _frameSize; i++)
-                frame[i] = mono[start + i] * _window[i];
-
-            double[] mag = Fft.MagnitudeSpectrum(frame);
             for (int b = 0; b < bins; b++)
             {
                 int pc = pitchClassOfBin[b];
                 if (pc >= 0)
                     chroma[pc] += mag[b];
             }
-        }
+        });
 
         double sum = 0;
         for (int i = 0; i < 12; i++) sum += chroma[i];

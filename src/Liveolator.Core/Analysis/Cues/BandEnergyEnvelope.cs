@@ -25,10 +25,7 @@ public sealed class BandEnergyEnvelope
     public BandEnergyEnvelope(
         int frameSize = 1024, int hop = 512, double lowCrossoverHz = 200.0, double highCrossoverHz = 2000.0)
     {
-        if (frameSize < 2 || (frameSize & (frameSize - 1)) != 0)
-            throw new ArgumentException("frameSize must be a power of two >= 2.", nameof(frameSize));
-        if (hop < 1 || hop > frameSize)
-            throw new ArgumentOutOfRangeException(nameof(hop), "hop must be in [1, frameSize].");
+        Stft.ValidateFrameParams(frameSize, hop);
         if (lowCrossoverHz <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(lowCrossoverHz), "Low crossover must be positive.");
         if (highCrossoverHz <= lowCrossoverHz)
@@ -61,21 +58,14 @@ public sealed class BandEnergyEnvelope
         int firstMidBin = Math.Clamp((int)Math.Ceiling(_lowCrossoverHz / binHz), 1, bins);
         int firstHighBin = Math.Clamp((int)Math.Ceiling(_highCrossoverHz / binHz), firstMidBin, bins);
 
-        int frames = 1 + (mono.Length - _frameSize) / _hop;
+        int frames = Stft.FrameCount(mono.Length, _frameSize, _hop);
         var low = new double[frames];
         var mid = new double[frames];
         var high = new double[frames];
         var broadband = new double[frames];
-        var frame = new double[_frameSize];
 
-        for (int f = 0; f < frames; f++)
+        Stft.ForEachFrame(mono, _window, _hop, (f, mag) =>
         {
-            int start = f * _hop;
-            for (int i = 0; i < _frameSize; i++)
-                frame[i] = mono[start + i] * _window[i];
-
-            double[] mag = Fft.MagnitudeSpectrum(frame);
-
             // Bin 0 is DC — excluded from every band so a track's offset doesn't masquerade as bass.
             double lowSum = 0.0, midSum = 0.0, highSum = 0.0;
             for (int i = 1; i < firstMidBin; i++)
@@ -89,7 +79,7 @@ public sealed class BandEnergyEnvelope
             mid[f] = midSum;
             high[f] = highSum;
             broadband[f] = lowSum + midSum + highSum;
-        }
+        });
 
         return new BandEnergyFrames(low, mid, high, broadband, FrameRateHz(sampleRate));
     }

@@ -191,8 +191,7 @@ We do **not** re-introduce projectM/MilkDrop binaries — this is our own GLSL c
 
 ## Phase 6 — UI: dynamic per-preset knobs (Avalonia, `Liveolator.App`) ✅ DONE
 
-- [x] [`PresetControlsViewModel`](../src/Liveolator.App/Features/Live/Modules/PresetControlsViewModel.cs) +
-      [`PresetOptionViewModel`](../src/Liveolator.App/Features/Live/Modules/PresetOptionViewModel.cs): for the
+- [x] [`PresetControlsViewModel`](../src/Liveolator.App/Features/Live/Modules/PresetControlsViewModel.cs): for the
       active preset it builds ≤5 `ContinuousControlViewModel`s labelled from `ControllableParameter.Label`,
       each emitting `VisualSetMacro` with the namespaced macro name — data-driven (count + labels from the
       preset, modelled on `MacroEncodersViewModel`). Knobs seed to the descriptor defaults via

@@ -49,50 +49,9 @@ public sealed class LibraryDoctor
 
         foreach (MusicTrack track in trackList)
         {
-            if (!_files.Exists(track.File.Path))
-            {
-                issues.Add(IssueFor(
-                    LibraryIssueKind.MissingFile,
-                    MediaIdentityKind.Music,
-                    track.File.Path,
-                    track.Title,
-                    $"Track file is missing: {track.File.Path}",
-                    LibraryRepairConfidence.Medium));
-                continue;
-            }
-
-            if (track.Status == MediaAnalysisStatus.Failed)
-            {
-                issues.Add(IssueFor(
-                    LibraryIssueKind.BrokenAnalysis,
-                    MediaIdentityKind.Music,
-                    track.File.Path,
-                    track.Title,
-                    track.Error is null ? "Track analysis failed." : $"Track analysis failed: {track.Error}",
-                    LibraryRepairConfidence.High));
-            }
-            else if (track.Bpm is null)
-            {
-                issues.Add(IssueFor(
-                    LibraryIssueKind.UnanalyzedTrack,
-                    MediaIdentityKind.Music,
-                    track.File.Path,
-                    track.Title,
-                    "Track has no BPM analysis.",
-                    LibraryRepairConfidence.High));
-            }
-            else if (track.Status == MediaAnalysisStatus.PartiallyAnalyzed
-                     || track.Bpm.Confidence < 0.35
-                     || track.Key?.Confidence < 0.2)
-            {
-                issues.Add(IssueFor(
-                    LibraryIssueKind.LowConfidenceAnalysis,
-                    MediaIdentityKind.Music,
-                    track.File.Path,
-                    track.Title,
-                    "Track analysis is low-confidence.",
-                    LibraryRepairConfidence.Medium));
-            }
+            LibraryIssue? issue = ClassifyTrack(track);
+            if (issue is not null)
+                issues.Add(issue);
         }
 
         foreach (VisualAsset asset in visualList)
@@ -147,6 +106,51 @@ public sealed class LibraryDoctor
             0,
             blockers is null ? Array.Empty<string>() : blockers.ToList());
         return new LibraryRepairPlan(actions.ToList(), preview);
+    }
+
+    // Health of a single music track: a missing file, then (for present files) failed / unanalyzed /
+    // low-confidence analysis — at most one issue per track. Returns null when the track is healthy.
+    private LibraryIssue? ClassifyTrack(MusicTrack track)
+    {
+        if (!_files.Exists(track.File.Path))
+            return IssueFor(
+                LibraryIssueKind.MissingFile,
+                MediaIdentityKind.Music,
+                track.File.Path,
+                track.Title,
+                $"Track file is missing: {track.File.Path}",
+                LibraryRepairConfidence.Medium);
+
+        if (track.Status == MediaAnalysisStatus.Failed)
+            return IssueFor(
+                LibraryIssueKind.BrokenAnalysis,
+                MediaIdentityKind.Music,
+                track.File.Path,
+                track.Title,
+                track.Error is null ? "Track analysis failed." : $"Track analysis failed: {track.Error}",
+                LibraryRepairConfidence.High);
+
+        if (track.Bpm is null)
+            return IssueFor(
+                LibraryIssueKind.UnanalyzedTrack,
+                MediaIdentityKind.Music,
+                track.File.Path,
+                track.Title,
+                "Track has no BPM analysis.",
+                LibraryRepairConfidence.High);
+
+        if (track.Status == MediaAnalysisStatus.PartiallyAnalyzed
+            || track.Bpm.Confidence < 0.35
+            || track.Key?.Confidence < 0.2)
+            return IssueFor(
+                LibraryIssueKind.LowConfidenceAnalysis,
+                MediaIdentityKind.Music,
+                track.File.Path,
+                track.Title,
+                "Track analysis is low-confidence.",
+                LibraryRepairConfidence.Medium);
+
+        return null;
     }
 
     private static LibraryIssue IssueFor(
