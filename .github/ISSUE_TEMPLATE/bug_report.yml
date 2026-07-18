@@ -1,0 +1,62 @@
+name: Bug report
+description: Something isn't working the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more concrete this is, the
+        faster it can be fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong?
+      placeholder: I loaded a track onto deck B and the app...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A numbered list we can follow exactly.
+      placeholder: |
+        1. Open the LIVE tab
+        2. Load a track onto deck A
+        3. Press SYNC
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Liveolator version or commit
+      description: The version from Settings, or the git commit you built.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Attach the app log if you can. On Windows it's at
+        `%APPDATA%\Liveolator\logs\liveolator.log` (Settings → Diagnostics).
+      render: text
+    validations:
+      required: false

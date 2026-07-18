@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Website
+    url: https://liveolator.zalmanim.com
+    about: What Liveolator is, with screenshots.
+  - name: Questions & discussion
+    url: https://github.com/zalmanimrecords-stack/DJliveolator/discussions
+    about: Ask a question or share an idea before it becomes a formal issue.
