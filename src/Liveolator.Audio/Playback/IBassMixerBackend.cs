@@ -74,6 +74,13 @@ internal interface IBassMixerBackend : IDisposable
     /// </summary>
     void SetStemEnabled(int deckHandle, Core.Analysis.Stems.StemKind kind, bool enabled);
 
+    /// <summary>
+    /// Set one stem's volume to a continuous 0..1 level (doc 32 §2b, DJ PRO stem knobs): the same click-free
+    /// ramp as <see cref="SetStemEnabled"/>, but to an arbitrary target rather than just mute/unmute. A
+    /// no-op for an unknown handle or a single-file deck.
+    /// </summary>
+    void SetStemVolume(int deckHandle, Core.Analysis.Stems.StemKind kind, double volume);
+
     /// <summary>The deck's current playback position in seconds from the track start (0 if unknown).</summary>
     double GetDeckPositionSeconds(int deckHandle);
 

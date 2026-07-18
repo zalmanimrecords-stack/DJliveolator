@@ -100,6 +100,7 @@ public class DeckActionHandlerTests
     {
         private readonly bool[] _playing;
         private readonly bool[] _sync;
+        private readonly SyncMode[] _syncMode;
         private readonly bool[] _quantize;
         private readonly bool[] _keyLock;
         private readonly double[] _position;
@@ -107,6 +108,7 @@ public class DeckActionHandlerTests
         private readonly double[] _baseBpm;
         private readonly double[] _bpm;
         private readonly double[] _firstBeat;
+        private readonly IReadOnlyList<double>[] _kickOnsets;
         private readonly double[] _loopBeats;
 
         /// <summary>Downbeat anchor last routed to the engine per slot (0 = never set / cleared).</summary>
@@ -129,6 +131,7 @@ public class DeckActionHandlerTests
         {
             _playing = new bool[deckCount];
             _sync = new bool[deckCount];
+            _syncMode = new SyncMode[deckCount];
             _quantize = new bool[deckCount];
             _keyLock = new bool[deckCount];
             _position = new double[deckCount];
@@ -136,6 +139,7 @@ public class DeckActionHandlerTests
             _baseBpm = new double[deckCount];
             _bpm = new double[deckCount];
             _firstBeat = new double[deckCount];
+            _kickOnsets = Enumerable.Repeat<IReadOnlyList<double>>(Array.Empty<double>(), deckCount).ToArray();
             _loopBeats = new double[deckCount];
             _stemDeck = new bool[deckCount];
             Downbeats = new double[deckCount];
@@ -210,12 +214,25 @@ public class DeckActionHandlerTests
 
         public double DeckFirstBeat(int slot) => _firstBeat[slot];
         public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+        public IReadOnlyList<double> DeckKickOnsets(int slot) => _kickOnsets[slot];
+        public void SetDeckKickOnsets(int slot, IReadOnlyList<double> kickOnsetsSeconds)
+            => _kickOnsets[slot] = kickOnsetsSeconds.ToArray();
         public void SetDeckDownbeat(int slot, double downbeatSeconds) => Downbeats[slot] = downbeatSeconds;
+        public readonly Dictionary<int, bool> PhaseSyncReadyBySlot = new();
+        public bool DeckPhaseSyncReady(int slot) => !PhaseSyncReadyBySlot.TryGetValue(slot, out bool r) || r;
+        public void SetDeckPhaseSyncReady(int slot, bool ready) => PhaseSyncReadyBySlot[slot] = ready;
         // Mirrors the real engine: one-shot SYNC engages key-lock to preserve the key across the beatmatch.
         public void SyncOnce(int slot) { SyncOnceCalls.Add(slot); _keyLock[slot] = true; }
 
         public bool IsSyncLocked(int slot) => _sync[slot];
-        public void SetSyncLock(int slot, bool enabled) => _sync[slot] = enabled;
+        public void SetSyncLock(int slot, bool enabled)
+        {
+            _sync[slot] = enabled;
+            if (enabled)
+                _keyLock[slot] = true;
+        }
+        public SyncMode DeckSyncMode(int slot) => _syncMode[slot];
+        public void SetDeckSyncMode(int slot, SyncMode mode) => _syncMode[slot] = mode;
 
         // A synced deck reports Active and makes the other deck the master â€” enough for the handler's
         // feedback translation; the real lock-state machine lives in the engine.
@@ -258,6 +275,18 @@ public class DeckActionHandlerTests
             StemMutes.Add((slot, kind, muted));
             if (_stemDeck[slot]) // a single-file deck ignores mute, mirroring the real engine
                 _stemMuted[(slot, kind)] = muted;
+        }
+
+        // Per-stem gain (DJ PRO stem knobs). Unity (1.0) until set; a single-file deck ignores it.
+        public List<(int Slot, StemKind Kind, double Gain)> StemGains { get; } = new();
+        private readonly Dictionary<(int Slot, StemKind Kind), double> _stemGain = new();
+        public double StemGainOf(int slot, StemKind kind)
+            => _stemGain.TryGetValue((slot, kind), out double g) ? g : 1.0;
+        public void SetStemGain(int slot, StemKind kind, double gain)
+        {
+            StemGains.Add((slot, kind, gain));
+            if (_stemDeck[slot]) // a single-file deck ignores gain, mirroring the real engine
+                _stemGain[(slot, kind)] = gain;
         }
 
         public int HotCueCount => 8;
@@ -323,6 +352,64 @@ public class DeckActionHandlerTests
 
         Assert.Equal(128.0, engine.DeckBaseBpm(1), precision: 6);
         Assert.Equal(0.0, engine.DeckBaseBpm(0), precision: 6); // other deck untouched
+    }
+
+    [Fact]
+    public void DeckSetPhaseSyncReady_ForwardsGateToEngine_AndEchoesFeedback()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetPhaseSyncReady, ActionInputMode.Absolute, Value: 0.0, Slot: 1)); // grid uncertain
+
+        Assert.False(engine.DeckPhaseSyncReady(1));
+        Assert.True(engine.DeckPhaseSyncReady(0)); // other deck untouched (defaults confident)
+        // Feedback IsActive tracks the gate so a deck UI can show "grid uncertain" when inactive.
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSetPhaseSyncReady, 1).IsActive);
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSetPhaseSyncReady, 0).IsActive);
+    }
+
+    [Fact]
+    public void DeckTempoSyncToggle_EngagesTempoOnly_AndLightsOnlyTheTempoButton()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckTempoSyncToggle, Slot: 1));
+
+        Assert.True(engine.IsSyncLocked(1));
+        Assert.Equal(SyncMode.TempoOnly, engine.DeckSyncMode(1));
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckTempoSyncToggle, 1).IsActive);
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive); // SYNC button stays dark
+    }
+
+    [Fact]
+    public void DeckSyncToggle_WhileTempoSynced_SwitchesToBeatLock_WithoutReleasing()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckTempoSyncToggle, Slot: 1)); // tempo sync on
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1)); // press SYNC
+
+        Assert.True(engine.IsSyncLocked(1));                     // still engaged (mode switch, not release)
+        Assert.Equal(SyncMode.BeatLock, engine.DeckSyncMode(1));
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckSyncToggle, 1).IsActive);
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckTempoSyncToggle, 1).IsActive);
+    }
+
+    [Fact]
+    public void DeckTempoSyncToggle_WhenAlreadyTempoSynced_ReleasesTheLatch()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckTempoSyncToggle, Slot: 1));
+        Assert.True(engine.IsSyncLocked(1));
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckTempoSyncToggle, Slot: 1)); // press again
+
+        Assert.False(engine.IsSyncLocked(1));
     }
 
     [Fact]
@@ -605,6 +692,26 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
+    public void SyncToggle_EchoesKeyLockFeedback_SoTheKeyLockButtonLights()
+    {
+        // Top-level SYNC preserves key in the engine; the handler must re-emit DeckKeyLockToggle feedback
+        // so the on-screen KEY LOCK button reflects the deck's audible path after sync engages.
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+        ActionFeedbackState? keyLockFeedback = null;
+        handler.FeedbackChanged += (_, change) =>
+        {
+            if (change.Kind == PerformanceActionKind.DeckKeyLockToggle && change.Slot == 1)
+                keyLockFeedback = change.State;
+        };
+
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckSyncToggle, Slot: 1));
+
+        Assert.NotNull(keyLockFeedback);
+        Assert.True(keyLockFeedback!.IsActive);
+    }
+
+    [Fact]
     public void EngineSyncStateTransition_ReEmitsSyncToggleFeedback()
     {
         // The continuous loop moves the lock state with no action dispatched; the handler must turn each
@@ -676,6 +783,37 @@ public class DeckActionHandlerTests
 
         Assert.False(engine.IsStemMuted(0, StemKind.Vocals)); // ignored — not a stem deck
         Assert.False(handler.GetFeedback(PerformanceActionKind.DeckStemMute, 0).IsAvailable);
+    }
+
+    [Fact]
+    public void StemGain_SetsTheRequestedStemAndSlot_AndReportsAvailable()
+    {
+        var engine = new FakeMultiDeckEngine();
+        engine.SetStemDeck(1, true);
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckStemGain, ActionInputMode.Absolute,
+            Value: 0.4, Slot: 1, Argument: nameof(StemKind.Drums)));
+
+        Assert.Equal(0.4, engine.StemGainOf(1, StemKind.Drums), 3);
+        Assert.Equal(1.0, engine.StemGainOf(0, StemKind.Drums), 3);   // other deck untouched
+        Assert.Equal(1.0, engine.StemGainOf(1, StemKind.Bass), 3);    // other stem untouched
+        Assert.True(handler.GetFeedback(PerformanceActionKind.DeckStemGain, 1).IsAvailable);
+    }
+
+    [Fact]
+    public void StemGain_OnSingleFileDeck_IsANoOp_AndFeedbackReportsUnavailable()
+    {
+        var engine = new FakeMultiDeckEngine(); // no slot marked as a stem deck
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckStemGain, ActionInputMode.Absolute,
+            Value: 0.5, Slot: 0, Argument: nameof(StemKind.Vocals)));
+
+        Assert.Equal(1.0, engine.StemGainOf(0, StemKind.Vocals), 3); // ignored — not a stem deck
+        Assert.False(handler.GetFeedback(PerformanceActionKind.DeckStemGain, 0).IsAvailable);
     }
 
     [Fact]
@@ -1091,6 +1229,23 @@ public class DeckActionHandlerTests
             PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute, Value: 0.347, Slot: 1));
 
         Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    [Fact]
+    public void DeckSetFirstBeat_WithKickOnsetArgument_ThreadsKickOnsetsToTheEngine()
+    {
+        var engine = new FakeMultiDeckEngine();
+        var handler = new DeckActionHandler(engine);
+
+        handler.Handle(new PerformanceAction(
+            PerformanceActionKind.DeckSetFirstBeat,
+            ActionInputMode.Absolute,
+            Value: 0.347,
+            Slot: 1,
+            Argument: "1.25;0.75;bad;-1"));
+
+        Assert.Equal(0.347, engine.DeckFirstBeat(1), precision: 6);
+        Assert.Equal(new[] { 0.75, 1.25 }, engine.DeckKickOnsets(1));
     }
 
     // --- Downbeat (bar-1 "one") anchor seam ---

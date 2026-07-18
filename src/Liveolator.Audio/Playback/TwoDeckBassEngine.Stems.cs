@@ -46,4 +46,24 @@ public sealed partial class TwoDeckBassEngine
             _backend.SetStemEnabled(deck.Handle, kind, enabled: !muted);
         }
     }
+
+    public void SetStemGain(int slot, StemKind kind, double gain)
+    {
+        ValidateSlot(slot);
+        int index = StemSet.IndexOf(kind);
+        if (index < 0)
+            return;
+        lock (_gate)
+        {
+            DeckSlot s = _slots[slot];
+            // Nothing loaded, or a plain single-file deck: a gain change has no meaning, so no-op rather than
+            // touch the backend (mirrors SetStemMuted).
+            if (s.Deck is not { } deck || !s.IsStemDeck)
+                return;
+            // ponytail: gain and mute both drive the stem decoder's volume (last write wins). Compose them
+            // (volume = muted ? 0 : gain) only if a surface ever shows BOTH stem controls on one deck at once
+            // — the DJ tab has mute only, the DJ PRO tab has the gain knob only, so today they never collide.
+            _backend.SetStemVolume(deck.Handle, kind, gain);
+        }
+    }
 }

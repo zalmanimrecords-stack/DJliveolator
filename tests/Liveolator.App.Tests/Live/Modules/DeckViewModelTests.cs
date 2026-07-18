@@ -835,10 +835,10 @@ public sealed class DeckViewModelTests
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public async Task Sync_EmitsMomentaryDeckSyncOnce_ForItsSlot(int slot)
+    public async Task Sync_EmitsToggleDeckSyncLock_ForItsSlot(int slot)
     {
-        // The on-screen SYNC is a ONE-SHOT (owner requirement): a single press beatmatches + snaps phase
-        // once, then leaves the deck free. It emits the momentary DeckSyncOnce, never the continuous latch.
+        // The on-screen SYNC is the top-level sync lock: a press beatmatches, snaps phase, then keeps the
+        // deck locked until the performer presses it again.
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot, dispatcher);
 
@@ -849,15 +849,15 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         PerformanceAction action = Assert.Single(dispatcher.Dispatched);
-        Assert.Equal(PerformanceActionKind.DeckSyncOnce, action.Kind);
-        Assert.Equal(ActionInputMode.Momentary, action.InputMode);
+        Assert.Equal(PerformanceActionKind.DeckSyncToggle, action.Kind);
+        Assert.Equal(ActionInputMode.Toggle, action.InputMode);
         Assert.Equal(slot, action.Slot);
     }
 
     [Fact]
-    public async Task Sync_IsOneShot_EachPressEmitsDeckSyncOnce_WithNoLatchedState()
+    public async Task Sync_EachPressEmitsDeckSyncToggle()
     {
-        // Not a latch: every press is an independent one-shot, and the button holds no engaged state.
+        // The latch state belongs to the engine feedback; the VM emits the same toggle action on each press.
         var dispatcher = new FakeDispatcher();
         var vm = new DeckViewModel(slot: 0, dispatcher);
 
@@ -865,7 +865,7 @@ public sealed class DeckViewModelTests
         await vm.SyncCommand.Execute().ToTask();
 
         Assert.Equal(2, dispatcher.Dispatched.Count);
-        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncOnce, a.Kind));
+        Assert.All(dispatcher.Dispatched, a => Assert.Equal(PerformanceActionKind.DeckSyncToggle, a.Kind));
     }
 
     [Fact]
@@ -1397,6 +1397,62 @@ public sealed class DeckViewModelTests
 
         // The load already carried a BPM, so no self-heal grid actions are emitted.
         Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetGridBpm);
+    }
+
+    // --- Grid-confidence gate (SYNC-BEHAVIOR-SPEC §7): the deck pushes the phase-sync gate on load ---
+
+    [Fact]
+    public void Load_WithConfidentGrid_DispatchesPhaseSyncReadyOn()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, 0.29)
+        {
+            GridCoherence = 0.85, TempoStabilityBpmDelta = 0.0, // clean, stable grid
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => analysis);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\a.flac"));
+
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetPhaseSyncReady && a.Value == 1.0 && a.Slot == 0);
+    }
+
+    [Fact]
+    public void Load_WithLowGridConfidence_DispatchesPhaseSyncReadyOff()
+    {
+        var dispatcher = new FakeDispatcher();
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, 0.29)
+        {
+            GridCoherence = 0.30, TempoStabilityBpmDelta = 0.0, // coherence below the phase-sync floor
+        };
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => analysis);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\a.flac"));
+
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetPhaseSyncReady && a.Value == 0.0 && a.Slot == 0);
+    }
+
+    [Fact]
+    public void Load_WithPreV9Grid_DoesNotDispatchPhaseSyncReady_PreservingPhaseSync()
+    {
+        var dispatcher = new FakeDispatcher();
+        // An older catalog track: no grid-confidence signals (both null) → Unknown → leave the gate alone.
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, 0.29);
+        var vm = new DeckViewModel(
+            slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
+            trackInfo: null, analysisInfo: _ => analysis);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\a.flac"));
+
+        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetPhaseSyncReady);
     }
 
     // --- Background BPM analysis: a load with no analysis anywhere self-heals by analyzing the file ---
@@ -2177,6 +2233,82 @@ public sealed class DeckViewModelTests
 
         Assert.False(vm.IsSyncOutOfRange); // deck B's state must not leak onto deck A
     }
+
+    // --- Sync mode taxonomy UI (SYNC-BEHAVIOR-SPEC §4/§11): TEMPO button + independent mode lighting ---
+
+    [Fact]
+    public async Task TempoSyncCommand_EmitsDeckTempoSyncToggle_ForItsSlot()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 1, dispatcher);
+
+        await vm.TempoSyncCommand.Execute().ToTask();
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.DeckTempoSyncToggle, action.Kind);
+        Assert.Equal(ActionInputMode.Toggle, action.InputMode);
+        Assert.Equal(1, action.Slot);
+    }
+
+    [Fact]
+    public void SyncAndTempoButtons_LightIndependently_FromTheirModeFeedback()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // Deck engaged in tempo-only mode: DeckTempoSyncToggle active, DeckSyncToggle inactive.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckTempoSyncToggle, 0, ModeFeedback(active: true, SyncLockState.Active));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, ModeFeedback(active: false, SyncLockState.Active));
+
+        Assert.True(vm.IsTempoSync);
+        Assert.False(vm.IsSync);
+
+        // Switch to Sync Lock: SYNC lights, TEMPO clears (one shared latch → never both).
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, ModeFeedback(active: true, SyncLockState.Locked));
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckTempoSyncToggle, 0, ModeFeedback(active: false, SyncLockState.Locked));
+
+        Assert.True(vm.IsSync);
+        Assert.False(vm.IsTempoSync);
+    }
+
+    [Fact]
+    public void SyncButton_ShowsLockedTight_OnlyWhenFullyLocked()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+
+        // Pulling in (Active): engaged, not yet in the pocket.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, ModeFeedback(active: true, SyncLockState.Active));
+        Assert.True(vm.IsSync);
+        Assert.False(vm.IsSyncLockedTight);
+
+        // In the pocket (Locked): the green locked look.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, ModeFeedback(active: true, SyncLockState.Locked));
+        Assert.True(vm.IsSyncLockedTight);
+
+        // Recovering (Drifting): engaged, no longer tight.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 0, ModeFeedback(active: true, SyncLockState.Drifting));
+        Assert.False(vm.IsSyncLockedTight);
+    }
+
+    [Fact]
+    public void GridUncertain_LightsWhenPhaseSyncIsNotReady()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, dispatcher);
+        Assert.False(vm.IsGridUncertain);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetPhaseSyncReady, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0)); // grid uncertain → tempo-only
+        Assert.True(vm.IsGridUncertain);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSetPhaseSyncReady, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 1)); // grid confident again
+        Assert.False(vm.IsGridUncertain);
+    }
+
+    private static ActionFeedbackState ModeFeedback(bool active, SyncLockState state)
+        => new(IsActive: active, IsAvailable: true, Value: (double)state, Argument: state.ToString());
 
     [Fact]
     public void IsSyncOutOfRange_IsSeededFromInitialFeedback()

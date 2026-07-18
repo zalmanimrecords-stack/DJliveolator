@@ -59,15 +59,15 @@ public class DdjFlx4ProfileTests
     }
 
     [Fact]
-    public void Default_MapsSyncOnce_PerDeck()
+    public void Default_MapsSyncLock_PerDeck()
     {
-        // SYNC is a one-shot beatmatch (tempo + phase), not a persistent latch — a press fires a
-        // momentary DeckSyncOnce, leaving the deck free for manual fine-tuning afterwards.
-        ControllerBinding deck1 = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 0);
-        ControllerBinding deck2 = SingleFor(PerformanceActionKind.DeckSyncOnce, slot: 1);
+        // SYNC is the top-level sync lock, matching the on-screen SYNC control. Toggle bindings fire only
+        // on the press edge, so MIDI note release does not immediately undo the lock.
+        ControllerBinding deck1 = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 0);
+        ControllerBinding deck2 = SingleFor(PerformanceActionKind.DeckSyncToggle, slot: 1);
 
-        Assert.Equal(ActionInputMode.Momentary, deck1.InputMode);
-        Assert.Equal(ActionInputMode.Momentary, deck2.InputMode);
+        Assert.Equal(ActionInputMode.Toggle, deck1.InputMode);
+        Assert.Equal(ActionInputMode.Toggle, deck2.InputMode);
     }
 
     [Fact]

@@ -156,6 +156,36 @@ public sealed class DjBrowserViewModelTests
     }
 
     [Fact]
+    public void StepAndLoad_from_nothing_selected_takes_the_first_track_and_loads_it()
+    {
+        var browser = Build(out FakeDispatcher dispatcher);
+        // Default sort is BPM ascending → first row is Bloom (122).
+        browser.StepAndLoad(slot: 0, step: +1);
+
+        Assert.Equal("Bloom", browser.SelectedTrack!.Title);
+        Assert.Contains(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckLoadTrack && a.Slot == 0);
+    }
+
+    [Fact]
+    public void StepAndLoad_advances_and_clamps_at_the_ends()
+    {
+        var browser = Build(out _);
+        browser.SelectedTrack = browser.Tracks[0]; // Bloom (122)
+
+        browser.StepAndLoad(slot: 1, step: +1);
+        Assert.Equal("Aurora", browser.SelectedTrack!.Title); // 128
+
+        browser.StepAndLoad(slot: 1, step: +1);
+        Assert.Equal("Crystal", browser.SelectedTrack!.Title); // 140 (last)
+
+        browser.StepAndLoad(slot: 1, step: +1); // clamp at the end
+        Assert.Equal("Crystal", browser.SelectedTrack!.Title);
+
+        browser.StepAndLoad(slot: 1, step: -1);
+        Assert.Equal("Aurora", browser.SelectedTrack!.Title);
+    }
+
+    [Fact]
     public void Browser_exposes_no_scan_or_import_surface()
     {
         // The DJ-tab browser must never carry the CPU-heavy setup actions (scan/rescan/import/auto-cue) —

@@ -233,4 +233,31 @@ public enum PerformanceActionKind
     /// (lit = playing), so a per-stem button reflects state; IsAvailable = the deck is a stem deck.
     /// </summary>
     DeckStemMute,
+
+    /// <summary>
+    /// Set one stem's volume on a stem deck to a continuous 0..1 level (doc 32 §2b, DJ PRO stem knobs):
+    /// Slot = A/B, Argument = the <see cref="Analysis.Stems.StemKind"/> name, Value = 0..1 gain (Absolute).
+    /// Distinct from <see cref="DeckStemMute"/> (a per-transition on/off) — this is the always-on stem level
+    /// knob. A no-op for a single-file deck; reset to unity on load. Feedback echoes the set Value with the
+    /// stem name in Argument and IsAvailable = the deck is a stem deck.
+    /// </summary>
+    DeckStemGain,
+
+    /// <summary>
+    /// Set whether a deck's analyzed beatgrid is trustworthy enough to PHASE-sync: Slot = A/B, Value = 1
+    /// (grid confident — offer beat/phase sync) or 0 (grid uncertain — Sync tempo-matches only, no phase
+    /// align). The gate decision is computed in Core from the track's grid-confidence signals
+    /// (<see cref="Liveolator.Core.Analysis.Bpm.GridConfidenceCalculator"/>) and fed on load, like the
+    /// downbeat. Never touches audible pitch. Echoed as feedback so a deck UI can show "grid uncertain"
+    /// (SYNC-BEHAVIOR-SPEC §7). Defaults to confident/preserve until a track with signals loads.
+    /// </summary>
+    DeckSetPhaseSyncReady,
+
+    /// <summary>
+    /// Toggle persistent TEMPO-ONLY sync to the other deck (SYNC-BEHAVIOR-SPEC §4): beatmatch and keep
+    /// following the master's tempo, but never align or correct the beat phase — the DJ rides the "one" by
+    /// hand. The tempo-only alternate to <see cref="DeckSyncToggle"/> (Sync Lock); the two share one latch,
+    /// so engaging either switches the deck's sync mode. Owned by the deck handler.
+    /// </summary>
+    DeckTempoSyncToggle,
 }

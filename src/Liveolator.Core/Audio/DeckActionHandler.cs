@@ -33,6 +33,7 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckCuePlay,
         PerformanceActionKind.DeckSyncOnce,
         PerformanceActionKind.DeckSyncToggle,
+        PerformanceActionKind.DeckTempoSyncToggle,
         PerformanceActionKind.DeckQuantizeToggle,
         PerformanceActionKind.DeckKeyLockToggle,
         PerformanceActionKind.DeckHotCue,
@@ -43,8 +44,10 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.DeckLoopDouble,
         PerformanceActionKind.DeckSetFirstBeat,
         PerformanceActionKind.DeckSetDownbeat,
+        PerformanceActionKind.DeckSetPhaseSyncReady,
         PerformanceActionKind.DeckSetGridBpm,
         PerformanceActionKind.DeckStemMute,
+        PerformanceActionKind.DeckStemGain,
     };
 
     // A monotonic seconds source used to time jog ticks (for velocity) and to release a stale bend. A
@@ -138,6 +141,8 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 // holds the full BpmResult (doc 11 / doc 22 A1). Echoed as feedback so the deck UI can
                 // anchor its beat/bar grid on the same downbeat the engine syncs to (grid sits on the kick).
                 _engine.SetDeckFirstBeat(slot, action.Value);
+                if (!string.IsNullOrWhiteSpace(action.Argument))
+                    _engine.SetDeckKickOnsets(slot, DeckKickOnsetCodec.Decode(action.Argument));
                 RaiseFeedback(PerformanceActionKind.DeckSetFirstBeat, slot, ValueFeedback(action.Value));
                 break;
             case PerformanceActionKind.DeckSetDownbeat:
@@ -148,6 +153,14 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 _engine.SetDeckDownbeat(slot, action.Value);
                 _downbeats[slot] = action.Value;
                 RaiseFeedback(PerformanceActionKind.DeckSetDownbeat, slot, ValueFeedback(action.Value));
+                break;
+            case PerformanceActionKind.DeckSetPhaseSyncReady:
+                // Grid-confidence gate (SYNC-BEHAVIOR-SPEC §7): Value 1 = grid trustworthy (offer phase
+                // sync), 0 = uncertain (Sync tempo-matches only). Computed in Core from the track's grid
+                // signals and fed on load. Echoed so a deck UI can show "grid uncertain"; never audible.
+                _engine.SetDeckPhaseSyncReady(slot, action.Value != 0);
+                RaiseFeedback(
+                    PerformanceActionKind.DeckSetPhaseSyncReady, slot, ActiveFeedback(action.Value != 0));
                 break;
             case PerformanceActionKind.DeckPlayPause:
                 _engine.PlayPause(slot);
@@ -230,7 +243,10 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, slot, ActiveFeedback(_engine.IsKeyLockEnabled(slot)));
                 break;
             case PerformanceActionKind.DeckSyncToggle:
-                ToggleSync(slot);
+                ToggleSync(slot, SyncMode.BeatLock);
+                break;
+            case PerformanceActionKind.DeckTempoSyncToggle:
+                ToggleSync(slot, SyncMode.TempoOnly);
                 break;
             case PerformanceActionKind.DeckQuantizeToggle:
                 ToggleQuantize(slot);
@@ -249,6 +265,9 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
                 break;
             case PerformanceActionKind.DeckStemMute:
                 ToggleStemMute(slot, action);
+                break;
+            case PerformanceActionKind.DeckStemGain:
+                SetStemGain(slot, action);
                 break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
@@ -309,7 +328,12 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     private void RaiseStemFeedback(int slot)
     {
         foreach (StemKind kind in StemSet.RequiredStems)
+        {
             RaiseFeedback(PerformanceActionKind.DeckStemMute, slot, StemFeedback(slot, kind));
+            // Gain resets to unity on load; push it so the DJ PRO stem knobs seed to full and reflect
+            // availability (enabled only for an actual stem deck).
+            RaiseFeedback(PerformanceActionKind.DeckStemGain, slot, StemGainFeedback(slot, kind, 1.0));
+        }
     }
 
     private void SetLoop(int slot, PerformanceAction action)
@@ -349,6 +373,25 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         RaiseFeedback(PerformanceActionKind.DeckStemMute, slot, StemFeedback(slot, kind));
     }
 
+    // Absolute per-stem gain (DJ PRO stem knobs): set the stem's volume and echo the value so the knob and
+    // any mapped controller stay in sync. The engine no-ops for a single-file deck; IsAvailable tells the
+    // knob whether it is live.
+    private void SetStemGain(int slot, PerformanceAction action)
+    {
+        StemKind kind = ParseStemKind(action.Argument);
+        _engine.SetStemGain(slot, kind, action.Value);
+        RaiseFeedback(PerformanceActionKind.DeckStemGain, slot, StemGainFeedback(slot, kind, action.Value));
+    }
+
+    // DeckStemGain feedback: Value = the stem's gain, Argument = the stem name (so one push updates the
+    // matching knob), IsAvailable = the deck is actually a stem deck.
+    private ActionFeedbackState StemGainFeedback(int slot, StemKind kind, double gain)
+        => new(
+            IsActive: true,
+            IsAvailable: _engine.IsStemDeck(slot),
+            Value: gain,
+            Argument: kind.ToString());
+
     // DeckStemMute feedback: IsActive = the stem is AUDIBLE (lit = playing, per the design line), Argument =
     // the stem name so one push updates the matching button, IsAvailable = the deck is actually a stem deck.
     private ActionFeedbackState StemFeedback(int slot, StemKind kind)
@@ -367,25 +410,53 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
         return kind;
     }
 
-    private void ToggleSync(int slot)
+    // The two sync-mode toggles (SYNC = BeatLock, TEMPO = TempoOnly) share ONE latch (SYNC-BEHAVIOR-SPEC
+    // §4). Pressing a mode's button engages that mode when not already synced in it, disengages when it is,
+    // and SWITCHES mode when the deck is synced in the other mode (so TEMPO while Sync-Locked drops to
+    // tempo-only without releasing, and vice-versa) — never a jarring release-then-re-engage.
+    private void ToggleSync(int slot, SyncMode mode)
     {
-        _engine.SetSyncLock(slot, !_engine.IsSyncLocked(slot));
-        RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncFeedback(slot));
+        if (_engine.IsSyncLocked(slot) && _engine.DeckSyncMode(slot) == mode)
+            _engine.SetSyncLock(slot, false);        // pressing the active mode's button releases the latch
+        else if (_engine.IsSyncLocked(slot))
+            _engine.SetDeckSyncMode(slot, mode);     // synced in the other mode → switch mode, stay engaged
+        else
+        {
+            _engine.SetDeckSyncMode(slot, mode);     // set the mode BEFORE engaging so engage takes the right phase path
+            _engine.SetSyncLock(slot, true);
+        }
+        RaiseSyncModeFeedback(slot);
         RaiseFeedback(PerformanceActionKind.DeckPitch, slot, ValueFeedback(_engine.PitchPosition(slot)));
         RaiseBpmFeedback(slot);
         RaiseFeedback(PerformanceActionKind.DeckSeek, slot, ValueFeedback(_engine.Position(slot)));
+        RaiseFeedback(PerformanceActionKind.DeckKeyLockToggle, slot, ActiveFeedback(_engine.IsKeyLockEnabled(slot)));
     }
 
-    // Re-emit sync feedback when the engine reports a lock-state transition (Active/Locked/Drifting/
-    // OutOfRange) — built from the pushed state, not a re-query, so it never re-enters the engine lock.
+    // Re-emit BOTH sync-mode toggles' feedback when the engine reports a lock-state transition
+    // (Active/Locked/Drifting/OutOfRange) — built from the pushed state so it never re-enters the engine
+    // lock for the state (the mode read is a separate, non-nested lock).
     private void OnEngineSyncStateChanged(int slot, SyncLockState state)
-        => RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncFeedback(slot, state));
+    {
+        SyncMode mode = _engine.DeckSyncMode(slot);
+        RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncModeFeedback(state, mode == SyncMode.BeatLock));
+        RaiseFeedback(PerformanceActionKind.DeckTempoSyncToggle, slot, SyncModeFeedback(state, mode == SyncMode.TempoOnly));
+    }
 
-    private ActionFeedbackState SyncFeedback(int slot) => SyncFeedback(slot, _engine.SyncState(slot));
+    // Raise feedback for both mode toggles from the current engine state, so SYNC and TEMPO light independently.
+    private void RaiseSyncModeFeedback(int slot)
+    {
+        SyncLockState state = _engine.SyncState(slot);
+        SyncMode mode = _engine.DeckSyncMode(slot);
+        RaiseFeedback(PerformanceActionKind.DeckSyncToggle, slot, SyncModeFeedback(state, mode == SyncMode.BeatLock));
+        RaiseFeedback(PerformanceActionKind.DeckTempoSyncToggle, slot, SyncModeFeedback(state, mode == SyncMode.TempoOnly));
+    }
 
-    private static ActionFeedbackState SyncFeedback(int slot, SyncLockState state)
+    // Feedback for one mode toggle: active only when the deck is synced AND in that mode, so the SYNC
+    // (BeatLock) and TEMPO (TempoOnly) buttons never both light. Value/Argument carry the lock state for
+    // the shared OutOfRange/Locked styling.
+    private static ActionFeedbackState SyncModeFeedback(SyncLockState state, bool modeMatches)
         => new(
-            IsActive: state != SyncLockState.Off,
+            IsActive: state != SyncLockState.Off && modeMatches,
             IsAvailable: true,
             Value: (double)state,
             Argument: state.ToString());
@@ -479,16 +550,24 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
             PerformanceActionKind.DeckPitch => ValueFeedback(_engine.PitchPosition(slot)),
             PerformanceActionKind.DeckBpm => BpmFeedback(slot),
             PerformanceActionKind.DeckSyncOnce => ActiveFeedback(false),
-            PerformanceActionKind.DeckSyncToggle => SyncFeedback(slot),
+            PerformanceActionKind.DeckSyncToggle
+                => SyncModeFeedback(_engine.SyncState(slot), _engine.DeckSyncMode(slot) == SyncMode.BeatLock),
+            PerformanceActionKind.DeckTempoSyncToggle
+                => SyncModeFeedback(_engine.SyncState(slot), _engine.DeckSyncMode(slot) == SyncMode.TempoOnly),
             PerformanceActionKind.DeckQuantizeToggle => ActiveFeedback(_engine.IsQuantizeEnabled(slot)),
             PerformanceActionKind.DeckKeyLockToggle => ActiveFeedback(_engine.IsKeyLockEnabled(slot)),
             PerformanceActionKind.DeckSetLoop => LoopFeedback(slot),
             PerformanceActionKind.DeckSetFirstBeat => ValueFeedback(_engine.DeckFirstBeat(slot)),
             PerformanceActionKind.DeckSetDownbeat => ValueFeedback(_downbeats[slot]),
+            // IsActive = grid trustworthy enough to phase-sync; a UI shows "grid uncertain" when inactive.
+            PerformanceActionKind.DeckSetPhaseSyncReady => ActiveFeedback(_engine.DeckPhaseSyncReady(slot)),
             // No stem is addressable through the (kind, slot) pull, so report only whether the deck is a
             // stem deck; the per-stem active state is delivered by push (RaiseStemFeedback on load + toggle).
             PerformanceActionKind.DeckStemMute
                 => new ActionFeedbackState(IsActive: false, IsAvailable: _engine.IsStemDeck(slot), Value: 0),
+            // Per-stem gain is not addressable via the (kind, slot) pull; report availability + unity default.
+            PerformanceActionKind.DeckStemGain
+                => new ActionFeedbackState(IsActive: false, IsAvailable: _engine.IsStemDeck(slot), Value: 1),
             _ => ActionFeedbackState.Unavailable,
         };
     }

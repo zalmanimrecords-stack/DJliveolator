@@ -73,6 +73,36 @@ public sealed class LibrariesViewModelTests
     }
 
     [Fact]
+    public async Task Rebuilding_the_rows_keeps_the_selection_on_the_same_track()
+    {
+        // Repro of "click a track, the selection vanishes a few seconds later": a background rebuild
+        // (re-analysis / cue-badge refresh) re-projects the list with fresh row instances, so the old
+        // selected instance is no longer in Tracks. The fix re-points the selection at the new row.
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks.Single(t => t.Title == "Alpha");
+        string selectedPath = vm.SelectedTrack!.Track.File.Path;
+
+        await vm.RescanAllCommand.Execute().ToTask(); // rebuilds every row instance
+
+        Assert.NotNull(vm.SelectedTrack);
+        Assert.Contains(vm.SelectedTrack, vm.Tracks); // a live row, not a stale orphan
+        Assert.Equal(selectedPath, vm.SelectedTrack!.Track.File.Path);
+    }
+
+    [Fact]
+    public async Task Filtering_out_the_selected_track_clears_the_selection()
+    {
+        LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks.Single(t => t.Title == "Alpha");
+
+        vm.SearchText = "beta"; // hides Alpha
+
+        Assert.Null(vm.SelectedTrack);
+    }
+
+    [Fact]
     public async Task Search_filters_tracks_by_title()
     {
         LibrariesViewModel vm = BuildViewModel("/music/Alpha.wav", "/music/Beta.wav");

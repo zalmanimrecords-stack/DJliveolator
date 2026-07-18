@@ -111,6 +111,16 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
         StemEnabled[(deckHandle, kind)] = enabled;
     }
 
+    /// <summary>Per-(deck, stem) volume as last set via <see cref="SetStemVolume"/>.</summary>
+    public Dictionary<(int Handle, Liveolator.Core.Analysis.Stems.StemKind Kind), double> StemVolume { get; } = new();
+    public List<(int Handle, Liveolator.Core.Analysis.Stems.StemKind Kind, double Volume)> StemVolumeCalls { get; } = new();
+
+    public void SetStemVolume(int deckHandle, Liveolator.Core.Analysis.Stems.StemKind kind, double volume)
+    {
+        StemVolumeCalls.Add((deckHandle, kind, volume));
+        StemVolume[(deckHandle, kind)] = volume;
+    }
+
     private double DeckLength(int deckHandle)
         => LengthSeconds.TryGetValue(deckHandle, out double len) && len > 0 ? len : 100.0;
 

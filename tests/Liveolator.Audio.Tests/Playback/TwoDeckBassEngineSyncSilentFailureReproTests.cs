@@ -111,6 +111,7 @@ public class TwoDeckBassEngineSyncSilentFailureReproTests
 
         LoadViaHandler(handler, slot: 0, @"\\share\a.flac", bpm: 128.0);
         LoadViaHandler(handler, slot: 1, @"S:\b.flac", bpm: 120.0);
+        handler.Handle(new PerformanceAction(PerformanceActionKind.DeckPlayPause, Slot: 0));
 
         double followerBpmFeedback = double.NaN;
         handler.FeedbackChanged += (_, e) =>

@@ -37,8 +37,13 @@ public sealed class TrackAnalyzer
     /// Additive; existing tracks re-analyze on next scan to populate the kick list.
     /// v8: windowed + half-beat-harmonic grid refinement (<see cref="Bpm.GridRefiner"/>) — an offbeat
     /// bass or a mid-track arrangement edit no longer collapses the kick fit back to the quantized coarse
-    /// bin (a true 145.0 read as 143.55, wrecking two-deck sync); mis-gridded tracks re-analyze.</remarks>
-    public const int CurrentVersion = 8;
+    /// bin (a true 145.0 read as 143.55, wrecking two-deck sync); mis-gridded tracks re-analyze.
+    /// v9: persist the grid-confidence signals (<see cref="Bpm.BpmResult.GridCoherence"/> — previously
+    /// discarded — and the new constant-tempo <see cref="Bpm.BpmResult.TempoStabilityBpmDelta"/>) so Sync
+    /// can gate beat/phase sync on grid quality and downgrade an untrustworthy grid to tempo-only
+    /// (SYNC-BEHAVIOR-SPEC §7). Additive; existing tracks re-analyze on next scan to populate the signals
+    /// (until then the grid confidence reads Unknown and phase sync is preserved).</remarks>
+    public const int CurrentVersion = 9;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;

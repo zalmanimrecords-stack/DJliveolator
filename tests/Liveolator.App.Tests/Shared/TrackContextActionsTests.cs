@@ -1,8 +1,13 @@
 using System.Reactive.Concurrency;
 using Liveolator.App.Features.Shared;
+using Liveolator.App.Tests.Fakes;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Stems;
+using Liveolator.Core.Enrichment;
+using Liveolator.Core.Library;
+using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using ReactiveUI;
@@ -56,6 +61,50 @@ public sealed class TrackContextActionsTests
             Saved.Remove(name);
             return Task.CompletedTask;
         }
+    }
+
+    [Fact]
+    public async Task ConfirmLocalBpm_dismisses_the_conflict_and_persists_that_one_track()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        library.Restore(new[]
+        {
+            new MusicTrack(
+                new ScannedFile("/m/a.wav", 1000, DateTime.UtcNow), new BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(4), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                OnlineBpm: 174, OnlineBpmSource: "GetSongBPM", BpmProvenance: BpmProvenance.Conflicted),
+        });
+        var store = new FakeMusicCatalogStore();
+        var statuses = new List<string>();
+        var actions = new TrackContextActions(
+            dispatcher: null, new FakePlaylistStore(), onStatus: statuses.Add,
+            library: library, catalogStore: store);
+
+        await actions.ConfirmLocalBpmAsync("/m/a.wav");
+
+        Assert.Equal(BpmProvenance.LocalConfirmed, library.TryGet("/m/a.wav")!.BpmProvenance);
+        MusicTrack persisted = Assert.Single(store.SavedTrackByTrack); // one per-row save, not the catalog
+        Assert.Equal(BpmProvenance.LocalConfirmed, persisted.BpmProvenance);
+        Assert.Contains(statuses, s => s.Contains("Kept detected BPM"));
+    }
+
+    [Fact]
+    public async Task ConfirmLocalBpm_on_an_unconflicted_track_changes_and_saves_nothing()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
+        library.Restore(new[]
+        {
+            new MusicTrack(
+                new ScannedFile("/m/a.wav", 1000, DateTime.UtcNow), new BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(4), TrackCues.None, MediaAnalysisStatus.Ok, null),
+        });
+        var store = new FakeMusicCatalogStore();
+        var actions = new TrackContextActions(
+            dispatcher: null, new FakePlaylistStore(), library: library, catalogStore: store);
+
+        await actions.ConfirmLocalBpmAsync("/m/a.wav");
+
+        Assert.Empty(store.SavedTrackByTrack);
     }
 
     [Fact]

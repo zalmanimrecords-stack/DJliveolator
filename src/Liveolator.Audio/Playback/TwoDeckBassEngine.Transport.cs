@@ -1,5 +1,6 @@
 using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Audio;
+using Liveolator.Core.Audio.Sync;
 using Microsoft.Extensions.Logging;
 
 namespace Liveolator.Audio.Playback;
@@ -77,9 +78,18 @@ public sealed partial class TwoDeckBassEngine
                 return;
             }
             bool next = !deck.Playing;
+            // Armed start (SYNC-BEHAVIOR-SPEC §6): a synced deck that was armed while stopped re-aligns its
+            // beat/bar phase to the master at the moment it starts, so it enters IN PHASE no matter how long
+            // it sat armed (the master kept moving). Done BEFORE the play toggle so PhaseAlignToLeader still
+            // sees the deck as not-playing and can bar-snap onto the master's "one". BeatLock only — Tempo
+            // Sync never touches phase; the grid-confidence gate inside PhaseAlignToLeader still applies.
+            if (next && _slots[slot].SyncLocked && _slots[slot].SyncMode == SyncMode.BeatLock)
+                PhaseAlignToLeader(slot);
             _backend.SetDeckPlaying(deck.Handle, next);
             _slots[slot].Deck = deck with { Playing = next };
+            ReapplySyncedFollowers();
         }
+        FlushSyncTransitions();
     }
 
     public void Stop(int slot)
@@ -91,8 +101,10 @@ public sealed partial class TwoDeckBassEngine
             {
                 _backend.SetDeckPlaying(deck.Handle, false);
                 _slots[slot].Deck = deck with { Playing = false };
+                ReapplySyncedFollowers();
             }
         }
+        FlushSyncTransitions();
     }
 
     public double Position(int slot)
@@ -252,7 +264,9 @@ public sealed partial class TwoDeckBassEngine
         Array.Clear(s.HotCues);
         s.BaseBpm = 0.0;         // base BPM belongs to the track — the new track supplies its own on load
         s.FirstBeat = 0.0;       // first-beat anchor likewise belongs to the track
+        s.KickOnsets = Array.Empty<double>();
         s.Downbeat = 0.0;        // and so does the bar-1 anchor — stale, it would bar-snap the wrong "one"
+        s.PhaseSyncReady = true; // grid confidence is per-track; default to confident/preserve until the load re-supplies it
         s.LoopBeats = 0.0;       // a new track has no active loop
         s.IsStemDeck = false;    // whether the NEXT track is a stem deck is decided at its load
         Array.Clear(s.StemMuted); // fresh decoders open at unity — stem mute is per-track, reset to audible

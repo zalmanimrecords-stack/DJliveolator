@@ -83,13 +83,28 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
 
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => EnsureSlot(slot);
 
+    public IReadOnlyList<double> DeckKickOnsets(int slot) { EnsureSlot(slot); return Array.Empty<double>(); }
+
+    public void SetDeckKickOnsets(int slot, IReadOnlyList<double> kickOnsetsSeconds) => EnsureSlot(slot);
+
     public void SetDeckDownbeat(int slot, double downbeatSeconds) => EnsureSlot(slot);
+
+    // A single deck never phase-syncs to another, so the grid-confidence gate has nothing to gate: report
+    // ready and ignore the setter.
+    public bool DeckPhaseSyncReady(int slot) { EnsureSlot(slot); return true; }
+
+    public void SetDeckPhaseSyncReady(int slot, bool ready) => EnsureSlot(slot);
 
     public void SyncOnce(int slot) => EnsureSlot(slot);
 
     public bool IsSyncLocked(int slot) { EnsureSlot(slot); return false; }
 
     public void SetSyncLock(int slot, bool enabled) => EnsureSlot(slot);
+
+    // A single deck never syncs to another, so the mode is inert; report the default and ignore the setter.
+    public SyncMode DeckSyncMode(int slot) { EnsureSlot(slot); return SyncMode.BeatLock; }
+
+    public void SetDeckSyncMode(int slot, SyncMode mode) => EnsureSlot(slot);
 
     // A single deck has no second deck to sync to: there is never a master and every slot is Off.
     public int? SyncMaster => null;
@@ -146,6 +161,9 @@ internal sealed class SingleDeckEngineAdapter : IMultiDeckPlaybackEngine
     public bool IsStemMuted(int slot, Analysis.Stems.StemKind kind) { EnsureSlot(slot); return false; }
 
     public void SetStemMuted(int slot, Analysis.Stems.StemKind kind, bool muted) => EnsureSlot(slot);
+
+    // The legacy single-deck engine has no stem support, so per-stem gain is a no-op.
+    public void SetStemGain(int slot, Analysis.Stems.StemKind kind, double gain) => EnsureSlot(slot);
 
     private void EnsureSlot(int slot)
     {

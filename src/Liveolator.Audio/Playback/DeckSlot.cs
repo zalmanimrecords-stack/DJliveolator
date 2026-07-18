@@ -46,14 +46,18 @@ internal sealed class DeckSlot
     /// <summary>SYNC engaged for this deck (the slave). Persists across track loads.</summary>
     public bool SyncLocked;
 
+    /// <summary>Which sync mode the latch runs in when engaged (SYNC-BEHAVIOR-SPEC §4): BeatLock =
+    /// tempo + phase (the default), TempoOnly = tempo-match without touching phase. Persists across loads.</summary>
+    public SyncMode SyncMode = SyncMode.BeatLock;
+
     /// <summary>Quantize armed for this deck. Persists across track loads.</summary>
     public bool Quantize;
 
     /// <summary>
     /// Key-lock (master tempo) armed for this deck: tempo changes preserve the track's musical pitch.
-    /// Persists across track loads. Phase 1 records intent only; the audible time-stretch (wrapping the
-    /// deck stream in BASS_FX and switching the rate path from frequency to the tempo attribute) is the
-    /// native Phase 3 piece, gated on hardware verification (docs/18, roadmap N4 / H1).
+    /// Persists across track loads. Native: the deck stream is wrapped in BASS_FX and the rate rides the
+    /// tempo attribute (pitch-preserving) when on, the frequency (vinyl) path when off — see
+    /// <c>BassMixerBackend.ApplyRate</c>.
     /// </summary>
     public bool KeyLocked;
 
@@ -66,9 +70,18 @@ internal sealed class DeckSlot
     /// <summary>First-beat (downbeat) anchor in seconds; 0 = unknown. Cleared on unload.</summary>
     public double FirstBeat;
 
+    /// <summary>Analyzed kick strike times in source-media seconds. Cleared on unload.</summary>
+    public double[] KickOnsets = Array.Empty<double>();
+
     /// <summary>Downbeat (bar-1 "one") anchor in seconds; 0 = unknown, so phase-match stays beat-level.
     /// Cleared on unload — a stale bar anchor must never mis-snap the next track.</summary>
     public double Downbeat;
+
+    /// <summary>Whether the analyzed grid is trustworthy enough to PHASE-sync (SYNC-BEHAVIOR-SPEC §7). When
+    /// false, Sync tempo-matches only and skips phase alignment. Defaults true (confident) and resets to
+    /// true on unload — a track without grid-confidence signals preserves phase sync; the load path pushes
+    /// the real value when the track's confidence is known.</summary>
+    public bool PhaseSyncReady = true;
 
     /// <summary>Active loop length in beats; 0 = no loop. Cleared on unload.</summary>
     public double LoopBeats;

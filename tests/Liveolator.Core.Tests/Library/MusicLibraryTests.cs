@@ -35,6 +35,34 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task Scan_StampsLastAnalyzed()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+
+        await library.ScanAsync(new[] { "music" });
+
+        Assert.NotNull(library.TryGet("a.mp3")!.LastAnalyzedUtc);
+    }
+
+    [Fact]
+    public async Task ForceReanalyze_RefreshesLastAnalyzed()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+        DateTime? afterScan = library.TryGet("a.mp3")!.LastAnalyzedUtc;
+
+        await library.ForceReanalyzeAsync("a.mp3");
+
+        DateTime? afterForce = library.TryGet("a.mp3")!.LastAnalyzedUtc;
+        Assert.NotNull(afterForce);
+        Assert.True(afterForce >= afterScan);
+    }
+
+    [Fact]
     public async Task Scan_Incremental_DoesNotReanalyzeUnchangedFiles()
     {
         var enumerator = new FakeFileEnumerator(File("a.mp3"));
@@ -286,6 +314,140 @@ public class MusicLibraryTests
         Assert.True(updated);
         Assert.Equal(TrackAnalyzer.CurrentVersion, track.AnalyzerVersion);
         Assert.DoesNotContain("a.mp3", library.PathsNeedingAnalysis());
+    }
+
+    [Fact]
+    public void ApplyOnlineDetails_Conflict_StampsOnlineBpmAndProvenance()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion),
+        });
+
+        bool updated = library.ApplyOnlineDetails(
+            "a.mp3", new OnlineTrackMetadata(174, null, null, null, "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.True(updated);
+        Assert.Equal(128, track.Bpm!.Bpm);            // offline-first: local stays authoritative
+        Assert.Equal(174, track.OnlineBpm);           // the disagreeing value is kept for display
+        Assert.Equal("GetSongBPM", track.OnlineBpmSource);
+        Assert.Equal(BpmProvenance.Conflicted, track.BpmProvenance);
+    }
+
+    [Fact]
+    public void ApplyOnlineDetails_Agreement_StampsCrossCheckedProvenance()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.7), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion),
+        });
+
+        library.ApplyOnlineDetails("a.mp3", new OnlineTrackMetadata(128, null, null, null, "GetSongBPM"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal(128, track.OnlineBpm);
+        Assert.Equal(BpmProvenance.CrossChecked, track.BpmProvenance);
+    }
+
+    [Fact]
+    public void ApplyOnlineDetails_ManualOrConfirmedBpm_IsNeverReFlagged()
+    {
+        // The user's decision (a manually-set BPM, or a dismissed conflict) outranks the online
+        // cross-check — it cannot tell an extended mix from the radio edit.
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("manual.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 1.0), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion, AnalysisIsManual: true),
+            new MusicTrack(File("confirmed.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion,
+                BpmProvenance: BpmProvenance.LocalConfirmed),
+        });
+
+        library.ApplyOnlineDetails("manual.mp3", new OnlineTrackMetadata(174, null, null, null, "GetSongBPM"));
+        library.ApplyOnlineDetails("confirmed.mp3", new OnlineTrackMetadata(174, null, null, null, "GetSongBPM"));
+
+        foreach (string path in new[] { "manual.mp3", "confirmed.mp3" })
+        {
+            MusicTrack track = library.TryGet(path)!;
+            Assert.Equal(BpmProvenance.LocalConfirmed, track.BpmProvenance);
+            Assert.Equal(MediaAnalysisStatus.Ok, track.Status); // a suppressed conflict never demotes the status
+        }
+    }
+
+    [Fact]
+    public void ConfirmLocalBpm_DismissesTheConflict()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion,
+                OnlineBpm: 174, OnlineBpmSource: "GetSongBPM", BpmProvenance: BpmProvenance.Conflicted),
+        });
+
+        Assert.True(library.ConfirmLocalBpm("a.mp3"));
+        Assert.Equal(BpmProvenance.LocalConfirmed, library.TryGet("a.mp3")!.BpmProvenance);
+
+        Assert.False(library.ConfirmLocalBpm("a.mp3"));       // already resolved — nothing to change
+        Assert.False(library.ConfirmLocalBpm("missing.mp3")); // unknown path
+    }
+
+    [Fact]
+    public void MarkOnlineLookup_StampsTimestampWithoutTouchingAnalysis()
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        library.Restore(new[]
+        {
+            new MusicTrack(File("a.mp3"), new Liveolator.Core.Analysis.Bpm.BpmResult(128, 0.9), null,
+                TimeSpan.FromMinutes(5), TrackCues.None, MediaAnalysisStatus.Ok, null,
+                AnalyzerVersion: TrackAnalyzer.CurrentVersion),
+        });
+
+        Assert.True(library.MarkOnlineLookup("a.mp3", T));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal(T, track.OnlineLookupUtc);
+        Assert.Equal(128, track.Bpm!.Bpm); // analysis untouched
+        Assert.False(library.MarkOnlineLookup("missing.mp3", T));
+    }
+
+    [Fact]
+    public async Task Rescan_CarriesOnlineLookup_AndRecomputesProvenanceAgainstTheNewLocalBpm()
+    {
+        // A re-decode must not drop the online data (or the next scan re-burns the free API), and the
+        // conflict flag must stay honest against the NEW locally detected tempo.
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var pcm = new Dictionary<string, float[]?> { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) };
+        var library = new MusicLibrary(enumerator, new MapAudioDecoder(pcm));
+        await library.ScanAsync(new[] { "music" });
+
+        // Online said 121 — agrees with the detected ~120.
+        library.ApplyOnlineDetails("a.mp3", new OnlineTrackMetadata(121, null, null, null, "GetSongBPM"));
+        library.MarkOnlineLookup("a.mp3", T);
+        Assert.Equal(BpmProvenance.CrossChecked, library.TryGet("a.mp3")!.BpmProvenance);
+
+        // The file changes on disk and now detects ~100 (121 conflicts with 100 under every octave/3:2
+        // relation, whichever octave the detector lands on) → the carried online value no longer agrees.
+        pcm["a.mp3"] = TestSignals.ClickTrain(100, Sr, 8);
+        enumerator.Files[0] = new ScannedFile("a.mp3", 2000, T.AddMinutes(1));
+        await library.ScanAsync(new[] { "music" });
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal(121, track.OnlineBpm);                        // online data survives the re-decode
+        Assert.Equal("GetSongBPM", track.OnlineBpmSource);
+        Assert.Equal(T, track.OnlineLookupUtc);                    // no API re-burn on the next pass
+        Assert.Equal(BpmProvenance.Conflicted, track.BpmProvenance); // recomputed vs the new local value
     }
 
     [Fact]

@@ -167,7 +167,7 @@ public sealed partial class TwoDeckBassEngine
     {
         DeckSlot s = _slots[slot];
         DeckSlot leader = _slots[slot == 0 ? 1 : 0];
-        if (s.BaseBpm <= 0.0 || leader.Deck is null || leader.SyncLocked || leader.BaseBpm <= 0.0)
+        if (s.BaseBpm <= 0.0 || leader.Deck is not { Playing: true } || leader.SyncLocked || leader.BaseBpm <= 0.0)
             return new SyncRate(s.PlaybackRate, WithinRange: true);
         double leaderEffectiveBpm = leader.BaseBpm * leader.PlaybackRate;
         return TempoSyncCalculator.RateWithin(leaderEffectiveBpm, s.BaseBpm, SyncRangePercent);

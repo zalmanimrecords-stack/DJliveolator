@@ -793,6 +793,14 @@ public static class ServiceConfig
             sp.GetRequiredService<PerformanceDeckSet>(),
             deckBQueue: deckBPlaylist));
 
+        // DJ PRO tab: a denser DJ surface built ALONGSIDE the DJ tab (never replacing it). It drives the
+        // SAME shared decks + mixer and reuses the DJ tab's track browser instance (one source of truth) —
+        // an external FX rack + per-stem knobs are layered on in later phases.
+        services.AddSingleton<DjProViewModel>(sp => new DjProViewModel(
+            sp.GetRequiredService<PerformanceDeckSet>(),
+            sp.GetRequiredService<IPerformanceActionDispatcher>(),
+            sp.GetRequiredService<DjViewModel>().Browser));
+
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
         // headless), and the choice is saved to settings.json. The audio output device + buffer are

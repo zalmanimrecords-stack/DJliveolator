@@ -28,6 +28,7 @@ public class SyncedFollowerBpmCounterReproTests
         engine.Load(1, @"C:\follower.wav"); // slot 1 = synced follower
         engine.SetDeckBaseBpm(0, leaderBpm);
         engine.SetDeckBaseBpm(1, followerBpm);
+        engine.PlayPause(0);
         return engine;
     }
 

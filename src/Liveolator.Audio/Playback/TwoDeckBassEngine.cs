@@ -50,7 +50,7 @@ public sealed partial class TwoDeckBassEngine : IMultiDeckPlaybackEngine, ISyncC
     /// with a moderate BPM gap still beatmatch cleanly. Past this the gap is too wide to
     /// beatmatch cleanly: sync reports OutOfRange instead of riding a chipmunk pitch. Tunable.
     /// </summary>
-    private const double SyncRangePercent = 0.15;
+    private const double SyncRangePercent = 0.35;
 
     /// <summary>Normalized pitch position with no tempo change (the fader centre).</summary>
     private const double PitchCenter = 0.5;

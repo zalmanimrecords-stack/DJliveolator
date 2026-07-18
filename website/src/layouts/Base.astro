@@ -8,7 +8,7 @@ interface Props {
 }
 
 const {
-  title = `${site.name} — Free DJ + VJ performance app`,
+  title = `${site.name} — Free, open-source DJ + VJ app`,
   description = site.description,
 } = Astro.props;
 
@@ -19,7 +19,8 @@ const canonical = new URL(Astro.url.pathname, origin).href;
 const ogImage = site.ogImage ? new URL(site.ogImage, origin).href : null;
 
 // SoftwareApplication structured data — makes the app eligible for rich results
-// in Google search. price "0" marks it as a free download.
+// in Google search. price "0" + isAccessibleForFree mark it as a free download;
+// license + sameAs (the public repo) signal that it is open source.
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -29,6 +30,15 @@ const jsonLd = {
   operatingSystem: "Windows",
   url: origin.href,
   softwareVersion: site.version,
+  isAccessibleForFree: true,
+  license: site.licenseUrl,
+  downloadUrl: new URL(site.downloadUrl, origin).href,
+  sameAs: [site.repoUrl],
+  author: {
+    "@type": "Organization",
+    name: site.operator,
+    url: origin.href,
+  },
   ...(ogImage ? { image: ogImage } : {}),
   offers: {
     "@type": "Offer",
@@ -59,6 +69,9 @@ const jsonLd = {
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     {ogImage && <meta property="og:image" content={ogImage} />}
+    {ogImage && <meta property="og:image:width" content="1440" />}
+    {ogImage && <meta property="og:image:height" content="900" />}
+    {ogImage && <meta property="og:image:alt" content={`${site.name} — DJ + VJ performance app`} />}
 
     <!-- Twitter -->
     <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />

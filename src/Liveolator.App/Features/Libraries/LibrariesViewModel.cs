@@ -619,8 +619,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                         ScanStatus = p.Done >= p.Total
                             ? $"Analysis complete — {p.Analyzed} tracks updated"
                             : $"Analyzing library in background… {p.Done}/{p.Total}";
-                        // Surface freshly-analyzed BPM/key periodically without thrashing the UI per track.
-                        if (p.Done >= p.Total || p.Done % 25 == 0)
+                        // Surface freshly-analyzed BPM/key as they come in — eager for the first dozen,
+                        // then every 25 (ShouldRevealDuringScan); the final tick always refreshes.
+                        if (p.Done >= p.Total || ShouldRevealDuringScan(p.Done))
                             RefreshRows();
                     }));
 
@@ -661,6 +662,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
         _lifetime.Dispose();
     }
+
+    // Decides whether a scan/re-analysis progress tick should re-project the visible list. Refresh
+    // eagerly for the first dozen processed tracks — so the list starts filling from the very first
+    // file instead of showing nothing until 25 are done (the reported "scanned tracks don't appear
+    // until the scan finishes") — then throttle to every 25 so a large catalog isn't rebuilt per file
+    // (O(n^2) thrash). Pure so it unit-tests without a scan.
+    internal static bool ShouldRevealDuringScan(int done)
+        => done > 0 && (done <= 12 || done % 25 == 0);
 
     // Re-projects the current catalog into the visible rows, facets and folder statuses. UI-thread only
     // (mutates ObservableCollections); callers marshal via the main scheduler.
@@ -964,7 +973,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         await RunGenreEnrichmentAsync().ConfigureAwait(false);
     }
 
-    // Fills in missing track genres from the online provider (doc 16) as the last step of the one-click
+    // Gives every never-checked track one online pass (doc 16) — fills missing genres AND cross-checks
+    // the detected BPM (a disagreement flags the row red for review) — as the last step of the one-click
     // ScanAll pass. Skipped (with a clear status) when no provider was wired — i.e. no GetSongBPM key.
     // The online lookups run off the UI thread; progress marshals to the status line; cancellation ties to
     // the view-model lifetime. Guarded so a failure surfaces but never blocks scan completion (global #16/#26).
@@ -973,7 +983,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         if (_metadataProvider is null)
         {
             // Append rather than replace, so the preceding auto-cue summary ("… tracks cued") stays visible.
-            ScanStatus = $"{ScanStatus} · Genre enrichment skipped (no getsongbpm key in Settings).";
+            ScanStatus = $"{ScanStatus} · Online genre/BPM check skipped (no getsongbpm key in Settings).";
             return;
         }
 
@@ -987,8 +997,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 RxApp.MainThreadScheduler.Schedule(() =>
                 {
                     ScanStatus = p.Done >= p.Total
-                        ? $"Enriched {p.Enriched} genres"
-                        : $"Enriching genres… {p.Done}/{p.Total}";
+                        ? $"Online check: {p.Enriched} of {p.Total} tracks matched (genre/BPM)"
+                        : $"Checking genre + BPM online… {p.Done}/{p.Total}";
                     if (p.Done >= p.Total)
                         RefreshRows();
                 }));
@@ -1002,7 +1012,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Genre enrichment failed: {ex.Message}");
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Online genre/BPM check failed: {ex.Message}");
         }
     }
 
@@ -1027,10 +1037,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 ScanStatus = p.Total == 0 ? "No new files." : $"Analyzing {p.Done} / {p.Total}…";
                 ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
                 // Reveal already-scanned tracks as they come in, instead of waiting for the whole
-                // folder. Batched every 25 so the list isn't rebuilt per file (O(n^2) thrash). The
+                // folder — eager for the first dozen, then every 25 (ShouldRevealDuringScan). The
                 // final tick is left to the post-await block so the two refreshes never race inside
                 // ApplyFilter's Clear()/Add() (doc 27 B0) — same guard as RunRescanAllAsync.
-                if (p.Done < p.Total && p.Done % 25 == 0)
+                if (p.Done < p.Total && ShouldRevealDuringScan(p.Done))
                     RxApp.MainThreadScheduler.Schedule(RefreshRows);
             });
 
@@ -1107,12 +1117,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                         ? $"Re-map complete — {p.Analyzed} tracks updated"
                         : $"Re-mapping all tracks… {p.Done}/{p.Total}";
                     ScanProgressValue = p.Total == 0 ? 0 : 100.0 * p.Done / p.Total;
-                    // Surface freshly-mapped BPM/key periodically without thrashing the UI per track.
-                    // The terminal refresh is owned solely by the post-await block below, so the final
-                    // tick does NOT refresh here — otherwise the two RefreshRows fire back-to-back on
-                    // different threads (Progress<T> posts to the thread pool with no sync context) and
-                    // race inside ApplyFilter's Tracks.Clear()/Add(), double-listing every row (doc 27 B0).
-                    if (p.Done < p.Total && p.Done % 25 == 0)
+                    // Surface freshly-mapped BPM/key as they come in — eager for the first dozen, then
+                    // every 25 (ShouldRevealDuringScan). The terminal refresh is owned solely by the
+                    // post-await block below, so the final tick does NOT refresh here — otherwise the two
+                    // RefreshRows fire back-to-back on different threads (Progress<T> posts to the thread
+                    // pool with no sync context) and race inside ApplyFilter's Tracks.Clear()/Add(),
+                    // double-listing every row (doc 27 B0).
+                    if (p.Done < p.Total && ShouldRevealDuringScan(p.Done))
                         RefreshRows();
                 }));
 
@@ -1575,6 +1586,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         if (_suppressFilter)
             return;
 
+        // Remember the selected track's path across the rebuild. Tracks.Clear() below drops the old row
+        // instance, so the ListBox nulls its bound selection; a background re-projection (re-analysis /
+        // cue-badge refresh builds fresh rows) would then make the selection vanish on its own — the
+        // reported "click a track, it deselects a few seconds later". Re-point it at the new row afterwards.
+        string? selectedPath = _selectedTrack?.Track.File.Path;
+
         var rowByTrack = _all.ToDictionary(r => r.Track);
         var filter = new TrackFilter(
             Text: SearchText,
@@ -1593,6 +1610,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Tracks.Clear();
         foreach (MusicTrack track in ordered)
             Tracks.Add(rowByTrack[track]);
+
+        // Re-select the row for the same track (null when it's now filtered out / gone). A filter-only
+        // change keeps the same instances, so this is a no-op; a rebuild swaps instances, so this restores
+        // the selection the Clear() above dropped.
+        if (selectedPath is not null)
+            SelectedTrack = Tracks.FirstOrDefault(
+                r => string.Equals(r.Track.File.Path, selectedPath, StringComparison.OrdinalIgnoreCase));
 
         // Surface how many of the whole catalog are shown, and flag when TrackQuery capped the result
         // (the cap used to drop rows with no indication — doc advisor note).
@@ -1919,7 +1943,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             slot,
             path,
             bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0).Message; // doc 22 A1
+            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0,
+            kickOnsetsSeconds: _selectedTrack.Track.Bpm?.KickOnsetsSeconds).Message; // doc 22 A1
 
         // Count the load as a play (play count + last-played), persisted per-row. Fire-and-forget so it
         // never delays the load.

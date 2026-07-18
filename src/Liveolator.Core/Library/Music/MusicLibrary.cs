@@ -67,10 +67,21 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         MusicTrack? prior = TryGet(path);
         return rebuilt with
         {
+            // Analysis just ran (this is the create/re-analyze path), so stamp "last scanned" now.
+            LastAnalyzedUtc = DateTime.UtcNow,
             Rating = prior?.Rating ?? 0,
             DateAdded = prior?.DateAdded ?? DateTime.UtcNow,
             LastPlayed = prior?.LastPlayed,
             PlayCount = prior?.PlayCount ?? 0,
+            // Online lookup data also survives a re-decode (or the next pass re-burns the free API),
+            // but the conflict verdict is re-derived against the NEW local tempo so it stays honest.
+            // A user-confirmed value stays confirmed — that decision belongs to the user, not the merge.
+            OnlineBpm = prior?.OnlineBpm,
+            OnlineBpmSource = prior?.OnlineBpmSource,
+            OnlineLookupUtc = prior?.OnlineLookupUtc,
+            BpmProvenance = prior?.BpmProvenance == BpmProvenance.LocalConfirmed
+                ? BpmProvenance.LocalConfirmed
+                : MetadataMergePolicy.MergeBpm(rebuilt.Bpm, prior?.OnlineBpm, rebuilt.Status).Provenance,
         };
     }
 
@@ -251,6 +262,7 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                 Error = null,
                 AnalyzerVersion = TrackAnalyzer.CurrentVersion,
                 AnalysisIsManual = false,
+                LastAnalyzedUtc = DateTime.UtcNow,
             });
             return true;
         }
@@ -260,7 +272,10 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         }
         catch (Exception ex)
         {
-            Upsert(existing with { Status = MediaAnalysisStatus.Failed, Error = ex.Message });
+            Upsert(existing with
+            {
+                Status = MediaAnalysisStatus.Failed, Error = ex.Message, LastAnalyzedUtc = DateTime.UtcNow,
+            });
             return false;
         }
     }
@@ -336,16 +351,58 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         // (doc 31 L2). A still-Failed/tempo-less result is left eligible.
         bool enrichmentIsUsable = bpm is not null && enriched.Status != MediaAnalysisStatus.Failed;
 
+        // A manually-set or user-confirmed local BPM is never re-flagged: the user's decision outranks
+        // the online cross-check (which can't tell an extended mix from the radio edit).
+        BpmProvenance provenance = enriched.Provenance;
+        MediaAnalysisStatus status = enriched.Status;
+        if (existing.AnalysisIsManual || existing.BpmProvenance == BpmProvenance.LocalConfirmed)
+        {
+            if (provenance == BpmProvenance.Conflicted)
+                status = existing.Status;
+            provenance = BpmProvenance.LocalConfirmed;
+        }
+
         Upsert(existing with
         {
             Bpm = bpm,
             Key = key,
-            Status = enriched.Status,
+            Status = status,
             AnalyzerVersion = enrichmentIsUsable ? TrackAnalyzer.CurrentVersion : existing.AnalyzerVersion,
             Metadata = string.IsNullOrWhiteSpace(online.Genre)
                 ? existing.Metadata
                 : (existing.Metadata ?? TrackMetadata.Empty) with { Genre = online.Genre.Trim() },
+            OnlineBpm = online.Bpm ?? existing.OnlineBpm,
+            OnlineBpmSource = online.Bpm is null ? existing.OnlineBpmSource : online.Source,
+            BpmProvenance = provenance,
         });
+        return true;
+    }
+
+    /// <summary>
+    /// Stamps that an online lookup COMPLETED for this track (hit or miss), so the next enrichment
+    /// pass skips it instead of re-querying the courtesy-free API. Returns false for an unknown path.
+    /// </summary>
+    public bool MarkOnlineLookup(string path, DateTime lookedUpUtc)
+    {
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        Upsert(existing with { OnlineLookupUtc = lookedUpUtc });
+        return true;
+    }
+
+    /// <summary>
+    /// User resolution for a BPM conflict: keep the locally detected value and stop flagging the track.
+    /// Returns true only when the track existed and was actually conflicted.
+    /// </summary>
+    public bool ConfirmLocalBpm(string path)
+    {
+        MusicTrack? existing = TryGet(path);
+        if (existing is null || existing.BpmProvenance != BpmProvenance.Conflicted)
+            return false;
+
+        Upsert(existing with { BpmProvenance = BpmProvenance.LocalConfirmed });
         return true;
     }
 

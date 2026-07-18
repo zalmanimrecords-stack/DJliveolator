@@ -58,7 +58,7 @@ public sealed class MappingsViewModelPresetTargetTests
     public void Targets_IncludeASyncLockLatchPerDeck(int slot)
     {
         // The on-screen SYNC button is a continuous sync latch (DeckSyncToggle); a hardware button must be
-        // learnable onto the same latch, alongside the legacy one-shot "Deck X: Sync" (DeckSyncOnce).
+        // learnable onto the same latch, alongside the explicit legacy "Deck X: Sync Once" target.
         var vm = new MappingsViewModel(new FakeMidiControlSession());
 
         MappingTargetViewModel latch = Assert.Single(

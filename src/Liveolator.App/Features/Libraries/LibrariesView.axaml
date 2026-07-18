@@ -50,37 +50,40 @@
         <Button Classes="accent" Content="Scan" Command="{Binding ScanAllCommand}"
                 ToolTip.Tip="Scan folders, re-map every track (BPM, key, beat grid, cues) and place automatic hot cues — keeps manually-corrected tracks" />
       </StackPanel>
-      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0"
-               Watermark="Search title or key…" Text="{Binding SearchText}" />
+      <TextBox Grid.Column="2" Classes="spartan" Margin="12,0" MinWidth="220"
+               Watermark="Search title, artist, album or key…" Text="{Binding SearchText}" />
       <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" MaxWidth="420"
                  Text="{Binding ScanStatus}" />
     </Grid>
 
     <!-- filter / sort bar (B1): facet dropdowns + status filter + sort -->
-    <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-      <ComboBox ItemsSource="{Binding Artists}" SelectedItem="{Binding SelectedArtist}"
-                PlaceholderText="Artist" MinWidth="120"
-                ToolTip.Tip="Filter by artist" />
-      <ComboBox ItemsSource="{Binding Genres}" SelectedItem="{Binding SelectedGenre}"
-                PlaceholderText="Genre" MinWidth="110"
-                ToolTip.Tip="Filter by genre" />
-      <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding SelectedYear}"
-                PlaceholderText="Year" MinWidth="80"
-                ToolTip.Tip="Filter by year" />
-      <ComboBox ItemsSource="{Binding FileTypes}" SelectedItem="{Binding SelectedFileType}"
-                PlaceholderText="Type" MinWidth="80"
-                ToolTip.Tip="Filter by file type" />
-      <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatus}"
-                MinWidth="110" ToolTip.Tip="Filter by analysis status">
-        <ComboBox.ItemTemplate>
-          <DataTemplate>
-            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
-          </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </ComboBox>
+    <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,4">
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,8,8">
+        <ComboBox ItemsSource="{Binding Artists}" SelectedItem="{Binding SelectedArtist}"
+                  PlaceholderText="Artist" MinWidth="120"
+                  ToolTip.Tip="Filter by artist" />
+        <ComboBox ItemsSource="{Binding Genres}" SelectedItem="{Binding SelectedGenre}"
+                  PlaceholderText="Genre" MinWidth="110"
+                  ToolTip.Tip="Filter by genre" />
+        <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding SelectedYear}"
+                  PlaceholderText="Year" MinWidth="80"
+                  ToolTip.Tip="Filter by year" />
+        <ComboBox ItemsSource="{Binding FileTypes}" SelectedItem="{Binding SelectedFileType}"
+                  PlaceholderText="Type" MinWidth="80"
+                  ToolTip.Tip="Filter by file type" />
+        <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatus}"
+                  MinWidth="110" ToolTip.Tip="Filter by analysis status">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
 
       <!-- BPM range filter (blank = unbounded) -->
-      <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,12,8" VerticalAlignment="Center">
         <TextBlock Classes="faint" VerticalAlignment="Center" Text="BPM" />
         <TextBox Classes="spartan" Width="52" Watermark="min" Text="{Binding BpmMinText}"
                  ToolTip.Tip="Only tracks at or above this BPM" />
@@ -89,27 +92,26 @@
                  ToolTip.Tip="Only tracks at or below this BPM" />
       </StackPanel>
 
-      <CheckBox IsChecked="{Binding ShowShortClips}" VerticalAlignment="Center"
+      <CheckBox IsChecked="{Binding ShowShortClips}" VerticalAlignment="Center" Margin="0,0,12,8"
                 Content="{Binding ShortClipCount, StringFormat='Short clips ({0})'}"
                 ToolTip.Tip="Show tracks under 1 minute (edits, stings, acapellas, loops)" />
 
-      <Border Width="1" Background="{DynamicResource Hair}" Margin="4,2" />
-
-      <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />
-      <ComboBox ItemsSource="{Binding SortKeys}" SelectedItem="{Binding SortKey}"
-                MinWidth="100" ToolTip.Tip="Sort tracks by">
-        <ComboBox.ItemTemplate>
-          <DataTemplate>
-            <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
-          </DataTemplate>
-        </ComboBox.ItemTemplate>
-      </ComboBox>
-      <ToggleButton Classes="spartan" IsChecked="{Binding SortDescending}"
-                    Content="↓" ToolTip.Tip="Descending order" />
-
-      <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
-              ToolTip.Tip="Reset all filters" />
-    </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="Sort" />
+        <ComboBox ItemsSource="{Binding SortKeys}" SelectedItem="{Binding SortKey}"
+                  MinWidth="100" ToolTip.Tip="Sort tracks by">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Converter={x:Static lib:FilterLabelConverter.Instance}}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <ToggleButton Classes="spartan" IsChecked="{Binding SortDescending}"
+                      Content="↓" ToolTip.Tip="Descending order" />
+        <Button Classes="spartan" Content="Clear" Command="{Binding ClearFiltersCommand}"
+                ToolTip.Tip="Reset all filters" />
+      </StackPanel>
+    </WrapPanel>
 
     <!-- main: table | detail -->
     <Grid Grid.Row="2" ColumnDefinitions="*,320">
@@ -123,7 +125,7 @@
             <TextBlock Grid.Column="2" Classes="mono faint" VerticalAlignment="Center"
                        Text="{Binding ResultSummary}" />
           </Grid>
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" Margin="11,0,9,8">
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2*,1.2*,64,46,58,128" Margin="11,0,9,8">
             <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
             <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
             <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
@@ -138,7 +140,7 @@
                    ToolTip.Tip="Double-click a track to load it onto Deck A">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
-                <Grid ColumnDefinitions="14,2.2*,1.4*,70,50,64,150" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="14,2*,1.2*,64,46,58,128" VerticalAlignment="Center">
                   <Grid.ContextFlyout>
                     <MenuFlyout>
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
@@ -149,6 +151,10 @@
                                 Command="{Binding Menu.AnalyzeAgainCommand}" />
                       <MenuItem Header="Edit BPM / key / genre / notes"
                                 Command="{Binding Menu.EditMetadataCommand}" />
+                      <MenuItem Header="Keep detected BPM (dismiss online conflict)"
+                                Command="{Binding Menu.ConfirmBpmCommand}"
+                                IsVisible="{Binding IsBpmConflicted}"
+                                ToolTip.Tip="{Binding BpmBadgeTip}" />
                       <MenuItem Header="Auto-cue track"
                                 Command="{Binding Menu.AutoCueCommand}"
                                 IsVisible="{Binding Menu.CanAutoCue}" />
@@ -178,8 +184,11 @@
                   <!-- Per-component analysis badges: lit when present, dim when absent (theme tokens only). -->
                   <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
                               ToolTip.Tip="What's analyzed: BPM, key, hot cues, genre, structure">
+                    <!-- Three-state: missing (Faint) / analyzed (Accent) / online-conflict (Red).
+                         The tip names both values + the online source (GetSongBPM attribution). -->
                     <TextBlock Classes="mono" FontSize="9" Text="BPM"
-                               Foreground="{Binding HasBpm, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
+                               ToolTip.Tip="{Binding BpmBadgeTip}"
+                               Foreground="{Binding BpmBadgeToken, Converter={x:Static lib:ThemeTokenToBrushConverter.Instance}}" />
                     <TextBlock Classes="mono" FontSize="9" Text="KEY"
                                Foreground="{Binding HasKey, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
                     <TextBlock Classes="mono" FontSize="9" Text="CUE"
@@ -198,6 +207,9 @@
 
       <!-- detail -->
       <Border Grid.Column="1" Classes="panel" Margin="16,0,0,0">
+        <!-- Scrollable: the detail (facts + rating + INFO + hot cues + harmonic matches) overflows the
+             fixed-height column, so it scrolls rather than clipping. -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="16" Spacing="16">
           <TextBlock Classes="section" Text="Track" />
 
@@ -210,6 +222,9 @@
             <StackPanel Spacing="2">
               <TextBlock FontSize="14" Text="{Binding SelectedTrack.Title}" TextWrapping="Wrap" />
               <TextBlock Classes="mono faint" Text="{Binding SelectedTrack.SubLine}" TextWrapping="Wrap" />
+              <TextBlock Classes="mono faint" FontSize="10" Margin="0,2,0,0"
+                         Text="{Binding SelectedTrack.LastScannedText}"
+                         IsVisible="{Binding SelectedTrack.LastScannedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
 
             <!-- live transport (Live Mode only) -->
@@ -240,6 +255,11 @@
                   <TextBlock Classes="mono accent" FontSize="14" Text="{Binding SelectedTrack.Bpm}" />
                   <TextBlock Classes="mono faint" VerticalAlignment="Bottom" Text="{Binding SelectedTrack.Confidence}" />
                 </StackPanel>
+                <!-- online cross-check verdict (blank when never matched online) -->
+                <TextBlock Classes="mono" FontSize="10" TextWrapping="Wrap"
+                           Text="{Binding SelectedTrack.OnlineBpmDetail}"
+                           Foreground="{Binding SelectedTrack.OnlineBpmDetailToken, Converter={x:Static lib:ThemeTokenToBrushConverter.Instance}}"
+                           IsVisible="{Binding SelectedTrack.OnlineBpmDetail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               </StackPanel>
               <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2">
                 <TextBlock Classes="faint" Text="KEY" />
@@ -336,9 +356,6 @@
                              TextWrapping="Wrap" />
                 </Grid>
               </StackPanel>
-              <Button Classes="spartan" HorizontalAlignment="Left"
-                      Content="Online metadata: GetSongBPM.com"
-                      Click="OnOpenGetSongBpm" />
             </StackPanel>
 
             <StackPanel Spacing="8">
@@ -413,6 +430,7 @@
             </StackPanel>
           </StackPanel>
         </StackPanel>
+        </ScrollViewer>
       </Border>
 
     </Grid>

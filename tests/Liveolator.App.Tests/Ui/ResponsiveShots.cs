@@ -43,7 +43,7 @@ public class ResponsiveShots
 
             foreach (var tab in shell.Tabs)
             {
-                if (tab.Title is not ("LIVE" or "DJ"))
+                if (tab.Title is not ("LIVE" or "DJ" or "DJ PRO"))
                     continue;
                 shell.CurrentTab = tab;
                 Dispatcher.UIThread.RunJobs();

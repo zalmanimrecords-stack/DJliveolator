@@ -191,7 +191,7 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   present) wiring `MidiFeedbackPublisher` back out. The Core seam `IMidiDeviceProvider` gained
   `OpenInput`/`OpenOutput` (already implemented by `RtMidiDeviceProvider`) so the App opens a device
   through the seam without touching RtMidi types. `CmdStudio2AProfile.Default` maps the controller's
-  transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncOnce`), crossfader + per-deck gain
+  transport (`DeckPlayPause`/`DeckCue`), sync (`DeckSyncToggle`), crossfader + per-deck gain
   (`MixerCrossfade`/`MixerChannelGain`), 3-band EQ (`MixerEqBand` Low/Mid/High) + filter
   (`MixerFilter`), and track-position jog (`DeckJog`) to the existing kinds — Deck A = channel 0/slot
   0, Deck B = channel 1/slot 1. **The CC/note numbers are documented defaults, not gospel:** every
@@ -230,15 +230,17 @@ Pure MIDI→`PerformanceAction` translation + device seams + routing. **Library-
   while playing. The engine clamps at track boundaries and immediately publishes `DeckSeek`
   feedback so the on-screen playhead/waveform follows the hardware. Existing saved CMD profiles
   using the former beat-clock jog mapping are upgraded in place.
-- **SYNC is a one-shot beatmatch:** deck SYNC uses the momentary `DeckSyncOnce` action. A single
-  press of the on-screen button or its learned MIDI button beatmatches tempo **and** beat-phase to
-  the other deck once (`engine.SyncOnce`), then leaves the deck free for manual NUDGE — no latch and
-  no continuous correction loop. Existing learned/saved `DeckSyncToggle` deck buttons are healed in
-  place back to `DeckSyncOnce` without changing their note/channel. The persistent-lock machinery
-  (`SetSyncLock`/`UpdateSync`, which also feeds the shared audio↔visual master clock) remains in the
-  engine but is no longer engaged by the SYNC button. If no feedback output is selected, the session
-  automatically tries an output matching the connected input device name, which covers
-  class-compliant bidirectional DJ controllers such as the CMD.
+- **SYNC is a top-level beat lock:** deck SYNC uses the toggle `DeckSyncToggle` action. A press of
+  the on-screen button or shipped MIDI SYNC button beatmatches tempo, snaps beat phase to the other
+  deck, engages key-lock to preserve musical pitch, and keeps the deck phase-locked through
+  `SetSyncLock`/`UpdateSync` until SYNC is pressed again. `DeckSyncOnce` remains as a learnable legacy
+  one-shot target, while existing CMD saved buttons that still target `DeckSyncOnce` are healed in
+  place to `DeckSyncToggle` without changing their note/channel. If no feedback output is selected,
+  the session automatically tries an output matching the connected input device name, which covers
+  class-compliant bidirectional DJ controllers such as the CMD. Sync now carries analyzed kick onsets
+  into the deck engine, uses the nearest local kick as the phase anchor, and allows ±35% key-locked
+  tempo stretch before reporting OutOfRange. A paused loaded deck is never elected as Sync master; if no
+  other deck is actively playing, SYNC releases instead of latching to a frozen playhead.
 - **Deferred:** persisted/custom mapping profiles beyond the CMD STUDIO 2A default feeding
   `AvailableMidiProfiles` (the `ILiveProfileStore` round-trip exists); the Push 1 profile + SysEx
   LED/LCD formatting (doc 06); and confirming the CMD STUDIO 2A CC map against its MIDI implementation
@@ -781,7 +783,7 @@ view-models under `Features/Live/Modules/`, each driving the engines only throug
 |--------|------------|-----------------|
 | Program Out | `ProgramOutViewModel` | Show Visuals (`IVisualStage`); preview/REC/layers static |
 | Visual Control | `VisualControlViewModel` | Show output; transition Now/Beat/Bar; toggle layers 1-4; enable/disable installed visual add-ons; list loaded effects/generators |
-| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncOnce` (one-shot tempo + phase match), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
+| Deck A / B | `DeckViewModel` (slot 0/1) | `DeckPlayPause`, `DeckSyncToggle` (tempo + phase lock), `MixerEqBand` (Hi/Mid/Low), `MixerFilter`; cue/loop/hot-cue/pitch disabled |
 | Mixer | `MixerViewModel` | `MixerCrossfade`, `MixerChannelGain` (A/B); VU static |
 | Scene Grid | `SceneGridViewModel` + `ScenePadViewModel` | 8×8 `VisualLoadScene`, bank `VisualSelectBank`; pad state from feedback |
 | Master / FX | `MasterFxViewModel` | `VisualToggleStrobe`, `VisualBlackout`; Master/Swing disabled |

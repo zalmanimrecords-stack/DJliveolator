@@ -2,7 +2,6 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Liveolator.App.Features.Playlists;
 
@@ -163,20 +162,5 @@ public partial class LibrariesView : UserControl
         string? path = picked.Count > 0 ? picked[0].TryGetLocalPath() : null;
         if (!string.IsNullOrEmpty(path))
             await vm.ImportFromFolderAsync(format, path);
-    }
-
-    private void OnOpenGetSongBpm(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo("https://getsongbpm.com/")
-            {
-                UseShellExecute = true,
-            });
-        }
-        catch
-        {
-            // The attribution remains visible even when the OS cannot open a browser.
-        }
     }
 }

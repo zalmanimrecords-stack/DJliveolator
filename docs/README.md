@@ -40,6 +40,7 @@ Hardware / UI / Autopilot
 | 09 | [Live playlist engine](09-live-playlist-engine.md) | Playlist | Carries over |
 | 10 | [Autopilot show rules](10-autopilot-show-rules.md) | Automation | Carries over |
 | 11 | [Deck A/B and DJ engine](11-deck-ab-pro-dj.md) | DJ playback | ⚠️ revise (output via audio lib) |
+| — | [Sync behavior spec](SYNC-BEHAVIOR-SPEC.md) | DJ sync/beatmatch | **Proposed** — contract + acceptance tests |
 | 12 | [UI modules](12-ui-modules.md) | UI | Carries over (WPF→Avalonia wording) |
 | 13 | [Data and persistence](13-data-and-persistence.md) | Storage | Carries over |
 | 14 | [Testing and validation](14-testing-and-validation.md) | Quality | Carries over |

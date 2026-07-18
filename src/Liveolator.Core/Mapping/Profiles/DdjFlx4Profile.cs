@@ -99,12 +99,11 @@ public static class DdjFlx4Profile
             MidiMessageType.NoteOn, deckChannel, CueNote,
             PerformanceActionKind.DeckCue, ActionInputMode.Momentary, slot));
 
-        // SYNC = one-shot beatmatch (tempo + phase), momentary — a single press lines the deck up, then
-        // the jog/tempo fader stay free for manual fine-tuning. Not a latch (no continuous loop), same
-        // convention as the other shipped profiles.
+        // SYNC = top-level beat lock: a press toggles tempo + phase sync to the other deck, matching the
+        // on-screen SYNC control. Release is ignored by the mapper for toggle buttons.
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, deckChannel, SyncNote,
-            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, slot));
+            PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, slot));
 
         // Tempo fader → absolute pitch position (0..1, 0.5 = original tempo; the engine owns the % range).
         bindings.Add(new ControllerBinding(

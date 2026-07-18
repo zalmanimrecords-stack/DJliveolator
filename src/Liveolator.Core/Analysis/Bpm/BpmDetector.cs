@@ -36,6 +36,22 @@ public sealed record BpmResult(double Bpm, double Confidence, double FirstBeatSe
     /// shape and existing serialized catalogs are unaffected (positional-record back-compat).
     /// </summary>
     public IReadOnlyList<double> KickOnsetsSeconds { get; init; } = Array.Empty<double>();
+
+    /// <summary>
+    /// Raw onset-phase coherence (0..1) of the kick-grid fit (<see cref="GridRefiner"/>) — how tightly the
+    /// kicks land on the grid, the primary predictor of a trustworthy constant-tempo grid. The Sync gate
+    /// (<see cref="GridConfidenceCalculator"/>) reads it to decide beat/phase sync vs. tempo-only. Null on
+    /// pre-v9 catalogs (unknown ⇒ phase sync preserved until re-analyzed); analysis persists the raw value
+    /// so the gate threshold can be retuned without re-scanning.
+    /// </summary>
+    public double? GridCoherence { get; init; }
+
+    /// <summary>
+    /// Constant-tempo proof: the absolute BPM difference between the track's first and second halves
+    /// (octave-folded to the same metrical level). Small ⇒ constant tempo (safe to phase-lock); large ⇒
+    /// variable/live tempo (the grid drifts, so Sync downgrades to tempo-only). Null on pre-v9 catalogs.
+    /// </summary>
+    public double? TempoStabilityBpmDelta { get; init; }
 }
 
 /// <summary>
@@ -131,7 +147,42 @@ public sealed class BpmDetector
             BeatsPerBar = downbeat.BeatsPerBar,
             DownbeatConfidence = downbeat.Confidence,
             KickOnsetsSeconds = kickOnsets,
+            // Grid-confidence signals for the Sync gate (SYNC-BEHAVIOR-SPEC §7). The kick-fit coherence
+            // was previously discarded; carry it. Tempo stability is the one added signal — a constant-
+            // tempo proof from the broadband envelope's two halves.
+            GridCoherence = Math.Round(kickFit.Coherence, 4),
+            TempoStabilityBpmDelta = TempoStabilityDelta(envelope, envelopeRateHz, bpm),
         };
+    }
+
+    // Constant-tempo proof: estimate the tempo over the first and second halves of the onset envelope and
+    // return their octave-folded BPM difference. Small on a constant-tempo track; large when the tempo
+    // drifts (live/acoustic) — the exact axis that separates "grids locally" from "stays constant" and the
+    // reason vendors split static vs. dynamic beatgrids. Cheap (two autocorrelations on half the envelope).
+    // 0 (assume stable) when too short to split or a half is undetectable — coherence still catches bad grids.
+    private double TempoStabilityDelta(double[] envelope, double envelopeRateHz, double referenceBpm)
+    {
+        if (envelope.Length < 8 || referenceBpm <= 0.0)
+            return 0.0;
+
+        int half = envelope.Length / 2;
+        double firstBpm = _tempo.Estimate(envelope[..half], envelopeRateHz).Bpm;
+        double secondBpm = _tempo.Estimate(envelope[half..], envelopeRateHz).Bpm;
+        if (firstBpm <= 0.0 || secondBpm <= 0.0)
+            return 0.0;
+
+        return Math.Round(Math.Abs(FoldToOctaveOf(firstBpm, referenceBpm) - FoldToOctaveOf(secondBpm, referenceBpm)), 3);
+    }
+
+    // Fold a BPM to the octave nearest the reference (√2 geometric midpoint), so a half's estimate landing
+    // on a half/double octave is compared on the reference's metrical level rather than reading as drift.
+    private static double FoldToOctaveOf(double bpm, double reference)
+    {
+        if (bpm <= 0.0 || reference <= 0.0)
+            return bpm;
+        while (bpm / reference >= 1.4142135623730951) bpm /= 2.0;
+        while (bpm / reference < 0.7071067811865476) bpm *= 2.0;
+        return bpm;
     }
 
     // Keep the first-beat anchor inside [0, 60/bpm): the kick fit's phase is taken modulo its own period,

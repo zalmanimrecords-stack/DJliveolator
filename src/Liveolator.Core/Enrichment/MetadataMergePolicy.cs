@@ -20,6 +20,9 @@ public enum BpmProvenance
 
     /// <summary>Local and online disagree — local value kept, flagged for review.</summary>
     Conflicted,
+
+    /// <summary>The user confirmed the local value (manual BPM or a dismissed conflict) — never re-flagged.</summary>
+    LocalConfirmed,
 }
 
 /// <summary>The merged BPM result: the chosen value, its confidence, where it came from, and the resulting status.</summary>
@@ -73,11 +76,14 @@ public static class MetadataMergePolicy
     }
 
     // Agreement allows half-/double-time, since tempo detectors commonly land an octave off (e.g. a
-    // 140 BPM psytrance track detected as 70). All three relations count as the same tempo.
+    // 140 BPM psytrance track detected as 70), and 3:2, the other common detector/crowd-data error
+    // (87 vs 130.5 on shuffle/broken-beat). All these relations count as the same tempo.
     private static bool Agrees(double localBpm, double onlineBpm)
         => Within(localBpm, onlineBpm)
         || Within(localBpm, onlineBpm * 2.0)
-        || Within(localBpm, onlineBpm / 2.0);
+        || Within(localBpm, onlineBpm / 2.0)
+        || Within(localBpm, onlineBpm * 1.5)
+        || Within(localBpm, onlineBpm / 1.5);
 
     private static bool Within(double a, double b) => Math.Abs(a - b) <= AgreementToleranceBpm;
 }

@@ -69,8 +69,16 @@ public sealed class WaveformStrip : Control
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(BeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x8E, 0x9A, 0xA8)));
 
-    /// <summary>Brush for the downbeat (bar-start) blocks in the bottom CBG comb — a broad red tooth
-    /// every fourth beat (the "beginning of a measure" marker).</summary>
+    /// <summary>Brush for a regular bar-start (downbeat) line in the bottom CBG comb — a CYAN line marking
+    /// the "beginning of a measure". A phrase START (the "1" of each 4-bar group) uses the stronger
+    /// <see cref="DownbeatBrush"/> (red) instead, so the DJ reads bars and 4-bar phrases apart.</summary>
+    public static readonly StyledProperty<IBrush> BarLineBrushProperty =
+        AvaloniaProperty.Register<WaveformStrip, IBrush>(
+            nameof(BarLineBrush), new ImmutableSolidColorBrush(Color.FromRgb(0x5E, 0xE2, 0xFF)));
+
+    /// <summary>Brush for a PHRASE-START downbeat in the bottom CBG comb — a broad red tooth on the "1" of
+    /// each 4-bar phrase (bars 5, 9, 13 …), so phrasing reads at a glance above the cyan bar lines. The
+    /// track's first bar stays a cyan anchor.</summary>
     public static readonly StyledProperty<IBrush> DownbeatBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
             nameof(DownbeatBrush), new ImmutableSolidColorBrush(Color.FromRgb(0xE5, 0x40, 0x3A)));
@@ -93,6 +101,14 @@ public sealed class WaveformStrip : Control
     /// the lower deck grows down, mirroring around the shared central comb.</summary>
     public static readonly StyledProperty<bool> FoldedProperty =
         AvaloniaProperty.Register<WaveformStrip, bool>(nameof(Folded));
+
+    /// <summary>
+    /// Scales the mid/high "body" bands to this fraction of the full amplitude (1.0 = full, the default),
+    /// while the kick band keeps the full height — so the kick transients SPIKE ABOVE the body (the
+    /// VirtualDJ "kick pops" look). DJ PRO sets it below 1; DJ / LIVE leave it at 1 (unchanged).
+    /// </summary>
+    public static readonly StyledProperty<double> BodyScaleProperty =
+        AvaloniaProperty.Register<WaveformStrip, double>(nameof(BodyScale), 1.0);
 
     /// <summary>The waveform overview peaks (each 0..1), or null/empty to draw the placeholder.</summary>
     public static readonly StyledProperty<IReadOnlyList<float>?> PeaksProperty =
@@ -153,7 +169,8 @@ public sealed class WaveformStrip : Control
         AffectsRender<WaveformStrip>(
             BarBrushProperty, PlayedBrushProperty, GridBrushProperty, KickBrushProperty,
             MidBrushProperty, HighBrushProperty,
-            PlayheadBrushProperty, BeatBrushProperty, DownbeatBrushProperty, CombAtTopProperty, FoldedProperty,
+            PlayheadBrushProperty, BeatBrushProperty, BarLineBrushProperty, DownbeatBrushProperty, CombAtTopProperty, FoldedProperty,
+            BodyScaleProperty,
             CueBrushProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
             BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty, HotCueMarkersProperty,
@@ -174,10 +191,12 @@ public sealed class WaveformStrip : Control
     public IBrush HighBrush { get => GetValue(HighBrushProperty); set => SetValue(HighBrushProperty, value); }
     public IBrush PlayheadBrush { get => GetValue(PlayheadBrushProperty); set => SetValue(PlayheadBrushProperty, value); }
     public IBrush BeatBrush { get => GetValue(BeatBrushProperty); set => SetValue(BeatBrushProperty, value); }
+    public IBrush BarLineBrush { get => GetValue(BarLineBrushProperty); set => SetValue(BarLineBrushProperty, value); }
     public IBrush DownbeatBrush { get => GetValue(DownbeatBrushProperty); set => SetValue(DownbeatBrushProperty, value); }
     public IBrush CueBrush { get => GetValue(CueBrushProperty); set => SetValue(CueBrushProperty, value); }
     public bool CombAtTop { get => GetValue(CombAtTopProperty); set => SetValue(CombAtTopProperty, value); }
     public bool Folded { get => GetValue(FoldedProperty); set => SetValue(FoldedProperty, value); }
+    public double BodyScale { get => GetValue(BodyScaleProperty); set => SetValue(BodyScaleProperty, value); }
     public IReadOnlyList<float>? Peaks { get => GetValue(PeaksProperty); set => SetValue(PeaksProperty, value); }
     public IReadOnlyList<float>? KickPeaks { get => GetValue(KickPeaksProperty); set => SetValue(KickPeaksProperty, value); }
     public IReadOnlyList<float>? MidPeaks { get => GetValue(MidPeaksProperty); set => SetValue(MidPeaksProperty, value); }
@@ -256,6 +275,9 @@ public sealed class WaveformStrip : Control
         // Centred bars by default; folded (single-sided, growing away from the comb) for the combined
         // butterfly view so a stacked A/B pair mirrors around the shared central comb.
         WaveGeometry geometry = WaveGeometry.For(waveRect.Height, Folded, combAtTop);
+        // The mid/high "body" is scaled down so the kick band (full height) SPIKES ABOVE it — the VirtualDJ
+        // "kick pops" look. BodyScale defaults to 1.0 (body == kick height), so DJ / LIVE are unchanged.
+        WaveGeometry bodyGeometry = geometry.Scaled(BodyScale);
 
         using (context.PushTransform(Matrix.CreateTranslation(0, waveTop)))
         {
@@ -268,12 +290,12 @@ public sealed class WaveformStrip : Control
             IReadOnlyList<float>? high = HighPeaks;
             if (mid is { Count: > 0 } && high is { Count: > 0 })
             {
-                RenderBand(context, waveRect, high, HighBrush, geometry, start, span);
-                RenderBand(context, waveRect, mid, MidBrush, geometry, start, span);
+                RenderBand(context, waveRect, high, HighBrush, bodyGeometry, start, span);
+                RenderBand(context, waveRect, mid, MidBrush, bodyGeometry, start, span);
             }
             else
             {
-                RenderWaveform(context, waveRect, peaks, geometry, start, span);
+                RenderWaveform(context, waveRect, peaks, bodyGeometry, start, span);
             }
 
             IReadOnlyList<float>? kick = KickPeaks;
@@ -354,11 +376,12 @@ public sealed class WaveformStrip : Control
     /// fixed index 0 — so the red bars sit on the musical one rather than on whatever beat the grid starts on.</summary>
     private const int BeatsPerBar = 4;
 
-    // The CBG comb (beat marking): a row of bottom-anchored teeth in the comb strip.
-    // Regular beats are short faint grey blocks; every 4th (a bar downbeat) is a broad red block running
-    // the full comb height, with a soft halo. Adaptive — teeth too dense to read are skipped, so the comb
-    // is empty in the whole-track overview and resolves into downbeats, then every beat, as the strip
-    // zooms in. Lining the red downbeats up across decks A/B is the "on the grid" read used to beat-match.
+    // The beat grid + CBG comb. Bar downbeats (cyan) and phrase starts (red, haloed) are drawn as
+    // FULL-HEIGHT lines OVER the waveform — a clear beat-grid overlay so the DJ can see the grid land on the
+    // kicks; the fine beats stay as short faint grey teeth in the comb strip so they subdivide without
+    // cluttering the wave. Adaptive — lines too dense to read are skipped, so the whole-track overview is
+    // clean and resolves into phrases, then bars, then beats as the strip zooms in. Lining the bar/phrase
+    // lines up across decks A/B is the "on the grid" read used to beat-match.
     private void RenderBeatComb(
         DrawingContext context, Rect b, double combTop, double combH, bool combAtTop, double start, double span)
     {
@@ -376,16 +399,26 @@ public sealed class WaveformStrip : Control
             return; // too zoomed-out to read even downbeats → draw no comb (keeps the overview clean)
 
         Color beat = (BeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x8E, 0x9A, 0xA8);
-        Color down = (DownbeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x40, 0x3A);
+        Color barLine = (BarLineBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x5E, 0xE2, 0xFF);
+        Color phrase = (DownbeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x40, 0x3A);
         double combBottom = combTop + combH;
+        // Bar and phrase lines are drawn as FULL-HEIGHT vertical lines OVER the waveform (a clear beat-grid
+        // overlay, like the cue markers) so the DJ can read the grid sitting on the kicks at a glance. The
+        // fine beat teeth stay SHORT in the comb strip so they subdivide the bars without cluttering the wave.
+        double gridTop = 0;
+        double gridBottom = b.Height;
         // Short beat teeth hug the strip's OUTER edge (the side away from the wave): the comb bottom when it
         // sits below the wave, the comb top when it is flipped above it. So a stacked pair's teeth mirror and
-        // meet in the middle. Downbeats always run the full comb height, so they line up regardless.
+        // meet in the middle.
         double beatNear = combAtTop ? combTop : combTop + combH * 0.55;
         double beatFar = combAtTop ? combTop + combH * 0.45 : combBottom;
-        var beatPen = new Pen(new ImmutableSolidColorBrush(beat, 0.60), 1.5);
-        var downHaloPen = new Pen(new ImmutableSolidColorBrush(down, 0.35), 4.0);
-        var downPen = new Pen(new ImmutableSolidColorBrush(down), 2.5);
+        // Bar/phrase lines are drawn OPAQUE + a dark backing so they read clearly over any wave colour (a
+        // cyan bar over the blue high band would otherwise blend). Beats stay faint in the comb.
+        var beatPen = new Pen(new ImmutableSolidColorBrush(beat, 0.55), 1.5);
+        var gridBackPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)), 3.5); // dark backing
+        var barPen = new Pen(new ImmutableSolidColorBrush(barLine), 2.0);                 // bright cyan bar over the wave
+        var phraseHaloPen = new Pen(new ImmutableSolidColorBrush(phrase, 0.30), 6.0);
+        var phrasePen = new Pen(new ImmutableSolidColorBrush(phrase), 2.5);               // bright red phrase over the wave
 
         int downbeatOffset = DownbeatOffset;
         double end = start + span;
@@ -398,10 +431,19 @@ public sealed class WaveformStrip : Control
             if (!isDownbeat && !drawBeats)
                 continue;
             double x = (fraction - start) / span * b.Width;
-            if (isDownbeat)
+            if (isDownbeat && IsPhraseDownbeat(i, downbeatOffset, BeatsPerBar, BarsPerPhrase))
             {
-                context.DrawLine(downHaloPen, new Point(x, combTop), new Point(x, combBottom));
-                context.DrawLine(downPen, new Point(x, combTop), new Point(x, combBottom));
+                // Phrase start (the "1" of a 4-bar group): a full-height red line — glow halo + dark backing
+                // + bright red core — so it reads clearly over the wave.
+                context.DrawLine(phraseHaloPen, new Point(x, gridTop), new Point(x, gridBottom));
+                context.DrawLine(gridBackPen, new Point(x, gridTop), new Point(x, gridBottom));
+                context.DrawLine(phrasePen, new Point(x, gridTop), new Point(x, gridBottom));
+            }
+            else if (isDownbeat)
+            {
+                // Full-height cyan bar over the wave, on a dark backing so it never blends into the blue band.
+                context.DrawLine(gridBackPen, new Point(x, gridTop), new Point(x, gridBottom));
+                context.DrawLine(barPen, new Point(x, gridTop), new Point(x, gridBottom));
             }
             else
             {
@@ -423,6 +465,25 @@ public sealed class WaveformStrip : Control
             return false;
         int folded = ((offset % beatsPerBar) + beatsPerBar) % beatsPerBar;
         return (((index - folded) % beatsPerBar) + beatsPerBar) % beatsPerBar == 0;
+    }
+
+    /// <summary>Bars per phrase group: the "1" of each group (bars 5, 9, 13 …) is drawn as the red phrase
+    /// marker; the other bar downbeats — and bar 1 — are cyan bar lines. 4-bar phrasing is the DJ default.</summary>
+    private const int BarsPerPhrase = 4;
+
+    /// <summary>
+    /// Whether comb line <paramref name="index"/> is a PHRASE START downbeat — the "1" of a
+    /// <paramref name="barsPerPhrase"/>-bar phrase group, i.e. bars 5, 9, 13 … The track's very first bar
+    /// (bar 1, the anchor) stays a cyan bar line, so the red phrase markers begin at the second phrase. Pure
+    /// and public so the placement unit-tests without a render.
+    /// </summary>
+    public static bool IsPhraseDownbeat(int index, int offset, int beatsPerBar, int barsPerPhrase)
+    {
+        if (barsPerPhrase < 1 || !IsBarDownbeat(index, offset, beatsPerBar))
+            return false;
+        int folded = ((offset % beatsPerBar) + beatsPerBar) % beatsPerBar;
+        int barNumber = (index - folded) / beatsPerBar; // 0-based bar from the grid's first "one"
+        return barNumber > 0 && (barNumber % barsPerPhrase) == 0; // phrase starts 5, 9, 13 … (bar 1 → cyan anchor)
     }
 
     /// <summary>
@@ -464,6 +525,10 @@ public sealed class WaveformStrip : Control
             => Folded
                 ? (new Point(x, Baseline), new Point(x, Baseline + Direction * amp))
                 : (new Point(x, Center - amp), new Point(x, Center + amp));
+
+        /// <summary>A copy with the max amplitude scaled by <paramref name="factor"/> (clamped to a sane
+        /// range), for drawing the body bands shorter than the full-height kick band.</summary>
+        public WaveGeometry Scaled(double factor) => this with { MaxAmp = MaxAmp * Math.Clamp(factor, 0.05, 1.0) };
     }
 
     // Broadband fallback (no band data): one bar per column, peak-held within the visible window.

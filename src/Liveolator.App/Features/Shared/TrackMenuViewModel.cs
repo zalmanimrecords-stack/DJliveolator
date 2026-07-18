@@ -14,27 +14,36 @@ public sealed class TrackMenuViewModel
     private readonly string _trackPath;
     private readonly double _bpm;
     private readonly double _firstBeatSeconds;
+    private readonly IReadOnlyList<double>? _kickOnsetsSeconds;
     private readonly TrackContextActions _actions;
 
     /// <param name="bpm">The track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).</param>
     /// <param name="firstBeatSeconds">The analyzed downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1).</param>
-    public TrackMenuViewModel(string trackPath, TrackContextActions actions, double bpm = 0, double firstBeatSeconds = 0)
+    public TrackMenuViewModel(
+        string trackPath,
+        TrackContextActions actions,
+        double bpm = 0,
+        double firstBeatSeconds = 0,
+        IReadOnlyList<double>? kickOnsetsSeconds = null)
     {
         _trackPath = trackPath ?? throw new ArgumentNullException(nameof(trackPath));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         _bpm = bpm;
         _firstBeatSeconds = firstBeatSeconds;
+        _kickOnsetsSeconds = kickOnsetsSeconds;
 
         LoadToDeckACommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(0, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckA));
+            () => _actions.LoadToDeck(0, _trackPath, _bpm, _firstBeatSeconds, _kickOnsetsSeconds), Observable.Return(_actions.CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(1, _trackPath, _bpm, _firstBeatSeconds), Observable.Return(_actions.CanLoadToDeckB));
+            () => _actions.LoadToDeck(1, _trackPath, _bpm, _firstBeatSeconds, _kickOnsetsSeconds), Observable.Return(_actions.CanLoadToDeckB));
         AnalyzeAgainCommand = ReactiveCommand.CreateFromTask(
             () => _actions.AnalyzeAgainAsync(_trackPath), Observable.Return(_actions.CanAnalyze));
         EditMetadataCommand = ReactiveCommand.CreateFromTask(
             () => _actions.EditAsync(_trackPath), Observable.Return(_actions.CanEdit));
         AutoCueCommand = ReactiveCommand.CreateFromTask(
             () => _actions.AutoCueAsync(_trackPath), Observable.Return(_actions.CanAutoCue));
+        ConfirmBpmCommand = ReactiveCommand.CreateFromTask(
+            () => _actions.ConfirmLocalBpmAsync(_trackPath), Observable.Return(_actions.CanAnalyze));
         SeparateStemsCommand = ReactiveCommand.CreateFromTask(
             () => _actions.SeparateStemsAsync(_trackPath), Observable.Return(_actions.CanSeparateStems));
     }
@@ -46,6 +55,9 @@ public sealed class TrackMenuViewModel
 
     /// <summary>Places automatic hot cues for this track (persisted; they appear on the next deck load).</summary>
     public ReactiveCommand<Unit, Unit> AutoCueCommand { get; }
+
+    /// <summary>Resolves a BPM conflict by keeping the detected value (shown only on conflicted rows).</summary>
+    public ReactiveCommand<Unit, Unit> ConfirmBpmCommand { get; }
 
     /// <summary>Drives the "Auto-cue track" menu item's visibility (hidden when no decoder/cue store).</summary>
     public bool CanAutoCue => _actions.CanAutoCue;

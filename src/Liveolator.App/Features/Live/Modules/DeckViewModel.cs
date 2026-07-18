@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
+using Liveolator.Core;
 using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
@@ -9,7 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Liveolator.App.Shell;
-using Liveolator.Core;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
@@ -27,8 +26,8 @@ namespace Liveolator.App.Features.Live.Modules;
 /// A single DJ deck (the mock's Deck A / Deck B, doc 11), parameterized by slot (A = 0, B = 1).
 /// Every control is an action source (doc 04): Play·Pause (<see cref="PerformanceActionKind.DeckPlayPause"/>),
 /// Cue (<see cref="PerformanceActionKind.DeckCue"/>), Loop (<see cref="PerformanceActionKind.DeckSetLoop"/>),
-/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), one-shot Sync
-/// (<see cref="PerformanceActionKind.DeckSyncOnce"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
+/// the four hot-cues (<see cref="PerformanceActionKind.DeckHotCue"/>), Sync
+/// (<see cref="PerformanceActionKind.DeckSyncToggle"/>), Pitch (<see cref="PerformanceActionKind.DeckPitch"/>),
 /// the 3-band EQ (<see cref="PerformanceActionKind.MixerEqBand"/>), the filter knob
 /// (<see cref="PerformanceActionKind.MixerFilter"/>), and click-to-seek on the waveform
 /// (<see cref="PerformanceActionKind.DeckSeek"/>). The deck learns its loaded track from
@@ -119,13 +118,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private IReadOnlyList<float>? _highPeaks;
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
+    private double _syncScrollOffset; // render-time beat-phase lock to the master (0 unless a synced follower)
     private double _trackBpm;
     private double _firstBeatSeconds;
     // The downbeat (bar-1, the musical "one") anchor in seconds: where the BAR starts, distinct from the
     // first-beat anchor (where beats land). Drives which grid line carries the red bar marker. Auto-set from
     // the analyzed downbeat when confident, or placed by the DJ via SET ONE; 0 = unknown → index 0 is the bar.
     private double _downbeatSeconds;
-    // The track's detected kick strike times (seconds), from analysis. SET PHASE and one-shot SYNC snap the
+    // The track's detected kick strike times (seconds), from analysis. SET PHASE and SYNC snap the
     // grid onto the kick nearest the playhead from this list, so alignment lands on the real transient
     // rather than the raw playhead. Empty until analysis is known.
     private IReadOnlyList<double> _kickOnsets = Array.Empty<double>();
@@ -146,6 +146,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isBpmMatched;
     private string _bpmOctaveLabel = "";
     private bool _isSyncOutOfRange;
+    private bool _isSync;
+    private bool _isSyncLockedTight;
+    private bool _isSyncMaster;
+    private bool _isTempoSync;
+    private bool _isTempoSyncOutOfRange;
+    private bool _isGridUncertain;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
@@ -221,20 +227,24 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 PerformanceActionKind.DeckSetLoop, ActionInputMode.Absolute, Value: 0.0, Slot: slot)),
             canEmit);
 
-        // One-shot Sync (owner requirement): a single press does it all, once, then leaves the deck free —
-        // no continuous latch fighting the DJ. First it auto-SETs PHASE (snaps this deck's grid onto the
-        // real kick nearest the playhead, via EmitGridHere) so alignment lands on the true transient even
-        // when analysis put the grid a hair off; then DeckSyncOnce beatmatches + phase-aligns to the other
-        // deck, preserving the musical key (the engine engages key-lock). The DeckSetFirstBeat from the
-        // snap is dispatched first, so the engine's align uses the corrected grid. Momentary; a latching
-        // "Sync Lock" (DeckSyncToggle) stays available as a MIDI mapping target for controllers.
+        // Top-level Sync: match tempo, align phase, then keep the deck locked to the other deck until the
+        // performer turns it off. First it auto-SETs PHASE (snaps this deck's grid onto the real kick
+        // nearest the playhead, via EmitGridHere) so alignment lands on the true transient even when
+        // analysis put the grid a hair off; then DeckSyncToggle engages the continuous lock.
         SyncCommand = ReactiveCommand.Create(
             () =>
             {
                 EmitGridHere(); // auto SET PHASE to the nearest kick before matching
                 _dispatcher?.Dispatch(new PerformanceAction(
-                    PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, Slot: slot));
+                    PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, Slot: slot));
             },
+            canEmit);
+
+        // Tempo Sync (the tempo-only alternate, SYNC-BEHAVIOR-SPEC §4): match tempo to the master without
+        // touching phase, so no SET PHASE first — the DJ rides the "one" by hand.
+        TempoSyncCommand = ReactiveCommand.Create(
+            () => _dispatcher?.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckTempoSyncToggle, ActionInputMode.Toggle, Slot: slot)),
             canEmit);
 
         // Key-lock (master tempo) toggle: holds the musical key constant while the tempo/pitch fader moves.
@@ -397,7 +407,19 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // Re-entering the DJ tab on a deck the engine already reports as OutOfRange must show "can't sync"
         // immediately, not only after the next lock-state transition — so seed it from current feedback.
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckSyncToggle, slot) is { } syncFeedback)
+        {
+            _isSync = IsEngagedFeedback(syncFeedback);
+            _isSyncLockedTight = IsLockedTightFeedback(syncFeedback);
             _isSyncOutOfRange = IsSyncOutOfRangeFeedback(syncFeedback);
+        }
+        if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckTempoSyncToggle, slot) is { } tempoSyncFeedback)
+        {
+            _isTempoSync = IsEngagedFeedback(tempoSyncFeedback);
+            _isTempoSyncOutOfRange = IsSyncOutOfRangeFeedback(tempoSyncFeedback);
+        }
+        // IsGridUncertain is a per-track verdict set on load (DispatchGridConfidence) and by live feedback;
+        // it is NOT seeded from a feedback pull — the "confident" default is the absence of a downgrade, and
+        // an inverted (!IsActive) seed would read a missing feedback as uncertain.
 
         if (_dispatcher?.GetFeedback(PerformanceActionKind.DeckLoadTrack, slot)
             is { IsAvailable: true, Argument: { Length: > 0 } trackPath } loadedTrack)
@@ -581,8 +603,29 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set
         {
             this.RaiseAndSetIfChanged(ref _progress, value);
+            this.RaisePropertyChanged(nameof(RenderProgress));
             UpdateTimeTexts();
         }
+    }
+
+    /// <summary>The playhead fraction the WAVEFORM renders at: the true <see cref="Progress"/> plus a small
+    /// beat-phase lock (<see cref="_syncScrollOffset"/>) when this deck is a Sync-Locked follower, so its
+    /// grid moves together with the master's. Equal to <see cref="Progress"/> when not synced (offset 0).</summary>
+    public double RenderProgress => _progress + _syncScrollOffset;
+
+    /// <summary>Grid state <see cref="PerformanceDeckSet"/> reads to compute the follower's sync-scroll lock:
+    /// the true playhead + the track's duration / first-beat anchor / base (grid) tempo.</summary>
+    internal (double Progress, double DurationSeconds, double FirstBeatSeconds, double BaseBpm) SyncScrollState
+        => (_progress, _durationSeconds, _firstBeatSeconds, _trackBpm);
+
+    /// <summary>Set the render-time beat-phase lock offset (progress-fraction) that aligns this follower's
+    /// grid to the master's. 0 clears it (not a follower). Driven by <see cref="PerformanceDeckSet"/>.</summary>
+    internal void SetSyncScrollOffset(double offset)
+    {
+        if (_syncScrollOffset == offset)
+            return;
+        _syncScrollOffset = offset;
+        this.RaisePropertyChanged(nameof(RenderProgress));
     }
 
     /// <summary>Time elapsed in the loaded track ("m:ss"), or the placeholder until the duration decodes.</summary>
@@ -725,6 +768,68 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         get => _isSyncOutOfRange;
         private set => this.RaiseAndSetIfChanged(ref _isSyncOutOfRange, value);
     }
+
+    /// <summary>True while the deck is engaged in Sync Lock (BeatLock) mode — lights the SYNC button so the
+    /// active sync mode is visible (SYNC-BEHAVIOR-SPEC §4/§11). Fed by <c>DeckSyncToggle</c> feedback.</summary>
+    public bool IsSync
+    {
+        get => _isSync;
+        private set => this.RaiseAndSetIfChanged(ref _isSync, value);
+    }
+
+    /// <summary>True while the deck is engaged in Tempo Sync (tempo-only) mode — lights the TEMPO button.
+    /// The tempo-only alternate to <see cref="IsSync"/>; the two never light together (one shared latch).</summary>
+    public bool IsTempoSync
+    {
+        get => _isTempoSync;
+        private set => this.RaiseAndSetIfChanged(ref _isTempoSync, value);
+    }
+
+    /// <summary>OutOfRange (tempos too far apart to beatmatch) surfaced on the TEMPO button, mirroring
+    /// <see cref="IsSyncOutOfRange"/> on SYNC. Fed by <c>DeckTempoSyncToggle</c> feedback.</summary>
+    public bool IsTempoSyncOutOfRange
+    {
+        get => _isTempoSyncOutOfRange;
+        private set => this.RaiseAndSetIfChanged(ref _isTempoSyncOutOfRange, value);
+    }
+
+    /// <summary>True when Sync Lock is engaged AND fully phase-locked (<see cref="SyncLockState.Locked"/> —
+    /// "in the pocket"), as opposed to still pulling in (Active) or recovering (Drifting). Drives the SYNC
+    /// button's green locked look so the DJ can see at a glance that the beat is held (SYNC-BEHAVIOR-SPEC §11).</summary>
+    public bool IsSyncLockedTight
+    {
+        get => _isSyncLockedTight;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncLockedTight, value);
+    }
+
+    /// <summary>True when the loaded track's analyzed beatgrid is too low-confidence to phase-sync, so SYNC
+    /// falls back to tempo-only (SYNC-BEHAVIOR-SPEC §7). Drives a "grid uncertain" hint so the downgrade is
+    /// visible, never silent. Fed by <c>DeckSetPhaseSyncReady</c> feedback (IsActive = grid trustworthy).</summary>
+    public bool IsGridUncertain
+    {
+        get => _isGridUncertain;
+        private set => this.RaiseAndSetIfChanged(ref _isGridUncertain, value);
+    }
+
+    /// <summary>True when this deck is the sync MASTER — the reference the other (synced) deck locks onto
+    /// (SYNC-BEHAVIOR-SPEC §11). Derived cross-deck by <see cref="PerformanceDeckSet"/> from the other deck's
+    /// sync state; drives the MASTER badge so the DJ can see which deck is leading.</summary>
+    public bool IsSyncMaster
+    {
+        get => _isSyncMaster;
+        private set => this.RaiseAndSetIfChanged(ref _isSyncMaster, value);
+    }
+
+    /// <summary>Cross-deck setter for <see cref="IsSyncMaster"/>, driven by <see cref="PerformanceDeckSet"/>.</summary>
+    internal void SetSyncMaster(bool value) => IsSyncMaster = value;
+
+    // DeckSyncToggle / DeckTempoSyncToggle feedback IsActive = the deck is synced IN THAT mode (the two
+    // buttons never light together — one shared latch, SYNC-BEHAVIOR-SPEC §4).
+    private static bool IsEngagedFeedback(ActionFeedbackState state) => state.IsActive;
+
+    // Sync feedback carries the SyncLockState name in Argument; the tight-lock look keys off Locked.
+    private static bool IsLockedTightFeedback(ActionFeedbackState state)
+        => state.IsActive && string.Equals(state.Argument, nameof(SyncLockState.Locked), StringComparison.Ordinal);
 
     // DeckSyncToggle feedback carries the deck's SyncLockState (name in Argument, ordinal in Value);
     // OutOfRange is the "tempos too far apart to beatmatch" state the SYNC button surfaces as "can't sync".
@@ -996,6 +1101,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> ExitLoopCommand { get; }
 
     public ReactiveCommand<Unit, Unit> SyncCommand { get; }
+
+    /// <summary>Engages/releases TEMPO-ONLY sync (SYNC-BEHAVIOR-SPEC §4) — the tempo-only alternate to
+    /// <see cref="SyncCommand"/>. Emits <see cref="PerformanceActionKind.DeckTempoSyncToggle"/>.</summary>
+    public ReactiveCommand<Unit, Unit> TempoSyncCommand { get; }
 
     /// <summary>Analyzes the loaded track and applies its auto hot cues live (the deck AUTO-CUE button).</summary>
     public ReactiveCommand<Unit, Unit> AutoCueCommand { get; }
@@ -1350,9 +1459,22 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                     IsKeyLock = e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckSyncToggle:
-                    // The engine reports the deck's beat-lock state here; surface OutOfRange as "can't sync"
-                    // on the SYNC button so a declined sync (tempo gap > ±15%) isn't a silent no-op.
+                    // The engine reports the deck's beat-lock state here; IsActive = engaged in BeatLock
+                    // mode (lights SYNC), Locked = fully in the pocket (green), and OutOfRange surfaces as
+                    // "can't sync" so a declined sync (tempo gap beyond the ceiling) isn't a silent no-op.
+                    IsSync = IsEngagedFeedback(e.State);
+                    IsSyncLockedTight = IsLockedTightFeedback(e.State);
                     IsSyncOutOfRange = IsSyncOutOfRangeFeedback(e.State);
+                    break;
+                case PerformanceActionKind.DeckTempoSyncToggle:
+                    // The tempo-only alternate (§4): IsActive = engaged in TempoOnly mode (lights TEMPO).
+                    IsTempoSync = IsEngagedFeedback(e.State);
+                    IsTempoSyncOutOfRange = IsSyncOutOfRangeFeedback(e.State);
+                    break;
+                case PerformanceActionKind.DeckSetPhaseSyncReady:
+                    // Grid-confidence gate (§7): IsActive = the grid is trustworthy enough to phase-sync;
+                    // when it isn't, SYNC downgrades to tempo-only and the deck shows "grid uncertain".
+                    IsGridUncertain = !e.State.IsActive;
                     break;
                 case PerformanceActionKind.DeckHotCue:
                     UpdateHotCue(e.State);
@@ -1561,6 +1683,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _downbeatSeconds = 0;     // re-resolved below from analysis (or set by SET ONE / a restore)
         _kickOnsets = Array.Empty<double>(); // the track's kick times, for SET PHASE / SYNC kick-snap
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
+        IsGridUncertain = false;  // clear the previous track's grid verdict; DispatchGridConfidence re-sets it below
         UpdateTimeTexts();        // back to placeholders until the new track's duration is known
         this.RaisePropertyChanged(nameof(KickAnchorFraction));
         ZoomWindow = ComputeZoomWindow();
@@ -1568,6 +1691,10 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
 
         BpmResult? analysis = _analysisInfo?.Invoke(trackPath);
         _kickOnsets = analysis?.KickOnsetsSeconds ?? Array.Empty<double>();
+
+        // Gate phase sync on grid confidence for the loaded track (no-op when the track has no signals yet).
+        if (analysis is not null)
+            DispatchGridConfidence(analysis);
 
         // Self-heal a load that arrived without analysis (e.g. a deck restored from a saved session whose
         // BPM predates analysis, or a queue load): pull the CURRENT catalog BPM + first-beat and apply them
@@ -1634,6 +1761,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 _kickOnsets = analysis.KickOnsetsSeconds; // so SET PHASE / SYNC can kick-snap this track
                 DispatchAnalyzedGrid(analysis);
                 DispatchAnalyzedDownbeat(analysis);
+                DispatchGridConfidence(analysis);
             }
         }
         catch (OperationCanceledException)
@@ -1696,6 +1824,23 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetDownbeat, ActionInputMode.Absolute,
             Value: analysis.DownbeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
+    }
+
+    // Gate SYNC's phase alignment on the analyzed grid confidence (SYNC-BEHAVIOR-SPEC §7): an untrustworthy
+    // grid must NOT phase-lock (a confident-but-wrong lock is worse than a tempo-only downgrade). Pushed
+    // through the action seam so the engine gate and the "grid uncertain" indicator follow one signal. Only
+    // emitted once the track has grid-confidence signals (analyzer v9+); an older / not-yet-analyzed track
+    // leaves the engine at its confident default, preserving phase sync until the background re-analysis runs.
+    private void DispatchGridConfidence(BpmResult analysis)
+    {
+        if (_dispatcher is null)
+            return;
+        GridConfidence confidence = GridConfidenceCalculator.Evaluate(analysis);
+        if (!confidence.Analyzed)
+            return;
+        _dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.DeckSetPhaseSyncReady, ActionInputMode.Absolute,
+            Value: confidence.PhaseSyncReady ? 1.0 : 0.0, Slot: _slot, Origin: AnalysisOrigin));
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick

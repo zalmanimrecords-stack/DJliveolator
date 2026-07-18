@@ -3,6 +3,7 @@ using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Analysis.Structure;
+using Liveolator.Core.Enrichment;
 
 namespace Liveolator.Core.Library.Music;
 
@@ -29,12 +30,24 @@ public sealed record MusicTrack(
     int Rating = 0,                 // 0 = unrated, 1–5 stars
     DateTime? DateAdded = null,     // when the track first entered the catalog
     DateTime? LastPlayed = null,    // when it was last loaded to a deck
-    int PlayCount = 0) : IMediaEntry
+    int PlayCount = 0,
+    // Online BPM cross-check (doc 16), added the same backward-compatible way — optional, no schema
+    // bump. OnlineBpm/Source keep the raw online value for display; BpmProvenance is the merged verdict
+    // (Conflicted = the library's visible flag); OnlineLookupUtc marks a COMPLETED lookup (hit or miss)
+    // so the free API is never re-queried for the same track.
+    double? OnlineBpm = null,
+    string? OnlineBpmSource = null,
+    BpmProvenance BpmProvenance = BpmProvenance.Unknown,
+    DateTime? OnlineLookupUtc = null,
+    // When offline analysis last ran for this track — the "last scanned" stamp shown in the library.
+    // Added the same backward-compatible way as the fields above: optional, so an older cache defaults
+    // it to null and still loads, no schema bump.
+    DateTime? LastAnalyzedUtc = null) : IMediaEntry
 {
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>
         string.IsNullOrWhiteSpace(Metadata?.Title)
-            ? PortablePath.GetFileNameWithoutExtension(File.Path)
+            ? Path.GetFileNameWithoutExtension(File.Path)
             : Metadata!.Title!;
 
     /// <summary>Track artist from tags, or null when untagged.</summary>

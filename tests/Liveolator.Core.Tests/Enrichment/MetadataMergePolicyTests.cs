@@ -75,6 +75,19 @@ public class MetadataMergePolicyTests
     }
 
     [Fact]
+    public void Agreement_AcrossThreeToTwoTime_StillCrossChecks()
+    {
+        // Shuffle/broken-beat edge case: detectors (and crowd-sourced data) also err by ×1.5 —
+        // e.g. 87 detected vs 130.5 catalogued. Without the 3:2 relation this paints a false conflict.
+        var local = new BpmResult(87.0, 0.6);
+
+        EnrichedBpm result = MetadataMergePolicy.MergeBpm(local, online: 130.5, MediaAnalysisStatus.PartiallyAnalyzed);
+
+        Assert.Equal(BpmProvenance.CrossChecked, result.Provenance);
+        Assert.Equal(MediaAnalysisStatus.Ok, result.Status);
+    }
+
+    [Fact]
     public void Disagreement_KeepsLocal_FlagsForReview()
     {
         var local = new BpmResult(128.0, 0.7);

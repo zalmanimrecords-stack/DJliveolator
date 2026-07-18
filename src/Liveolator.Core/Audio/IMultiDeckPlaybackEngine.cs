@@ -36,7 +36,7 @@ public interface IMultiDeckPlaybackEngine
     void Stop(int slot);
 
     // --- Transport (doc 11): position scrub, pitch/tempo, cue, and per-deck sync/quantize toggles.
-    // Driven via DeckSeek/DeckPitch/DeckBpm/DeckCue/DeckSyncOnce/DeckQuantizeToggle actions, never directly.
+    // Driven via DeckSeek/DeckPitch/DeckBpm/DeckCue/DeckSyncToggle/DeckQuantizeToggle actions, never directly.
 
     /// <summary>Current playback position as a normalized 0..1 fraction of the track (0 if nothing loaded).</summary>
     double Position(int slot);
@@ -124,12 +124,38 @@ public interface IMultiDeckPlaybackEngine
     void SetDeckFirstBeat(int slot, double firstBeatSeconds);
 
     /// <summary>
+    /// The track's analyzed kick strike times in source-media seconds. Sync uses these as local phase
+    /// anchors near the playhead so beat-lock lands on audible kicks, not only a coarse global grid.
+    /// </summary>
+    IReadOnlyList<double> DeckKickOnsets(int slot);
+
+    /// <summary>
+    /// Set the track's analyzed kick strike times in source-media seconds. Invalid values are ignored;
+    /// an empty list means the deck falls back to its first-beat grid.
+    /// </summary>
+    void SetDeckKickOnsets(int slot, IReadOnlyList<double> kickOnsetsSeconds);
+
+    /// <summary>
     /// Set the deck's downbeat (bar-1 "one") anchor in seconds — a confidence-gated analyzed downbeat or
     /// a manual SET ONE, arriving via <c>DeckSetDownbeat</c>. When BOTH decks have one, Quantize/SYNC
     /// phase-match snaps onto the leader's DOWNBEAT instead of just the nearest beat, so engaging sync
     /// can never land beat 3 on the leader's one. 0 (or negative) = unknown → beat-level alignment.
     /// </summary>
     void SetDeckDownbeat(int slot, double downbeatSeconds);
+
+    /// <summary>
+    /// True when the deck's analyzed grid is trustworthy enough to PHASE-sync (SYNC-BEHAVIOR-SPEC §7).
+    /// When false, Sync tempo-matches only and skips beat/phase alignment (a confident-but-wrong lock on a
+    /// bad grid is worse than a tempo-only downgrade). Defaults to true (confident) so a track without
+    /// grid-confidence signals — an older catalog, or one not yet analyzed — preserves phase sync.
+    /// </summary>
+    bool DeckPhaseSyncReady(int slot);
+
+    /// <summary>
+    /// Set whether the deck may phase-sync, fed from the track's grid-confidence on load (like the
+    /// downbeat). false ⇒ Sync holds tempo-only for this deck; the continuous lock does not phase-correct.
+    /// </summary>
+    void SetDeckPhaseSyncReady(int slot, bool ready);
 
     /// <summary>
     /// Beatmatches this deck to the other deck and snaps its analyzed kick/grid phase once.
@@ -147,6 +173,20 @@ public interface IMultiDeckPlaybackEngine
     /// master's grid, then held there by the continuous correction loop (<see cref="UpdateSync"/>).
     /// </summary>
     void SetSyncLock(int slot, bool enabled);
+
+    /// <summary>
+    /// The deck's sync mode (SYNC-BEHAVIOR-SPEC §4): <see cref="SyncMode.BeatLock"/> (tempo + phase, the
+    /// default) or <see cref="SyncMode.TempoOnly"/> (tempo-match, phase left to the DJ). Per-deck; persists
+    /// across loads. Only affects behaviour while sync is engaged.
+    /// </summary>
+    SyncMode DeckSyncMode(int slot);
+
+    /// <summary>
+    /// Set the deck's sync mode. When sync is already engaged, switching to <see cref="SyncMode.BeatLock"/>
+    /// snaps the phase now (then the loop holds it); switching to <see cref="SyncMode.TempoOnly"/> stops the
+    /// phase correction (tempo tracking continues). Never changes the matched tempo.
+    /// </summary>
+    void SetDeckSyncMode(int slot, SyncMode mode);
 
     /// <summary>
     /// The deck slot currently acting as the sync master (the reference the slave locks onto), or null
@@ -262,4 +302,10 @@ public interface IMultiDeckPlaybackEngine
     /// deck is a single-file deck. State is per-track and resets to all-audible on the next load.
     /// </summary>
     void SetStemMuted(int slot, StemKind kind, bool muted);
+
+    /// <summary>
+    /// Set one stem's volume to a continuous 0..1 level (doc 32 §2b, DJ PRO stem knobs). A no-op when
+    /// nothing is loaded or the deck is a single-file deck. Absolute (not a toggle); reset to unity on load.
+    /// </summary>
+    void SetStemGain(int slot, StemKind kind, double gain);
 }

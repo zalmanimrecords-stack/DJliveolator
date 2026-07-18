@@ -168,6 +168,41 @@ public sealed class PerformanceDeckSetTests
     }
 
     [Fact]
+    public void SyncedFollower_MakesTheOtherDeckMaster()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        // Deck B engages Sync Lock (becomes the follower) → deck A is the MASTER it locks onto.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 1,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        Assert.True(decks.DeckA.IsSyncMaster);
+        Assert.False(decks.DeckB.IsSyncMaster); // the follower is not the master
+
+        // Release → no master.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckSyncToggle, 1,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0));
+
+        Assert.False(decks.DeckA.IsSyncMaster);
+        Assert.False(decks.DeckB.IsSyncMaster);
+    }
+
+    [Fact]
+    public void TempoSyncedFollower_AlsoMakesTheOtherDeckMaster()
+    {
+        var dispatcher = new FakeDispatcher();
+        using var decks = new PerformanceDeckSet(dispatcher);
+
+        // Deck A engages Tempo Sync (tempo-only follower) → deck B is the master.
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckTempoSyncToggle, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+
+        Assert.True(decks.DeckB.IsSyncMaster);
+        Assert.False(decks.DeckA.IsSyncMaster);
+    }
+
+    [Fact]
     public void NotMatched_WhenOneDeckIsNotPlaying()
     {
         var dispatcher = new FakeDispatcher();

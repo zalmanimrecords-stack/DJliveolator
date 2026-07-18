@@ -137,7 +137,8 @@ public sealed class PlaylistAudioPlayer : IDisposable
                 PerformanceActionKind.DeckSetFirstBeat,
                 ActionInputMode.Absolute,
                 Value: analysis?.FirstBeatSeconds ?? 0.0,
-                Slot: _slot));
+                Slot: _slot,
+                Argument: DeckKickOnsetCodec.Encode(analysis?.KickOnsetsSeconds)));
             if (shouldAutoPlay && !_engine.IsPlaying(_slot))
                 _dispatcher.Dispatch(new PerformanceAction(
                     PerformanceActionKind.DeckPlayPause, Slot: _slot));

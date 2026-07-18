@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Dj.DjProView"
+             x:DataType="dj:DjProViewModel">
+
+  <!-- DJ PRO — a denser DJ surface built ALONGSIDE the DJ tab (new files only; the DJ tab is untouched).
+       It drives the SAME shared decks + mixer, but with DJ-PRO-specific compact deck/mixer views: a smaller
+       jog, tighter buttons, all 8 hot-cue pads, an "effects outside" FX rack under each deck, and NO FX-mode
+       button (the FX are their own knobs now). Everything is designed to fit one screen with no scroll; the
+       browser row collapses on laptop tiers (code-behind, via DjBrowserLayout) and opens on wide/4K. -->
+  <Grid Name="RootGrid" RowDefinitions="Auto,*,0">
+
+    <!-- WAVEFORMS — the shared dual strip (bound to the shared decks), with the ZOOM knob on the right. -->
+    <Border Grid.Row="0" Classes="panel" Margin="0,0,0,6">
+      <Grid ColumnDefinitions="*,Auto" Margin="10,6">
+        <StackPanel Grid.Column="0" Spacing="5">
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
+                       VerticalAlignment="Center" Text="A" />
+            <controls:DeckWaveform Grid.Column="1" DataContext="{Binding Decks.DeckA}" Folded="True" />
+          </Grid>
+          <Grid ColumnDefinitions="20,*">
+            <TextBlock Grid.Column="0" Classes="mono" FontWeight="SemiBold"
+                       Foreground="{DynamicResource DeckBIdentity}" VerticalAlignment="Center" Text="B" />
+            <controls:DeckWaveform Grid.Column="1" DataContext="{Binding Decks.DeckB}" Folded="True" CombAtTop="True" />
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Spacing="4" Margin="14,0,0,0"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+          <TextBlock Classes="faint" HorizontalAlignment="Center" Text="ZOOM" />
+          <controls:Knob Width="{DynamicResource SizeKnobZoom}" Height="{DynamicResource SizeKnobZoom}" DefaultValue="0.55"
+                         ArcBrush="{DynamicResource Accent}" Value="{Binding Decks.WaveformZoom}"
+                         ToolTip.Tip="Zoom both waveforms" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- PERFORMANCE: [Deck A + FX] · Mixer · [Deck B + FX] -->
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*">
+      <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto" Margin="0,0,10,0">
+        <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckA}"
+                          BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
+                          BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
+        <dj:DeckStemRackView Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackA}" />
+        <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackA}" />
+      </Grid>
+
+      <dj:DjProMixerView Grid.Column="1" Margin="0,0,10,0" DataContext="{Binding Decks.Mixer}" />
+
+      <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
+        <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckB}"
+                          BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
+                          BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
+        <dj:DeckStemRackView Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackB}" />
+        <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackB}" />
+      </Grid>
+    </Grid>
+
+    <!-- Browser (collapsible per tier): 0 on laptop, a band on wide/4K. -->
+    <Border Grid.Row="2" IsVisible="{Binding HasBrowser}" Margin="0,12,0,0" ClipToBounds="True">
+      <dj:DjBrowserView DataContext="{Binding Browser}" />
+    </Border>
+  </Grid>
+</UserControl>

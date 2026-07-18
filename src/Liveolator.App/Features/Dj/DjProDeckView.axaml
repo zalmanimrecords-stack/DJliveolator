@@ -1,0 +1,285 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             x:Class="Liveolator.App.Features.Dj.DjProDeckView"
+             x:Name="Root"
+             x:DataType="m:DeckViewModel">
+
+  <!-- DJ PRO compact deck: the SAME DeckViewModel as the DJ tab, laid out tighter (smaller jog, all 8
+       hot-cue pads visible). The transport/loop/BPM controls sit BESIDE the jog (not stacked below it) so
+       the deck is short enough to leave room for the STEMS + FX racks with no clipping, and deck B mirrors
+       deck A around the central mixer (jog on the inner edge, pads on the outer flank). The DJ tab's own
+       DjDeckView is untouched. -->
+  <UserControl.Styles>
+    <Style Selector="Button.cuepad.suggested">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <!-- Compact square icon button (nudge / loop-exit): one consistent size + a legible glyph, so the
+         controls read as deliberate icons rather than the old tiny, faint arrows. -->
+    <Style Selector="Button.deckicon">
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Text}" />
+    </Style>
+    <!-- Uniform, exact gaps between every cell of the control table — the version-independent stand-in for
+         Grid ColumnSpacing/RowSpacing. Half-margins meet at each shared edge → an even 5px H / 6px V gutter.
+         The button selector is a descendant (not child) so the buttons paired inside a group cell get it too. -->
+    <Style Selector="Grid.ctlgrid Button">
+      <Setter Property="Margin" Value="2.5,3" />
+    </Style>
+    <Style Selector="Grid.ctlgrid > TextBlock">
+      <Setter Property="Margin" Value="2.5,3" />
+    </Style>
+    <Style Selector="Grid.ctlgrid > StackPanel">
+      <Setter Property="Margin" Value="2.5,3" />
+    </Style>
+    <Style Selector="TextBlock.bpm.matched">
+      <Setter Property="Foreground" Value="{DynamicResource Green}" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.key.cantsync">
+      <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    </Style>
+    <!-- SYNC fully phase-locked ("in the pocket", SyncLockState.Locked): GREEN, distinct from the amber
+         "pulling in" (Active) / "recovering" (Drifting) engaged look, so the DJ reads lock at a glance
+         (SYNC-BEHAVIOR-SPEC §11). Applied on top of .on (both classes present when locked) — a control-level
+         style, so it wins the Background/border over the theme's amber .on. -->
+    <Style Selector="Button.key.locked">
+      <Setter Property="Background" Value="{DynamicResource Green}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Green}" />
+    </Style>
+    <!-- MASTER chip: this deck is the sync reference the other deck locks onto (SYNC-BEHAVIOR-SPEC §11). -->
+    <Style Selector="Border.master-chip">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="5,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.master-chip TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontSize" Value="9" />
+    </Style>
+    <!-- Half/double-time tag next to the BPM (mirrors the DJ tab): a 140-vs-70 sync reads as a deliberate
+         half-time lock, not a broken match. -->
+    <Style Selector="Border.octave-tag">
+      <Setter Property="Background" Value="{DynamicResource S2}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Amber}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="3" />
+      <Setter Property="Padding" Value="4,0" />
+    </Style>
+    <Style Selector="Border.octave-tag TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource Amber}" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+    <!-- Both decks share the SAME layout (pads on the outer flank, jog on the inner edge) — NOT mirrored, so
+         the two sides are identical and easier to design/scan. Deck B keeps only its teal colour identity. -->
+    <Style Selector="controls|Jog.platter">
+      <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
+    </Style>
+    <Style Selector="Grid.deck-b controls|Jog.platter">
+      <Setter Property="ArcBrush" Value="{DynamicResource DeckBIdentity}" />
+    </Style>
+    <Style Selector="Border.deck-badge">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentLightColor}" />
+      <Setter Property="Background">
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+          <GradientStop Color="{DynamicResource AccentLightColor}" Offset="0" />
+          <GradientStop Color="{DynamicResource AccentDarkColor}" Offset="1" />
+        </LinearGradientBrush>
+      </Setter>
+    </Style>
+    <Style Selector="Grid.deck-b Border.deck-badge">
+      <Setter Property="BorderBrush" Value="{DynamicResource DeckBIdentityLightColor}" />
+      <Setter Property="Background">
+        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+          <GradientStop Color="{DynamicResource DeckBIdentityLightColor}" Offset="0" />
+          <GradientStop Color="{DynamicResource DeckBIdentityDarkColor}" Offset="1" />
+        </LinearGradientBrush>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="panel">
+    <Grid Classes="deck-root" Classes.deck-b="{Binding IsDeckB}" Margin="8,6"
+          RowDefinitions="Auto,*">
+
+      <!-- header: badge (+ MASTER chip) · title/meta · elapsed/remaining -->
+      <Grid Grid.Row="0" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Border Classes="deck-badge" Width="28" Height="28" CornerRadius="3" BorderThickness="1">
+            <TextBlock Foreground="{DynamicResource AccentInk}" FontWeight="SemiBold" FontSize="13"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Text="{Binding DeckId}" />
+          </Border>
+          <Border Classes="master-chip" IsVisible="{Binding IsSyncMaster}"
+                  ToolTip.Tip="This deck is the sync master — the other deck is locked to it">
+            <TextBlock Text="MASTER" />
+          </Border>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" Spacing="0">
+          <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="mono accent" FontSize="10" Text="{Binding Meta}" IsVisible="{Binding HasTrackMeta}" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Spacing="0" VerticalAlignment="Center">
+          <TextBlock Classes="mono" FontSize="12" HorizontalAlignment="Right" Text="{Binding ElapsedText}" />
+          <TextBlock Classes="mono accent" FontSize="12" HorizontalAlignment="Right" Text="{Binding RemainingText}" />
+        </StackPanel>
+      </Grid>
+
+      <!-- body: playback control table (left) · compact hot-cue pads (middle) · jog (right). Both decks
+           share this identical layout. The control table takes the star column; the pads + jog are Auto. -->
+      <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" VerticalAlignment="Center">
+
+        <StackPanel Classes="deck-flank" Grid.Column="1" VerticalAlignment="Center" Width="96">
+          <ItemsControl ItemsSource="{Binding HotCues}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="m:HotCuePadViewModel">
+                <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                        Height="30" Margin="0,0,3,3" Command="{Binding TriggerCommand}"
+                        IsEnabled="{Binding IsEnabled}" ToolTip.Tip="{Binding CueLabel}">
+                  <Grid RowDefinitions="*,3">
+                    <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                               FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                               Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+                  </Grid>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <!-- Track browse: ◀/▶ step the shared browser's current list and load-or-queue onto THIS deck
+               (never cuts a playing deck). Commands are injected by DjProView; disabled when no browser. -->
+          <TextBlock Classes="section" HorizontalAlignment="Center" Margin="0,5,3,2" Text="TRACK" />
+          <Grid ColumnDefinitions="*,*">
+            <Button Grid.Column="0" Classes="key deckicon" Content="◀" Margin="0,0,3,3"
+                    Command="{Binding #Root.BrowsePrevCommand}" ToolTip.Tip="Previous track → load on this deck" />
+            <Button Grid.Column="1" Classes="key deckicon" Content="▶" Margin="0,0,3,3"
+                    Command="{Binding #Root.BrowseNextCommand}" ToolTip.Tip="Next track → load on this deck" />
+          </Grid>
+        </StackPanel>
+
+        <!-- Control table: a 4-column grid where every button gets a real cell with exact, equal gutters
+             (the ctlgrid margin styles above). Wide-label buttons (CUE/PLAY/SYNC/T·SYNC/LOOP) each span TWO
+             columns → two per row → their text never clips, even on the narrow high-DPI deck. Small icons
+             (−/+, ✕, ◀/▶) take single columns. MaxWidth stops it stretching on wide/4K decks. -->
+        <Grid Classes="ctlgrid" Grid.Column="0" Margin="12,0" MaxWidth="300" VerticalAlignment="Center"
+              ColumnDefinitions="*,*,*,*"
+              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+
+          <!-- Row 0 — transport: CUE · PLAY (each half the width) -->
+          <Button Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Classes="key" Content="CUE" Height="34"
+                  Command="{Binding CueCommand}" IsEnabled="{Binding CanCue}" ToolTip.Tip="Cue" />
+          <Button Grid.Row="0" Grid.Column="2" Grid.ColumnSpan="2" Classes="play" Classes.on="{Binding IsPlaying}"
+                  Height="34" Command="{Binding PlayPauseCommand}" ToolTip.Tip="Play / pause">
+            <Path Data="M 0,0 L 14,8 L 0,16 Z" Fill="{DynamicResource Accent}" />
+          </Button>
+
+          <!-- Row 1 — sync pair: SYNC = Sync Lock (tempo + phase, green when locked in the pocket);
+               T·SYNC = Tempo Sync (tempo only, ride the phase by hand). -->
+          <Button Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Classes="key" Classes.on="{Binding IsSync}"
+                  Classes.locked="{Binding IsSyncLockedTight}"
+                  Classes.cantsync="{Binding IsSyncOutOfRange}" Height="32"
+                  Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
+                  ToolTip.Tip="Sync Lock — match tempo + phase to the other deck (green = locked in the pocket)">
+            <Panel>
+              <TextBlock Text="SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         IsVisible="{Binding !IsSyncOutOfRange}" />
+              <TextBlock Text="✕ SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Foreground="{DynamicResource Red}" IsVisible="{Binding IsSyncOutOfRange}" />
+            </Panel>
+          </Button>
+          <Button Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Classes="key" Classes.on="{Binding IsTempoSync}"
+                  Classes.cantsync="{Binding IsTempoSyncOutOfRange}" Height="32"
+                  Command="{Binding TempoSyncCommand}" IsEnabled="{Binding CanSync}"
+                  ToolTip.Tip="Tempo Sync — match tempo only; you ride the phase by hand">
+            <Panel>
+              <TextBlock Text="T·SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         IsVisible="{Binding !IsTempoSyncOutOfRange}" />
+              <TextBlock Text="✕ T·SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         Foreground="{DynamicResource Red}" IsVisible="{Binding IsTempoSyncOutOfRange}" />
+            </Panel>
+          </Button>
+
+          <!-- Row 2 — grid-confidence downgrade (§7): weak grid ⇒ SYNC is tempo-only. Collapses when fine. -->
+          <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="mono" FontSize="10" HorizontalAlignment="Center"
+                     Foreground="{DynamicResource Amber}" Text="◆ GRID UNCERTAIN · TEMPO-ONLY"
+                     IsVisible="{Binding IsGridUncertain}"
+                     ToolTip.Tip="The analyzed beatgrid is low-confidence, so SYNC matches tempo only (no phase lock). Re-analyze the track for full beat sync." />
+
+          <!-- Row 3 — TEMPO: live BPM (+ octave tag) · fine −/+ nudge -->
+          <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal"
+                      Spacing="6" VerticalAlignment="Center">
+            <TextBlock Classes="mono bpm" Classes.matched="{Binding IsBpmMatched}"
+                       FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"
+                       Text="{Binding Bpm, StringFormat='{}{0:0.0}'}" ToolTip.Tip="Live BPM" />
+            <Border Classes="octave-tag" VerticalAlignment="Center" IsVisible="{Binding HasBpmOctaveLabel}"
+                    ToolTip.Tip="Beatmatched at an octave (half/double time) to the other deck">
+              <TextBlock Classes="mono" Text="{Binding BpmOctaveLabel}" />
+            </Border>
+          </StackPanel>
+          <Button Grid.Row="3" Grid.Column="2" Classes="key deckicon" Content="−"
+                  Command="{Binding NudgeLeftCommand}" IsEnabled="{Binding IsBpmEnabled}"
+                  ToolTip.Tip="Fine tempo −0.1 BPM" />
+          <Button Grid.Row="3" Grid.Column="3" Classes="key deckicon" Content="+"
+                  Command="{Binding NudgeRightCommand}" IsEnabled="{Binding IsBpmEnabled}"
+                  ToolTip.Tip="Fine tempo +0.1 BPM" />
+
+          <!-- Row 4 — captions: LOOP (over its group) · BEND (over its group) -->
+          <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Classes="section"
+                     HorizontalAlignment="Center" Text="LOOP" />
+          <TextBlock Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Classes="section"
+                     HorizontalAlignment="Center" Text="BEND" />
+
+          <!-- Row 5 — LOOP group (length + exit) · BEND group (◀ ▶). Each group is a 2-button sub-grid that
+               fills its half, so the loop length has room for "8 BAR" and the arrows stay square. -->
+          <Grid Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto">
+            <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}" Height="28" Padding="2,3"
+                    Content="{Binding LoopLengthLabel}"
+                    Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" ToolTip.Tip="Arm a loop" />
+            <Button Grid.Column="1" Classes="key deckicon" Content="✕"
+                    Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}" ToolTip.Tip="Release the loop" />
+          </Grid>
+          <Grid Grid.Row="5" Grid.Column="2" Grid.ColumnSpan="2" ColumnDefinitions="*,*">
+            <Button Grid.Column="0" Classes="key deckicon" Content="◀"
+                    Command="{Binding NudgeBendDownCommand}" IsEnabled="{Binding CanPitchBend}"
+                    ToolTip.Tip="Pitch-bend slower (beat-match)" />
+            <Button Grid.Column="1" Classes="key deckicon" Content="▶"
+                    Command="{Binding NudgeBendUpCommand}" IsEnabled="{Binding CanPitchBend}"
+                    ToolTip.Tip="Pitch-bend faster (beat-match)" />
+          </Grid>
+
+          <!-- Row 6 — KEY LOCK (3 cols) · musical key -->
+          <Button Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3" Classes="key" Classes.on="{Binding IsKeyLock}"
+                  Content="KEY LOCK" Height="28" Padding="2,3" FontSize="11"
+                  Command="{Binding KeyLockCommand}" IsEnabled="{Binding CanSync}" ToolTip.Tip="Key lock (master tempo)" />
+          <TextBlock Grid.Row="6" Grid.Column="3" Classes="mono accent" FontSize="13" FontWeight="SemiBold"
+                     HorizontalAlignment="Right" VerticalAlignment="Center"
+                     Text="{Binding TrackKey}" IsVisible="{Binding HasTrackKey}" ToolTip.Tip="Musical key" />
+        </Grid>
+
+        <controls:Jog Grid.Column="2" Classes="platter" Margin="8,0"
+                      Width="150" Height="150" VerticalAlignment="Center"
+                      BassTintBrush="{DynamicResource Red}"
+                      CenterImage="avares://Liveolator.App/Assets/jellyfish.png"
+                      Progress="{Binding Progress}" SeekCommand="{Binding SeekCommand}"
+                      BendCommand="{Binding JogBendCommand}" BendReleaseCommand="{Binding JogBendReleaseCommand}"
+                      IsEnabled="{Binding IsEnabled}"
+                      KickPeaks="{Binding KickPeaks}" IsKickActive="{Binding IsPlaying}"
+                      IsSpinning="{Binding IsPlaying}"
+                      ToolTip.Tip="Playing: drag to pitch-bend. Paused: drag to scrub/cue." />
+      </Grid>
+    </Grid>
+  </Border>
+</UserControl>

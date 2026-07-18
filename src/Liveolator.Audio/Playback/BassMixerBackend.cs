@@ -665,6 +665,25 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
             _logger.LogWarning("Stem {Kind} volume slide on deck {Handle} failed: {Error}", kind, deckHandle, Bass.LastError);
     }
 
+    // Set one stem's volume to a continuous 0..1 level (doc 32 §2b, DJ PRO stem knobs) — the same click-free
+    // ChannelSlideAttribute ramp as SetStemEnabled, but to an arbitrary target instead of just mute/unmute.
+    // A no-op for an unknown handle or a single-file deck. NATIVE: not exercised in CI (tests drive the fake
+    // backend); verify by ear in the running app. See Liveolator.Audio/CLAUDE.md.
+    public void SetStemVolume(int deckHandle, StemKind kind, double volume)
+    {
+        if (!_decks.TryGetValue(deckHandle, out DeckDsp? deck) || deck.StemDecoders.Length == 0)
+        {
+            _logger.LogDebug("SetStemVolume ignored: deck {Handle} is not a stem deck.", deckHandle);
+            return;
+        }
+        int index = StemSet.IndexOf(kind);
+        if (index < 0 || index >= deck.StemDecoders.Length)
+            return;
+        float target = (float)Math.Clamp(volume, 0.0, 1.0);
+        if (!Bass.ChannelSlideAttribute(deck.StemDecoders[index], ChannelAttribute.Volume, target, StemMuteRampMs))
+            _logger.LogWarning("Stem {Kind} volume slide on deck {Handle} failed: {Error}", kind, deckHandle, Bass.LastError);
+    }
+
     // Apply the deck's current rate either pitch-preserving (key-lock: BASS_FX Tempo % time-stretch) or
     // vinyl-style (resampling the tempo stream). BOTH attributes live on the BASS_FX tempo stream
     // (MixerHandle) — the stream actually plugged into the master mixer. The raw source decode stream is

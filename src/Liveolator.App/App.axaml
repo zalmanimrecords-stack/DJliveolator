@@ -53,6 +53,7 @@
     <Color x:Key="WaveHighColor">#A036A6E8</Color>
     <Color x:Key="WavePlayheadColor">#F2F6FF</Color>
     <Color x:Key="BeatMarkColor">#8E9AA8</Color>
+    <Color x:Key="BarLineMarkColor">#5EE2FF</Color>
     <Color x:Key="DownbeatMarkColor">#E5403A</Color>
 
     <!-- CornerRadius (not x:Double): the control styles bind these to a CornerRadius property, and a theme
@@ -118,6 +119,7 @@
          red downbeat blocks. -->
     <SolidColorBrush x:Key="WavePlayhead" Color="{DynamicResource WavePlayheadColor}" />
     <SolidColorBrush x:Key="BeatMark" Color="{DynamicResource BeatMarkColor}" />
+    <SolidColorBrush x:Key="BarLineMark" Color="{DynamicResource BarLineMarkColor}" />
     <SolidColorBrush x:Key="DownbeatMark" Color="{DynamicResource DownbeatMarkColor}" />
 
     <!-- Control-skin brushes (doc 30): the Knob/Fader styles bind to THESE (not the raw tokens) so a

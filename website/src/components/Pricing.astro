@@ -4,7 +4,8 @@ import { site } from "../data/site";
 const perks = [
   "Both engines — DJ and VJ — fully unlocked",
   "Use it for real gigs, no watermark, no time limit",
-  "Every update while it's in active development",
+  "Open source under the GPLv3 — audit it, fork it, keep it",
+  "Every update, free — forever",
   "Your feedback shapes what gets built next",
 ];
 ---
@@ -14,17 +15,18 @@ const perks = [
     <div class="price-card card reveal">
       <div class="price-left">
         <p class="eyebrow">Pricing</p>
-        <h2>Free, while it grows</h2>
+        <h2>Free forever — and open source</h2>
         <p class="price-note">
-          Liveolator is in active development, and right now it's completely free.
-          No account, no trial countdown, no locked features. The goal at this
-          stage is simple: get it into the hands of DJs and VJs and build the
-          rest with their feedback.
+          Liveolator is completely free, and it always will be — no account, no
+          trial countdown, no locked features. It's also
+          <strong>open source under the GPLv3</strong>: the full source is on
+          GitHub for anyone to read, audit or fork. The goal is simple — get it
+          into the hands of DJs and VJs and build the rest with their feedback.
         </p>
         <div class="price-actions">
           <a class="btn btn-primary" href="#download">Download for Windows</a>
-          <a class="btn btn-ghost" href={site.donateUrl} target="_blank" rel="noopener">
-            Support the project
+          <a class="btn btn-ghost" href={site.repoUrl} target="_blank" rel="noopener">
+            View source on GitHub
           </a>
         </div>
       </div>
@@ -32,7 +34,7 @@ const perks = [
       <div class="price-right">
         <div class="price-tag">
           <span class="amount">$0</span>
-          <span class="period">at this stage</span>
+          <span class="period">forever</span>
         </div>
         <ul class="perks">
           {perks.map((p) => <li>{p}</li>)}
@@ -68,6 +70,7 @@ const perks = [
     font-size: 17px;
     max-width: 460px;
   }
+  .price-note strong { color: var(--amber); font-weight: 700; }
   .price-actions {
     margin-top: 30px;
     display: flex;

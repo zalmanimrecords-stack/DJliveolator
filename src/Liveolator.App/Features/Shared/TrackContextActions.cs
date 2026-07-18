@@ -117,6 +117,9 @@ public sealed class TrackContextActions
                         fingerprint?.Fingerprint,
                         track.Duration),
                     cancellationToken).ConfigureAwait(false);
+                // Hit or miss, the lookup completed — stamp it so the scan-time enrichment pass
+                // doesn't re-query this track (the free-API once-per-track rule).
+                _library.MarkOnlineLookup(trackPath, DateTime.UtcNow);
                 if (online is not null)
                 {
                     _library.ApplyOnlineDetails(trackPath, online);
@@ -227,6 +230,33 @@ public sealed class TrackContextActions
         }
     }
 
+    /// <summary>
+    /// User resolution for a BPM conflict ("Keep detected BPM"): keeps the locally detected value,
+    /// clears the red flag permanently, and persists just that track. Deliberately NO "accept online
+    /// value" counterpart — overwriting the BPM without re-deriving the beat grid would break
+    /// sync/loops/quantize; the right tool for that is Re-analyze.
+    /// </summary>
+    public async Task ConfirmLocalBpmAsync(string trackPath, CancellationToken cancellationToken = default)
+    {
+        if (_library is null || _catalogStore is null || string.IsNullOrWhiteSpace(trackPath))
+            return;
+
+        try
+        {
+            if (!_library.ConfirmLocalBpm(trackPath))
+                return;
+
+            if (_library.TryGet(trackPath) is { } track)
+                await _catalogStore.SaveTrackAsync(track, cancellationToken).ConfigureAwait(false);
+            RaiseTrackChanged(trackPath);
+            ReportStatus($"Kept detected BPM for \"{TitleOf(trackPath)}\" — conflict dismissed.");
+        }
+        catch (Exception ex)
+        {
+            ReportStatus($"Could not dismiss the BPM conflict for \"{TitleOf(trackPath)}\": {ex.Message}");
+        }
+    }
+
     public async Task EditAsync(string trackPath, CancellationToken cancellationToken = default)
     {
         if (!CanEdit || _library!.TryGet(trackPath) is not { } track)
@@ -258,11 +288,21 @@ public sealed class TrackContextActions
     /// deck as its Sync reference (doc 11); <paramref name="firstBeatSeconds"/> is the analyzed
     /// downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1) right after the load.
     /// </summary>
-    public void LoadToDeck(int slot, string trackPath, double bpm, double firstBeatSeconds = 0)
+    public void LoadToDeck(
+        int slot,
+        string trackPath,
+        double bpm,
+        double firstBeatSeconds = 0,
+        IReadOnlyList<double>? kickOnsetsSeconds = null)
     {
         if (_deckLoader is null || string.IsNullOrWhiteSpace(trackPath))
             return;
-        DeckLoadResult result = _deckLoader.Load(slot, trackPath, bpm, firstBeatSeconds);
+        DeckLoadResult result = _deckLoader.Load(
+            slot,
+            trackPath,
+            bpm,
+            firstBeatSeconds,
+            kickOnsetsSeconds: kickOnsetsSeconds);
         ReportStatus(result.Message);
     }
 

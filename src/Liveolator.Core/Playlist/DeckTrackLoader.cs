@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio;
 
 namespace Liveolator.Core.Playlist;
 
@@ -54,7 +55,13 @@ public sealed class DeckTrackLoader
     /// (the library "Play" button). The default (false) keeps the never-cut-off-a-playing-deck policy for
     /// the staging surfaces ("Load → Deck", "Add to Deck").
     /// </param>
-    public DeckLoadResult Load(int slot, string trackPath, double bpm, double firstBeatSeconds = 0, bool replacePlaying = false)
+    public DeckLoadResult Load(
+        int slot,
+        string trackPath,
+        double bpm,
+        double firstBeatSeconds = 0,
+        bool replacePlaying = false,
+        IReadOnlyList<double>? kickOnsetsSeconds = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(trackPath);
         string deck = slot == 0 ? "A" : "B";
@@ -91,7 +98,10 @@ public sealed class DeckTrackLoader
         }
 
         _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckSetFirstBeat, Slot: slot, Value: firstBeatSeconds));
+            PerformanceActionKind.DeckSetFirstBeat,
+            Slot: slot,
+            Value: firstBeatSeconds,
+            Argument: DeckKickOnsetCodec.Encode(kickOnsetsSeconds)));
         return new DeckLoadResult(DeckLoadOutcome.Loaded, $"Loaded \"{title}\" → Deck {deck}");
     }
 }

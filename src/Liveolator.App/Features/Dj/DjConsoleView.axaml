@@ -22,43 +22,13 @@
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="A" />
-            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
-                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
-              <controls:WaveformStrip Peaks="{Binding DeckA.Waveform}" KickPeaks="{Binding DeckA.KickPeaks}"
-                                      MidPeaks="{Binding DeckA.MidPeaks}" HighPeaks="{Binding DeckA.HighPeaks}"
-                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                      KickBrush="{DynamicResource Kick}"
-                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                      PlayheadBrush="{DynamicResource WavePlayhead}"
-                                      BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
-                                      Folded="True"
-                                      Progress="{Binding DeckA.Progress}" ZoomWindow="{Binding DeckA.ZoomWindow}"
-                                      BeatGrid="{Binding DeckA.BeatGrid}"
-                                      DownbeatOffset="{Binding DeckA.DownbeatBarOffset}"
-                                      KickAnchor="{Binding DeckA.KickAnchorFraction}"
-                                      SeekCommand="{Binding DeckA.SeekCommand}" />
-            </Border>
+            <controls:DeckWaveform Grid.Column="1" DataContext="{Binding DeckA}" Folded="True" />
           </Grid>
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono" FontWeight="SemiBold"
                        Foreground="{DynamicResource DeckBIdentity}"
                        VerticalAlignment="Center" Text="B" />
-            <Border Grid.Column="1" Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
-                    BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
-              <controls:WaveformStrip Peaks="{Binding DeckB.Waveform}" KickPeaks="{Binding DeckB.KickPeaks}"
-                                      MidPeaks="{Binding DeckB.MidPeaks}" HighPeaks="{Binding DeckB.HighPeaks}"
-                                      BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
-                                      KickBrush="{DynamicResource Kick}"
-                                      MidBrush="{DynamicResource WaveMid}" HighBrush="{DynamicResource WaveHigh}"
-                                      PlayheadBrush="{DynamicResource WavePlayhead}"
-                                      BeatBrush="{DynamicResource BeatMark}" DownbeatBrush="{DynamicResource DownbeatMark}"
-                                      CombAtTop="True" Folded="True"
-                                      Progress="{Binding DeckB.Progress}" ZoomWindow="{Binding DeckB.ZoomWindow}"
-                                      BeatGrid="{Binding DeckB.BeatGrid}"
-                                      DownbeatOffset="{Binding DeckB.DownbeatBarOffset}"
-                                      KickAnchor="{Binding DeckB.KickAnchorFraction}"
-                                      SeekCommand="{Binding DeckB.SeekCommand}" />
-            </Border>
+            <controls:DeckWaveform Grid.Column="1" DataContext="{Binding DeckB}" Folded="True" CombAtTop="True" />
           </Grid>
         </StackPanel>
 

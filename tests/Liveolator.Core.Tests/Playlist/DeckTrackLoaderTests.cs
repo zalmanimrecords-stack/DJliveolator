@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Playlist;
 using Xunit;
 
@@ -54,6 +55,19 @@ public sealed class DeckTrackLoaderTests
         Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, anchor.Kind);
         Assert.Equal(1, anchor.Slot);
         Assert.Equal(0.5, anchor.Value, precision: 6);
+    }
+
+    [Fact]
+    public void Load_WithKickOnsets_CarriesThemOnTheFirstBeatAction()
+    {
+        var dispatcher = new RecordingDispatcher();
+        var loader = new DeckTrackLoader(dispatcher, _ => true);
+
+        loader.Load(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5, kickOnsetsSeconds: new[] { 1.25, 0.75 });
+
+        PerformanceAction anchor = dispatcher.Dispatched[1];
+        Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, anchor.Kind);
+        Assert.Equal(new[] { 0.75, 1.25 }, DeckKickOnsetCodec.Decode(anchor.Argument));
     }
 
     [Fact]

@@ -108,6 +108,61 @@ public class BpmDetectorTests
     }
 
     [Fact]
+    public void Detect_CleanGrid_PopulatesGridConfidenceSignals_AndOffersPhaseSync()
+    {
+        const int sr = 44100;
+        // A clean, constant 140 BPM four-on-the-floor: the kicks sit tightly on the grid and the tempo does
+        // not drift, so both grid-confidence signals should be present and strong (SYNC-BEHAVIOR-SPEC §7).
+        float[] signal = KickFourOnFloor(
+            bpm: 140.0, sampleRate: sr, seconds: 30, accentBeat: 0, strong: 1.0f, weak: 1.0f);
+
+        BpmResult result = new BpmDetector().Detect(signal, sr);
+
+        Assert.NotNull(result.GridCoherence);
+        Assert.True(result.GridCoherence > 0.5, $"clean kicks should cohere, was {result.GridCoherence:F3}");
+        Assert.NotNull(result.TempoStabilityBpmDelta);
+        Assert.True(result.TempoStabilityBpmDelta < 0.75, $"constant tempo should be stable, delta was {result.TempoStabilityBpmDelta:F3}");
+        Assert.True(GridConfidenceCalculator.Evaluate(result).PhaseSyncReady);
+    }
+
+    [Fact]
+    public void Detect_VariableTempo_ReportsLargeStabilityDelta_AndDowngrades()
+    {
+        const int sr = 44100;
+        // First half at 120, second half at 140: a genuinely variable-tempo track. The half-vs-half tempo
+        // delta must be large so the gate downgrades to tempo-only rather than phase-locking a drifting grid.
+        float[] signal = Concat(
+            TestSignals.ClickTrain(120.0, sr, seconds: 12),
+            TestSignals.ClickTrain(140.0, sr, seconds: 12));
+
+        BpmResult result = new BpmDetector().Detect(signal, sr);
+
+        Assert.NotNull(result.TempoStabilityBpmDelta);
+        Assert.True(result.TempoStabilityBpmDelta > 2.0, $"a 120→140 track should read as unstable, delta was {result.TempoStabilityBpmDelta:F3}");
+        Assert.False(GridConfidenceCalculator.Evaluate(result).PhaseSyncReady);
+    }
+
+    [Fact]
+    public void BpmResult_DefaultsGridSignalsToNull_ForOldCatalogBackCompat()
+    {
+        // A track deserialized from a pre-v9 catalog has no grid signals: they default to null so the gate
+        // treats it as Unknown and preserves phase sync until the background re-analysis populates them.
+        var legacy = new BpmResult(128.0, 0.9, 0.0);
+
+        Assert.Null(legacy.GridCoherence);
+        Assert.Null(legacy.TempoStabilityBpmDelta);
+        Assert.False(GridConfidenceCalculator.Evaluate(legacy).Analyzed);
+    }
+
+    private static float[] Concat(float[] a, float[] b)
+    {
+        var result = new float[a.Length + b.Length];
+        a.CopyTo(result, 0);
+        b.CopyTo(result, a.Length);
+        return result;
+    }
+
+    [Fact]
     public void Detect_InvalidSampleRate_Throws()
     {
         var buffer = new float[2048];

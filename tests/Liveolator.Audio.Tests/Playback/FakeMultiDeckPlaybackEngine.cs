@@ -16,6 +16,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     private readonly bool[] _playing;
     private readonly double[] _baseBpm;
     private readonly double[] _firstBeat;
+    private readonly IReadOnlyList<double>[] _kickOnsets;
+    private readonly bool[] _phaseSyncReady;
 
     public FakeMultiDeckPlaybackEngine(int deckCount = 2)
     {
@@ -24,6 +26,8 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
         _playing = new bool[deckCount];
         _baseBpm = new double[deckCount];
         _firstBeat = new double[deckCount];
+        _kickOnsets = Enumerable.Repeat<IReadOnlyList<double>>(Array.Empty<double>(), deckCount).ToArray();
+        _phaseSyncReady = Enumerable.Repeat(true, deckCount).ToArray(); // default confident (preserve phase sync)
     }
 
     /// <summary>Ordered log of (operation, slot, arg) so a test can assert the exact sequence.</summary>
@@ -83,10 +87,22 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public void SetDeckBaseBpm(int slot, double bpm) => _baseBpm[slot] = bpm;
     public double DeckFirstBeat(int slot) => _firstBeat[slot];
     public void SetDeckFirstBeat(int slot, double firstBeatSeconds) => _firstBeat[slot] = firstBeatSeconds;
+    public IReadOnlyList<double> DeckKickOnsets(int slot) => _kickOnsets[slot];
+    public void SetDeckKickOnsets(int slot, IReadOnlyList<double> kickOnsetsSeconds)
+        => _kickOnsets[slot] = kickOnsetsSeconds.ToArray();
     public void SetDeckDownbeat(int slot, double downbeatSeconds) { }
+    public bool DeckPhaseSyncReady(int slot) => _phaseSyncReady[slot];
+    public void SetDeckPhaseSyncReady(int slot, bool ready)
+    {
+        _phaseSyncReady[slot] = ready;
+        Calls.Add($"SetDeckPhaseSyncReady({slot},{ready})");
+    }
     public void SyncOnce(int slot) => Calls.Add($"SyncOnce({slot})");
     public bool IsSyncLocked(int slot) => false;
     public void SetSyncLock(int slot, bool enabled) { }
+    private readonly SyncMode[] _syncMode = new SyncMode[4];
+    public SyncMode DeckSyncMode(int slot) => _syncMode[slot];
+    public void SetDeckSyncMode(int slot, SyncMode mode) => _syncMode[slot] = mode;
     public int? SyncMaster => null;
     public SyncLockState SyncState(int slot) => SyncLockState.Off;
     public event Action<int, SyncLockState>? SyncStateChanged { add { } remove { } }
@@ -109,4 +125,5 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
     public bool IsStemDeck(int slot) => false;
     public bool IsStemMuted(int slot, Liveolator.Core.Analysis.Stems.StemKind kind) => false;
     public void SetStemMuted(int slot, Liveolator.Core.Analysis.Stems.StemKind kind, bool muted) { }
+    public void SetStemGain(int slot, Liveolator.Core.Analysis.Stems.StemKind kind, double gain) { }
 }

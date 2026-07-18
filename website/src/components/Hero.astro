@@ -5,7 +5,7 @@ import { site } from "../data/site";
 <section class="hero" id="top">
   <div class="container hero-inner">
     <div class="hero-copy">
-      <span class="pill"><span class="dot"></span> {site.stage} · free while in development</span>
+      <span class="pill"><span class="dot"></span> {site.stage} · free forever &amp; open source</span>
 
       <h1>
         Mix the music.<br />
@@ -21,13 +21,13 @@ import { site } from "../data/site";
 
       <p class="alpha-note">
         <strong>Heads up:</strong> this is an early <strong>alpha</strong> — it's
-        rough and there are plenty of bugs. That's exactly why it's free right now,
-        and why your <a href="#feedback">bug reports and ideas</a> matter so much.
+        rough and there are plenty of bugs. It's free, and always will be, so your
+        <a href="#feedback">bug reports and ideas</a> matter so much.
       </p>
 
       <div class="hero-actions">
         <a class="btn btn-primary" href="#download">Download for Windows</a>
-        <a class="btn btn-ghost" href="#feedback">Suggest a feature</a>
+        <a class="btn btn-ghost" href={site.repoUrl} target="_blank" rel="noopener">View source on GitHub</a>
       </div>
 
       <ul class="hero-meta">

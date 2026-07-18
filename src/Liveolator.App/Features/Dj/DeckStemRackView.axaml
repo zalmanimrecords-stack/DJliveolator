@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             x:Class="Liveolator.App.Features.Dj.DeckStemRackView"
+             x:DataType="dj:DeckStemRackViewModel">
+
+  <!-- Per-deck STEM level knobs (doc 32 §2b, DJ PRO). Each drives the deck's stem submix via DeckStemGain.
+       Seeded to unity; inert until a stem deck is loaded (the engine no-ops for a single-file track). -->
+  <Border Classes="hardware-well" Padding="8,6">
+    <StackPanel Spacing="4">
+      <TextBlock Classes="section" HorizontalAlignment="Center" Text="STEMS" />
+      <UniformGrid Columns="4">
+        <StackPanel Spacing="2">
+          <controls:Knob Width="34" Height="34" DefaultValue="1" HorizontalAlignment="Center"
+                         ArcBrush="{DynamicResource Accent}"
+                         Value="{Binding Drums.Value}" IsEnabled="{Binding IsAvailable}"
+                         ToolTip.Tip="Drums stem level (a stem deck must be loaded)" />
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="DRUMS" />
+        </StackPanel>
+        <StackPanel Spacing="2">
+          <controls:Knob Width="34" Height="34" DefaultValue="1" HorizontalAlignment="Center"
+                         ArcBrush="{DynamicResource Accent}"
+                         Value="{Binding Bass.Value}" IsEnabled="{Binding IsAvailable}"
+                         ToolTip.Tip="Bass stem level (a stem deck must be loaded)" />
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="BASS" />
+        </StackPanel>
+        <StackPanel Spacing="2">
+          <controls:Knob Width="34" Height="34" DefaultValue="1" HorizontalAlignment="Center"
+                         ArcBrush="{DynamicResource Accent}"
+                         Value="{Binding Vocals.Value}" IsEnabled="{Binding IsAvailable}"
+                         ToolTip.Tip="Vocals stem level (a stem deck must be loaded)" />
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="VOX" />
+        </StackPanel>
+        <StackPanel Spacing="2">
+          <controls:Knob Width="34" Height="34" DefaultValue="1" HorizontalAlignment="Center"
+                         ArcBrush="{DynamicResource Accent}"
+                         Value="{Binding Other.Value}" IsEnabled="{Binding IsAvailable}"
+                         ToolTip.Tip="Other (melody/harmony) stem level (a stem deck must be loaded)" />
+          <TextBlock Classes="tick" HorizontalAlignment="Center" Text="OTHER" />
+        </StackPanel>
+      </UniformGrid>
+    </StackPanel>
+  </Border>
+</UserControl>

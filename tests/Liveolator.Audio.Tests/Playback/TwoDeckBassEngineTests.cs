@@ -454,7 +454,7 @@ public class TwoDeckBassEngineTests
         engine.SetSyncLock(1, true);
         engine.SetQuantize(0, true);
 
-        Assert.True(engine.IsSyncLocked(1));
+        Assert.False(engine.IsSyncLocked(1));
         Assert.False(engine.IsSyncLocked(0));
         Assert.True(engine.IsQuantizeEnabled(0));
         Assert.False(engine.IsQuantizeEnabled(1));
@@ -564,11 +564,30 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // follower, handle 101
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 124.0);
+        engine.PlayPause(0);
 
         engine.SetSyncLock(1, true);
 
         Assert.Equal(128.0 / 124.0, backend.Rate[101], 6);
     }
+
+    [Fact]
+    public void Sync_MatchesWideBpmGap_ThroughKeyLockedTempoStretch()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader, handle 100
+        engine.Load(1, @"C:\b.wav"); // follower, handle 101
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 100.0);
+        engine.PlayPause(0);
+
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal(1.28, backend.Rate[101], 6);
+        Assert.True(engine.IsKeyLockEnabled(1));
+        Assert.NotEqual(SyncLockState.OutOfRange, engine.SyncState(1));
+    }
+
 
     [Fact]
     public void Sync_FoldsHalfTempoFollowerToNearUnity()
@@ -578,6 +597,7 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // 70 BPM follower
         engine.SetDeckBaseBpm(0, 140.0);
         engine.SetDeckBaseBpm(1, 70.0);
+        engine.PlayPause(0);
 
         engine.SetSyncLock(1, true);
 
@@ -593,12 +613,204 @@ public class TwoDeckBassEngineTests
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 124.0);
         engine.SetPitch(1, 1.0, relative: false); // follower pitch fader at +8%
+        engine.PlayPause(0);
 
         engine.SetSyncLock(1, true);
         Assert.Equal(128.0 / 124.0, backend.Rate[101], 6); // sync owns the rate
 
         engine.SetSyncLock(1, false);
         Assert.Equal(1.08, backend.Rate[101], 6); // handed back to the pitch fader
+    }
+
+    // --- Grid-confidence gate (SYNC-BEHAVIOR-SPEC §7): an untrustworthy grid tempo-matches but never phase-locks.
+
+    [Fact]
+    public void SyncLock_WithConfidentGrid_PhaseAlignsTheFollower()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader 100
+        engine.Load(1, @"C:\b.wav"); // follower 101
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);
+        backend.PositionFraction[100] = 0.0;   // leader on the beat
+        backend.PositionFraction[101] = 0.002; // follower off the beat (0.2 s of a 100 s track)
+
+        engine.SetSyncLock(1, true); // default = confident grid
+
+        Assert.Equal(1.0, backend.Rate[101], 6);                     // tempo matched
+        Assert.NotEqual(0.002, backend.PositionFraction[101], 6);    // AND phase-snapped onto the grid
+    }
+
+    [Fact]
+    public void SyncLock_WithLowGridConfidence_MatchesTempoButDoesNotPhaseAlign()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);
+        backend.PositionFraction[100] = 0.0;
+        backend.PositionFraction[101] = 0.002;
+
+        engine.SetDeckPhaseSyncReady(1, false); // grid uncertain → tempo-only
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal(1.0, backend.Rate[101], 6);                  // still tempo matched
+        Assert.Equal(0.002, backend.PositionFraction[101], 6);    // but the phase is left untouched
+    }
+
+    [Fact]
+    public void PhaseSyncReady_DefaultsTrue_AndResetsToTrueOnLoad()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+        Assert.True(engine.DeckPhaseSyncReady(0)); // confident by default
+
+        engine.SetDeckPhaseSyncReady(0, false);
+        engine.Load(0, @"C:\b.wav"); // grid confidence is per-track — a new load resets to confident/preserve
+
+        Assert.True(engine.DeckPhaseSyncReady(0));
+    }
+
+    [Fact]
+    public void UpdateSync_WithLowGridConfidence_HoldsTempoWithoutResnappingTheFollower()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);
+        engine.SetDeckPhaseSyncReady(1, false);
+        engine.SetSyncLock(1, true);
+        // A phase error well past the re-snap threshold that a confident grid would seek to correct.
+        backend.PositionFraction[100] = 0.0;
+        backend.PositionFraction[101] = 0.003; // 0.3 s ≈ 0.64 beat → wraps past the 0.25-beat re-snap gate
+
+        engine.UpdateSync(0);
+
+        Assert.Equal(1.0, backend.Rate[101], 6);                 // tempo held
+        Assert.Equal(0.003, backend.PositionFraction[101], 6);   // no re-snap seek (grid uncertain)
+        Assert.Equal(SyncLockState.Active, engine.SyncState(1)); // engaged, tempo-only (never Locked)
+    }
+
+    // --- Sync mode taxonomy (SYNC-BEHAVIOR-SPEC §4): Tempo Sync = a latch that tracks tempo, never phase.
+
+    [Fact]
+    public void SyncMode_DefaultsBeatLock_AndIsStoredPerSlot()
+    {
+        using var engine = NewEngine(out _, out _);
+        Assert.Equal(SyncMode.BeatLock, engine.DeckSyncMode(0));
+
+        engine.SetDeckSyncMode(1, SyncMode.TempoOnly);
+
+        Assert.Equal(SyncMode.TempoOnly, engine.DeckSyncMode(1));
+        Assert.Equal(SyncMode.BeatLock, engine.DeckSyncMode(0)); // per-slot
+    }
+
+    [Fact]
+    public void TempoSync_MatchesTempo_ButDoesNotPhaseAlign()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        engine.PlayPause(0);
+        backend.PositionFraction[100] = 0.0;
+        backend.PositionFraction[101] = 0.002; // follower off the beat
+
+        engine.SetDeckSyncMode(1, SyncMode.TempoOnly);
+        engine.SetSyncLock(1, true);
+
+        Assert.Equal(128.0 / 124.0, backend.Rate[101], 6);     // tempo matched to the leader
+        Assert.Equal(0.002, backend.PositionFraction[101], 6); // phase left to the DJ (no snap)
+    }
+
+    [Fact]
+    public void TempoSync_FollowsMasterTempoLive_WithoutResnappingThePhase()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);
+        engine.SetDeckSyncMode(1, SyncMode.TempoOnly);
+        engine.SetSyncLock(1, true);
+        backend.PositionFraction[100] = 0.0;
+        backend.PositionFraction[101] = 0.003; // a phase error a BeatLock loop would re-snap
+
+        engine.SetPitch(0, 1.0, relative: false); // master pitch fader to +8%
+        engine.UpdateSync(0);
+
+        Assert.Equal(1.08, backend.Rate[101], 6);              // follower tracks the master's new tempo
+        Assert.Equal(0.003, backend.PositionFraction[101], 6); // but never re-snaps the phase
+        Assert.Equal(SyncLockState.Active, engine.SyncState(1));
+    }
+
+    [Fact]
+    public void SetDeckSyncMode_SwitchingToBeatLockWhileSynced_SnapsThePhase()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);
+        backend.PositionFraction[100] = 0.0;
+        backend.PositionFraction[101] = 0.002;
+        engine.SetDeckSyncMode(1, SyncMode.TempoOnly);
+        engine.SetSyncLock(1, true);
+        Assert.Equal(0.002, backend.PositionFraction[101], 6); // tempo-only: not snapped
+
+        engine.SetDeckSyncMode(1, SyncMode.BeatLock); // upgrade to Sync Lock
+
+        Assert.NotEqual(0.002, backend.PositionFraction[101], 6); // now phase-snapped onto the master
+    }
+
+    // --- Armed / quantized start (SYNC-BEHAVIOR-SPEC §6): a synced deck armed while stopped enters in phase.
+
+    [Fact]
+    public void PlayPause_StartingAnArmedSyncedDeck_RealignsPhaseToTheMaster()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // leader 100
+        engine.Load(1, @"C:\b.wav"); // follower 101
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);                   // leader playing
+        backend.PositionFraction[100] = 0.0;   // leader on the beat
+        engine.SetSyncLock(1, true);           // follower armed while STOPPED
+        // The master moved on while the follower sat armed off the beat — its engage-time alignment is stale.
+        backend.PositionFraction[101] = 0.003; // 0.3 s ≈ 0.64 beat off
+
+        engine.PlayPause(1);                    // start the armed follower
+
+        Assert.True(engine.IsPlaying(1));
+        Assert.NotEqual(0.003, backend.PositionFraction[101], 6); // re-aligned to the master at the moment it starts
+    }
+
+    [Fact]
+    public void UpdateSync_HoldsAPausedArmedFollower_WithoutDraggingItOffTheCue()
+    {
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav");
+        engine.Load(1, @"C:\b.wav");
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 128.0);
+        engine.PlayPause(0);                   // leader playing
+        backend.PositionFraction[100] = 0.0;
+        engine.SetSyncLock(1, true);           // follower armed, STOPPED
+        backend.PositionFraction[101] = 0.003; // cued off the beat — must stay put while armed
+        backend.PositionFraction[100] = 0.02;  // master plays on
+
+        engine.UpdateSync(0);
+
+        Assert.Equal(0.003, backend.PositionFraction[101], 6); // paused armed follower held at its cue point
+        Assert.Equal(SyncLockState.Active, engine.SyncState(1)); // engaged/armed, not "Locked"
     }
 
     [Fact]
@@ -621,6 +833,7 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav");
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 124.0);
+        engine.PlayPause(0);
         engine.SetSyncLock(1, true);
 
         engine.SetDeckBaseBpm(0, 140.0); // leader retuned
@@ -636,6 +849,7 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav");
         engine.SetDeckBaseBpm(0, 124.0);
         engine.SetDeckBaseBpm(1, 124.0);
+        engine.PlayPause(0);
         engine.SetSyncLock(1, true);
         Assert.Equal(1.0, backend.Rate[101], 6); // equal tempos
 
@@ -652,6 +866,7 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav");
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 124.0); // in sync range
+        engine.PlayPause(0);
         var events = new List<(int Slot, SyncLockState State)>();
         engine.SyncStateChanged += (slot, state) => events.Add((slot, state));
 
@@ -670,8 +885,9 @@ public class TwoDeckBassEngineTests
         using var engine = NewEngine(out _, out _);
         engine.Load(0, @"C:\a.wav");
         engine.Load(1, @"C:\b.wav");
-        engine.SetDeckBaseBpm(0, 180.0);
-        engine.SetDeckBaseBpm(1, 120.0); // folded rate 0.75 -> 25% > the 15% sync ceiling
+        engine.SetDeckBaseBpm(0, 168.0);
+        engine.SetDeckBaseBpm(1, 120.0); // folded rate 1.40 -> 40% > the 35% sync ceiling
+        engine.PlayPause(0);
         var events = new List<(int Slot, SyncLockState State)>();
         engine.SyncStateChanged += (slot, state) => events.Add((slot, state));
 
@@ -692,6 +908,7 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav");
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 124.0);
+        engine.PlayPause(0);
         engine.SyncStateChanged += (_, _) => throw new InvalidOperationException("boom");
 
         engine.SetSyncLock(1, true);  // must not throw despite the subscriber
@@ -1363,6 +1580,21 @@ public class TwoDeckBassEngineTests
         engine.Load(0, @"C:\b.wav");
 
         Assert.Equal(0.0, engine.DeckFirstBeat(0), precision: 6);
+    }
+
+    [Fact]
+    public void SetDeckKickOnsets_AreStoredSortedPerSlot_AndClearedOnReload()
+    {
+        using var engine = NewEngine(out _, out _);
+        engine.Load(0, @"C:\a.wav");
+
+        engine.SetDeckKickOnsets(0, new[] { 1.25, double.NaN, -1.0, 0.75 });
+
+        Assert.Equal(new[] { 0.75, 1.25 }, engine.DeckKickOnsets(0));
+
+        engine.Load(0, @"C:\b.wav");
+
+        Assert.Empty(engine.DeckKickOnsets(0));
     }
 
     [Fact]

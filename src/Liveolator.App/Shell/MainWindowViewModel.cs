@@ -31,6 +31,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         LibrariesViewModel libraries,
         LiveViewModel live,
         DjViewModel dj,
+        DjProViewModel djPro,
         StudioViewModel studio,
         VisualLibraryViewModel visualLibrary,
         AddonsViewModel addons,
@@ -44,6 +45,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
         ArgumentNullException.ThrowIfNull(dj);
+        ArgumentNullException.ThrowIfNull(djPro);
         ArgumentNullException.ThrowIfNull(studio);
         ArgumentNullException.ThrowIfNull(visualLibrary);
         ArgumentNullException.ThrowIfNull(addons);
@@ -72,7 +74,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Tabs = new ObservableCollection<TabItemViewModel>
         {
             new("LIVE", live),
-            new("DJ", dj),
+            new("DJ PRO", djPro),
             new("STUDIO", studio),
             new("VJ", visualLibrary),
             new("LIBRARIES", libraries),
@@ -89,7 +91,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         // Re-read the catalog into the DJ-tab browser whenever the DJ tab is (re)entered, so tracks scanned
         // in LIBRARIES show up there (MediaLibrary exposes no change event to subscribe to).
         this.WhenAnyValue(x => x.CurrentTab)
-            .Subscribe(tab => (tab?.Page as DjViewModel)?.Browser?.Refresh());
+            .Subscribe(tab =>
+            {
+                (tab?.Page as DjViewModel)?.Browser?.Refresh();
+                // DJ PRO reuses the DJ tab's browser instance, so refresh it on entry there too.
+                (tab?.Page as DjProViewModel)?.Browser?.Refresh();
+            });
     }
 
     /// <summary>A startup warning about the realtime audio engine (e.g. a missing bass_fx that makes every

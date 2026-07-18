@@ -54,6 +54,28 @@ public sealed class PlaylistAudioPlayerTests
     }
 
     [Fact]
+    public void NowChanged_DispatchesCataloguedKickOnsetsToTheDeck()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        var dispatcher = new PerformanceActionDispatcher(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            dispatcher,
+            engine,
+            analysisResolver: path => path == "a.wav"
+                ? new BpmResult(126.0, 0.9, 0.375) { KickOnsetsSeconds = new[] { 1.25, 0.75 } }
+                : null,
+            slot: 1);
+
+        playlist.RaiseNowChanged(Entry("a.wav"));
+
+        Assert.Equal(new[] { 0.75, 1.25 }, engine.DeckKickOnsets(1));
+    }
+
+    [Fact]
     public void NowChanged_WhenAutoPlayOff_LoadsButDoesNotPlay()
     {
         var playlist = new FakeLivePlaylist();

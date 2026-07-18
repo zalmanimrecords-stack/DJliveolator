@@ -1,5 +1,5 @@
-using System.IO;
 using Liveolator.App.Features.Shared;
+using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 
@@ -17,7 +17,11 @@ public sealed class TrackRowViewModel
         Menu = contextActions is null
             ? null
             : new TrackMenuViewModel(
-                track.File.Path, contextActions, track.Bpm?.Bpm ?? 0, track.Bpm?.FirstBeatSeconds ?? 0);
+                track.File.Path,
+                contextActions,
+                track.Bpm?.Bpm ?? 0,
+                track.Bpm?.FirstBeatSeconds ?? 0,
+                track.Bpm?.KickOnsetsSeconds);
     }
 
     public MusicTrack Track { get; }
@@ -38,6 +42,39 @@ public sealed class TrackRowViewModel
 
     /// <summary>True when the track has at least one stored hot cue (read in batch from the cue store).</summary>
     public bool HasCues { get; }
+
+    // --- online BPM cross-check (doc 16) ---
+
+    /// <summary>True when the detected BPM disagrees with the online value — the review flag.</summary>
+    public bool IsBpmConflicted => Track.BpmProvenance == BpmProvenance.Conflicted;
+
+    /// <summary>Theme token for the BPM badge: Red on a conflict, otherwise the normal presence colors.</summary>
+    public string BpmBadgeToken => IsBpmConflicted ? "Red" : HasBpm ? "Accent" : "Faint";
+
+    /// <summary>
+    /// BPM badge tooltip. On a conflict it names BOTH values and the online source — the source name is
+    /// the GetSongBPM attribution requirement, not decoration.
+    /// </summary>
+    public string BpmBadgeTip => Track.BpmProvenance switch
+    {
+        BpmProvenance.Conflicted =>
+            $"BPM conflict — detected {Track.Bpm?.Bpm:0.0} · {Track.OnlineBpmSource} says {Track.OnlineBpm:0.0}. " +
+            "Right-click to keep the detected value, or re-analyze.",
+        BpmProvenance.CrossChecked => $"BPM cross-checked online ({Track.OnlineBpmSource})",
+        BpmProvenance.OnlineFetched => $"BPM from {Track.OnlineBpmSource} (not verified against the file)",
+        BpmProvenance.LocalConfirmed => "BPM confirmed by you",
+        _ => HasBpm ? "Detected BPM" : "No BPM analyzed",
+    };
+
+    /// <summary>Detail-panel line for the online value; blank when the track was never matched online.</summary>
+    public string OnlineBpmDetail => Track.OnlineBpm is { } online
+        ? IsBpmConflicted
+            ? $"⚠ {Track.OnlineBpmSource}: {online:0.0} BPM — differs from the detected value"
+            : $"{Track.OnlineBpmSource}: {online:0.0} BPM"
+        : string.Empty;
+
+    /// <summary>Theme token for the detail line: Red on a conflict, quiet otherwise.</summary>
+    public string OnlineBpmDetailToken => IsBpmConflicted ? "Red" : "Faint";
 
     /// <summary>Right-click menu (Add to Deck A/B, Add to playlist); null when context actions weren't supplied.</summary>
     public TrackMenuViewModel? Menu { get; }
@@ -70,6 +107,10 @@ public sealed class TrackRowViewModel
     public string DateAddedText =>
         Track.DateAdded is { } added ? $"Added {added.ToLocalTime():yyyy-MM-dd}" : string.Empty;
 
+    /// <summary>When the track was last scanned/analyzed (local date + time), or blank if never stamped.</summary>
+    public string LastScannedText =>
+        Track.LastAnalyzedUtc is { } scanned ? $"Scanned {scanned.ToLocalTime():yyyy-MM-dd HH:mm}" : string.Empty;
+
     public string StatusText => Track.Status switch
     {
         MediaAnalysisStatus.Ok => "OK",
@@ -79,16 +120,15 @@ public sealed class TrackRowViewModel
 
     // --- detail panel ---
 
-    /// <summary>"Artist · folder · bitrate · format" — omits the parts that are unknown.</summary>
+    /// <summary>"Artist · bitrate · codec" — omits the parts that are unknown. The folder is deliberately
+    /// left out: the full path already has its own row in the INFO section, so it isn't shown twice.</summary>
     public string SubLine
     {
         get
         {
-            string? folder = Path.GetDirectoryName(Track.File.Path);
             var parts = new[]
             {
                 Track.Artist,
-                string.IsNullOrEmpty(folder) ? null : folder,
                 Track.Metadata?.BitrateKbps is { } kbps ? $"{kbps}kbps" : null,
                 Track.Metadata?.Codec,
             };

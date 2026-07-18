@@ -162,6 +162,22 @@ public sealed class DjBrowserViewModel : ViewModelBase
             LoadToDeck(SelectedTrack, s);
     }
 
+    /// <summary>Deck ◀/▶ browse-and-load: step the current visible list by <paramref name="step"/> (−1 =
+    /// previous, +1 = next) from the selected track, select the new row, and load-or-queue it onto
+    /// <paramref name="slot"/> via the shared policy (never cuts a playing deck). No-op on an empty list;
+    /// clamps at the ends. With nothing selected yet, ▶ starts at the first row and ◀ at the last.</summary>
+    public void StepAndLoad(int slot, int step)
+    {
+        if (Tracks.Count == 0)
+            return;
+        int current = SelectedTrack is null ? -1 : Tracks.IndexOf(SelectedTrack);
+        int next = current < 0
+            ? (step >= 0 ? 0 : Tracks.Count - 1)
+            : System.Math.Clamp(current + step, 0, Tracks.Count - 1);
+        SelectedTrack = Tracks[next];
+        LoadToDeck(SelectedTrack, slot);
+    }
+
     /// <summary>The unambiguous "free deck" for a double-click load: the not-playing deck when exactly one
     /// deck is playing; otherwise none. Pure so the rule is unit-testable.</summary>
     public static int? FreeDeckSlot(bool deckAPlaying, bool deckBPlaying)
@@ -201,7 +217,8 @@ public sealed class DjBrowserViewModel : ViewModelBase
             slot,
             track.Track.File.Path,
             bpm: track.Track.Bpm?.Bpm ?? 0,
-            firstBeatSeconds: track.Track.Bpm?.FirstBeatSeconds ?? 0).Message;
+            firstBeatSeconds: track.Track.Bpm?.FirstBeatSeconds ?? 0,
+            kickOnsetsSeconds: track.Track.Bpm?.KickOnsetsSeconds).Message;
     }
 
     // A deck slot is loadable only if the engine backs it (DeckPlayPause reports IsAvailable iff

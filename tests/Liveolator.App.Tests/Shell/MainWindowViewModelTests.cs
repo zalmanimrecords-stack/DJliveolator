@@ -7,6 +7,7 @@ using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Studio;
@@ -120,6 +121,7 @@ public sealed class MainWindowViewModelTests
 
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), dj ?? new DjViewModel(),
+            new DjProViewModel(new PerformanceDeckSet()),
             studio, visualLibrary, addons, settings, midiLearn, status,
             new SystemVolumeControlViewModel(), appSettings, audioStatus);
     }
@@ -202,13 +204,13 @@ public sealed class MainWindowViewModelTests
     {
         var settings = AppSettings.Default with
         {
-            WindowLayout = new WindowLayoutSettings(ActiveTabId: "DJ"),
+            WindowLayout = new WindowLayoutSettings(ActiveTabId: "STUDIO"),
         };
 
         var vm = BuildShell(settings);
 
-        Assert.Equal("DJ", vm.CurrentTab.Title);
-        Assert.Equal("DJ", vm.CurrentTabId);
+        Assert.Equal("STUDIO", vm.CurrentTab.Title);
+        Assert.Equal("STUDIO", vm.CurrentTabId);
     }
 
     [Fact]

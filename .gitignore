@@ -51,3 +51,20 @@ __pycache__/
 
 # graphify was removed from this project (2026-06-12); its output dir must not return
 graphify-out/
+
+# AI / agent scaffolding — kept local, not part of the public repo.
+# These stay on the maintainer's machine; they are dev tooling, not the product.
+.agents/
+.claude/
+.codex/
+orchestration/
+AGENTS.md
+CLAUDE.md
+dj-software-auditor.zip
+
+# Website — now lives in its own private repo (SimonRoseDorix/LiveolatorWebsite).
+# Kept local because the release-sync scripts below still operate on it in-tree;
+# reworking that into a cross-repo flow is a follow-up.
+website/
+scripts/publish-website-release.ps1
+scripts/sync-website-screenshots.ps1

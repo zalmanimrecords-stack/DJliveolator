@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Controls.DeckWaveform"
+             x:Name="root" x:DataType="m:DeckViewModel">
+
+  <!-- The single source of truth for how a deck waveform looks. Every tab drops in this control and binds
+       its DataContext to a deck; the brushes, 3-band colours, kick-forward body scale and beat-grid colours
+       all live here, so DJ, DJ PRO (and any future surface) render the IDENTICAL waveform. Only the layout
+       (Folded / CombAtTop for the stacked A/B butterfly) varies per host. -->
+  <Border Height="{DynamicResource SizeWaveformHeight}" Background="{DynamicResource S2}"
+          BorderBrush="{DynamicResource Hair}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+    <controls:WaveformStrip Peaks="{Binding Waveform}" KickPeaks="{Binding KickPeaks}"
+                            MidPeaks="{Binding MidPeaks}" HighPeaks="{Binding HighPeaks}"
+                            BarBrush="{DynamicResource WaveformAhead}" PlayedBrush="{DynamicResource Waveform}"
+                            KickBrush="{DynamicResource Kick}"
+                            MidBrush="{DynamicResource Accent}" HighBrush="{DynamicResource WaveHigh}"
+                            PlayheadBrush="{DynamicResource WavePlayhead}"
+                            BeatBrush="{DynamicResource BeatMark}"
+                            BarLineBrush="{DynamicResource BarLineMark}"
+                            DownbeatBrush="{DynamicResource DownbeatMark}"
+                            BodyScale="0.65"
+                            Folded="{Binding #root.Folded}" CombAtTop="{Binding #root.CombAtTop}"
+                            Progress="{Binding RenderProgress}" ZoomWindow="{Binding ZoomWindow}"
+                            BeatGrid="{Binding BeatGrid}"
+                            DownbeatOffset="{Binding DownbeatBarOffset}"
+                            KickAnchor="{Binding KickAnchorFraction}"
+                            SeekCommand="{Binding SeekCommand}" />
+  </Border>
+</UserControl>

@@ -26,12 +26,45 @@ public class TwoDeckBassEngineSyncTests
         engine.Load(1, @"C:\slave.wav");  // handle 101 — slave
         engine.SetDeckBaseBpm(0, Bpm);
         engine.SetDeckBaseBpm(1, Bpm);
+        engine.PlayPause(0);
         return engine;
     }
 
     // Place a deck's playhead at a given beat phase (beats past its first-beat anchor) via the backend.
     private static void SetBeatPhase(FakeBassMixerBackend backend, int handle, double beats)
         => backend.PositionFraction[handle] = beats * BeatSeconds / Length;
+
+    [Fact]
+    public void EngagingSync_WithOnlyPausedOtherDeck_DoesNotLatchToAFrozenMaster()
+    {
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.PlayPause(0); // pause the would-be master again
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+
+        engine.SetSyncLock(1, true);
+
+        Assert.False(engine.IsSyncLocked(1));
+        Assert.Null(engine.SyncMaster);
+        Assert.Equal(SyncLockState.Off, engine.SyncState(1));
+        Assert.Equal(1.0, backend.Rate[101], 6);
+    }
+
+    [Fact]
+    public void EngagingSync_OnTheOtherDeck_TransfersTheFollowerInsteadOfDeadlockingBothDecks()
+    {
+        using var engine = NewSyncedPair(out _);
+        engine.SetSyncLock(1, true);
+        engine.PlayPause(1);
+
+        engine.SetSyncLock(0, true);
+
+        Assert.True(engine.IsSyncLocked(0));
+        Assert.False(engine.IsSyncLocked(1));
+        Assert.Equal(1, engine.SyncMaster);
+        Assert.Equal(SyncLockState.Active, engine.SyncState(0));
+        Assert.Equal(SyncLockState.Off, engine.SyncState(1));
+    }
 
     [Fact]
     public void SyncOnce_BeatmatchesAndAlignsKick_WithoutEngagingContinuousLock()
@@ -117,6 +150,22 @@ public class TwoDeckBassEngineSyncTests
     }
 
     [Fact]
+    public void EngagingSync_PreservesKey_ByEngagingKeyLockBeforeBeatmatch()
+    {
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.SetDeckBaseBpm(0, 128.0);
+        engine.SetDeckBaseBpm(1, 124.0);
+        Assert.False(engine.IsKeyLockEnabled(1));
+
+        engine.SetSyncLock(1, true);
+
+        Assert.True(engine.IsKeyLockEnabled(1));
+        Assert.True(backend.KeyLock[101]);
+        Assert.True(backend.RateViaTempoPath[101]);
+        Assert.Equal(128.0 / 124.0, backend.Rate[101], 6);
+    }
+
+    [Fact]
     public void NoSecondDeck_HasNoMaster()
     {
         var backend = new FakeBassMixerBackend();
@@ -134,6 +183,7 @@ public class TwoDeckBassEngineSyncTests
     {
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
         engine.SetSyncLock(1, true);
+        engine.PlayPause(1); // the loop corrects a PLAYING follower; a paused/armed one holds its cue (§6)
         // Both on the same beat phase => zero error.
         SetBeatPhase(backend, 100, 0.0);
         SetBeatPhase(backend, 101, 0.0);
@@ -145,10 +195,27 @@ public class TwoDeckBassEngineSyncTests
     }
 
     [Fact]
+    public void Quantize_UsesNearestLocalKickOnset_ForBeatPhase()
+    {
+        using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
+        engine.SetDeckFirstBeat(0, 0.0);
+        engine.SetDeckFirstBeat(1, 0.0);
+        engine.SetDeckKickOnsets(0, new[] { 10.10 });
+        engine.SetDeckKickOnsets(1, new[] { 10.30 });
+        backend.PositionFraction[100] = 10.10 / Length;
+        backend.PositionFraction[101] = 10.30 / Length;
+
+        engine.SetQuantize(1, true);
+
+        Assert.Equal(10.30 / Length, backend.PositionFraction[101], precision: 6);
+    }
+
+    [Fact]
     public void UpdateSync_SlaveBehind_AppliesPositiveCorrectionWithinMax()
     {
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
         engine.SetSyncLock(1, true);
+        engine.PlayPause(1); // the loop corrects a PLAYING follower; a paused/armed one holds its cue (§6)
         SetBeatPhase(backend, 100, 0.10); // master 0.1 beat ahead
         SetBeatPhase(backend, 101, 0.00); // slave behind
 
@@ -164,6 +231,7 @@ public class TwoDeckBassEngineSyncTests
         var hotGain = PhaseLockSettings.Default with { Gain = 1.0 };
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend, hotGain);
         engine.SetSyncLock(1, true);
+        engine.PlayPause(1); // the loop corrects a PLAYING follower; a paused/armed one holds its cue (§6)
         SetBeatPhase(backend, 100, 0.10); // 0.1 * gain 1.0 = 0.1, clamped to MaxCorrection
         SetBeatPhase(backend, 101, 0.00);
 
@@ -177,6 +245,7 @@ public class TwoDeckBassEngineSyncTests
     {
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend);
         engine.SetSyncLock(1, true);
+        engine.PlayPause(1); // the loop corrects a PLAYING follower; a paused/armed one holds its cue (§6)
         SetBeatPhase(backend, 100, 0.35); // beyond the 0.25-beat re-snap threshold
         SetBeatPhase(backend, 101, 0.00);
 
@@ -197,6 +266,7 @@ public class TwoDeckBassEngineSyncTests
         var settings = PhaseLockSettings.Default with { OutputLatencySeconds = 0.02 };
         using var engine = NewSyncedPair(out FakeBassMixerBackend backend, settings);
         engine.SetSyncLock(1, true);
+        engine.PlayPause(1); // the loop corrects a PLAYING follower; a paused/armed one holds its cue (§6)
         SetBeatPhase(backend, 100, 0.35); // master beyond the re-snap threshold
         SetBeatPhase(backend, 101, 0.00); // slave on its beat (raw playhead = 0)
 

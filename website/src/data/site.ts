@@ -7,7 +7,7 @@ export const site = {
   name: "Liveolator",
   tagline: "Mix the music. Move the visuals. One beat.",
   description:
-    "A cross-platform DJ + VJ performance app where the visuals are locked to the music on a single shared beat clock.",
+    "Liveolator is a free, open-source (GPLv3) cross-platform DJ + VJ performance app where the visuals lock to the music on one shared beat clock.",
   // Public canonical origin. Used to build absolute canonical, og:url and
   // og:image URLs for search engines and social crawlers. Must match astro
   // config `site` and carry no trailing slash.
@@ -32,7 +32,13 @@ export const site = {
   // `productSlug` must match a product key in the newsletter plugin settings.
   downloadApiUrl: "https://zalmanim.com/wp-json/zalmanim/v1/request-download",
   productSlug: "liveolator",
-  repoUrl: "https://github.com/zalmanimrecords-stack/Liveolator",
+  // Public, open-source home of the project (GPLv3). NOTE: this is the public
+  // `DJliveolator` repo, not the private dev mirror — visitor-facing links must
+  // resolve, so keep this pointed at the public repo.
+  repoUrl: "https://github.com/zalmanimrecords-stack/DJliveolator",
+  // Software licence, surfaced in copy and in the SoftwareApplication JSON-LD.
+  license: "GPLv3",
+  licenseUrl: "https://www.gnu.org/licenses/gpl-3.0.html",
   // PayPal donate button (same one wired into the app's Donate action and the
   // Zalmanolator site).
   donateUrl: "https://www.paypal.com/donate/?hosted_button_id=APK7NELSVVMXL",
@@ -82,6 +88,11 @@ export const features: Feature[] = [
     tag: "Platform",
     title: "Runs on Windows",
     body: "Liveolator runs on Windows, built on .NET 8 and Avalonia with a low-latency audio engine and GPU-shader visuals. Install the free build and you're mixing in minutes.",
+  },
+  {
+    tag: "Open source",
+    title: "Free and open source (GPLv3)",
+    body: "Liveolator is open-source software under the GPLv3. The full source lives on GitHub — read it, audit it, fork it or build it yourself. Free forever, and nobody can close it.",
   },
 ];
 

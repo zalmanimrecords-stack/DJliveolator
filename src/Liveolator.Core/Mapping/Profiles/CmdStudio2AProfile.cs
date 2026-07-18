@@ -79,11 +79,11 @@ public static class CmdStudio2AProfile
             MidiMessageType.NoteOn, channel, PlayPauseNote,
             PerformanceActionKind.DeckPlayPause, ActionInputMode.Momentary, slot));
 
-        // SYNC = one-shot beatmatch (tempo + phase), momentary — a single press lines the deck up,
-        // then NUDGE is free for manual fine-tuning. Not a latch (no continuous correction loop).
+        // SYNC = top-level beat lock: a press toggles tempo + phase sync to the other deck, matching the
+        // on-screen SYNC control. Release is ignored by the mapper for toggle buttons.
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, SyncNote,
-            PerformanceActionKind.DeckSyncOnce, ActionInputMode.Momentary, slot));
+            PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, slot));
 
         bindings.Add(new ControllerBinding(
             MidiMessageType.NoteOn, channel, CueNote,
@@ -176,10 +176,10 @@ public static class CmdStudio2AProfile
     }
 
     /// <summary>
-    /// Heals a profile saved while SYNC was a persistent toggle back to the one-shot beatmatch:
-    /// any deck-slot (0/1) <see cref="PerformanceActionKind.DeckSyncToggle"/> binding is rewritten to
-    /// a momentary <see cref="PerformanceActionKind.DeckSyncOnce"/>, keeping the learned physical
-    /// button. Other learned controls are left untouched.
+    /// Heals a profile saved while SYNC was a one-shot beatmatch up to the top-level sync lock:
+    /// any deck-slot (0/1) <see cref="PerformanceActionKind.DeckSyncOnce"/> binding is rewritten to
+    /// a toggle <see cref="PerformanceActionKind.DeckSyncToggle"/>, keeping the learned physical button.
+    /// Other learned controls are left untouched.
     /// </summary>
     public static ControllerMappingProfile UpgradeLegacySyncBindings(ControllerMappingProfile profile)
     {
@@ -187,14 +187,14 @@ public static class CmdStudio2AProfile
         bool changed = false;
         IReadOnlyList<ControllerBinding> bindings = profile.Bindings.Select(binding =>
         {
-            if (binding.Action != PerformanceActionKind.DeckSyncToggle || binding.Slot is < 0 or > 1)
+            if (binding.Action != PerformanceActionKind.DeckSyncOnce || binding.Slot is < 0 or > 1)
                 return binding;
 
             changed = true;
             return binding with
             {
-                Action = PerformanceActionKind.DeckSyncOnce,
-                InputMode = ActionInputMode.Momentary,
+                Action = PerformanceActionKind.DeckSyncToggle,
+                InputMode = ActionInputMode.Toggle,
             };
         }).ToList();
 
