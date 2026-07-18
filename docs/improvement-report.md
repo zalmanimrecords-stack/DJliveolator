@@ -1,102 +1,127 @@
 # Code Improvement Report
-_Generated: 2026-06-20 (loop 2)_
+_Generated: 2026-07-18 (loop 3)_
 
 ## Summary
-An autonomous maintenance pass over the Liveolator codebase. The code remains in
-unusually good shape — strict project standards mean a thin candidate pool: no
-TODO/FIXME anywhere in `src`, no obsolete/legacy markers, all README/doc cross-links
-resolve, and the only proven dead code was a single never-called method. Two safe,
-evidence-backed changes were made and committed; everything riskier (audio/GL hot
-loops) was deliberately deferred rather than gambled on. The loop began on a clean tree
-after the owner committed an in-progress STUDIO feature (`9d735ad`), so no in-progress
-work was swept up.
+An autonomous maintenance pass over `Liveolator.Core` (the pure, hardware-free, fully
+unit-tested layer — the safe zone for refactoring). The codebase remains in unusually
+good shape: no `TODO`/`FIXME`/`HACK` anywhere in `src`, zero empty catch blocks, no
+proven dead private/internal members, and all-but-one doc cross-reference resolves. The
+one substantial finding was a genuine DRY violation — the short-time-Fourier-transform
+(STFT) framing scaffold was hand-copied verbatim across all four spectral analyzers,
+with a documented "must line up frame-for-frame" coupling enforced only by comment. That
+was extracted into a shared, tested helper and all four consumers routed through it. Two
+long-function candidates were also decomposed, and one stale doc link fixed. Six safe,
+evidence-backed commits; everything riskier (audio/GL hot loops, roadmap enum stubs) was
+deliberately deferred rather than gambled on.
 
 ## Commits Made
 | # | Commit | Type | Scope |
 |---|--------|------|-------|
-| 1 | `0a91715` remove unused `Cooldown.Validate()` | refactor | autopilot |
-| 2 | `1a1bb2d` await writer task instead of blocking `Wait()` | test | audio |
+| 1 | `4d41e0b` drop dangling link to non-existent `PresetOptionViewModel` | docs | visuals |
+| 2 | `f0279b8` add shared `Stft` framing helper for spectral analyzers | refactor | dsp |
+| 3 | `c33c020` route onset envelopes through the shared `Stft` helper | refactor | bpm |
+| 4 | `9f65e67` route band-energy + chroma through the shared `Stft` helper | refactor | analysis |
+| 5 | `e8be4cb` extract `BuildBandChains` from `WaveformBuilder.Build` | refactor | waveform |
+| 6 | `1c978e9` extract `ClassifyTrack` from `LibraryDoctor.Scan` | refactor | library |
 
 ## Validation Commands Run
-- `dotnet restore Liveolator.sln` — passed
-- `dotnet build Liveolator.sln --configuration Release --no-restore` — passed (1 warning, pre-existing)
-- `dotnet test Liveolator.sln --configuration Release --no-build --no-restore` — passed (2,449 passed, 0 failed, 2 skipped)
-- Per-commit: narrow project build + test (Core 1202 green; Audio 231 green)
+- `dotnet build src/Liveolator.Core -c Debug` — passed (0 warnings, 0 errors) [baseline]
+- `dotnet build src/Liveolator.Core -c Release` — passed (0 warnings, 0 errors) [CI-matching, final]
+- `dotnet test tests/Liveolator.Core.Tests -c Debug` — **1509 passed, 0 failed, 0 skipped** (final)
+- Per-commit narrow validation: `--filter Dsp.StftTests` (15), `--filter Waveform` (25),
+  `--filter Library` (151), plus two full-suite runs after the BPM and band/chroma routings.
 
-Baseline before any change: build green, 2,446 passed / 0 failed / 2 skipped.
-Warnings went 2 → 1 (the xUnit1031 blocking-task warning was resolved by commit 2).
+Baseline before any change: Core build green, **1494 passed / 0 failed / 0 skipped**.
+Net after loop: 1509 passed (the +15 are the new `StftTests`). No behavior change.
+
+Note: the only uncommitted files on entry were CRLF/line-ending normalizations under
+`.claude/` (config + skill markdown) — pre-existing, environment-driven, left untouched.
 
 ## Improvement Candidates Found
 
 ### needs-refactor-now (addressed)
-- **src/Liveolator.Core/Autopilot/Cooldown.cs:11-16** — `Cooldown.Validate()` had zero
-  callers in the whole repo (full-repo grep; `AutopilotEngine` reads `rule.Cooldown` but
-  never validates it, no test invokes it) → removed the dead method.
-- **tests/Liveolator.Audio.Tests/Playback/StatefulBiquadTests.cs:33,62** — concurrency
-  test used `Task.Wait()` (xUnit1031, deadlock risk) → made async and `await` the writer
-  task; behavior preserved (still waits before asserting), warning gone.
+- **`docs/28-controllable-preset-generator-addon.md:195`** — Phase 6 "✅ DONE" linked
+  `PresetOptionViewModel.cs`, which exists nowhere in `src`. → Removed the dead link;
+  the sibling `PresetControlsViewModel.LoadPreset` already builds the ≤5 knobs the doc
+  describes (the design consolidated into one view-model). *(commit 1)*
+- **STFT framing duplication** — the identical Hann-windowed frame slide +
+  `Fft.MagnitudeSpectrum` scaffold and the byte-identical power-of-two/hop constructor
+  guard were hand-copied in `OnsetEnvelope`, `PercussiveOnsetEnvelope`,
+  `BandEnergyEnvelope`, and `ChromaExtractor`. → New `Dsp/Stft.cs`
+  (`ValidateFrameParams` / `FrameCount` / `ForEachFrame`) with dedicated tests; all four
+  routed through it, so the frame-for-frame alignment now holds by construction rather
+  than by comment. *(commits 2–4)*
+- **`WaveformBuilder.Build` (~87 lines)** — mixed LR4 band-filter construction with the
+  per-bucket peak-reduction loop. → Extracted `BuildBandChains`. *(commit 5)*
+- **`LibraryDoctor.Scan` (~114 lines, longest method in Core)** — mixed five concerns.
+  → Extracted the four-branch per-track health check into `ClassifyTrack`. *(commit 6)*
 
 ### worth-refactoring-soon (deferred)
-- **src/Liveolator.Audio/Render/OfflineMixRenderer.cs:160-164** — L/R channel filter
-  cascade `filt(high(mid(low(x))))` is duplicated per channel. A `static ProcessCascade`
-  helper would dedup it cleanly and is guarded by `OfflineMixRendererTests`, BUT it sits
-  in a per-sample hot loop the module docs require to mirror the live mixer exactly →
-  deferred; the ~2-line dedup doesn't justify adding indirection to perf-sensitive DSP
-  without owner sign-off.
-- **src/Liveolator.Audio/Render/OfflineMixRenderer.cs:138-148** — the 4-band biquad
-  init + coefficient-set pattern repeats; could collapse to an array+loop. Same hot-loop /
-  state-isolation caution as above → deferred.
-- **src/Liveolator.Audio/Playback/BassMixerBackend.cs:790-828** — four near-identical
-  `Ensure*Scratch` buffer-grow methods could become one `EnsureCapacity(ref float[], …)`
-  helper (~30 lines saved). Realtime BASS backend; native lib absent in CI, so harder to
-  validate safely → deferred (owner should confirm test coverage first).
-- **src/Liveolator.Core/Dsp/MasterLimiter.cs:152-223** — 71-line per-frame `Process`
-  loop with five interleaved DSP phases. Realtime DSP; medium risk → deferred.
-- **src/Liveolator.Visuals/Gl/GlVisualPerformanceEngine.cs:336-464** — 128-line `Run`
-  bundling window config + GL context + handler wiring. Cannot be unit-tested (GL) →
-  deferred.
+- **`LibraryDoctor.Scan` remaining concerns** — offline-folder detection, visual-asset
+  checks, duplicate grouping, and report assembly could each become a named helper.
+  Deferred to keep this loop's diff small and one-concern-per-commit.
+- **STFT attack/release smoother** (`Audio/AudioLevelEnvelope.cs:65`,
+  `Audio/FrequencyBandEnvelope.cs:44`) — same exponential-smoother idiom, but only ~3
+  shared lines and wired in differently (scalar VU vs per-band). Extract a shared
+  `AttackReleaseSmoother` only if a third caller appears (below the ~10-line bar today).
 
 ### acceptable-as-is
-- **src/Liveolator.Visuals/Gl/LayeredQuadRenderer.cs:113-116 / 170-173** — a scan flagged
-  the second frame-uniform set as "redundant," but that is an *assumption*; removing it
-  would risk a real behavior change with no test to catch it. Left untouched.
-- **tests/Liveolator.Audio.Tests/Playback/FakeLivePlaylist.cs:23** — `Changed` event
-  (CS0067 "never used") is a required `ILivePlaylist` interface member; cannot be removed.
-- **docs/01, 05, 08, 11** — still describe the old Zalmanolator stack (NAudio / DryWetMidi
-  / projectM). Project `CLAUDE.md` keeps these as *intentional historical* references
-  until the rewrite lands; not stale-by-accident.
+- **`TempoEstimator.Estimate`** — long but cohesive; the autocorrelation sweep is
+  deliberately *fused* with the argmax + mean accumulation in one pass. Extracting it
+  would add a redundant scan and de-optimize a hot analysis path for marginal gain.
+- **`MasterLimiter.Process`** — hot realtime audio loop that intentionally keeps
+  allocation/indirection out; the class comments say so. Leave inlinable.
+- **`DeckActionHandler.Handle` (~145 lines)** — the longest method in Core, but it's a
+  dispatcher `switch` already delegating to small per-case methods; no computation to
+  extract.
+- **Effect-processor boilerplate** (`FreeverbProcessor`, `PhaserProcessor`,
+  `MoogLadderFilterProcessor`) — idiomatic `IAudioEffectProcessor` shape; the DSP bodies
+  are unrelated.
 
 ### unclear-needs-more-evidence
-- None this pass — the dead-code sweep surfaced exactly one proven item; everything else
-  in DI/MCP-attribute/XAML-bound territory could not be ruled out as dynamically used and
-  was left alone (the conservative default).
+- *(none)* — every candidate examined resolved to one of the categories above.
 
 ## Areas Intentionally Left Unchanged
-- All UI ViewModels (`DeckViewModel`, `LibrariesViewModel`, `StudioViewModel`, etc.) —
-  large but XAML/DI-wired; "dead-looking" members are often bound dynamically.
-- `ServiceConfig.cs` (1,210 lines) — the DI composition root; splitting it is high-risk
-  and not a smallest-diff win.
-- Realtime audio (`BassMixerBackend`, `TwoDeckBassEngine`) and all GL/`Visuals` code —
-  perf-sensitive and/or untestable without hardware in CI.
+- **Roadmap enum stubs** (grep-proven unused but deliberate public API):
+  `BeatClockSource.External` (planned Ableton Link), `TransitionStyle.Wipe`/`Dissolve`,
+  `TrackVisualFallback.SolidColor`. Removing planned-feature API is an owner decision,
+  not a mechanical cleanup — left in place.
+- **Everything outside `Liveolator.Core`** — App/Visuals/Audio/etc. carry native/UI/GL
+  surface that can't be validated headlessly here; refactoring them without the running
+  app is riskier than the reward for this pass.
+- **The `.claude/` CRLF churn** — pre-existing, not ours.
 
 ## Risks and Follow-up Items
-- **Cooldown bars are now unvalidated anywhere.** `Cooldown(int Bars)` and
-  `ScenePool.CooldownBars` accept negatives silently. Removing the dead `Validate()` did
-  not change behavior (it was never called), but if validation is desired it should be
-  wired into rule/profile construction — an owner/product decision, not a mechanical fix.
+- The STFT dedup introduces a per-frame delegate invocation. All four consumers are
+  **offline** analysis paths (BPM/key/cue/HPSS), never the realtime clock, so the cost is
+  negligible — but if any consumer is ever moved onto the realtime path, revisit the
+  callback shape (e.g. a `ref struct` enumerator) before doing so.
+- `PresetOptionViewModel` was documented as shipped but never existed. Worth a quick
+  owner confirm that the consolidated `PresetControlsViewModel` fully covers the intended
+  Phase 6 scope (it appears to).
 
 ## Suggested Improvements (next loop)
-- If the owner confirms `OfflineMixRendererTests` covers output bit-for-bit, do the
-  `ProcessCascade` + filter-array dedup in `OfflineMixRenderer` as one reviewed commit.
-- Audit `BassMixerBackend.Ensure*Scratch` consolidation behind a focused test first.
-- Consider extracting window/GL-context setup out of `GlVisualPerformanceEngine.Run`
-  once a smoke/integration harness exists for the compositor.
+- Finish decomposing `LibraryDoctor.Scan` (offline-folders / visuals / duplicates /
+  report assembly into named helpers), one concern per commit.
+- Extend the STFT helper: consider a shared overload that also owns the spectrogram
+  accumulation pattern used by `PercussiveOnsetEnvelope` if a second spectrogram consumer
+  appears.
+- Run a coverage pass on the Core dirs that are sparse by test-file count
+  (`Autopilot`, `Persistence`, `Enrichment`) to confirm the pure logic there is actually
+  exercised, not just reachable — add characterization tests where it isn't.
 
 ## Topics for Treatment
-- Input validation policy for autopilot/scene config (cooldown bars, scene counts):
-  validate-at-construction vs. clamp vs. leave-open — decide once, apply consistently.
-- A consistent "grow-or-reallocate buffer" helper shared by the audio backends.
+- **Roadmap-stub policy** — decide whether unreferenced public enum values
+  (`External`/`Wipe`/`Dissolve`/`SolidColor`) stay as planned API or get removed until
+  their feature lands; a one-line `// reserved` convention would make intent explicit and
+  stop future dead-code scans from re-flagging them.
+- **Delegate-vs-span framing** — a project stance on when a shared DSP helper may use a
+  callback (offline) vs. must stay allocation-free (realtime).
 
 ## New Feature Ideas
-- None implied beyond the already-tracked roadmap gaps (VJ authoring UI, keylock,
-  cross-platform packaging — see `docs/22-status-and-roadmap.md`).
+- The `Stft` helper is now a natural home for a **reusable spectrogram/feature front-end**
+  if more analyzers arrive (e.g. spectral-centroid or MFCC-based features for smarter
+  auto-cue or genre hinting) — they'd get consistent framing for free.
+- `LibraryDoctor` already classifies track health; a **"fix all safe issues" batch
+  action** (relocate obvious moves, drop confirmed-missing) is a small step from the
+  existing `Preview` / `LibraryRepairPlan` scaffolding.
