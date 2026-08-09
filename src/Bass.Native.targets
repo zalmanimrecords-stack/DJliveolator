@@ -1,0 +1,53 @@
+<Project>
+
+  <!--
+    Copies the per-platform native BASS libraries next to a project's output.
+
+    The binaries are NOT in source control (commercial license; see docs/01); they are fetched into
+    runtimes/<rid>/native/ by scripts/fetch-bass.(ps1|sh). Every target here is a silent no-op when they
+    are absent, so a checkout without them still builds — the consuming project degrades at runtime
+    instead (the app disables Live Mode; the MCP server's render tools report the failure).
+
+    Imported by every project that loads BASS at runtime: Liveolator.App and Liveolator.Mcp. Kept in one
+    file so the two cannot drift — an MCP server missing bass_fx renders silence rather than a warped
+    mix, with nothing at build time to say why.
+  -->
+
+  <PropertyGroup>
+    <!-- RID for native-lib selection. Honour an explicit RID; otherwise infer from the OS. -->
+    <BassRid Condition="'$(BassRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">win-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX')) and '$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture)' == 'Arm64'">osx-arm64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">osx-x64</BassRid>
+    <BassRid Condition="'$(BassRid)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</BassRid>
+    <BassNativeDir>$(MSBuildThisFileDirectory)..\runtimes\$(BassRid)\native\</BassNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BassNativeLib Include="$(BassNativeDir)*" Condition="Exists('$(BassNativeDir)')" />
+  </ItemGroup>
+
+  <Target Name="CopyBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(OutDir)" />
+  </Target>
+
+  <Target Name="WarnMissingBassNative" AfterTargets="Build" Condition="'@(BassNativeLib)' == ''">
+    <Message Importance="high"
+             Text="BASS native lib not found under runtimes\$(BassRid)\native\ — realtime audio and offline rendering will be unavailable at runtime. Run scripts/fetch-bass to enable them." />
+  </Target>
+
+  <!-- Publish copies only ResolvedFileToPublish items, so the Build-time copy above never
+       reaches the publish folder — without this, installed builds would silently lose Live Mode. -->
+  <Target Name="CopyBassNativeToPublish" AfterTargets="Publish" Condition="'@(BassNativeLib)' != ''">
+    <Copy SourceFiles="@(BassNativeLib)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true"
+          OverwriteReadOnlyFiles="true" />
+    <Message Importance="high" Text="Copied BASS native lib for $(BassRid) into $(PublishDir)" />
+  </Target>
+
+</Project>
