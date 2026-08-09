@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.6.1",
+    "date": "2026-08-09",
+    "notes": [
+      "New DJ PRO tab: the whole mixer, both decks and the effect knobs on one screen with no scrolling, for when you want density over comfort.",
+      "SYNC now refuses to lock onto a beat grid it is not confident about, instead of quietly drifting a few bars later.",
+      "Import your library from Rekordbox, Traktor, VirtualDJ, Serato, Mixxx or Engine DJ - tracks, cue points, beat grids, keys and playlists come across.",
+      "Per-stem gain knobs on the DJ PRO decks, so you can pull the vocal or the drums down without touching the EQ.",
+      "This build also carries the beat-grid, waveform-scroll and CMD STUDIO 2A jog fixes announced with 0.6.0."
+    ]
+  },
+  {
     "version": "0.5.0",
     "date": "2026-07-12",
     "notes": [
