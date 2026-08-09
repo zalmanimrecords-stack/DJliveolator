@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 15 — Phased Roadmap
 
 ## Purpose

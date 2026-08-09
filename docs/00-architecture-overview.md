@@ -111,7 +111,7 @@ be removed once `Liveolator.App` is closed so its output unlocks):
 - **`IVisualMediaProbe` → `Liveolator.Visuals.CompositeVisualMediaProbe`** (image header + ffprobe video).
 
 Tests live in `tests/` over `Liveolator.Core` — see
-[14 — Testing and validation](14-testing-and-validation.md).
+[the test strategy and commands](core-business-logic/00-project-context.md).
 
 ## Naming conventions
 

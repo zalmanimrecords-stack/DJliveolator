@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 21 — DJ Feature Gap Analysis (Follow-up after the integration merge)
 
 > **Author's lens:** same working club/festival DJ + DSP engineer who wrote

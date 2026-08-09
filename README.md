@@ -77,9 +77,9 @@ analysis, and a GL layer compositor with beat-reactive generators, all driven th
 `PerformanceAction` dispatcher and covered by ~1,000+ passing tests. The audio↔visual link runs off one
 shared beat clock (the differentiator).
 
-For the current state, verified bug map, and prioritized next steps see
-[`docs/27-system-review-2026-06-10.md`](docs/27-system-review-2026-06-10.md) and
-[`docs/22-status-and-roadmap.md`](docs/22-status-and-roadmap.md);
+For the current state — what is built, what is reachable from the UI, and what is still open — see
+[`docs/core-business-logic/`](docs/core-business-logic/00-project-context.md), which is validated
+against the code;
 [`docs/00-LIVEOLATOR-CONTEXT.md`](docs/00-LIVEOLATOR-CONTEXT.md) holds the direction and what carries
 over from Zalmanolator. Still open: keylock, the VJ authoring UI, and cross-platform packaging.
 

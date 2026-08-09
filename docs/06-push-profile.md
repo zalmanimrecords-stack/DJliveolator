@@ -115,5 +115,5 @@ visible macros; beat lock/tap/blackout available from Push.
 
 ## Resolved
 
-Target device is **Push 1** (user-confirmed). The Phase 6 prerequisite in
-[15 — Phased roadmap](15-phased-roadmap.md) is satisfied — no longer an open question.
+Target device is **Push 1** (user-confirmed). The Phase 6 prerequisite in the phased roadmap
+(archived: `docs/archive/2026-08-01-15-phased-roadmap.md`) is satisfied — no longer an open question.

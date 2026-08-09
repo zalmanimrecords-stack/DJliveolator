@@ -6,6 +6,12 @@ Windows-only Zalmanolator and are being adapted to the cross-platform direction.
 
 ## Read first
 
+➡️ **[Core business logic](core-business-logic/00-project-context.md)** — what the system
+**currently does**, validated against the code: entities and rules, critical flows, state machines,
+integrations, which features are actually reachable from the UI, and the open questions. When a
+document in this folder and that set disagree about current behaviour, **that set wins**; these
+documents remain the record of *why* each subsystem is shaped as it is.
+
 ➡️ **[00 — Liveolator Context](00-LIVEOLATOR-CONTEXT.md)** — why this project exists,
 the product definition, the reimagined visual engine, the cross-platform stack, what
 carries over, and the open decisions. **This is the source of truth** where any
@@ -43,8 +49,10 @@ Hardware / UI / Autopilot
 | — | [Sync behavior spec](SYNC-BEHAVIOR-SPEC.md) | DJ sync/beatmatch | **Proposed** — contract + acceptance tests |
 | 12 | [UI modules](12-ui-modules.md) | UI | Carries over (WPF→Avalonia wording) |
 | 13 | [Data and persistence](13-data-and-persistence.md) | Storage | Carries over |
-| 14 | [Testing and validation](14-testing-and-validation.md) | Quality | Carries over |
-| 15 | [Phased roadmap](15-phased-roadmap.md) | Delivery | Carries over (visual phases reframed) |
+| 14 | Testing and validation | Quality | 📦 archived 2026-08-01 — see [00 — Project context](core-business-logic/00-project-context.md) |
+| 15 | Phased roadmap | Delivery | 📦 archived 2026-08-01 — see [`docs/archive/`](archive/README.md) |
+| 17 | [MCP agent interface](17-mcp-agent-interface.md) | Agent tools | Built — 27 tools over the catalog |
+| — | [MCP connect guide](mcp-connect-guide.md) | Agent tools | How an external agent connects to the MCP server |
 | 25 | [Track-linked media and VJ foundation](25-track-linked-media-and-vj-foundation.md) | Media / Visuals | Detailed implementation plan |
 
 ## Confirmed hardware targets
@@ -57,5 +65,5 @@ Hardware / UI / Autopilot
 ## Cross-platform stack (summary; full rationale in the context doc)
 
 - .NET 8 + **Avalonia** (UI) · **OpenGL via Silk.NET** + GLSL (effects) · **FFmpeg**
-  (video) · camera capture · **RtMidi/libremidi** (MIDI) · audio library **TBD**
-  (BASS vs PortAudio/miniaudio).
+  (video) · camera capture · **RtMidi** (MIDI) · **BASS/ManagedBass** (realtime audio —
+  decided 2026-06-05).

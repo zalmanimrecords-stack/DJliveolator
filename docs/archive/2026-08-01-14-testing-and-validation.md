@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 14 — Testing and Validation
 
 > **⚠️ STALE (flagged 2026-06-07, doc 24):** the "Existing test infrastructure" section below still

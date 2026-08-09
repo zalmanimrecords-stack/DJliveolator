@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # Code Improvement Report
 _Generated: 2026-07-18 (loop 3)_
 
