@@ -26,7 +26,7 @@ export const site = {
   // Cache-buster for the screenshots specifically. Bump this when the images are
   // re-rendered WITHOUT a version bump, so Cloudflare's edge (which keys on the query)
   // serves the fresh files instead of the cached ones (see website/DEPLOY.md).
-  shotRev: "2",
+  shotRev: "3",
   // Email-gated download: the button posts the visitor's email here and the WP
   // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
   // `productSlug` must match a product key in the newsletter plugin settings.
@@ -36,6 +36,12 @@ export const site = {
   // `DJliveolator` repo, not the private dev mirror — visitor-facing links must
   // resolve, so keep this pointed at the public repo.
   repoUrl: "https://github.com/zalmanimrecords-stack/DJliveolator",
+  // Contributor entry points on the public repo (both enabled): bugs/features go
+  // to Issues, open-ended questions to Discussions.
+  repoIssuesUrl: "https://github.com/zalmanimrecords-stack/DJliveolator/issues",
+  repoDiscussionsUrl: "https://github.com/zalmanimrecords-stack/DJliveolator/discussions",
+  repoContributingUrl:
+    "https://github.com/zalmanimrecords-stack/DJliveolator/blob/main/CONTRIBUTING.md",
   // Software licence, surfaced in copy and in the SoftwareApplication JSON-LD.
   license: "GPLv3",
   licenseUrl: "https://www.gnu.org/licenses/gpl-3.0.html",
@@ -45,7 +51,7 @@ export const site = {
   // Inquiries + efficiency suggestions land here (mailto, see Feedback form).
   contactEmail: "zalmanimrecords@gmail.com",
   // Bump when the user manual page (/manual) is revised.
-  manualUpdated: "2026-06-21",
+  manualUpdated: "2026-08-09",
   // Who operates the site / acts as data controller for the privacy policy.
   operator: "Liveolator (Zalmanim Records)",
   // Bump when the privacy policy (/privacy) is revised.
@@ -112,8 +118,8 @@ export const shots: Shot[] = [
   },
   {
     src: "/screenshots/dj.png",
-    alt: "Liveolator DJ tab showing two decks with jog wheels, EQ and crossfader",
-    label: "DJ",
+    alt: "Liveolator DJ PRO tab showing two decks with jog wheels, EQ and crossfader",
+    label: "DJ PRO",
     caption: "Full two-deck focus: jog wheels, 3-band EQ, filter, hot cues and loops.",
   },
   {

@@ -75,7 +75,7 @@ export const manual: ManualSection[] = [
         kind: "list",
         items: [
           "LIVE — your performance screen: both decks, the mixer and the visuals output together.",
-          "DJ — the same two decks with more room for detailed deck work.",
+          "DJ PRO — the same two decks with more room for detailed deck work.",
           "STUDIO — a timeline for laying out and rendering a set.",
           "VJ — the visual assets and layers.",
           "LIBRARIES — your music catalog.",
@@ -86,7 +86,7 @@ export const manual: ManualSection[] = [
   },
   {
     id: "dj",
-    title: "DJ: decks & mixer",
+    title: "DJ PRO: decks & mixer",
     blocks: [
       {
         kind: "p",
