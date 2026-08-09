@@ -28,12 +28,8 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
     private readonly Shared.TrackContextActions? _contextActions;
     private readonly PerformanceDeckSet _decks;
     private readonly bool _ownsDecks;
+    private readonly PlayedHistoryTracker? _playedHistory;
     private bool _disposed;
-    // Played-history tracking (B5): the entry currently in Now, and the id we expect to become Now on
-    // the next advance (the prior Next). They let us tell an advance (record the leaving track) from a
-    // fresh Load (reset history) without changing the queue engine.
-    private QueueEntry? _previousNow;
-    private Guid? _expectedNextId;
 
     /// <param name="decks">The shared decks + crossfader (doc 11). When provided, the DJ tab drives the
     /// same instances as the Live tab (one source of truth); when null it builds a private set so the
@@ -71,9 +67,9 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
 
         if (_playlist is not null)
         {
+            _playedHistory = new PlayedHistoryTracker(_playlist.Now, _playlist.Upcoming);
             _playlist.NowChanged += OnNowChanged;
             RefreshSet();
-            CaptureQueuePosition(); // seed the played-history tracking from the initial queue
         }
 
         if (_deckBQueue is not null)
@@ -165,40 +161,16 @@ public sealed class DjViewModel : ViewModelBase, IDisposable
             RefreshSet();
         });
 
-    // Decides whether Now changed because the queue advanced (the prior Next became Now → the track
-    // that left Now is "played") or because a fresh set was loaded (→ reset history). The expected-next
-    // id captured on the previous change is the deterministic signal; the queue engine is untouched.
     private void UpdatePlayedHistory(QueueEntry? now)
     {
-        bool advanced = _previousNow is not null && now?.Id == _expectedNextId;
-        if (advanced)
-        {
-            RecordPlayed(_previousNow!);
-        }
-        else if (_previousNow is not null || now is not null)
-        {
-            // A reload/replace (not a sequential advance): the prior history no longer applies.
-            Played.Clear();
-            this.RaisePropertyChanged(nameof(IsPlayedEmpty));
-        }
+        if (_playlist is null || _playedHistory is null ||
+            !_playedHistory.Observe(now, _playlist.Upcoming))
+            return;
 
-        CaptureQueuePosition();
-    }
-
-    private void RecordPlayed(QueueEntry entry)
-    {
-        var played = new QueueEntry(entry.TrackPath, entry.Id, TrackState.Played);
-        // No remove callback ⇒ history is read-only; titles come from the same catalog lookup as the set.
-        Played.Insert(0, new SetEntryViewModel(played, TitleFor(entry.TrackPath), null, _contextActions));
+        Played.Clear();
+        foreach (QueueEntry entry in _playedHistory.History)
+            Played.Add(new SetEntryViewModel(entry, TitleFor(entry.TrackPath), null, _contextActions));
         this.RaisePropertyChanged(nameof(IsPlayedEmpty));
-    }
-
-    // Snapshots the current Now and the id of the next-up entry, so the following NowChanged can tell
-    // an advance from a reload.
-    private void CaptureQueuePosition()
-    {
-        _previousNow = _playlist?.Now;
-        _expectedNextId = _playlist is { Upcoming: { Count: > 0 } up } ? up[0].Id : null;
     }
 
     private void RefreshSet()

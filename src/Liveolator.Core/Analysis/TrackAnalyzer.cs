@@ -1,13 +1,15 @@
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Analysis.Structure;
 
 namespace Liveolator.Core.Analysis;
 
-/// <summary>Combined offline analysis of one track: tempo, musical key/scale, duration, cues, and
-/// (when the optional Python/librosa analyzer is available) the song structure (doc 32).</summary>
-/// <param name="Structure">Detected musical structure, or <c>null</c> when structure analysis was not
-/// run or was unavailable — existing analysis without Python keeps working unchanged.</param>
+/// <summary>Combined offline analysis of one track: tempo, musical key/scale, duration, cues, and the
+/// song structure (doc 32).</summary>
+/// <param name="Structure">Detected musical structure — from the built-in
+/// <see cref="NoveltyStructureDetector"/>, or from the optional Python/librosa analyzer when it is
+/// installed. <c>null</c> when the material is too flat or too short to read structure from.</param>
 public sealed record TrackAnalysisResult(
     BpmResult Bpm, MusicalKey Key, TimeSpan Duration, TrackCues Cues, SongStructure? Structure = null);
 
@@ -42,8 +44,19 @@ public sealed class TrackAnalyzer
     /// discarded — and the new constant-tempo <see cref="Bpm.BpmResult.TempoStabilityBpmDelta"/>) so Sync
     /// can gate beat/phase sync on grid quality and downgrade an untrustworthy grid to tempo-only
     /// (SYNC-BEHAVIOR-SPEC §7). Additive; existing tracks re-analyze on next scan to populate the signals
-    /// (until then the grid confidence reads Unknown and phase sync is preserved).</remarks>
-    public const int CurrentVersion = 9;
+    /// (until then the grid confidence reads Unknown and phase sync is preserved).
+    /// v10: song structure is now detected in-process by <see cref="NoveltyStructureDetector"/>, so every
+    /// track carries intro/build-up/drop/breakdown/outro sections without the optional Python runtime —
+    /// which auto-cues, the STUDIO mix anchors and the library STRUCTURE badge all read. The Python
+    /// analyzer still overrides it when installed. Existing tracks re-analyze on next scan.
+    /// v11: key and tempo corrections (issues #4/#5). The chroma now ignores everything below the
+    /// frequency its frame can actually resolve to a semitone (<see cref="Key.ChromaExtractor"/>) — the
+    /// sub and kick used to dominate it with a fixed, music-independent pattern, so nearly every track
+    /// classified as the same major key; the classifier moved to Temperley's usage-based profiles to
+    /// match. <see cref="Bpm.TempoEstimator"/> also promotes the 1.5x (dotted) sub-harmonic, so a track
+    /// whose accents fall every 1.5 beats no longer reads 4/3 fast. Existing tracks re-analyze on next
+    /// scan; a track corrected by hand (<see cref="Library.Music.MusicTrack.AnalysisIsManual"/>) does not.</remarks>
+    public const int CurrentVersion = 11;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
@@ -53,6 +66,8 @@ public sealed class TrackAnalyzer
     private readonly KeyClassifier _key;
     private readonly SilenceCueDetector _cues;
     private readonly ISongStructureAnalyzer? _structure;
+    private readonly BandEnergyEnvelope _bandEnergy = new();
+    private readonly NoveltyStructureDetector _novelty = new();
 
     public TrackAnalyzer(
         BpmDetector? bpmDetector = null,
@@ -79,7 +94,14 @@ public sealed class TrackAnalyzer
         MusicalKey key = _key.Classify(chroma);
         TrackCues cues = _cues.Detect(mono, sampleRate);
         var duration = TimeSpan.FromSeconds((double)mono.Length / sampleRate);
-        return new TrackAnalysisResult(bpm, key, duration, cues);
+
+        // Built-in structure pass: runs on the PCM already in hand, so it costs one band-energy STFT
+        // and no second decode. Boundaries snap to the grid just measured. Null on material too
+        // flat/short to read (callers keep their fallback).
+        SongStructure? structure = _novelty.Detect(
+            _bandEnergy.Compute(mono, sampleRate), BeatGrid.FromBpmResult(bpm));
+
+        return new TrackAnalysisResult(bpm, key, duration, cues, structure);
     }
 
     /// <summary>
@@ -105,8 +127,10 @@ public sealed class TrackAnalyzer
         float[] buffer = await DecodeMonoAsync(decoder, filePath, cancellationToken).ConfigureAwait(false);
         TrackAnalysisResult result = AnalyzePcm(buffer, AnalysisSampleRate);
 
-        // Optional song-structure pass (doc 32). The analyzer is graceful by contract (null on missing
-        // runtime / failure); the guard here only keeps a buggy implementation from breaking core analysis.
+        // Optional higher-quality structure pass (doc 32), which OVERRIDES the built-in novelty result
+        // when it produces one. The analyzer is graceful by contract (null on missing runtime / failure),
+        // so the built-in result stands unless librosa actually returned sections; the guard here only
+        // keeps a buggy implementation from breaking core analysis.
         if (_structure is not null)
         {
             try

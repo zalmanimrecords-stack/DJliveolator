@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 22 — Status Review & Forward Roadmap
 
 > **Purpose:** the systems-analyst + dev-manager status review the owner asked for after the

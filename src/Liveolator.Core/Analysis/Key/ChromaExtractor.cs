@@ -9,8 +9,10 @@ namespace Liveolator.Core.Analysis.Key;
 /// </summary>
 public sealed class ChromaExtractor
 {
-    private const double MinFrequencyHz = 27.5;   // ~A0
     private const double MaxFrequencyHz = 5000.0;
+
+    /// <summary>One semitone as a fraction of the frequency it sits on (2^(1/12) − 1).</summary>
+    private const double SemitoneStep = 0.0594630943592952;
 
     private readonly int _frameSize;
     private readonly int _hop;
@@ -53,13 +55,26 @@ public sealed class ChromaExtractor
         return chroma;
     }
 
+    /// <summary>
+    /// The lowest frequency this frame size can actually assign to a pitch class: where one semitone
+    /// finally spans a whole FFT bin. Below it neighbouring semitones share bins, so each bin's energy
+    /// lands on whichever pitch class its centre happens to round to — the same fixed pattern for every
+    /// track. Electronic music puts its loudest content (kick and sub) exactly there, so including that
+    /// region made the chroma a near-constant and collapsed almost every track onto one key (issue #5).
+    /// At the default 4096-sample frame and 44.1 kHz this is ~181 Hz; the bass still reaches the chroma
+    /// through its harmonics, which are resolvable.
+    /// </summary>
+    private double MinResolvableFrequencyHz(int sampleRate)
+        => (double)sampleRate / _frameSize / SemitoneStep;
+
     private int[] BuildBinToPitchClassMap(int bins, int sampleRate)
     {
         var map = new int[bins];
+        double minFrequencyHz = MinResolvableFrequencyHz(sampleRate);
         for (int b = 0; b < bins; b++)
         {
             double freq = (double)b * sampleRate / _frameSize;
-            if (freq < MinFrequencyHz || freq > MaxFrequencyHz)
+            if (freq < minFrequencyHz || freq > MaxFrequencyHz)
             {
                 map[b] = -1;
                 continue;

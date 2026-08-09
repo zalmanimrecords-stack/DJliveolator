@@ -1,19 +1,24 @@
 # 18 — Implementation Status (living map)
 
+> **⚠️ Superseded for current behaviour (2026-08-01).** Verified current behaviour now lives in
+> [`docs/core-business-logic/`](core-business-logic/00-project-context.md), which is validated against
+> the code. This file has not been updated since 2026-06-12 and is kept as an increment log. Retiring
+> it is an owner decision, because the root `CLAUDE.md` still instructs agents to read it first.
+>
 > **Purpose:** a single, authoritative map of what is **already built** in code, so work is
 > not duplicated and so the design docs (numbered 00–17) can stay aspirational while this doc
 > tracks reality. Update this file whenever a module lands. Last updated: **2026-06-12**.
 >
-> **See `docs/31-system-review-2026-06-27.md`** (latest) — a panel review **focused on the music
+> **See `docs/archive/2026-08-01-31-system-review-2026-06-27.md`** — a panel review **focused on the music
 > library**, with a verified bug map and the recommended next 10 steps; **supersedes
-> `docs/27-system-review-2026-06-10.md`** for the next wave. Baseline at that review:
+> `docs/archive/2026-08-01-27-system-review-2026-06-10.md`** for the next wave. Baseline at that review:
 > **2784 tests passed / 2 skipped / 0 failed** (Core 1322 · App 798 · Audio 239 · Media 196 ·
 > Visuals 128 · Midi 44 · Online 31 · Integration 26); solution compiles clean. Verified High bugs:
 > `JsonLiveSetStore` non-atomic concurrent autosave race, Libraries silently hides <1 min tracks,
 > hot cues never play-on-jump (+ Medium: App↔MCP catalog cross-process race, MIDI-learn encoder
 > forced to TwosComplement). Where doc 31 and this file disagree on a code fact, doc 31 wins.
 >
-> Earlier: `docs/27-system-review-2026-06-10.md` (supersedes doc 24) closed five of doc 24's headline
+> Earlier: `docs/archive/2026-08-01-27-system-review-2026-06-10.md` (supersedes doc 24) closed five of doc 24's headline
 > holes and verified eight High bugs, of which seven were fixed in the same wave.
 
 ## Startup update check (2026-06-26)
@@ -50,23 +55,21 @@ A new top-level **STUDIO** tab: an arrangement timeline (dj.studio-inspired) tha
 decks — clips on per-deck lanes + automation lanes — playable live and renderable to a file. An
 earlier harmonic set-planner build was scrapped per the owner; this is the deck-automation DAW.
 
-- **Scope change:** the engine now has **4 decks** (`MixerState.DeckCount = 4`): 2 live A/B + **2
-  hidden** C/D (STUDIO only). The A/B crossfader is unchanged; `MixerMath.DeckOutputGain` gives
-  hidden decks (slots ≥ 2) a **unity crossfader factor** so their level is pure channel gain. LIVE/DJ
-  is untouched and still a 2-deck surface.
+- **Current scope (2026-08-01):** the engine supports exactly **2 decks** (`MixerState.DeckCount = 2`),
+  A and B. LIVE, DJ, and STUDIO share this pair; slots 2 and 3 are no longer addressable.
 - **Done + tested:**
-  - 4-deck engine widening (Core + `TwoDeckBassEngine`/`BassMixer`); 688 mixer/engine/app tests green.
+  - Two-deck Core mixer and `TwoDeckBassEngine`/`BassMixer` contract.
   - `StudioProject`/`StudioClip`/`AutomationLane` model + `JsonStudioProjectStore` (`live/studio-projects/`).
   - `StudioArranger` (pure): per-tick automation actions + clip Start/Stop events (Origin = "studio").
-  - `StudioTransport`: host-clock ticker driving the 4-deck engine through the dispatcher.
+  - `StudioTransport`: host-clock ticker driving the shared A/B engine through the dispatcher.
   - Offline render: Core `MixPlan` + Audio `OfflineMixRenderer` + `WavWriter` (mono MVP, native tempo).
-  - Timeline UI (`StudioViewModel`/`StudioView`): 4 lanes, clip placement, Play/Stop, Save/Open, Render.
+  - Timeline UI (`StudioViewModel`/`StudioView`): 2 lanes, clip placement, Play/Stop, Save/Open, Render.
 - **Deferred / follow-ups:** graphical automation-curve editing (model already supports it; it
-  round-trips); engine rename to `MultiDeckBassEngine`; sync leader-election guard for the hidden decks
-  (latent — nothing sync-engages slots ≥ 2); per-deck C/D live queues (not needed — the transport drives
-  decks via the dispatcher); tempo-match/keylock at render; stereo render; live playhead animation.
-- **Verify live:** confirm LIVE/DJ still plays/cues/crossfades normally with the engine sized to 4 decks
-  (the 2 hidden decks stay idle), then in STUDIO place clips → Play (hear decks automate) → Render to WAV.
+  round-trips); tempo-match/keylock at render; stereo render; live playhead animation.
+- **Legacy project compatibility:** the Studio UI folds saved C/D clips and automation onto A/B when
+  loading older projects, preserving content while enforcing the current two-deck runtime.
+- **Verify live:** confirm LIVE/DJ plays, cues, and crossfades normally, then in STUDIO place clips on
+  A/B → Play (hear decks automate) → Render to WAV.
 
 ## How to read this
 

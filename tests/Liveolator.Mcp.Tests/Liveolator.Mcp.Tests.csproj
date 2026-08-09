@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\Liveolator.Mcp\Liveolator.Mcp.csproj" />
   </ItemGroup>
 
+  <!-- The set-preview render test exercises the real BASS_FX path. Without the natives beside the test
+       binary it would skip on every machine, which reads as a passing test while proving nothing. -->
+  <Import Project="..\..\src\Bass.Native.targets" />
+
 </Project>

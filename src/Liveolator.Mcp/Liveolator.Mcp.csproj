@@ -22,4 +22,9 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
   </ItemGroup>
 
+  <!-- render_set_preview mixes a set's transitions down through the offline renderer, which decodes and
+       time-stretches through BASS/BASS_FX. Without these natives beside the server every warped clip
+       fails to decode, so the server needs the same copy step the app does. -->
+  <Import Project="..\Bass.Native.targets" />
+
 </Project>

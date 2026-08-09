@@ -1,3 +1,5 @@
+> **Archived on 2026-08-01. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 20 — DJ Feature Gap Analysis
 
 > **⚠️ Point-in-time snapshot (2026-06-06) — partially superseded.** Several rows below have

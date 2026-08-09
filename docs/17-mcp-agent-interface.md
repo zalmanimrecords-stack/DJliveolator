@@ -74,12 +74,13 @@ Other flags: `--ffmpeg PATH` (FFmpeg executable; also `LIVEOLATOR_FFMPEG_PATH`),
 
 | Tool | What it does |
 |------|--------------|
-| `scan_music_folders(folders[], force?)` | Scan + analyze + cache; returns status counts, elapsed, and any failures. |
+| `scan_music_folders(folders[], force?)` | Scan + analyze + cache **only the folders passed**; returns status counts, elapsed, the folders walked, the folders otherwise known, and any failures. |
 | `list_tracks(text?, kind?, artist?, genre?, status?, minBpm?, maxBpm?, camelot?, year?, fileType?, minDurationSeconds?, sort?, descending?, limit?, offset?)` | Rich catalog query over shared Core filter/sort logic. |
 | `get_track(path)` | Full analysis for one catalogued track. |
 | `get_catalog_stats()` | Counts by status, average BPM, key distribution, 10-BPM histogram. |
 | `reanalyze_track(path, force?)` | Refresh one catalogued track and persist it. |
 | `reanalyze_pending_tracks()` | Resume all failed/incomplete/old-version analysis; preserve manual edits. |
+| `set_track_analysis(path, bpm?, key?)` | Correct a track's tempo and/or Camelot key by hand and lock it against automatic re-analysis; an omitted value keeps what analysis found. |
 | `analyze_track(path)` | One-off analysis without cataloging. |
 | `harmonic_matches(path, limit?)` | Camelot-compatible tracks for a seed, with the relationship. |
 | `compatible_keys(camelot)` | The Camelot keys that mix with a given code (pure theory). |
@@ -88,9 +89,49 @@ Other flags: `--ffmpeg PATH` (FFmpeg executable; also `LIVEOLATOR_FFMPEG_PATH`),
 | `scan_visual_folders(folders[], force?)` | Scan + catalog images/videos (dimensions, video duration via ffprobe). |
 | `list_visuals(kind?, minWidth?, limit?, offset?)` | Query the visual catalog. |
 | `get_visual(path)` | Metadata for one catalogued visual asset. |
+| `build_dj_set(seedPath?, trackPaths[]?, length?, bpmTolerance?, trend?, overlapBars?, maxWarpPercent?, excludeLowGridConfidence?, name?)` | Build a beat-matched set and save it as a STUDIO arrangement; returns every transition and every rejected candidate. `trackPaths` restricts the candidate pool to exactly those catalogued tracks and defaults `length` to their count. |
+| `list_dj_sets()` | Names of the saved sets. |
+| `get_dj_set(name)` | A saved set read back: tempo, tracks in play order with their stretch, and where they overlap. |
+| `render_set_preview(name, outputDirectory, sampleRate?)` | Render each transition to its own WAV, with a phrase of lead-in and lead-out. |
 
 Each tool returns a stable DTO (`Liveolator.Mcp.Contracts`) decoupled from Core records, and
 surfaces failures as clear errors — never a silent gap (global standards #16, #23, #26).
+
+## DJ set building
+
+An agent builds a whole set through `build_dj_set`. All the mixing decisions live in
+`Liveolator.Core/Studio/Set` (`DjSetArranger` + `SetTransitionPlanner`); the tool layer only supplies the
+catalog, saves the arrangement, and reports.
+
+- **The pool is the whole catalog unless you name it.** Tempo and key are the only signals the arranger
+  orders on, so a second, unrelated library in the same data root competes for every join and wins its
+  share — with `rejectedCount: 0`, because from the arranger's side nothing went wrong. `trackPaths`
+  restricts the candidates to exactly the records asked for; the arranger still decides their order. A
+  seed outside that list is an error rather than a silently widened pool.
+- **One tempo per set.** The renderer samples a clip's warp factor once, at the clip's start, so a tempo
+  that moves inside a clip is silently not rendered — and two overlapping clips at different rates drift
+  apart within a bar. The set tempo is the median of the chosen tracks; anything that would stretch past
+  `maxWarpPercent` (default 6%) is rejected and reported with the stretch it would have needed. Stepped
+  tempo across a long set (tempo changes only at clip boundaries, with the boundary clip split in two)
+  is the known next step, not built.
+- **Phrase alignment, by construction.** Every clip enters on one of its own 16-bar phrase lines and
+  starts on a project phrase line. Warping to a common tempo maps a track's phrase onto the project's
+  phrase exactly, so both hold by induction from the first clip at t=0 — no per-transition correction.
+- **Structure is used, never trusted blindly.** Mix points come from `SongStructure` (leave on an outro
+  after the last drop, enter where the kick actually starts) but only past four gates: at least three
+  sections, real labels, boundaries within a beat of the bar grid, and a chosen point inside the last
+  30% of the record. Anything failing them falls back to a distance-from-the-tail rule and says so.
+- **Grid confidence gates the stretch.** A track failing `GridConfidenceCalculator` plays at its native
+  rate with the shortest legal blend rather than being warped by a ratio derived from a guessed tempo.
+- **Every join is mixed, not just overlapped.** An equal-power crossfade (a linear one dips 3 dB in the
+  middle of every transition) plus a bass swap across the blend, as `DeckGain`/`EqLow` automation lanes.
+- **Previews only.** `render_set_preview` renders the joins, not the set: the offline renderer holds the
+  whole master and every decoded source in memory at once, which an hour-long mix does not survive.
+  `ProjectSlice` cuts each window out so only the two records involved are decoded.
+
+Rendering needs the native BASS libraries beside the server — every clip in a built set is warped, so the
+mix runs through BASS_FX. `src/Bass.Native.targets` ships them to the app, the MCP server, and the MCP
+tests from one place.
 
 ## Decode / FFmpeg requirement
 

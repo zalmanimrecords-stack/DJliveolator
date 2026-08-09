@@ -27,8 +27,9 @@ with the brief, say so and propose the on-brand alternative.
 Also useful for grounding in the actual product:
 - `docs/00-LIVEOLATOR-CONTEXT.md` — product definition & the core differentiator.
 - `website/src/` — the live site copy; keep messaging consistent with it.
-- `docs/22-status-and-roadmap.md` / `docs/18-implementation-status.md` — what's real
-  and shippable *right now* (never market a feature that isn't actually usable).
+- `docs/core-business-logic/06-ui-feature-coverage.md` — what's real and *actually reachable by a
+  user* right now (never market a feature that isn't usable); `13-executive-summary.md` for the
+  five-minute version.
 
 ## The one thing you must never get wrong
 LIVEOLATOR's whole pitch is **one shared beat clock for DJ + VJ** — visuals locked to

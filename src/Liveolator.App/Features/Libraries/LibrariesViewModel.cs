@@ -690,36 +690,16 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
         try
         {
-            IReadOnlyList<MediaIdentity> saved = _identityStore is null
-                ? Array.Empty<MediaIdentity>()
-                : await _identityStore.LoadIdentitiesAsync(_lifetime.Token).ConfigureAwait(false);
-            Dictionary<string, string?> shaByPath = saved
-                .SelectMany(identity => identity.Paths.Select(path => (Path: path, identity.Sha256)))
-                .GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Last().Sha256, StringComparer.OrdinalIgnoreCase);
-
-            IReadOnlyCollection<MusicTrack> tracks = _library.All;
-            IReadOnlyCollection<VisualAsset> visuals = _visualLibrary?.All ?? Array.Empty<VisualAsset>();
-            if (_contentHasher is not null)
-                await FillDuplicateHashesAsync(
-                    tracks.Cast<IMediaEntry>().Concat(visuals),
-                    shaByPath,
-                    _lifetime.Token).ConfigureAwait(false);
-
-            IReadOnlyList<MediaIdentity> identities = MediaIdentityBuilder.FromCatalog(
-                tracks,
-                visuals,
-                DateTime.UtcNow,
-                shaByPath);
-            if (_identityStore is not null)
-                await _identityStore.SaveIdentitiesAsync(identities, _lifetime.Token).ConfigureAwait(false);
-
-            LibraryDoctorReport report = _doctor.Scan(
-                tracks,
-                visuals,
-                Folders.ToList(),
-                Array.Empty<string>(),
-                identities);
+            // The hash/identity/scan pipeline itself is pure orchestration over seams and lives in Core
+            // (LibraryHealthScanner) — this view-model only supplies the catalog and renders the report.
+            LibraryDoctorReport report = await new LibraryHealthScanner(
+                    _doctor, _identityStore, _contentHasher)
+                .ScanAsync(
+                    _library.All,
+                    _visualLibrary?.All ?? Array.Empty<VisualAsset>(),
+                    Folders.ToList(),
+                    _lifetime.Token)
+                .ConfigureAwait(false);
 
             RxApp.MainThreadScheduler.Schedule(() =>
             {
@@ -738,29 +718,6 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 DoctorSummary = $"Health scan failed: {ex.Message}";
                 ScanStatus = DoctorSummary;
             });
-        }
-    }
-
-    private async Task FillDuplicateHashesAsync(
-        IEnumerable<IMediaEntry> entries,
-        Dictionary<string, string?> shaByPath,
-        CancellationToken cancellationToken)
-    {
-        foreach (IGrouping<long, IMediaEntry> group in entries
-                     .Where(e => e.File.SizeBytes > 0)
-                     .GroupBy(e => e.File.SizeBytes)
-                     .Where(g => g.Select(e => e.File.Path).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
-        {
-            foreach (IMediaEntry entry in group)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (shaByPath.TryGetValue(entry.File.Path, out string? existing)
-                    && !string.IsNullOrWhiteSpace(existing))
-                    continue;
-
-                shaByPath[entry.File.Path] = await _contentHasher!.ComputeSha256Async(entry.File.Path, cancellationToken)
-                    .ConfigureAwait(false);
-            }
         }
     }
 

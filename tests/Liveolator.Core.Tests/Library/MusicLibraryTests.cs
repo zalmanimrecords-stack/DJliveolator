@@ -1,4 +1,5 @@
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Enrichment;
@@ -98,24 +99,26 @@ public class MusicLibraryTests
     [Fact]
     public async Task Scan_ReportsRemovedFile_SoPersistenceCanDropIt()
     {
-        var enumerator = new FakeFileEnumerator(File("a.mp3"), File("gone.mp3"));
+        // Paths sit under the scanned folder because a deletion is only reported for a folder the scan
+        // actually walked (MediaLibraryScopedScanTests) — as they do in a real catalog.
+        var enumerator = new FakeFileEnumerator(File("music/a.mp3"), File("music/gone.mp3"));
         var decoder = new MapAudioDecoder(new()
         {
-            ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
-            ["gone.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
+            ["music/a.mp3"] = TestSignals.ClickTrain(120, Sr, 8),
+            ["music/gone.mp3"] = TestSignals.ClickTrain(128, Sr, 8),
         });
         var library = new MusicLibrary(enumerator, decoder);
         await library.ScanAsync(new[] { "music" });
 
-        enumerator.Files.RemoveAll(f => f.Path == "gone.mp3"); // the file vanished from disk
+        enumerator.Files.RemoveAll(f => f.Path == "music/gone.mp3"); // the file vanished from disk
         var removed = new List<string>();
 
         await library.ScanAsync(
             new[] { "music" }, progress: null, cancellationToken: default,
             onEntryRemoved: (path, _) => { removed.Add(path); return Task.CompletedTask; });
 
-        Assert.Equal(new[] { "gone.mp3" }, removed);
-        Assert.Null(library.TryGet("gone.mp3"));
+        Assert.Equal(new[] { "music/gone.mp3" }, removed);
+        Assert.Null(library.TryGet("music/gone.mp3"));
     }
 
     [Fact]
@@ -226,6 +229,68 @@ public class MusicLibraryTests
         Assert.Equal("Psytrance", track.Metadata!.Genre);
         Assert.Equal("Long intro", track.Metadata.Comment);
         Assert.True(track.AnalysisIsManual);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_CorrectsOnlyTheTempo_AndLocksTheEntry()
+    {
+        // The detector-miss case (issue #4): the DJ knows the tempo is wrong but has not checked the key,
+        // so asserting a key they did not verify would trade one wrong value for another.
+        MusicLibrary library = await ScannedLibrary();
+        MusicalKey? detectedKey = library.TryGet("a.mp3")!.Key;
+
+        MusicTrack? updated = library.SetManualAnalysis("a.mp3", bpm: 125.0, camelot: null);
+
+        Assert.NotNull(updated);
+        Assert.Equal(125.0, updated!.Bpm!.Bpm);
+        Assert.Equal(1.0, updated.Bpm.Confidence);
+        Assert.Equal(detectedKey, updated.Key);
+        Assert.True(updated.AnalysisIsManual);
+        Assert.False(MusicLibrary.NeedsAnalysis(updated));
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_KeepsTheBeatAnchor_SoTheGridSurvivesACorrection()
+    {
+        MusicLibrary library = await ScannedLibrary();
+        library.SetManualBeatGrid("a.mp3", bpm: 120.0, firstBeatSeconds: 0.375);
+
+        MusicTrack updated = library.SetManualAnalysis("a.mp3", bpm: 125.0, camelot: null)!;
+
+        Assert.Equal(0.375, updated.Bpm!.FirstBeatSeconds);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_CorrectsOnlyTheKey()
+    {
+        MusicLibrary library = await ScannedLibrary();
+        double detectedBpm = library.TryGet("a.mp3")!.Bpm!.Bpm;
+
+        MusicTrack updated = library.SetManualAnalysis("a.mp3", bpm: null, camelot: "8A")!;
+
+        Assert.Equal("8A", updated.Key!.Camelot);
+        Assert.Equal(detectedBpm, updated.Bpm!.Bpm);
+        Assert.True(updated.AnalysisIsManual);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_RejectsAnEmptyOrInvalidCorrection()
+    {
+        MusicLibrary library = await ScannedLibrary();
+
+        Assert.Throws<ArgumentException>(() => library.SetManualAnalysis("a.mp3", null, null));
+        Assert.Throws<ArgumentException>(() => library.SetManualAnalysis("a.mp3", bpm: null, camelot: "13Z"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => library.SetManualAnalysis("a.mp3", bpm: 0, camelot: null));
+        Assert.Null(library.SetManualAnalysis("nowhere.mp3", bpm: 125, camelot: null));
+    }
+
+    private static async Task<MusicLibrary> ScannedLibrary()
+    {
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+        return library;
     }
 
     [Fact]
