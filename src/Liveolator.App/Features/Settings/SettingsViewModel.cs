@@ -804,7 +804,9 @@ public sealed class SettingsViewModel : ViewModelBase
         AdvancedAnalysisStatus = "Starting download...";
         bool ok = await _advancedInstaller.InstallAsync(progress).ConfigureAwait(false);
         AdvancedAnalysisStatus = ok
-            ? "Advanced analysis enabled. Re-scan your library to detect song structure."
+            // Structure detection itself no longer depends on this download (the built-in analyzer
+            // covers every track); enabling it upgrades the segmentation and unlocks stems.
+            ? "Advanced analysis enabled. Re-scan your library for more accurate song structure."
             : "Could not enable advanced analysis - check your connection and the log.";
     }
 

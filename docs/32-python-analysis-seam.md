@@ -23,6 +23,19 @@ Two capabilities justify it (priority order):
 contract, runtime packaging, output caching, re-analysis versioning — on a low-risk feature.
 Stems (the heavier, license-sensitive, storage-heavy feature) reuses that proven seam.
 
+> **Update (2026-08-09) — segmentation is no longer Python-only.** The P1 row's premise
+> ("boundary detection we don't have in C#") no longer holds: `NoveltyStructureDetector`
+> (`Core/Analysis/Structure/`) segments in-process from the band-energy contour with a novelty
+> curve — the method used by the WebClip analyzer — and snaps the boundaries to the bar grid.
+> It runs inside `TrackAnalyzer.AnalyzePcm` on PCM already decoded, so it costs one extra STFT
+> and **no** second decode, and it needs no runtime download. Consequence: `MusicTrack.Structure`
+> is now populated for **every** analyzed track, so auto-cues, the STUDIO mix anchors and the
+> library STRUCTURE badge no longer wait on the Python install. `ISongStructureAnalyzer` stays
+> exactly as specified below and **overrides** the built-in result when librosa is present —
+> laplacian segmentation over a recurrence matrix still reads long-form and non-4/4 material
+> better than an energy novelty curve. The built-in detector returns `null` on material too flat
+> or too short to read, which keeps the rule-based `StructuralCueDetector` as the final fallback.
+
 **What we explicitly do NOT do** (advisors' skeptical verdict):
 - Do **not** rewrite the C# beat grid (`BpmDetector`/`PercussiveOnsetEnvelope`/`DownbeatEstimator`/
   `GridRefiner`) or key detection (`ChromaExtractor`+`KeyClassifier`) in Python — both are at

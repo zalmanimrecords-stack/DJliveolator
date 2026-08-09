@@ -47,6 +47,46 @@ public class AutoCueAnalyzerTests
     }
 
     [Fact]
+    public void AnalyzePcm_StructureWithoutAnOutro_StillPlacesTheOutroCue()
+    {
+        // The outro pad is an always-safe slot, not a speculative one. A segmentation that ends on a
+        // rise (a track ending in its payload) must not empty it — the heuristic contour fills it in.
+        var noOutro = new SongStructure(
+            new[]
+            {
+                new SongSection(0.0, SongSectionLabel.Intro),
+                new SongSection(10.0, SongSectionLabel.Drop),
+                new SongSection(26.0, SongSectionLabel.Breakdown),
+            },
+            NoveltyStructureDetector.Provenance);
+
+        TrackCueSet? result = Analyzer().AnalyzePcm(CueTestSignals.StructuredClickTrack(), Sr, noOutro);
+
+        Assert.NotNull(result);
+        Assert.Contains(result!.HotCues, c => c.Label == "Outro");
+        Assert.Contains(result.HotCues, c => c.Label == "Drop");
+    }
+
+    [Fact]
+    public void AnalyzePcm_StructureWithAnOutro_KeepsItsOwn()
+    {
+        const double realOutroSeconds = 40.0;
+        var withOutro = new SongStructure(
+            new[]
+            {
+                new SongSection(0.0, SongSectionLabel.Intro),
+                new SongSection(10.0, SongSectionLabel.Drop),
+                new SongSection(realOutroSeconds, SongSectionLabel.Outro),
+            },
+            NoveltyStructureDetector.Provenance);
+
+        TrackCueSet? result = Analyzer().AnalyzePcm(CueTestSignals.StructuredClickTrack(), Sr, withOutro);
+
+        HotCue outro = result!.HotCues.Single(c => c.Label == "Outro");
+        Assert.InRange((double)outro.PositionSamples / Sr, realOutroSeconds - 0.5, realOutroSeconds + 0.5);
+    }
+
+    [Fact]
     public void AnalyzePcm_WithSongStructure_PrefersRealSectionBoundaries()
     {
         // A real drop at a deliberate position the energy heuristic would not pick. The placed Drop cue
