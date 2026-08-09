@@ -6,9 +6,8 @@ namespace Liveolator.Core.Mixer;
 /// The complete, immutable state of the software mixer (doc 11): the crossfader position, the
 /// selected crossfader curve, and one <see cref="DeckChannelState"/> per deck slot. Pure data with
 /// no behaviour — the math that derives audible gains lives in <see cref="MixerMath"/> and the
-/// action wiring in <c>MixerActionHandler</c>. <see cref="DeckCount"/> slots: A = 0 and B = 1 are
-/// the live/DJ decks the crossfader blends; C = 2 and D = 3 are the hidden STUDIO decks (per-deck
-/// gain only, outside the A/B crossfader). Indexable so callers stay slot-generic.
+/// action wiring in <c>MixerActionHandler</c>. <see cref="DeckCount"/> slots: A = 0 and B = 1.
+/// Indexable so callers stay slot-generic.
 /// </summary>
 /// <param name="Crossfader">Crossfader position 0..1: 0 = full deck A, 1 = full deck B, 0.5 = center.</param>
 /// <param name="Curve">Shape of the crossfader transition.</param>
@@ -29,20 +28,14 @@ public sealed record MixerState(
     /// </summary>
     public LimiterSettings Limiter { get; init; } = LimiterSettings.Default;
 
-    /// <summary>Number of deck slots: 2 live (A/B) + 2 hidden STUDIO decks (C/D).</summary>
-    public const int DeckCount = 4;
+    /// <summary>Number of supported deck slots: A and B.</summary>
+    public const int DeckCount = 2;
 
     /// <summary>Deck slot index for deck A (live).</summary>
     public const int DeckA = 0;
 
     /// <summary>Deck slot index for deck B (live).</summary>
     public const int DeckB = 1;
-
-    /// <summary>Deck slot index for deck C (hidden — STUDIO only).</summary>
-    public const int DeckC = 2;
-
-    /// <summary>Deck slot index for deck D (hidden — STUDIO only).</summary>
-    public const int DeckD = 3;
 
     /// <summary>Crossfader centered, smooth curve, every deck at its default channel strip, cue bus default.</summary>
     public static MixerState Default { get; } = new(

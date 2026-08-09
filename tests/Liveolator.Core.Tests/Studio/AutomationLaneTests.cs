@@ -8,7 +8,7 @@ public class AutomationLaneTests
     private const double Tol = 1e-9;
 
     private static AutomationLane Lane(params (double t, double v)[] keys)
-        => new(AutomationTarget.DeckGain, DeckSlot: 2,
+        => new(AutomationTarget.DeckGain, DeckSlot: 1,
             keys.Select(k => new AutomationKeyframe(k.t, k.v)).ToList());
 
     [Fact]

@@ -769,8 +769,8 @@ public static class ServiceConfig
             sp.GetRequiredService<IFileRemover>(),
             sp.GetRequiredService<IConfirmationService>()));
 
-        // STUDIO tab: the DAW-timeline arrangement editor. Plays the arrangement live via the dispatcher
-        // (4-deck engine) and renders it offline to WAV; degrades to plan-only when the realtime engine
+        // STUDIO tab: the two-lane DAW-timeline arrangement editor. Plays the arrangement live via the
+        // shared A/B deck pair and renders it offline to WAV; degrades to plan-only when the realtime engine
         // or decoder is absent. A fresh SystemHostClock drives the transport tick (stateless stopwatch).
         services.AddSingleton<StudioViewModel>(sp => new StudioViewModel(
             sp.GetRequiredService<MusicLibrary>(),

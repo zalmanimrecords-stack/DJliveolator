@@ -75,7 +75,7 @@ public class AutomationEditingTests
     [Fact]
     public void ToLane_FromKeyframes_RoundTrips()
     {
-        var lane = new AutomationLaneViewModel(AutomationTarget.EqLow, 2, new[]
+        var lane = new AutomationLaneViewModel(AutomationTarget.EqLow, 1, new[]
         {
             new AutomationKeyframe(0, 0.5),
             new AutomationKeyframe(8, 0.0),
@@ -84,7 +84,7 @@ public class AutomationEditingTests
         AutomationLane core = lane.ToLane();
 
         Assert.Equal(AutomationTarget.EqLow, core.Target);
-        Assert.Equal(2, core.DeckSlot);
+        Assert.Equal(1, core.DeckSlot);
         Assert.Equal(2, core.Keyframes.Count);
         Assert.Equal(0.5, core.ValueAt(0), Tol);
         Assert.Equal(0.0, core.ValueAt(8), Tol);

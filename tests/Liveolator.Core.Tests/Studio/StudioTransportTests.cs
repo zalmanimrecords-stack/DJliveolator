@@ -20,10 +20,10 @@ public class StudioTransportTests
         => new(new StudioArranger(project), dispatcher, new SystemHostClock());
 
     private static StudioProject OneClipWithGain() => new("p", 120,
-        new[] { new StudioClip(2, "/m/x.wav", TimelineStartSeconds: 8, TimeSpan.Zero, TimeSpan.FromSeconds(10)) },
+        new[] { new StudioClip(1, "/m/x.wav", TimelineStartSeconds: 8, TimeSpan.Zero, TimeSpan.FromSeconds(10)) },
         new[]
         {
-            new AutomationLane(AutomationTarget.DeckGain, 2, new[]
+            new AutomationLane(AutomationTarget.DeckGain, 1, new[]
             {
                 new AutomationKeyframe(8, 0.0),
                 new AutomationKeyframe(18, 1.0),
@@ -44,7 +44,7 @@ public class StudioTransportTests
         Assert.Equal(2, transportActions.Count);
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, transportActions[0].Kind);
         Assert.Equal("/m/x.wav", transportActions[0].Argument);
-        Assert.Equal(2, transportActions[0].Slot);
+        Assert.Equal(1, transportActions[0].Slot);
         Assert.Equal(PerformanceActionKind.DeckPlayPause, transportActions[1].Kind);
         Assert.All(transportActions, a => Assert.Equal(StudioArranger.Origin, a.Origin));
     }
@@ -122,7 +122,7 @@ public class StudioTransportTests
 
         PerformanceAction stop = Assert.Single(
             dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.TransportStop));
-        Assert.Equal(2, stop.Slot);
+        Assert.Equal(1, stop.Slot);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class StudioTransportTests
 
         PerformanceAction gain = Assert.Single(
             dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.MixerChannelGain));
-        Assert.Equal(2, gain.Slot);
+        Assert.Equal(1, gain.Slot);
         Assert.Equal(0.5, gain.Value, 1e-9);
     }
 
