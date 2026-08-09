@@ -45,8 +45,13 @@ public sealed class LibrarySession
         _logger = logger;
     }
 
-    /// <summary>Scans (and analyzes) the given folders, persists the catalog, and returns a summary.
-    /// Always re-scans the full accumulated folder set so previously-catalogued folders are kept.</summary>
+    /// <summary>
+    /// Scans (and analyzes) exactly the folders it is given, persists the catalog, and returns a summary.
+    /// <para>Only the requested folders are walked. Folders scanned earlier are remembered (and reported)
+    /// but not re-walked: their tracks survive because a scan no longer treats files it did not walk as
+    /// deleted, so asking for one ten-file folder costs ten files of work rather than the whole catalog's
+    /// (issue #3).</para>
+    /// </summary>
     public async Task<ScanSummary> ScanAsync(IReadOnlyList<string> folders, bool force, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(folders);
@@ -55,29 +60,38 @@ public sealed class LibrarySession
         {
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
+            var requested = new List<string>();
             foreach (string folder in folders)
             {
                 string? canonical = Canonicalize(folder);
-                if (canonical is not null)
-                    _folders.Add(canonical);
+                if (canonical is null || requested.Contains(canonical, StringComparer.OrdinalIgnoreCase))
+                    continue;
+                requested.Add(canonical);
+                _folders.Add(canonical);
             }
 
-            if (_folders.Count == 0)
+            if (requested.Count == 0)
                 throw new ArgumentException("No folders to scan. Pass at least one folder path.", nameof(folders));
 
+            // Force drops the cache only for the folders being scanned, so every file under them
+            // re-analyzes while the rest of the catalog — which this scan does not speak for — stays.
             if (force)
-                _library.Restore(Array.Empty<MusicTrack>()); // drop cache so every file re-analyzes
+                foreach (string path in _library.All
+                             .Select(t => t.File.Path)
+                             .Where(p => requested.Any(root => FolderScope.IsUnder(p, root)))
+                             .ToList())
+                    _library.Remove(path);
 
             var processed = 0;
             var progress = new Progress<ScanProgress>(p => processed = Math.Max(processed, p.Total));
 
             var stopwatch = Stopwatch.StartNew();
-            await _library.ScanAsync(_folders.ToList(), progress, cancellationToken).ConfigureAwait(false);
+            await _library.ScanAsync(requested, progress, cancellationToken).ConfigureAwait(false);
             stopwatch.Stop();
 
             await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
 
-            return BuildSummary(processed, stopwatch.ElapsedMilliseconds);
+            return BuildSummary(requested, processed, stopwatch.ElapsedMilliseconds);
         }
         finally
         {
@@ -184,6 +198,34 @@ public sealed class LibrarySession
         finally { _gate.Release(); }
     }
 
+    /// <summary>
+    /// Applies a hand-corrected BPM and/or key to a catalogued track, locks it against automatic
+    /// re-analysis, and persists. Returns null when the path — matched by path or file name (doc 31 L5) —
+    /// is not catalogued.
+    /// </summary>
+    public async Task<MusicTrack?> SetManualAnalysisAsync(
+        string path, double? bpm, string? camelot, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            if (_library.TryGetByPathOrName(path) is not { } track)
+                return null;
+
+            MusicTrack? updated = _library.SetManualAnalysis(track.File.Path, bpm, camelot);
+            if (updated is null)
+                return null;
+
+            await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Manual analysis set on {Path}: bpm {Bpm}, key {Key}", track.File.Path, bpm, camelot);
+            return updated;
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<ReanalysisSummary> ReanalyzePendingAsync(CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -259,7 +301,7 @@ public sealed class LibrarySession
         }
     }
 
-    private ScanSummary BuildSummary(int processed, long elapsedMs)
+    private ScanSummary BuildSummary(IReadOnlyList<string> scanned, int processed, long elapsedMs)
     {
         IReadOnlyCollection<MusicTrack> all = _library.All;
         var failures = all
@@ -275,7 +317,8 @@ public sealed class LibrarySession
             Failed: all.Count(t => t.Status == MediaAnalysisStatus.Failed),
             ProcessedThisScan: processed,
             ElapsedMs: elapsedMs,
-            Folders: _folders.ToList(),
+            Folders: scanned,
+            KnownFolders: _folders.ToList(),
             Failures: failures);
     }
 }

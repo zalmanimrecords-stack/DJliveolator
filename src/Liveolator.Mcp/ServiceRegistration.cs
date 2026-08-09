@@ -1,4 +1,5 @@
 using Liveolator.Audio;
+using Liveolator.Audio.Render;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library;
@@ -64,6 +65,16 @@ internal static class ServiceRegistration
                 path, msg => sp.GetRequiredService<ILogger<LibraryImportService>>().LogWarning("{Warning}", msg))));
 
         services.AddSingleton<LibrarySession>();
+
+        // DJ set building: the arranger is pure Core, so all this layer owns is where the arrangement is
+        // stored (the same live/studio-projects folder the app's STUDIO tab lists) and the offline
+        // renderer used to audition the transitions.
+        services.AddSingleton<IStudioProjectStore>(sp => new JsonStudioProjectStore(
+            config.DataDirectory,
+            onWarning: msg => sp.GetRequiredService<ILogger<JsonStudioProjectStore>>().LogWarning("{Warning}", msg)));
+        services.AddSingleton(sp => new OfflineMixRenderer(
+            sp.GetRequiredService<IAudioDecoder>(), sp.GetRequiredService<ILogger<OfflineMixRenderer>>()));
+        services.AddSingleton<DjSetSession>();
 
         // Visual-media catalog (doc 17 Phase 3): image dimensions are pure-managed; video duration
         // uses ffprobe, which resolves itself via LIVEOLATOR_FFPROBE_PATH/PATH (its own executable,

@@ -14,8 +14,10 @@ public sealed class LibraryTools
 {
     [McpServerTool(Name = "scan_music_folders")]
     [Description("Scan folders recursively for audio files, analyze them, and persist the catalog. " +
-                 "The scan is incremental unless force is true. WAV works without external setup; " +
-                 "compressed formats require FFmpeg.")]
+                 "Only the folders passed are walked — tracks catalogued from other folders are left " +
+                 "untouched, and force re-analyzes only what is under these folders. The scan is " +
+                 "incremental unless force is true. WAV works without external setup; compressed " +
+                 "formats require FFmpeg.")]
     public static Task<ScanSummary> ScanMusicFolders(
         LibrarySession session,
         [Description("Absolute folder paths to scan recursively.")] string[] folders,
@@ -137,6 +139,29 @@ public sealed class LibraryTools
         CancellationToken cancellationToken = default)
     {
         MusicTrack? track = await session.ReanalyzeAsync(path, force, cancellationToken).ConfigureAwait(false);
+        if (track is null)
+            throw MissingTrack(path);
+        return TrackInfo.From(track);
+    }
+
+    [McpServerTool(Name = "set_track_analysis")]
+    [Description("Correct a catalogued track's BPM and/or musical key by hand, and lock that track " +
+                 "against automatic re-analysis so the correction survives every later scan. Use it when " +
+                 "the detector is confidently wrong — a published tempo the analysis missed, or a key you " +
+                 "verified. Whichever value you omit keeps what analysis found, so a wrong tempo can be " +
+                 "fixed without asserting a key you have not checked. Only reanalyze_track(force: true) " +
+                 "overwrites the result.")]
+    public static async Task<TrackInfo> SetTrackAnalysis(
+        LibrarySession session,
+        [Description("Exact path of a catalogued track.")] string path,
+        [Description("Corrected tempo in BPM. Omit to keep the analyzed tempo.")] double? bpm = null,
+        [Description("Corrected key as a Camelot code, 1A to 12B. Omit to keep the analyzed key.")] string? key = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        MusicTrack? track = await session
+            .SetManualAnalysisAsync(path, bpm, key, cancellationToken)
+            .ConfigureAwait(false);
         if (track is null)
             throw MissingTrack(path);
         return TrackInfo.From(track);

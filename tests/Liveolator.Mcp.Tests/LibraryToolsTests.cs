@@ -63,6 +63,56 @@ public sealed class LibraryToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanMusicFolders_WalksOnlyTheFoldersItIsGiven()
+    {
+        // The enumerator finds nothing, so every folder this scan walks loses its tracks. That makes it
+        // visible which folders were walked: asking for one folder must not re-walk — or empty — another
+        // library that happens to share the data root (issue #3).
+        string curated = Path.Combine(_directory, "curated");
+        string other = Path.Combine(_directory, "other");
+        LibrarySession session = await CreateSessionAsync(
+            TrackAt(Path.Combine(curated, "mine.mp3")),
+            TrackAt(Path.Combine(other, "theirs.mp3")));
+
+        ScanSummary summary = await LibraryTools.ScanMusicFolders(session, new[] { curated });
+
+        Assert.Equal(new[] { curated }, summary.Folders);
+        Assert.Contains(other, summary.KnownFolders);
+        IReadOnlyList<TrackInfo> remaining = await LibraryTools.ListTracks(session);
+        TrackInfo survivor = Assert.Single(remaining);
+        Assert.Equal(Path.Combine(other, "theirs.mp3"), survivor.Path);
+    }
+
+    [Fact]
+    public async Task SetTrackAnalysis_CorrectsTheTempo_LocksTheTrack_AndPersists()
+    {
+        // Issue #4: a 125 BPM record read as 168. Without this the wrong value is the catalog's forever.
+        LibrarySession session = await CreateSessionAsync(Track("a.mp3", "Alpha", "DJ One", 168));
+
+        TrackInfo corrected = await LibraryTools.SetTrackAnalysis(session, Path.GetFullPath("a.mp3"), bpm: 125);
+
+        Assert.Equal(125, corrected.Bpm);
+        Assert.True(corrected.AnalysisIsManual);
+        Assert.Equal("8B", corrected.Camelot); // the unverified key is left alone
+
+        // Survives a reload from the store, which is the whole point of the correction.
+        LibrarySession reopened = ReopenSession();
+        Assert.Equal(125, (await LibraryTools.GetTrack(reopened, Path.GetFullPath("a.mp3"))).Bpm);
+    }
+
+    [Fact]
+    public async Task SetTrackAnalysis_RejectsAnEmptyCorrectionAndAnUnknownTrack()
+    {
+        LibrarySession session = await CreateSessionAsync(Track("a.mp3", "Alpha", "DJ One", 168));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => LibraryTools.SetTrackAnalysis(session, Path.GetFullPath("a.mp3")));
+        ArgumentException missing = await Assert.ThrowsAsync<ArgumentException>(
+            () => LibraryTools.SetTrackAnalysis(session, "nowhere.mp3", bpm: 125));
+        Assert.Contains("Scan its folder first", missing.Message);
+    }
+
+    [Fact]
     public async Task ReanalyzeTrack_RejectsUnknownCatalogPath()
     {
         LibrarySession session = await CreateSessionAsync();
@@ -81,8 +131,13 @@ public sealed class LibraryToolsTests : IDisposable
 
     private async Task<LibrarySession> CreateSessionAsync(params MusicTrack[] tracks)
     {
-        var store = new JsonCatalogStore(_directory);
-        await store.SaveMusicAsync(tracks);
+        await new JsonCatalogStore(_directory).SaveMusicAsync(tracks);
+        return ReopenSession();
+    }
+
+    /// <summary>A fresh session over the same store — proves a change was persisted, not just cached.</summary>
+    private LibrarySession ReopenSession()
+    {
         var importService = new LibraryImportService(
             new JsonHotCueStore(_directory), new JsonPlaylistStore(_directory), p => ImportFileProbe.Stat(p));
         return new LibrarySession(
@@ -90,12 +145,26 @@ public sealed class LibraryToolsTests : IDisposable
             new EmptyDecoder(),
             new TrackAnalyzer(),
             NullTrackMetadataReader.Instance,
-            store,
+            new JsonCatalogStore(_directory),
             Array.Empty<ILibraryImporter>(),
             Array.Empty<IFolderLibraryImporter>(),
             importService,
             NullLogger<LibrarySession>.Instance);
     }
+
+    /// <summary>A catalogued track at an exact absolute path, so folder scoping can be exercised.</summary>
+    private static MusicTrack TrackAt(string fullPath)
+        => new(
+            new ScannedFile(fullPath, 100, DateTime.UtcNow),
+            new BpmResult(128, 0.9),
+            new MusicalKey(0, KeyMode.Major, "8B", 0.8),
+            TimeSpan.FromMinutes(4),
+            TrackCues.None,
+            MediaAnalysisStatus.Ok,
+            null,
+            TrackMetadata.Empty with { Title = Path.GetFileNameWithoutExtension(fullPath) },
+            MusicMediaKind.Track,
+            TrackAnalyzer.CurrentVersion);
 
     private static MusicTrack Track(
         string file,

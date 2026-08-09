@@ -13,8 +13,15 @@ public sealed class TempoEstimator
     // (174 BPM reads as ~69.6): the beat lag itself is nearly as strong there, so this promotion demands
     // near-parity evidence — mere subdivision energy must never push a genuinely slow track fast.
     private const double TwoAndAHalfTimeEvidenceRatio = 0.5;
+    // 1.5x rescues the DOTTED trap: when a track's accents fall every 1.5 beats, that sub-harmonic can
+    // out-poll the beat itself, and doubling it lands on 0.75 of a beat — 4/3 of the truth, which is how a
+    // 125 BPM record was read as 168 (issue #4). It shares the 2x gate deliberately: "the winner is the
+    // dotted lag" and "the winner is the half-time lag" are mutually exclusive readings of the same
+    // envelope, so with one bar between them the gate-normalized margin below reduces to the only question
+    // that matters — which of the two lags actually carries more autocorrelation.
+    private const double DottedTimeEvidenceRatio = DoubleTimeEvidenceRatio;
     private static readonly (double Factor, double EvidenceRatio)[] FastTempoPromotions =
-        { (2.0, DoubleTimeEvidenceRatio), (2.5, TwoAndAHalfTimeEvidenceRatio) };
+        { (1.5, DottedTimeEvidenceRatio), (2.0, DoubleTimeEvidenceRatio), (2.5, TwoAndAHalfTimeEvidenceRatio) };
     private const int HarmonicSearchRadius = 2;
 
     private readonly double _minBpm;

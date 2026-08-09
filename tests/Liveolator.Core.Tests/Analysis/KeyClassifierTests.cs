@@ -5,11 +5,11 @@ namespace Liveolator.Core.Tests.Analysis;
 
 public class KeyClassifierTests
 {
-    // Krumhansl–Kessler profiles (independently restated here to verify the classifier).
+    // Temperley (Kostka–Payne) profiles, independently restated here to verify the classifier.
     private static readonly double[] Major =
-        { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
+        { 0.748, 0.060, 0.488, 0.082, 0.670, 0.460, 0.096, 0.715, 0.104, 0.366, 0.057, 0.400 };
     private static readonly double[] Minor =
-        { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
+        { 0.712, 0.084, 0.474, 0.618, 0.049, 0.460, 0.105, 0.747, 0.404, 0.067, 0.133, 0.330 };
 
     private static double[] Rotate(double[] profile, int tonic)
     {
@@ -43,6 +43,33 @@ public class KeyClassifierTests
         Assert.Equal(tonic, key.Tonic);
         Assert.Equal(KeyMode.Minor, key.Mode);
         Assert.Equal(camelot, key.Camelot);
+    }
+
+    [Theory]
+    [InlineData(0, 3, 7, KeyMode.Minor, "5A")]   // C Eb G  → C minor
+    [InlineData(0, 4, 7, KeyMode.Major, "8B")]   // C E  G  → C major
+    [InlineData(9, 0, 4, KeyMode.Minor, "8A")]   // A C  E  → A minor
+    public void Classify_ATriad_ReadsItsMode(int a, int b, int c, KeyMode mode, string camelot)
+    {
+        var chroma = new double[12];
+        chroma[a] = chroma[b] = chroma[c] = 1.0;
+
+        MusicalKey key = new KeyClassifier().Classify(chroma);
+
+        Assert.Equal(mode, key.Mode);
+        Assert.Equal(camelot, key.Camelot);
+    }
+
+    [Fact]
+    public void Classify_UndecidableChroma_DoesNotFallBackToMajor()
+    {
+        // A flat chroma correlates equally (at 0) with all 24 candidates. Testing major first made the
+        // seated major win every such tie — a bias pointing the same way as the observed mode failures
+        // (issue #5). Minor is tested first so an undecidable read is not dressed up as a major key.
+        var flat = new double[12];
+        Array.Fill(flat, 1.0);
+
+        Assert.Equal(KeyMode.Minor, new KeyClassifier().Classify(flat).Mode);
     }
 
     [Fact]

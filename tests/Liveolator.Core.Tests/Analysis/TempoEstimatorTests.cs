@@ -88,6 +88,24 @@ public sealed class TempoEstimatorTests
         Assert.InRange(result.Bpm, 139.0, 147.0);
     }
 
+    [Fact]
+    public void Estimate_PromotesTheDottedSubHarmonic_ToTheBeat_NotPastIt()
+    {
+        // Issue #4: a 125 BPM melodic-house record read as 168. The strongest in-band lag was the
+        // 1.5-BEAT (dotted) sub-harmonic at ~83 BPM, and the only rescue on offer was a 2x doubling —
+        // which landed on 0.75 of a beat, i.e. 4/3 of the true tempo, and passed its lax 0.2 gate on
+        // off-beat energy alone. Here the beat lag (48) carries near-parity evidence while the 0.75-beat
+        // lag (36) carries only the off-beat layer, so the 1.5x promotion must win and land on ~125.
+        var envelope = new double[4_800];
+        for (int frame = 0; frame < envelope.Length; frame += 72) envelope[frame] += 0.60; // dotted accent
+        for (int frame = 0; frame < envelope.Length; frame += 48) envelope[frame] += 0.80; // the beat
+        for (int frame = 0; frame < envelope.Length; frame += 36) envelope[frame] += 0.45; // off-beat layer
+
+        TempoEstimate result = new TempoEstimator().Estimate(envelope, EnvelopeRateHz);
+
+        Assert.InRange(result.Bpm, 121.0, 129.0);
+    }
+
     private static double[] AccentedBeatEnvelope(
         int frames, int beatPeriod, double strong, double weak)
     {

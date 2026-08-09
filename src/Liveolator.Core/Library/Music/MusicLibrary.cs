@@ -155,6 +155,58 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     }
 
     /// <summary>
+    /// Applies a user-corrected tempo and/or key to a catalogued track and locks the entry against
+    /// automatic re-analysis (<see cref="MusicTrack.AnalysisIsManual"/>) — the escape hatch for a detector
+    /// miss, where a confidently wrong value would otherwise stay in the catalog forever.
+    /// <para>Whichever value is omitted keeps what analysis found, so a DJ can fix a tempo without
+    /// asserting a key they have not checked. A corrected tempo keeps the existing beat anchor
+    /// (<see cref="Bpm.BpmResult.FirstBeatSeconds"/> and the downbeat), because the grid's phase was
+    /// usually right even when its rate was not. Returns the updated track, or null for an unknown path.</para>
+    /// </summary>
+    /// <exception cref="ArgumentException">Neither value was supplied, or the Camelot code is not 1A–12B.</exception>
+    public MusicTrack? SetManualAnalysis(string path, double? bpm, string? camelot)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        if (bpm is null && string.IsNullOrWhiteSpace(camelot))
+            throw new ArgumentException("Supply a BPM, a Camelot key, or both — there is nothing to correct otherwise.");
+        if (bpm is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(bpm), bpm, "BPM must be positive.");
+
+        MusicalKey? key = null;
+        if (!string.IsNullOrWhiteSpace(camelot) && !Camelot.TryToMusicalKey(camelot, out key))
+            throw new ArgumentException("Camelot key must be between 1A and 12B.", nameof(camelot));
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return null;
+
+        Liveolator.Core.Analysis.Bpm.BpmResult? corrected = bpm is { } value
+            ? (existing.Bpm is { } prior
+                ? prior with { Bpm = value, Confidence = 1.0 }
+                : new Liveolator.Core.Analysis.Bpm.BpmResult(value, Confidence: 1.0))
+            : existing.Bpm;
+        MusicalKey? resolvedKey = key ?? existing.Key;
+
+        // Only a track that now has BOTH a tempo and a key is fully analyzed; correcting one value on a
+        // failed track does not make it mixable, so its status is left honest.
+        bool complete = corrected is not null && resolvedKey is not null;
+        MusicTrack updated = existing with
+        {
+            Bpm = corrected,
+            Key = resolvedKey,
+            Status = complete ? MediaAnalysisStatus.Ok : existing.Status,
+            Error = complete ? null : existing.Error,
+            AnalyzerVersion = TrackAnalyzer.CurrentVersion,
+            AnalysisIsManual = true,
+            // The DJ's value outranks the online cross-check, which cannot tell an extended mix from a
+            // radio edit — so it is never re-flagged as conflicted.
+            BpmProvenance = BpmProvenance.LocalConfirmed,
+        };
+        Upsert(updated);
+        return updated;
+    }
+
+    /// <summary>
     /// Sets the user's 0–5 star rating on a catalogued track (0 clears it). Returns the updated track so
     /// the caller can persist just that one row, or null if the path isn't catalogued. Rating is user
     /// data — preserved across re-analysis.

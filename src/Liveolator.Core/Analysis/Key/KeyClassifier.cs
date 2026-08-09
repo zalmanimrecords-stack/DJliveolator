@@ -7,11 +7,17 @@ namespace Liveolator.Core.Analysis.Key;
 /// </summary>
 public sealed class KeyClassifier
 {
-    // Krumhansl–Kessler probe-tone key profiles.
+    // Temperley's Kostka–Payne profiles, measured from how often each scale degree is actually USED in
+    // written music. They replace Krumhansl–Kessler, whose probe-tone ratings were how listeners judged
+    // a tone's fit after a cadence: those rate the tonic and dominant so far above everything else that
+    // the major and minor templates barely differ outside the third, and on the flat, riff-driven chroma
+    // of electronic music the major template won nearly every time. Measured over a ten-record melodic
+    // house/techno set, against the corrected chroma (see ChromaExtractor, the larger half of issue #5),
+    // these read 8/10 keys where Krumhansl–Kessler reads 5/10.
     private static readonly double[] MajorProfile =
-        { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 };
+        { 0.748, 0.060, 0.488, 0.082, 0.670, 0.460, 0.096, 0.715, 0.104, 0.366, 0.057, 0.400 };
     private static readonly double[] MinorProfile =
-        { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 };
+        { 0.712, 0.084, 0.474, 0.618, 0.049, 0.460, 0.105, 0.747, 0.404, 0.067, 0.133, 0.330 };
 
     public MusicalKey Classify(double[] chroma)
     {
@@ -21,18 +27,12 @@ public sealed class KeyClassifier
 
         double bestCorr = double.NegativeInfinity;
         int bestTonic = 0;
-        KeyMode bestMode = KeyMode.Major;
+        KeyMode bestMode = KeyMode.Minor;
 
+        // Minor is tested first so a tie is not silently awarded to the major already seated by loop
+        // order — a bias pointing the same way as the mode failures this classifier was built to fix.
         for (int tonic = 0; tonic < 12; tonic++)
         {
-            double major = Correlation(chroma, MajorProfile, tonic);
-            if (major > bestCorr)
-            {
-                bestCorr = major;
-                bestTonic = tonic;
-                bestMode = KeyMode.Major;
-            }
-
             double minor = Correlation(chroma, MinorProfile, tonic);
             if (minor > bestCorr)
             {
@@ -40,8 +40,19 @@ public sealed class KeyClassifier
                 bestTonic = tonic;
                 bestMode = KeyMode.Minor;
             }
+
+            double major = Correlation(chroma, MajorProfile, tonic);
+            if (major > bestCorr)
+            {
+                bestCorr = major;
+                bestTonic = tonic;
+                bestMode = KeyMode.Major;
+            }
         }
 
+        // How well the chroma matches the winning template — NOT the odds the key is right. Measured over
+        // a ten-record set neither this nor the margin over the runner-up separated the correct reads from
+        // the wrong ones, so it ranks candidates within a track and must not be used as a downstream gate.
         double confidence = Math.Clamp(bestCorr, 0.0, 1.0);
         return new MusicalKey(bestTonic, bestMode, Camelot.Code(bestTonic, bestMode), confidence);
     }

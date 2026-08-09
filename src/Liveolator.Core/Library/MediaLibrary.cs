@@ -214,8 +214,19 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
 
         IReadOnlyList<ScanDelta> deltas = IncrementalScan.Diff(current, known);
 
+        // A scan can only report a deletion for a folder it actually walked. Without this, every catalogued
+        // file outside the scanned folders looks deleted, so callers had to re-walk every folder they had
+        // ever scanned just to keep those entries alive — turning a ten-file request into a whole-library
+        // pass (issue #3). Dropping entries because their folder left the scan set stays a separate,
+        // deliberate act (see PruneToFolders).
+        string[] roots = folders
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(FolderScope.Normalize)
+            .ToArray();
+
         foreach (ScanDelta delta in deltas)
-            if (delta.Change == ScanChange.Removed)
+            if (delta.Change == ScanChange.Removed
+                && IsUnderAnyRoot(FolderScope.Normalize(delta.File.Path), roots))
             {
                 lock (_gate)
                     _byPath.Remove(delta.File.Path);
