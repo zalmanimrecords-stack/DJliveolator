@@ -30,11 +30,10 @@ public class TwoDeckBassEngineTests
     }
 
     [Fact]
-    public void DeckCount_IsFour()
+    public void DeckCount_IsTwo()
     {
-        // 2 live decks (A/B) + 2 hidden STUDIO decks (C/D).
         using var engine = NewEngine(out _, out _);
-        Assert.Equal(4, engine.DeckCount);
+        Assert.Equal(2, engine.DeckCount);
     }
 
     [Fact]
@@ -207,8 +206,7 @@ public class TwoDeckBassEngineTests
     public void OutOfRangeSlot_Throws()
     {
         using var engine = NewEngine(out _, out _);
-        // Slots 0-3 are valid (2 live + 2 hidden); 4 is past the end.
-        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Load(4, @"C:\a.wav"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => engine.Load(2, @"C:\a.wav"));
         Assert.Throws<ArgumentOutOfRangeException>(() => engine.PlayPause(-1));
     }
 

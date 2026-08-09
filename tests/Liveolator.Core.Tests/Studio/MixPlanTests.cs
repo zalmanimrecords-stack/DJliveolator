@@ -30,11 +30,11 @@ public class MixPlanTests
     public void EvaluateDeck_InsideClip_MapsTimelineToSource()
     {
         var p = new StudioProject("p", 120,
-            new[] { Clip(2, start: 10, sourceInSec: 30, lengthSec: 60) },
+            new[] { Clip(1, start: 10, sourceInSec: 30, lengthSec: 60) },
             Array.Empty<AutomationLane>());
         var plan = new MixPlan(p);
 
-        DeckMixState s = plan.EvaluateDeck(2, timeSeconds: 25); // 15s into the clip
+        DeckMixState s = plan.EvaluateDeck(1, timeSeconds: 25); // 15s into the clip
 
         Assert.True(s.HasAudio);
         Assert.Equal(45, s.SourceSeconds, Tol); // sourceIn 30 + 15

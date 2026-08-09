@@ -86,17 +86,11 @@ public class MixerMathTests
     }
 
     [Theory]
-    [InlineData(MixerState.DeckC)]
-    [InlineData(MixerState.DeckD)]
-    public void DeckOutputGain_HiddenDecks_IgnoreCrossfader(int slot)
+    [InlineData(-1)]
+    [InlineData(2)]
+    public void DeckOutputGain_RejectsUnsupportedDecks(int slot)
     {
-        // The crossfader blends only the live A/B decks; a hidden STUDIO deck's output is its channel
-        // gain at unity crossfader factor, regardless of fader position. Verify at both extremes.
-        var atA = MixerState.Default.WithCrossfader(0.0).WithChannel(slot, DeckChannelState.Default with { Gain = 0.7 });
-        var atB = MixerState.Default.WithCrossfader(1.0).WithChannel(slot, DeckChannelState.Default with { Gain = 0.7 });
-
-        Assert.Equal(0.7, MixerMath.DeckOutputGain(atA, slot), Tol);
-        Assert.Equal(0.7, MixerMath.DeckOutputGain(atB, slot), Tol);
+        Assert.Throws<ArgumentOutOfRangeException>(() => MixerMath.DeckOutputGain(MixerState.Default, slot));
     }
 
     // --- EQ band coefficient design ---

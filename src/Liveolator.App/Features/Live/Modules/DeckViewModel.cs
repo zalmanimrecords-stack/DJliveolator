@@ -383,8 +383,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // button disables in catalog-browser mode exactly like the knobs it resets.
         ResetEqCommand = ReactiveCommand.Create(ResetEq, Observable.Return(dispatcherPresent));
 
-        // FX-mode toggle — only the live A/B decks have a built-in FX rack (slots 0/1); hidden STUDIO decks
-        // (C/D) map to the master/out-of-range rack, so the button stays disabled there.
+        // FX-mode toggle — both supported decks have a built-in FX rack (slots 0/1).
         FxModeCommand = ReactiveCommand.Create(
             ToggleFxMode, Observable.Return(dispatcherPresent && _slot <= AudioEffectRackSlot.DeckB));
 

@@ -105,8 +105,7 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
         _renderDirectory = renderDirectory
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator", "renders");
 
-        // STUDIO arranges on the two channels A/B (matching the live mixer's primary deck pair). The
-        // shared engine still has more deck slots, but the arrangement UI is intentionally two lanes.
+        // STUDIO arranges on the two supported channels A/B.
         Lanes = new ObservableCollection<StudioLaneViewModel>
         {
             new(0, "A"), new(1, "B"),

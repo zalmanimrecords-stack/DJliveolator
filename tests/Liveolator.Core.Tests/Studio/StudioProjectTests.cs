@@ -46,7 +46,7 @@ public class StudioProjectTests
         var p = new StudioProject("p", 124, new[]
         {
             new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(20)),   // ends 20
-            new StudioClip(2, "/m/b.wav", 16, TimeSpan.Zero, TimeSpan.FromSeconds(30)),  // ends 46
+            new StudioClip(1, "/m/b.wav", 16, TimeSpan.Zero, TimeSpan.FromSeconds(30)),  // ends 46
         }, Array.Empty<AutomationLane>());
 
         Assert.Equal(46, p.DurationSeconds, Tol);

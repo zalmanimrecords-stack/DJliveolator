@@ -45,11 +45,11 @@ public class StudioClipViewModelTests
     public void ToClip_ProjectsBackTrimAndPlacement()
     {
         StudioClipViewModel clip = Make(start: 12, inSec: 4, outSec: 24);
-        clip.DeckSlot = 3;
+        clip.DeckSlot = 1;
 
         StudioClip projected = clip.ToClip();
 
-        Assert.Equal(3, projected.DeckSlot);
+        Assert.Equal(1, projected.DeckSlot);
         Assert.Equal(12, projected.TimelineStartSeconds, Tol);
         Assert.Equal(TimeSpan.FromSeconds(4), projected.SourceIn);
         Assert.Equal(TimeSpan.FromSeconds(24), projected.SourceOut);

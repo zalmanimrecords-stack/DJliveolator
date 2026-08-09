@@ -43,9 +43,7 @@ public static class MixerMath
     /// <summary>
     /// The combined linear output gain for one deck slot: its channel gain times the crossfader
     /// gain for that side. This is the scalar the binding multiplies the deck's samples by before
-    /// summing into the master bus. The crossfader blends only the live A/B decks (slots 0/1);
-    /// hidden STUDIO decks (slots ≥ 2) sit outside the crossfader, so their factor is unity and
-    /// their level is governed purely by their channel gain (driven by timeline automation).
+    /// summing into the master bus. The application supports only the A/B deck pair.
     /// </summary>
     public static double DeckOutputGain(MixerState state, int slot)
     {
@@ -55,7 +53,7 @@ public static class MixerMath
         {
             MixerState.DeckA => gainA,
             MixerState.DeckB => gainB,
-            _ => 1.0, // slots >= 2 (hidden STUDIO decks) are not on the A/B crossfader
+            _ => throw new ArgumentOutOfRangeException(nameof(slot), slot, "Deck slot is out of range."),
         };
         return Math.Clamp(state.Channel(slot).Gain, 0.0, 1.0) * crossfade;
     }

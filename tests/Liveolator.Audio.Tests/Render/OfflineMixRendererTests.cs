@@ -188,7 +188,7 @@ public class OfflineMixRendererTests
         var project = new StudioProject("p", 120, new[]
         {
             new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
-            new StudioClip(2, "/m/b.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
+            new StudioClip(1, "/m/b.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
         }, Array.Empty<AutomationLane>());
 
         float[] outSamples = await Render(project, new ConstantDecoder(0.3f, rate * 2), rate);
@@ -200,7 +200,7 @@ public class OfflineMixRendererTests
     [Fact]
     public async Task Render_DecksSumAboveUnity_MasterIsLimitedBelowCeiling()
     {
-        // Four decks each at 0.4 DC sum to ~1.6 - far past full scale. Without the master limiter this
+        // Two decks each at 0.6 DC sum to ~1.2 - past full scale. Without the master limiter this
         // hard-clips to +/-1.0 in the WAV (audible distortion); with it the true peak must stay at or
         // below the limiter's default -1.0 dBTP ceiling (~0.8913 linear) and never touch full scale.
         const int rate = 8_000;
@@ -209,11 +209,9 @@ public class OfflineMixRendererTests
         {
             new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
             new StudioClip(1, "/m/b.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
-            new StudioClip(2, "/m/c.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
-            new StudioClip(3, "/m/d.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(1)),
         }, Array.Empty<AutomationLane>());
 
-        float[] outSamples = await Render(project, new ConstantDecoder(0.4f, rate * 2), rate);
+        float[] outSamples = await Render(project, new ConstantDecoder(0.6f, rate * 2), rate);
 
         Assert.NotEmpty(outSamples);
         float peak = 0f;
@@ -226,7 +224,7 @@ public class OfflineMixRendererTests
         Assert.True(peak < 0.999f, $"peak {peak} indicates hard clipping at full scale");
 
         // After the limiter settles (mid-buffer, well past attack/look-ahead), the steady DC must be
-        // pulled down close to the ceiling rather than passed through at ~1.6 or clipped at 1.0.
+        // pulled down close to the ceiling rather than passed through at ~1.2 or clipped at 1.0.
         Assert.InRange(outSamples[rate / 2], 0.80f, ceiling + 0.01f);
     }
 

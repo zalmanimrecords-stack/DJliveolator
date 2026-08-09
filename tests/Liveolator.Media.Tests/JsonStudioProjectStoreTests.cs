@@ -21,10 +21,10 @@ public class JsonStudioProjectStoreTests
     private static StudioProject SampleProject() => new("Live set", 126, new[]
     {
         new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromMinutes(4)),
-        new StudioClip(2, "/m/b.wav", 90, TimeSpan.FromSeconds(8), SourceOut: null),
+        new StudioClip(1, "/m/b.wav", 90, TimeSpan.FromSeconds(8), SourceOut: null),
     }, new[]
     {
-        new AutomationLane(AutomationTarget.DeckGain, 2, new[]
+        new AutomationLane(AutomationTarget.DeckGain, 1, new[]
         {
             new AutomationKeyframe(90, 0.0),
             new AutomationKeyframe(98, 1.0),
@@ -46,7 +46,7 @@ public class JsonStudioProjectStoreTests
         Assert.Equal(126, loaded.Bpm);
 
         Assert.Equal(2, loaded.Clips.Count);
-        Assert.Equal(2, loaded.Clips[1].DeckSlot);
+        Assert.Equal(1, loaded.Clips[1].DeckSlot);
         Assert.Equal(90, loaded.Clips[1].TimelineStartSeconds);
         Assert.Equal(TimeSpan.FromSeconds(8), loaded.Clips[1].SourceIn);
         Assert.Null(loaded.Clips[1].SourceOut);
@@ -54,7 +54,7 @@ public class JsonStudioProjectStoreTests
         Assert.Equal(2, loaded.Automation.Count);
         AutomationLane gain = loaded.Automation[0];
         Assert.Equal(AutomationTarget.DeckGain, gain.Target);
-        Assert.Equal(2, gain.DeckSlot);
+        Assert.Equal(1, gain.DeckSlot);
         Assert.Equal(0.5, gain.ValueAt(94), 1e-9); // interpolation survives the round-trip
     }
 
