@@ -179,11 +179,14 @@ Write-Host "  REMINDER: update WordPress -> Newsletter -> Settings -> Gated down
 
 # --- Update version.json (the app's machine-readable update manifest) ----------
 # The in-app startup update check (Liveolator.App.Features.Update) GETs this from the
-# site root and compares its "version" to the running build. Keep it in step with the
-# same values written above; the download URL is absolute so the app can open it directly.
+# site root and compares its "version" to the running build.
+# The URL points at the DOWNLOAD PAGE, not the direct /downloads/*.exe path: downloads are
+# email-gated and nginx returns 403 for any unsigned direct link, so the app must send the
+# user through the same gate the site's Download button uses. site.ts keeps the direct path
+# (that is the one WordPress signs) - only this manifest differs.
 $siteOrigin     = 'https://liveolator.zalmanim.com'
 $versionJsonPath = Join-Path $repoRoot 'website/public/version.json'
-$downloadAbs    = "$siteOrigin/downloads/LiveolatorSetup-$Version.exe"
+$downloadAbs    = "$siteOrigin/#download"
 $vjLines = New-Object System.Collections.Generic.List[string]
 $vjLines.Add('{')
 $vjLines.Add('  "version": ' + (ConvertTo-JsonString ([string]$Version)) + ',')

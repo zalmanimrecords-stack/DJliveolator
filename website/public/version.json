@@ -1,10 +1,11 @@
 {
-  "version": "0.5.0",
-  "downloadUrl": "https://liveolator.zalmanim.com/downloads/LiveolatorSetup-0.5.0.exe",
+  "version": "0.6.1",
+  "downloadUrl": "https://liveolator.zalmanim.com/#download",
   "notes": [
-    "Live BPM counters now track a synced follower when you change the leader's tempo - no more frozen counter after SYNC.",
-    "Half/double-time beatmatches (e.g. 140 vs 70) read as matched, with a small half/double tag next to the BPM readout.",
-    "SYNC shows a clear \"can't sync\" state when two tracks are more than +/-15 percent apart, instead of doing nothing silently.",
-    "Library Play now auditions the selected track immediately on Deck A and counts it as a play."
+    "New DJ PRO tab: the whole mixer, both decks and the effect knobs on one screen with no scrolling, for when you want density over comfort.",
+    "SYNC now refuses to lock onto a beat grid it is not confident about, instead of quietly drifting a few bars later.",
+    "Import your library from Rekordbox, Traktor, VirtualDJ, Serato, Mixxx or Engine DJ - tracks, cue points, beat grids, keys and playlists come across.",
+    "Per-stem gain knobs on the DJ PRO decks, so you can pull the vocal or the drums down without touching the EQ.",
+    "This build also carries the beat-grid, waveform-scroll and CMD STUDIO 2A jog fixes announced with 0.6.0."
   ]
 }
