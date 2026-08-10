@@ -1,11 +1,12 @@
 {
-  "version": "0.6.1",
+  "version": "0.7.0",
   "downloadUrl": "https://liveolator.zalmanim.com/#download",
   "notes": [
-    "New DJ PRO tab: the whole mixer, both decks and the effect knobs on one screen with no scrolling, for when you want density over comfort.",
-    "SYNC now refuses to lock onto a beat grid it is not confident about, instead of quietly drifting a few bars later.",
-    "Import your library from Rekordbox, Traktor, VirtualDJ, Serato, Mixxx or Engine DJ - tracks, cue points, beat grids, keys and playlists come across.",
-    "Per-stem gain knobs on the DJ PRO decks, so you can pull the vocal or the drums down without touching the EQ.",
-    "This build also carries the beat-grid, waveform-scroll and CMD STUDIO 2A jog fixes announced with 0.6.0."
+    "An AI agent can now build a whole set from your library: it picks tracks that mix in key and tempo, beat-matches them to one tempo, and renders preview audio of each transition so you can hear the blend before you play it.",
+    "Every track's structure - intro, builds, drops, outro - is now detected inside Liveolator, with no extra download needed.",
+    "Key detection is far more accurate. A flaw in the chroma analysis made most tracks collapse onto the same few keys; on a real test library correct keys went from 2 in 10 to 8 in 10.",
+    "Fixed tracks whose tempo read half again too fast - a 125 BPM track that came out as 168 now reads 125.",
+    "Scanning a folder now touches only that folder instead of re-walking your whole library, so a small rescan takes seconds instead of an hour.",
+    "You can now correct a track's BPM or key by hand and have that correction survive every later scan."
   ]
 }

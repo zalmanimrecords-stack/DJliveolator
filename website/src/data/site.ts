@@ -20,8 +20,8 @@ export const site = {
   // Windows installer, served from the site's own /downloads (bind-mounted on
   // the VPS — see website/DEPLOY.md). These three are updated automatically by
   // scripts/publish-website-release.ps1 each time an installer is built.
-  version: "0.6.1",
-  downloadUrl: "/downloads/LiveolatorSetup-0.6.1.exe",
+  version: "0.7.0",
+  downloadUrl: "/downloads/LiveolatorSetup-0.7.0.exe",
   downloadSize: "38 MB",
   // Cache-buster for the screenshots specifically. Bump this when the images are
   // re-rendered WITHOUT a version bump, so Cloudflare's edge (which keys on the query)
