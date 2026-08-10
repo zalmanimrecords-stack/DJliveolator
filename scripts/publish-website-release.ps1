@@ -258,7 +258,7 @@ try {
     Push-Location (Join-Path $repoRoot 'website/public')
     & scp @sshOpts -r 'screenshots' "${VpsHost}:$RemoteDir/public/"
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "scp screenshots failed ($LASTEXITCODE)." }
-    # The app's update manifest — must reach the live site so the startup check sees the new version.
+    # The app's update manifest - must reach the live site so the startup check sees the new version.
     & scp @sshOpts 'version.json' "${VpsHost}:$RemoteDir/public/version.json"
     Pop-Location
     if ($LASTEXITCODE -ne 0) { throw "scp version.json failed ($LASTEXITCODE)." }
@@ -271,4 +271,71 @@ try {
 catch {
     Write-Warning "Deploy step failed: $($_.Exception.Message)"
     Write-Warning "Local files were updated; deploy manually (see website/DEPLOY.md)."
+}
+
+# --- Verify the WordPress gate agrees with what we just shipped -----------------
+# WordPress signs the download link from its OWN copy of the installer path
+# (Newsletter -> Settings -> Gated downloads). Nothing above updates it, and nginx's
+# secure_link only validates the signature against the URI string - it never checks
+# that the file exists. So a stale WP path yields a VALID signature for a missing
+# file: the visitor gets a 404 and the failure is completely silent on our side.
+# That is not hypothetical - it was found live on 2026-08-10 pointing at 0.1.4,
+# long since pruned by download retention, so every gated download 404'd.
+# This check is read-only: it reads WP's configured path and confirms both that it
+# names the shipped version and that the file is actually on disk.
+if (-not $NoDeploy -and $VpsHost) {
+    $probe = @'
+set -u
+WPC=${WPC:-wordpress-ke8p-wordpress-1}
+DBC=${DBC:-wordpress-ke8p-db-1}
+if ! docker inspect "$WPC" >/dev/null 2>&1; then echo "SKIP no-wp-container"; exit 0; fi
+eval "$(docker exec "$WPC" env | grep -E '^WORDPRESS_DB_(USER|PASSWORD|NAME)=' | sed -E 's/^WORDPRESS_DB_/WPDB_/')"
+if [ -z "${WPDB_USER:-}" ]; then echo "SKIP no-db-creds"; exit 0; fi
+HEXV=$(docker exec -e MYSQL_PWD="$WPDB_PASSWORD" "$DBC" mysql -u"$WPDB_USER" -N -B "$WPDB_NAME" \
+  -e "SELECT HEX(option_value) FROM wp_options WHERE option_name='znl_settings'" 2>/dev/null)
+if [ -z "$HEXV" ]; then echo "SKIP no-znl-settings"; exit 0; fi
+# Print only the liveolator path/version - znl_settings also holds the link secret.
+PV=$(printf '%s' "$HEXV" | docker exec -i "$WPC" php -r '
+  $d=@unserialize(hex2bin(trim(stream_get_contents(STDIN))));
+  if(!is_array($d)){echo "ERR unserialize";exit;}
+  $p=$d["download_products"]["liveolator"] ?? null;
+  if(!$p){echo "ERR no-liveolator-product";exit;}
+  echo ($p["version"] ?? "?"), " ", ($p["path"] ?? "?");
+')
+case "$PV" in ERR*) echo "SKIP $PV"; exit 0;; esac
+WPVER=${PV%% *}; WPPATH=${PV#* }
+echo "WPVER=$WPVER"
+echo "WPPATH=$WPPATH"
+echo "EXISTS=$([ -f "/docker/liveolator$WPPATH" ] && echo yes || echo no)"
+'@
+    try {
+        $out = ($probe | & ssh @sshOpts $VpsHost 'bash -s' 2>&1) -join "`n"
+        $wpVer   = ([regex]::Match($out, 'WPVER=(\S+)')).Groups[1].Value
+        $wpPath  = ([regex]::Match($out, 'WPPATH=(\S+)')).Groups[1].Value
+        $exists  = ([regex]::Match($out, 'EXISTS=(\S+)')).Groups[1].Value
+
+        if ($out -match 'SKIP (\S+)') {
+            Write-Warning "Could not verify the WordPress gate ($($Matches[1])). Check it by hand: Newsletter -> Settings -> Gated downloads."
+        }
+        elseif ($wpVer -eq $Version -and $exists -eq 'yes') {
+            Write-Host "  WordPress gate OK: signs $wpPath (v$wpVer), file present." -ForegroundColor Green
+        }
+        else {
+            Write-Host ''
+            Write-Host '================ GATED DOWNLOAD IS BROKEN ================' -ForegroundColor Red
+            Write-Host "  shipped version : $Version" -ForegroundColor Red
+            Write-Host "  WordPress signs : $wpPath (v$wpVer)" -ForegroundColor Red
+            Write-Host "  that file exists: $exists" -ForegroundColor Red
+            Write-Host '  Every visitor who submits the email form gets a link to the above path.' -ForegroundColor Red
+            Write-Host '  A stale path still signs VALID, so this fails as a silent 404.' -ForegroundColor Red
+            Write-Host '  FIX: wp-admin -> Newsletter -> Settings -> Gated downloads -> Liveolator' -ForegroundColor Yellow
+            Write-Host "       path = /downloads/LiveolatorSetup-$Version.exe   version = $Version" -ForegroundColor Yellow
+            Write-Host '==========================================================' -ForegroundColor Red
+            throw "WordPress gated-download config does not match the shipped version ($Version)."
+        }
+    }
+    catch [System.Management.Automation.RuntimeException] { throw }
+    catch {
+        Write-Warning "WordPress gate check could not run: $($_.Exception.Message)"
+    }
 }
