@@ -29,6 +29,11 @@ public sealed class OfflineMixRenderer
     private const int BlockSize = 256;
     private const double UnwarpedEpsilon = 1e-4;
 
+    // Grace period before a decoded source is released, absorbing the rounding between timeline seconds and
+    // buffer frames at a block boundary. One second costs a few MB and removes the whole class of
+    // "released one block too early" bugs.
+    private const double ReleaseMarginSeconds = 1.0;
+
     private readonly IAudioDecoder _decoder;
     private readonly BassFxRenderDecoder _stretchDecoder;
 
@@ -62,6 +67,11 @@ public sealed class OfflineMixRenderer
     /// <summary>
     /// Render <paramref name="project"/> to a 16-bit stereo WAV at <paramref name="outputPath"/>.
     /// Reports 0..1 progress. An empty/zero-length project writes an empty WAV.
+    /// <para>Streams: each block is mixed, limited and written straight to disk, and a decoded source is
+    /// dropped once the timeline has passed the last clip that reads it. Nothing proportional to the whole
+    /// arrangement is ever held in memory, so an hour-long set renders in roughly the footprint of the two
+    /// or three tracks actually sounding — and the old ~2 GB single-array ceiling (about 101 minutes at
+    /// 44.1 kHz without <c>gcAllowVeryLargeObjects</c>) is gone.</para>
     /// </summary>
     public async Task RenderAsync(
         StudioProject project,
@@ -76,29 +86,22 @@ public sealed class OfflineMixRenderer
             throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
 
         var plan = new MixPlan(project);
-        int totalSamples = plan.DurationSeconds > 0 ? (int)Math.Ceiling(plan.DurationSeconds * sampleRate) : 0;
+        long totalFrames = plan.DurationSeconds > 0 ? (long)Math.Ceiling(plan.DurationSeconds * sampleRate) : 0;
 
         // The furthest source position (seconds) any clip needs for each (path, factor): a clip bounded by
         // its out-point only needs up to SourceOut; an open-ended clip needs the whole file. Decoding only
         // this far keeps render memory proportional to the material used, not the source file lengths.
         Dictionary<string, double> sourceEndSeconds = MaxSourceEndPerKey(project, plan);
 
-        // Decode every distinct (clip, warp factor) once into a stereo buffer at the render rate. Unwarped
-        // clips use the managed mono decoder duplicated to both channels; warped clips use BASS_FX stereo.
+        // The last timeline second each decoded buffer is read at, so it can be released the moment the
+        // playhead is past it. Without this the sources dictionary alone holds every track at once and
+        // streaming the output would not have bounded the render.
+        Dictionary<string, double> sourceLastNeeded = LastNeededSecondPerKey(project, plan);
+
+        // Decoded lazily on first use rather than all up front, so only the sources currently sounding
+        // (plus any not yet evicted) are resident.
         var sources = new Dictionary<string, StereoBuffer>(StringComparer.OrdinalIgnoreCase);
-        foreach (StudioClip clip in project.Clips)
-        {
-            double factor = plan.WarpFactorFor(clip);
-            string key = SourceKey(clip.TrackPath, factor);
-            if (sources.ContainsKey(key))
-                continue;
 
-            sources[key] = await DecodeSourceAsync(clip.TrackPath, factor, sampleRate, sourceEndSeconds[key], cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Interleaved stereo master (L0,R0,L1,R1,...) so the stereo-linked limiter sees both channels.
-        var master = new float[totalSamples * OutputChannels];
         int decks = plan.DeckCount;
         // Per-deck biquad cascade (low -> mid -> high -> filter), each a single 2-channel StatefulBiquad
         // addressed by channel index so L and R carry independent delay state (mirrors BassMixerChannel).
@@ -112,70 +115,167 @@ public sealed class OfflineMixRenderer
         // previous source's filter ring. StatefulBiquad is intentionally not reset in place (Core-owned).
         var deckSource = new string?[decks];
 
-        for (int blockStart = 0; blockStart < totalSamples; blockStart += BlockSize)
+        // One limiter instance across the whole render: it carries its look-ahead delay line and gain state
+        // between calls, so limiting block by block is identical to one pass over the finished master.
+        var limiter = new MasterLimiter(sampleRate, channels: OutputChannels);
+        int latencyFrames = limiter.LatencySamples;
+
+        // The limiter delays by its look-ahead, so output frame j carries input frame j - latency. To emit
+        // input [0, totalFrames) we push one extra look-ahead window of silence through and drop the first
+        // `latency` output frames — that is what keeps the file sample-aligned to the timeline.
+        long flushFrames = totalFrames > 0 ? latencyFrames : 0;
+        long inputFrames = totalFrames + flushFrames;
+
+        // Interleaved stereo block (L0,R0,L1,R1,...) so the stereo-linked limiter sees both channels.
+        var block = new float[BlockSize * OutputChannels];
+        long emitted = 0;   // limiter output frames seen so far, including the primed ones we discard
+        long written = 0;   // frames actually written to the file
+
+        using var writer = new WavStreamWriter(outputPath, OutputChannels, sampleRate);
+
+        for (long blockStart = 0; blockStart < inputFrames; blockStart += BlockSize)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            int blockLen = Math.Min(BlockSize, totalSamples - blockStart);
+            int blockLen = (int)Math.Min(BlockSize, inputFrames - blockStart);
+            int blockFloats = blockLen * OutputChannels;
+            Array.Clear(block, 0, blockFloats);
             double tBlock = blockStart / (double)sampleRate;
 
-            for (int slot = 0; slot < decks; slot++)
+            // Past the end of the arrangement there is nothing to mix; the silence flushes the look-ahead.
+            if (blockStart < totalFrames)
             {
-                DeckMixState state = plan.EvaluateDeck(slot, tBlock);
-                if (!state.HasAudio || state.SourcePath is null ||
-                    !sources.TryGetValue(SourceKey(state.SourcePath, state.WarpFactor), out StereoBuffer? src))
+                for (int slot = 0; slot < decks; slot++)
                 {
-                    // Deck is silent this block: its next sounding clip is a genuine source discontinuity,
-                    // so drop the persistent state (a fresh stream would start at zero).
-                    deckSource[slot] = null;
-                    continue;
-                }
+                    DeckMixState state = plan.EvaluateDeck(slot, tBlock);
+                    if (!state.HasAudio || state.SourcePath is null)
+                    {
+                        // Deck is silent this block: its next sounding clip is a genuine source discontinuity,
+                        // so drop the persistent state (a fresh stream would start at zero).
+                        deckSource[slot] = null;
+                        continue;
+                    }
 
-                // Identify the active source on this deck. A different clip (path, warp, or timeline anchor)
-                // is a discontinuity even on the same deck slot, so recreate the cascade from zero history.
-                string activeSource = ActiveSourceKey(state);
-                if (deckSource[slot] != activeSource)
-                {
-                    low[slot] = new StatefulBiquad(OutputChannels);
-                    mid[slot] = new StatefulBiquad(OutputChannels);
-                    high[slot] = new StatefulBiquad(OutputChannels);
-                    filt[slot] = new StatefulBiquad(OutputChannels);
-                    deckSource[slot] = activeSource;
-                }
+                    string key = SourceKey(state.SourcePath, state.WarpFactor);
+                    if (!sources.TryGetValue(key, out StereoBuffer? src))
+                    {
+                        // Only decode material the plan actually accounted for; an unplanned key would have
+                        // no decode bound, and the old code treated it as silence.
+                        if (!sourceEndSeconds.TryGetValue(key, out double endSeconds))
+                        {
+                            deckSource[slot] = null;
+                            continue;
+                        }
 
-                low[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, state.Eq, sampleRate));
-                mid[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Mid, state.Eq, sampleRate));
-                high[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.High, state.Eq, sampleRate));
-                filt[slot].SetCoefficients(MixerMath.FilterCoefficients(state.Filter, sampleRate));
+                        src = await DecodeSourceAsync(
+                                state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
+                            .ConfigureAwait(false);
+                        sources[key] = src;
+                    }
 
-                // The decoded buffer is already time-stretched to the project tempo, so it advances 1:1
-                // with the timeline; the source-in trim maps into it scaled by the warp factor.
-                double bufferSeconds = (state.SourceInSeconds / state.WarpFactor) + (tBlock - state.ClipStartSeconds);
-                int srcStart = (int)Math.Round(bufferSeconds * sampleRate);
-                for (int i = 0; i < blockLen; i++)
-                {
-                    int si = srcStart + i;
-                    bool inRange = si >= 0 && si < src.Length;
+                    // Identify the active source on this deck. A different clip (path, warp, or timeline anchor)
+                    // is a discontinuity even on the same deck slot, so recreate the cascade from zero history.
+                    string activeSource = ActiveSourceKey(state);
+                    if (deckSource[slot] != activeSource)
+                    {
+                        low[slot] = new StatefulBiquad(OutputChannels);
+                        mid[slot] = new StatefulBiquad(OutputChannels);
+                        high[slot] = new StatefulBiquad(OutputChannels);
+                        filt[slot] = new StatefulBiquad(OutputChannels);
+                        deckSource[slot] = activeSource;
+                    }
 
-                    // Process each channel through its own delay line: filter(high(mid(low(x)))) per L/R.
-                    double l = (inRange ? src.Left[si] : 0.0) * state.Gain;
-                    l = filt[slot].Process(Left, high[slot].Process(Left, mid[slot].Process(Left, low[slot].Process(Left, l))));
+                    low[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Low, state.Eq, sampleRate));
+                    mid[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.Mid, state.Eq, sampleRate));
+                    high[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.High, state.Eq, sampleRate));
+                    filt[slot].SetCoefficients(MixerMath.FilterCoefficients(state.Filter, sampleRate));
 
-                    double r = (inRange ? src.Right[si] : 0.0) * state.Gain;
-                    r = filt[slot].Process(Right, high[slot].Process(Right, mid[slot].Process(Right, low[slot].Process(Right, r))));
+                    // The decoded buffer is already time-stretched to the project tempo, so it advances 1:1
+                    // with the timeline; the source-in trim maps into it scaled by the warp factor.
+                    double bufferSeconds = (state.SourceInSeconds / state.WarpFactor) + (tBlock - state.ClipStartSeconds);
+                    long srcStart = (long)Math.Round(bufferSeconds * sampleRate);
+                    for (int i = 0; i < blockLen; i++)
+                    {
+                        long si = srcStart + i;
+                        bool inRange = si >= 0 && si < src.Length;
 
-                    int frame = (blockStart + i) * OutputChannels;
-                    master[frame + Left] += (float)l;
-                    master[frame + Right] += (float)r;
+                        // Process each channel through its own delay line: filter(high(mid(low(x)))) per L/R.
+                        double l = (inRange ? src.Left[si] : 0.0) * state.Gain;
+                        l = filt[slot].Process(Left, high[slot].Process(Left, mid[slot].Process(Left, low[slot].Process(Left, l))));
+
+                        double r = (inRange ? src.Right[si] : 0.0) * state.Gain;
+                        r = filt[slot].Process(Right, high[slot].Process(Right, mid[slot].Process(Right, low[slot].Process(Right, r))));
+
+                        int frame = i * OutputChannels;
+                        block[frame + Left] += (float)l;
+                        block[frame + Right] += (float)r;
+                    }
                 }
             }
 
-            progress?.Report(totalSamples == 0 ? 1.0 : Math.Min(1.0, (blockStart + blockLen) / (double)totalSamples));
+            limiter.Process(block.AsSpan(0, blockFloats));
+
+            // Discard the limiter's primed frames, then keep only as many as the timeline actually has.
+            int skip = (int)Math.Min(blockLen, Math.Max(0L, latencyFrames - emitted));
+            int keep = (int)Math.Min(blockLen - skip, totalFrames - written);
+            if (keep > 0)
+            {
+                writer.Write(block.AsSpan(skip * OutputChannels, keep * OutputChannels));
+                written += keep;
+            }
+            emitted += blockLen;
+
+            ReleasePassedSources(sources, sourceLastNeeded, tBlock);
+            progress?.Report(totalFrames == 0 ? 1.0 : Math.Min(1.0, written / (double)totalFrames));
         }
 
-        ApplyMasterLimiter(master, sampleRate);
-
-        WriteStereo(outputPath, master, totalSamples, sampleRate);
         progress?.Report(1.0);
+    }
+
+    // The last timeline second each (path, factor) buffer is read at: the clip's start plus its own
+    // timeline length (source span divided by the warp factor, since a warped buffer plays 1:1 with the
+    // timeline). An open-ended clip has no known end, so its buffer is never released.
+    private static Dictionary<string, double> LastNeededSecondPerKey(StudioProject project, MixPlan plan)
+    {
+        var lastNeeded = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (StudioClip clip in project.Clips)
+        {
+            double factor = plan.WarpFactorFor(clip);
+            string key = SourceKey(clip.TrackPath, factor);
+
+            double end = double.PositiveInfinity;
+            if (clip.SourceOut is { } sourceOut && factor > 0)
+            {
+                double sourceSpan = sourceOut.TotalSeconds - clip.SourceIn.TotalSeconds;
+                if (sourceSpan >= 0)
+                    end = clip.TimelineStartSeconds + (sourceSpan / factor);
+            }
+
+            lastNeeded[key] = lastNeeded.TryGetValue(key, out double existing) ? Math.Max(existing, end) : end;
+        }
+
+        return lastNeeded;
+    }
+
+    // Release buffers the playhead is past. The margin covers the rounding between timeline seconds and
+    // buffer frames at a block boundary, so a buffer is never dropped while its clip's last samples are
+    // still being read.
+    private static void ReleasePassedSources(
+        Dictionary<string, StereoBuffer> sources, Dictionary<string, double> lastNeeded, double tBlock)
+    {
+        if (sources.Count == 0)
+            return;
+
+        List<string>? stale = null;
+        foreach (string key in sources.Keys)
+        {
+            if (lastNeeded.TryGetValue(key, out double end) && tBlock > end + ReleaseMarginSeconds)
+                (stale ??= new List<string>()).Add(key);
+        }
+
+        if (stale is null)
+            return;
+        foreach (string key in stale)
+            sources.Remove(key);
     }
 
     // The furthest source position (seconds) any clip needs per (path, factor). A clip with a known
@@ -219,41 +319,6 @@ public sealed class OfflineMixRenderer
             return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
 
         return _stretchDecoder.DecodeStretchedStereo(path, sampleRate, (factor - 1.0) * 100.0, maxFrames);
-    }
-
-    // Run the summed interleaved-stereo master through the same brick-wall limiter the realtime master bus
-    // uses (BassMixerBackend.OnMasterDsp), constructed for 2 channels so it is stereo-linked - a multi-deck
-    // mix that sums past full scale never clips in the exported WAV. The limiter delays its output by
-    // LatencySamples (its look-ahead), so we process the master plus one look-ahead window of trailing
-    // silence to flush the delay line, then copy back the audio that occupies
-    // [latencyFloats, latencyFloats + master.Length), keeping the rendered length identical to the input
-    // and the tail un-truncated. Limits in place.
-    private static void ApplyMasterLimiter(float[] master, int sampleRate)
-    {
-        if (master.Length == 0)
-            return;
-
-        var limiter = new MasterLimiter(sampleRate, channels: OutputChannels);
-        int latencyFloats = limiter.LatencySamples * OutputChannels;
-
-        var work = new float[master.Length + latencyFloats];
-        Array.Copy(master, work, master.Length);
-        limiter.Process(work);
-
-        // output[i] == input[i - latency]; the real audio occupies [latencyFloats, latencyFloats + length).
-        Array.Copy(work, latencyFloats, master, 0, master.Length);
-    }
-
-    private static void WriteStereo(string outputPath, float[] interleaved, int frames, int sampleRate)
-    {
-        var left = new float[frames];
-        var right = new float[frames];
-        for (int i = 0; i < frames; i++)
-        {
-            left[i] = interleaved[(i * OutputChannels) + Left];
-            right[i] = interleaved[(i * OutputChannels) + Right];
-        }
-        WavWriter.WriteStereo(outputPath, left, right, sampleRate);
     }
 
     private static StatefulBiquad[] NewBiquads(int count)

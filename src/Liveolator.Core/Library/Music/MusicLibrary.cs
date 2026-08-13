@@ -82,6 +82,9 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             BpmProvenance = prior?.BpmProvenance == BpmProvenance.LocalConfirmed
                 ? BpmProvenance.LocalConfirmed
                 : MetadataMergePolicy.MergeBpm(rebuilt.Bpm, prior?.OnlineBpm, rebuilt.Status).Provenance,
+            // Loudness is measured by its own pass, not by the analyzer, so a re-decode would otherwise
+            // blank it and cost the whole catalog a second measuring run.
+            IntegratedLufs = prior?.IntegratedLufs,
         };
     }
 
@@ -248,6 +251,38 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     /// <summary>Paths of the catalogued tracks that still need analysis (Failed / no BPM).</summary>
     public IReadOnlyList<string> PathsNeedingAnalysis()
         => All.Where(NeedsAnalysis).Select(t => t.File.Path).ToList();
+
+    /// <summary>
+    /// Paths of the catalogued tracks with no loudness measurement yet. Deliberately independent of the
+    /// analyzer version: loudness does not depend on tempo, key or structure, so measuring it must never
+    /// drag a full re-analysis behind it — and a bumped analyzer version would skip exactly the
+    /// hand-corrected tracks (<see cref="MusicTrack.AnalysisIsManual"/>), which still need measuring.
+    /// Failed entries are excluded: nothing decoded, so there is nothing to measure.
+    /// </summary>
+    public IReadOnlyList<string> PathsNeedingLoudness()
+        => All.Where(t => t.IntegratedLufs is null && t.Status != MediaAnalysisStatus.Failed)
+              .Select(t => t.File.Path)
+              .ToList();
+
+    /// <summary>
+    /// Records a measured integrated loudness for <paramref name="path"/>. Returns false for an unknown
+    /// path.
+    /// <para>A null <paramref name="integratedLufs"/> leaves the track indistinguishable from one never
+    /// measured, so a later pass tries it again. That is intended rather than tolerated: the usual reason a
+    /// measurement comes back null is an unreachable file, and this catalog lives partly on a network
+    /// share — a track that failed while the share was offline must be picked up once it is back.</para>
+    /// </summary>
+    public bool SetLoudness(string path, double? integratedLufs)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        Upsert(existing with { IntegratedLufs = integratedLufs });
+        return true;
+    }
 
     /// <summary>
     /// Paths of every catalogued track eligible for a full re-map ("Rescan all") — all tracks except

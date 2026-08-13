@@ -39,9 +39,7 @@ public static class TransitionAutomation
         if (windows.Count == 0)
             return Array.Empty<AutomationLane>();
 
-        double swapSeconds = Math.Min(
-            BassSwapBars * SetBuildOptions.BarSeconds(tempoBpm),
-            windows.Min(w => w.OverlapSeconds) / 2.0);
+        double fullSwapSeconds = BassSwapBars * SetBuildOptions.BarSeconds(tempoBpm);
 
         var gain = new Dictionary<int, List<AutomationKeyframe>>();
         var low = new Dictionary<int, List<AutomationKeyframe>>();
@@ -51,6 +49,10 @@ public static class TransitionAutomation
             AddEqualPowerFade(Lane(gain, window.OutSlot), window, fadingIn: false);
             AddEqualPowerFade(Lane(gain, window.InSlot), window, fadingIn: true);
 
+            // Sized per blend, not once for the set: the swap must stay inside the blend it lives in, but
+            // taking the shortest blend in the set as the bound would let one hard-ending record shorten the
+            // bass trade everywhere, leaving two basslines stacked through every long blend.
+            double swapSeconds = Math.Min(fullSwapSeconds, window.OverlapSeconds / 2.0);
             double middle = window.StartSeconds + (window.OverlapSeconds / 2.0);
             Lane(low, window.OutSlot).Add(new AutomationKeyframe(middle - swapSeconds, EqBands.Unity));
             Lane(low, window.OutSlot).Add(new AutomationKeyframe(middle, BandCut));

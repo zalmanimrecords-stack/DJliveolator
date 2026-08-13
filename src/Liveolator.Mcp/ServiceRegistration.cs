@@ -28,6 +28,11 @@ internal static class ServiceRegistration
         services.AddSingleton(config);
         services.AddSingleton(_ => new FfmpegOptions(config.FfmpegPath));
         services.AddSingleton<IAudioDecoder>(sp => new CompositeAudioDecoder(sp.GetRequiredService<FfmpegOptions>()));
+        // Loudness is measured by the same FFmpeg CLI already resolved above, and kept out of TrackAnalyzer
+        // so measuring never forces a re-analysis (CatalogLoudnessService explains why).
+        services.AddSingleton<ILoudnessMeter>(sp => new FfmpegLoudnessMeter(
+            sp.GetRequiredService<FfmpegOptions>().ExecutablePath,
+            sp.GetRequiredService<ILogger<FfmpegLoudnessMeter>>()));
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();
         services.AddSingleton<IFileEnumerator, FileSystemFileEnumerator>();
         services.AddSingleton(new TrackAnalyzer());

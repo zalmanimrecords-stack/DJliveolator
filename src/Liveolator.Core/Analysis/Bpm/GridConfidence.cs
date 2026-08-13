@@ -11,10 +11,20 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// <param name="PhaseSyncReady">True ⇒ offer beat/phase sync; false ⇒ downgrade to tempo-only.</param>
 /// <param name="Analyzed">False when the signals are absent (pre-v9 catalog) — <see cref="PhaseSyncReady"/>
 /// then preserves the prior behaviour (allow phase sync) until the track re-analyzes.</param>
-public readonly record struct GridConfidence(double? Display, bool PhaseSyncReady, bool Analyzed)
+/// <param name="TempoTrusted">True ⇒ the detected tempo is stable enough to warp by. Deliberately separate
+/// from <see cref="PhaseSyncReady"/>: the two signals answer different questions, and a smeared kick (weak
+/// grid fit) says nothing about whether the tempo is constant. Consumers that stretch audio must gate on
+/// this, not on <see cref="PhaseSyncReady"/> — treating a phase downgrade as a tempo downgrade leaves the
+/// track at its native rate against the set tempo, which guarantees the drift the gate exists to prevent.</param>
+public readonly record struct GridConfidence(
+    double? Display,
+    bool PhaseSyncReady,
+    bool Analyzed,
+    bool TempoTrusted = true)
 {
     /// <summary>A track analyzed before grid-confidence existed: quality unknown, phase sync preserved.</summary>
-    public static GridConfidence Unknown { get; } = new(Display: null, PhaseSyncReady: true, Analyzed: false);
+    public static GridConfidence Unknown { get; } =
+        new(Display: null, PhaseSyncReady: true, Analyzed: false, TempoTrusted: true);
 }
 
 /// <summary>
@@ -65,7 +75,14 @@ public static class GridConfidenceCalculator
         double coherenceN = NormalizeCoherence(coherence);
         double stabilityN = NormalizeStability(bpmDelta);
         bool ready = coherenceN >= PhaseSyncFloor && stabilityN >= PhaseSyncFloor;
-        return new GridConfidence(Display: coherenceN * stabilityN, PhaseSyncReady: ready, Analyzed: true);
+        // Warping needs only a constant tempo; aligning phase additionally needs a tight grid fit. Gating
+        // the stretch on the fused verdict would refuse to tempo-match a rock-steady record whose kick
+        // merely reads soft, which is the one case where stretching is unambiguously right.
+        return new GridConfidence(
+            Display: coherenceN * stabilityN,
+            PhaseSyncReady: ready,
+            Analyzed: true,
+            TempoTrusted: stabilityN >= PhaseSyncFloor);
     }
 
     private static double NormalizeCoherence(double coherence)

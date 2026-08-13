@@ -42,7 +42,11 @@ public sealed record MusicTrack(
     // When offline analysis last ran for this track — the "last scanned" stamp shown in the library.
     // Added the same backward-compatible way as the fields above: optional, so an older cache defaults
     // it to null and still loads, no schema bump.
-    DateTime? LastAnalyzedUtc = null) : IMediaEntry
+    DateTime? LastAnalyzedUtc = null,
+    // Measured integrated loudness (EBU R128 / BS.1770), used to gain each clip to one level so a set of
+    // unequal masters blends instead of stepping. Null = never measured, which callers must treat as unity
+    // rather than as a level (see LoudnessGain). Optional in the same backward-compatible way as above.
+    double? IntegratedLufs = null) : IMediaEntry
 {
     /// <summary>Display title: the tag title when present, otherwise derived from the file name.</summary>
     public string Title =>

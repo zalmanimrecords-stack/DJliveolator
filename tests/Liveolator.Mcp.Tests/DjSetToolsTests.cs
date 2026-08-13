@@ -244,12 +244,14 @@ public sealed class DjSetToolsTests : IDisposable
             Array.Empty<ILibraryImporter>(),
             Array.Empty<IFolderLibraryImporter>(),
             importService,
+            NullLoudnessMeter.Instance,
             NullLogger<LibrarySession>.Instance);
 
         return new DjSetSession(
             library,
             new JsonStudioProjectStore(_directory),
             new OfflineMixRenderer(new EmptyDecoder()),
+            NullLoudnessMeter.Instance,
             NullLogger<DjSetSession>.Instance);
     }
 

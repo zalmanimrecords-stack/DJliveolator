@@ -245,6 +245,62 @@ public class DjSetArrangerTests
     }
 
     [Fact]
+    public void Build_GainsUnequalMasters_ToOneLevel()
+    {
+        // Two records 7 dB apart is ordinary for commercial masters. At unity the mix would step at the
+        // join and the equal-power crossfade would sum two different loudnesses; gained, they sit level.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("loud.mp3", "8A", 128, integratedLufs: -6.0,
+                structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.Track("quiet.mp3", "8A", 128, integratedLufs: -13.0),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip loud = Assert.Single(plan.Project.Clips, c => c.TrackPath == "loud.mp3");
+        StudioClip quiet = Assert.Single(plan.Project.Clips, c => c.TrackPath == "quiet.mp3");
+
+        Assert.True(loud.Gain < quiet.Gain, "the louder master must be pulled down relative to the quieter one");
+        Assert.Equal(
+            -6.0 + (20.0 * Math.Log10(loud.Gain)),
+            -13.0 + (20.0 * Math.Log10(quiet.Gain)),
+            precision: 6);
+    }
+
+    [Fact]
+    public void Build_LeavesAnUnmeasuredCatalog_AtUnityGain()
+    {
+        // Backward compatibility: a catalog with no loudness measured yet must arrange exactly as before.
+        DjSetPlan plan = BuildStandard();
+
+        Assert.All(plan.Project.Clips, clip => Assert.Equal(1.0, clip.Gain));
+    }
+
+    [Fact]
+    public void Build_StillWarps_ARecordWithASteadyTempoButASmearedKick()
+    {
+        // A phase downgrade is not a tempo downgrade. Leaving a rock-steady record at its native rate
+        // against the set tempo guarantees the drift the confidence gate exists to prevent, so it warps —
+        // and only loses the phase lock and the long blend, which are what the loose grid fit really costs.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.SmearedKick("soft-kick.mp3", "8A", 127),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip softKick = Assert.Single(plan.Project.Clips, c => c.TrackPath == "soft-kick.mp3");
+        Assert.True(softKick.WarpEnabled, "a steady tempo must still be warped to the set tempo");
+
+        SetTransition transition = Assert.Single(plan.Transitions);
+        Assert.False(transition.PhaseLocked);
+        Assert.Equal(SetBuildOptions.LowConfidenceOverlapBars, transition.OverlapBars);
+        Assert.Contains(SetWarning.LowGridConfidence, transition.Warnings);
+    }
+
+    [Fact]
     public void Build_ExcludesUntrustedGrids_OnlyWhenAsked()
     {
         MusicTrack[] pool =

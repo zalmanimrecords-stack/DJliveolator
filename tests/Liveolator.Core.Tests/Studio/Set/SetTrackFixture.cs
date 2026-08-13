@@ -29,7 +29,8 @@ internal static class SetTrackFixture
         IReadOnlyList<double>? kicks = null,
         double? gridCoherence = TrustedCoherence,
         double? tempoStability = TrustedStability,
-        double downbeatSeconds = 0.0)
+        double downbeatSeconds = 0.0,
+        double? integratedLufs = null)
         => new(
             new ScannedFile(path, 1_000, Stamp),
             new BpmResult(bpm, 0.9)
@@ -46,7 +47,8 @@ internal static class SetTrackFixture
             TrackCues.None,
             MediaAnalysisStatus.Ok,
             null,
-            Structure: structure);
+            Structure: structure,
+            IntegratedLufs: integratedLufs);
 
     /// <summary>A track whose beat grid fails the phase-sync gate (loose kick fit, drifting tempo).</summary>
     internal static MusicTrack UntrustedGrid(string path, string camelot = "8A", double bpm = 128.0)
@@ -55,6 +57,13 @@ internal static class SetTrackFixture
     /// <summary>A track analyzed before grid confidence existed — quality unknown, phase sync preserved.</summary>
     internal static MusicTrack UnanalyzedGrid(string path, string camelot = "8A", double bpm = 128.0)
         => Track(path, camelot, bpm, gridCoherence: null, tempoStability: null);
+
+    /// <summary>
+    /// A rock-steady record whose kick reads soft: the tempo is constant so it can be warped, but the grid
+    /// fit is too loose to align phase against. The case that separates a tempo downgrade from a phase one.
+    /// </summary>
+    internal static MusicTrack SmearedKick(string path, string camelot = "8A", double bpm = 128.0)
+        => Track(path, camelot, bpm, gridCoherence: 0.2, tempoStability: TrustedStability);
 
     /// <summary>
     /// The usual shape of a dance record, on bar lines at 128 BPM: intro, build, drop, breakdown, second

@@ -149,6 +149,7 @@ public sealed class LibraryToolsTests : IDisposable
             Array.Empty<ILibraryImporter>(),
             Array.Empty<IFolderLibraryImporter>(),
             importService,
+            NullLoudnessMeter.Instance,
             NullLogger<LibrarySession>.Instance);
     }
 
