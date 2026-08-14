@@ -134,7 +134,26 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                    || track.AnalyzerVersion != TrackAnalyzer.CurrentVersion);
     }
 
-    /// <summary>Applies a user-authored beat grid and protects it from automatic re-analysis.</summary>
+    /// <summary>A hand-set tempo this close to the analyzed one is the same tempo (matches <see cref="RegridManual"/>).</summary>
+    private const double SameTempoBpm = 0.05;
+
+    /// <summary>A hand-set anchor within a millisecond of the analyzed one is the same anchor.</summary>
+    private const double SameAnchorSeconds = 0.001;
+
+    /// <summary>
+    /// Applies a user-authored beat grid and protects it from automatic re-analysis.
+    /// <para>What survives is split by what each signal actually measures. The kick strike times and the
+    /// half-vs-half tempo delta are properties of the AUDIO — absolute onset times, and whether the
+    /// recording's tempo is constant — so no hand edit can invalidate them, and dropping them cost the row
+    /// both the deck's SET PHASE anchor list and the signal warping is gated on. The FIT signals are
+    /// different: <see cref="Bpm.BpmResult.GridCoherence"/>, <see cref="Bpm.BpmResult.KickPhaseMarginRatio"/>
+    /// and <see cref="Bpm.BpmResult.PhaseWindowDisagreementSeconds"/> are all evidence for a specific
+    /// <see cref="Bpm.BpmResult.FirstBeatSeconds"/>, so carrying them onto an anchor the DJ moved would let a
+    /// hand-authored grid claim a measurement nobody made — the offbeat-anchor failure with its sign
+    /// flipped. They are kept only when the hand grid IS the analyzed one, i.e. a confirmation rather than a
+    /// correction. A DJ who wants a corrected grid vouched for should re-analyze it
+    /// (<see cref="ForceReanalyzeAsync"/> re-grids at their tempo and measures fresh signals).</para>
+    /// </summary>
     public bool SetManualBeatGrid(string path, double bpm, double firstBeatSeconds)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
@@ -147,10 +166,31 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         if (existing is null)
             return false;
 
-        double confidence = existing.Bpm?.Confidence ?? 1.0;
+        Liveolator.Core.Analysis.Bpm.BpmResult? prior = existing.Bpm;
+        double confidence = prior?.Confidence ?? 1.0;
+        bool confirmsAnalyzedGrid = prior is not null
+            && Math.Abs(prior.Bpm - bpm) < SameTempoBpm
+            && Math.Abs(prior.FirstBeatSeconds - firstBeatSeconds) < SameAnchorSeconds;
+
+        Liveolator.Core.Analysis.Bpm.BpmResult grid = prior is null
+            ? new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, confidence, firstBeatSeconds)
+            : prior with
+            {
+                Bpm = bpm,
+                Confidence = confidence,
+                FirstBeatSeconds = firstBeatSeconds,
+                // A bar can only start on a beat, and this edit sets where the beats land — not which one is
+                // beat 1. So the downbeat follows the new anchor with its confidence honestly at zero.
+                DownbeatSeconds = confirmsAnalyzedGrid ? prior.DownbeatSeconds : firstBeatSeconds,
+                DownbeatConfidence = confirmsAnalyzedGrid ? prior.DownbeatConfidence : 0.0,
+                GridCoherence = confirmsAnalyzedGrid ? prior.GridCoherence : null,
+                KickPhaseMarginRatio = confirmsAnalyzedGrid ? prior.KickPhaseMarginRatio : null,
+                PhaseWindowDisagreementSeconds = confirmsAnalyzedGrid ? prior.PhaseWindowDisagreementSeconds : null,
+            };
+
         Upsert(existing with
         {
-            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, confidence, firstBeatSeconds),
+            Bpm = grid,
             AnalyzerVersion = TrackAnalyzer.CurrentVersion,
             AnalysisIsManual = true,
         });
@@ -425,8 +465,12 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         };
         Upsert(existing with
         {
-            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(
-                bpm, Confidence: 1.0, existing.Bpm?.FirstBeatSeconds ?? 0),
+            // Corrects the TEMPO and leaves the anchor alone, so it keeps the whole measured grid — the same
+            // treatment SetManualAnalysis already gives a tempo correction. Building a fresh BpmResult here
+            // carried the anchor across and silently discarded the kick list and every grid signal with it.
+            Bpm = existing.Bpm is { } prior
+                ? prior with { Bpm = bpm, Confidence = 1.0 }
+                : new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, Confidence: 1.0),
             Key = key,
             Metadata = metadata,
             Status = MediaAnalysisStatus.Ok,
