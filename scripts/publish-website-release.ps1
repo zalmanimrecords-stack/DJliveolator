@@ -309,7 +309,10 @@ echo "WPPATH=$WPPATH"
 echo "EXISTS=$([ -f "/docker/liveolator$WPPATH" ] && echo yes || echo no)"
 '@
     try {
-        $out = ($probe | & ssh @sshOpts $VpsHost 'bash -s' 2>&1) -join "`n"
+        # Send LF-only: a PowerShell here-string carries CRLF, and bash reading it over stdin sees
+        # "set -u`r" -> 'bash: line 1: set: -' and dies on the FIRST line, so this whole check has been
+        # inert on Windows since it was added. That is why the stale 0.1.4 gate went on 404'ing unseen.
+        $out = (($probe -replace "`r`n", "`n") | & ssh @sshOpts $VpsHost 'bash -s' 2>&1) -join "`n"
         $wpVer   = ([regex]::Match($out, 'WPVER=(\S+)')).Groups[1].Value
         $wpPath  = ([regex]::Match($out, 'WPPATH=(\S+)')).Groups[1].Value
         $exists  = ([regex]::Match($out, 'EXISTS=(\S+)')).Groups[1].Value
