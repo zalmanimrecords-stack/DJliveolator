@@ -220,9 +220,13 @@ public sealed class DjSetSession
     /// anyway, for when the owner has listened and decided.</para>
     /// <para>Unreachable source files always fail, force or not: this catalog lives partly on a network
     /// share, and a share that drops mid-render would otherwise produce a long mix with silent stretches
-    /// that nothing reports.</para>
+    /// that nothing reports. A mix that comes back silent — a source that decoded to nothing, a non-finite
+    /// measured loudness, or mostly-silent output — fails on the same terms, after the render; see
+    /// <see cref="RequireAudibleMix"/>.</para>
     /// </summary>
     /// <exception cref="ArgumentException">No set is saved under that name, or a source file is missing.</exception>
+    /// <exception cref="InvalidOperationException">The render produced a mix that is silent where it
+    /// should play. Force does not bypass this.</exception>
     public async Task<SetMixExport> ExportMixAsync(
         string name,
         string outputDirectory,
@@ -267,8 +271,17 @@ public sealed class DjSetSession
 
         string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
         string audioPath = Path.Combine(outputDirectory, $"{safeName}.wav");
-        await _renderer.RenderAsync(project, audioPath, sampleRate, progress: null, cancellationToken)
+        MixRenderResult render = await _renderer
+            .RenderAsync(project, audioPath, sampleRate, progress: null, cancellationToken)
             .ConfigureAwait(false);
+
+        // Measure what was actually produced rather than assuming the target was hit.
+        double? lufs = await _loudnessMeter
+            .MeasureIntegratedLufsAsync(audioPath, cancellationToken).ConfigureAwait(false);
+
+        // Before any artifact is written: a mix that does not contain the audio it claims to is not a
+        // deliverable, and half a publish package is worse than none.
+        RequireAudibleMix(name, audioPath, render, lufs);
 
         string tracklistPath = Path.Combine(outputDirectory, $"{safeName}-tracklist.json");
         string chaptersPath = Path.Combine(outputDirectory, $"{safeName}-youtube.txt");
@@ -283,10 +296,6 @@ public sealed class DjSetSession
                 cancellationToken)
             .ConfigureAwait(false);
 
-        // Measure what was actually produced rather than assuming the target was hit.
-        double? lufs = await _loudnessMeter
-            .MeasureIntegratedLufsAsync(audioPath, cancellationToken).ConfigureAwait(false);
-
         _logger.LogInformation(
             "Exported '{Name}' to {Path} ({Seconds:F0}s, {Lufs} LUFS)",
             name, audioPath, project.DurationSeconds, lufs?.ToString("F1") ?? "unmeasured");
@@ -298,6 +307,59 @@ public sealed class DjSetSession
             LimiterSettings.Default.CeilingDbTp,
             issues, tracks);
     }
+
+    /// <summary>
+    /// Refuses a mix that does not contain the audio it claims to.
+    /// <para>Sits deliberately outside the publish gate, so <c>force</c> does not reach past it — the same
+    /// standing as an unreachable source file, and for the same reason. Every decode failure degrades to
+    /// silence rather than a throw (global #16/#26), so without this a 69-minute unattended render of
+    /// digital silence reports success. It did: every warped clip decoded to nothing because BASS was not
+    /// initialised in the render host, and whole-file loudness read a healthy -10.3 LUFS because the two
+    /// clips that happened to need no warp carried the average.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The mix is silent where it should not be.</exception>
+    private void RequireAudibleMix(string name, string audioPath, MixRenderResult render, double? lufs)
+    {
+        if (render.SilentSources.Count > 0)
+        {
+            _logger.LogError(
+                "Export of '{Name}' produced no audio for {Count} of {Total} source(s): {Sources}",
+                name, render.SilentSources.Count, render.SourceCount, string.Join(", ", render.SilentSources));
+            throw new InvalidOperationException(
+                $"{render.SilentSources.Count} of {render.SourceCount} source(s) decoded to nothing, so the mix " +
+                $"is silent where they should play: {string.Join(", ", render.SilentSources.Take(3))}" +
+                (render.SilentSources.Count > 3 ? $" (+{render.SilentSources.Count - 3} more)" : string.Empty) +
+                $". Nothing was published. The incomplete file is at {audioPath} — check the app log for the " +
+                "decode warnings, and that the native BASS libraries (including bassflac for flac sources) are " +
+                "present next to the render host.");
+        }
+
+        // Null is "not measured" and stays a normal outcome; a measured -infinity is a silent file.
+        if (lufs is { } measured && !double.IsFinite(measured))
+        {
+            _logger.LogError("Export of '{Name}' measured {Lufs} LUFS — the file carries no signal", name, measured);
+            throw new InvalidOperationException(
+                $"The rendered mix measured {measured} LUFS, which means it carries no signal. Nothing was " +
+                $"published. The incomplete file is at {audioPath}.");
+        }
+
+        if (render.SilentFraction > MaxSilentFraction)
+        {
+            _logger.LogError(
+                "Export of '{Name}' is {Percent:P0} silence", name, render.SilentFraction);
+            throw new InvalidOperationException(
+                $"{render.SilentFraction:P0} of the rendered mix is silence, so it is not a continuous mix. " +
+                $"Nothing was published. The incomplete file is at {audioPath}.");
+        }
+    }
+
+    /// <summary>
+    /// How much of a mix may be silence before it is refused. A continuous mix is silent essentially
+    /// nowhere — even a long fade-in and fade-out is under a percent — so half is a floor no plausible
+    /// set trips and every broken render does. Kept here rather than in the renderer: measuring the
+    /// silence is an audio fact, deciding what is publishable is this gate's business.
+    /// </summary>
+    private const double MaxSilentFraction = 0.5;
 
     private static readonly JsonSerializerOptions TracklistJson = new() { WriteIndented = true };
 

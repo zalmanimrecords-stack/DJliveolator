@@ -9,9 +9,12 @@ namespace Liveolator.Audio.Render;
 /// Decodes a track and time-stretches it with BASS_FX (SoundTouch) - tempo changed, pitch preserved
 /// (keylock) - for the STUDIO offline render's warp. The decode stream -> a BASS_FX tempo stream -> a
 /// BASSmix mixer that resamples to the render rate and produces interleaved stereo (matching the rest of
-/// the stereo renderer; a mono source is upmixed to both channels by the mixer). Native; BASS must
-/// already be initialised (it is, inside the running app). Failures degrade to an empty buffer with a
-/// warning, never a throw (global #16/#26).
+/// the stereo renderer; a mono source is upmixed to both channels by the mixer). Native; BASS is brought
+/// up on demand through <see cref="BassAudioDecoder.EnsureUsable"/> (the same tolerant no-sound init the
+/// offline decoder uses), so a host that renders without a playback device - the MCP server - gets audio
+/// rather than a silent mix. Failures degrade to an empty buffer with a warning, never a throw
+/// (global #16/#26); the empty buffer is what <see cref="OfflineMixRenderer"/> counts and reports, so a
+/// failed decode can no longer pass for a rendered mix.
 /// </summary>
 public sealed class BassFxRenderDecoder
 {
@@ -31,6 +34,16 @@ public sealed class BassFxRenderDecoder
     /// </summary>
     internal StereoBuffer DecodeStretchedStereo(string path, int sampleRate, double tempoPercent, int maxFrames = int.MaxValue)
     {
+        // The render host need not have a playback device up: a no-sound init is enough for decode streams,
+        // and skipping it is exactly how an offline render silently produced 69 minutes of nothing.
+        if (!BassAudioDecoder.EnsureUsable())
+        {
+            _log?.LogWarning(
+                "STUDIO warp: BASS is unavailable (init failed or the native library is missing), so '{Path}' " +
+                "cannot be time-stretched and would render as silence.", path);
+            return Empty();
+        }
+
         int decode = Bass.CreateStream(path, 0, 0, BassFlags.Decode | BassFlags.Float);
         if (decode == 0)
         {

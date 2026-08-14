@@ -699,8 +699,13 @@ public sealed class StudioViewModel : ViewModelBase, IDisposable
             Directory.CreateDirectory(_renderDirectory);
             string outputPath = Path.Combine(_renderDirectory, Sanitize(project.Name) + ".wav");
             RxApp.MainThreadScheduler.Schedule(() => Status = $"Rendering \"{project.Name}\"…");
-            await new OfflineMixRenderer(_decoder).RenderAsync(project, outputPath).ConfigureAwait(false);
-            RxApp.MainThreadScheduler.Schedule(() => Status = $"Rendered to {outputPath}");
+            MixRenderResult render = await new OfflineMixRenderer(_decoder)
+                .RenderAsync(project, outputPath).ConfigureAwait(false);
+            // A clip that failed to decode is silence in the file; saying "Rendered" and nothing else is
+            // how an export of pure silence passed for a finished mix.
+            RxApp.MainThreadScheduler.Schedule(() => Status = render.SilentSources.Count > 0
+                ? $"Rendered to {outputPath} — but {render.SilentSources.Count} track(s) decoded to nothing and are silent in it"
+                : $"Rendered to {outputPath}");
         }
         catch (Exception ex)
         {

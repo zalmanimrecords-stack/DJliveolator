@@ -171,6 +171,77 @@ public sealed class SetMixExportGateTests : IDisposable
     }
 
     [Fact]
+    public async Task Export_Fails_WhenASourceDecodedToNothing_EvenThoughEveryGateIsClean()
+    {
+        // The 703 MB of digital silence, reproduced: a set that passes every publish check — both clips
+        // warped to the set tempo, both level-matched, a 20 s blend — whose sources decode to nothing.
+        // Rendering it and reporting success is the worst outcome of a long unattended export.
+        DjSetSession session = await SessionWithSetAsync(
+            createFiles: true, new SilentDecoder(), NullLoudnessMeter.Instance,
+            Clip("a.mp3", start: 0, seconds: 30, warped: true, sourceBpm: TempoBpm, gain: 0.8),
+            Clip("b.mp3", start: 10, seconds: 30, warped: true, sourceBpm: TempoBpm, gain: 0.9));
+
+        InvalidOperationException error =
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Export(session));
+
+        Assert.Contains("decoded to nothing", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("a.mp3", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Nothing was published", error.Message, StringComparison.OrdinalIgnoreCase);
+
+        // No half publish package: the tracklist would read as a finished, publishable mix.
+        Assert.False(File.Exists(Path.Combine(_directory, "out", $"{SetName}-tracklist.json")));
+        Assert.False(File.Exists(Path.Combine(_directory, "out", $"{SetName}-youtube.txt")));
+    }
+
+    [Fact]
+    public async Task Export_Fails_WhenTheWarpedDecodePathReturnsEmpty_EvenWhenForced()
+    {
+        // Warp is no longer gated on phase confidence, so every clip takes the native time-stretch path:
+        // one BASS problem silences the whole mix rather than a few clips. This clip needs a real stretch
+        // (128 against 140), and its source is a zero-byte file, so the stretch decode comes back empty
+        // whether or not BASS is available on the machine running the test.
+        DjSetSession session = await SessionWithSetAsync(
+            Clip("warped.mp3", start: 0, seconds: 20, warped: true, sourceBpm: 128.0, gain: 0.8));
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Export(session, force: true));
+
+        Assert.Contains("decoded to nothing", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("warped.mp3", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Export_Fails_WhenTheMeasuredLoudnessIsNotFinite()
+    {
+        // -infinity LUFS is ffmpeg's way of saying the file carries no signal at all.
+        DjSetSession session = await SessionWithSetAsync(
+            createFiles: true, new ToneDecoder(), new FixedLoudnessMeter(double.NegativeInfinity),
+            Clip("a.mp3", start: 0, seconds: 5, warped: true, sourceBpm: TempoBpm, gain: 0.8));
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Export(session, force: true));
+
+        Assert.Contains("no signal", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Export_Fails_WhenMostOfTheMixIsSilence_ThoughEverySourceDecoded()
+    {
+        // Whole-file loudness cannot catch this: a mix that is mostly silence still measures a healthy
+        // number, because the part that does sound carries the average. Here every source decodes, but
+        // only 2 s of a 30 s clip has audio in it.
+        DjSetSession session = await SessionWithSetAsync(
+            createFiles: true, new ToneDecoder(seconds: 2.0), new FixedLoudnessMeter(-10.3),
+            Clip("a.mp3", start: 0, seconds: 30, warped: true, sourceBpm: TempoBpm, gain: 0.8));
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => Export(session, force: true));
+
+        Assert.Contains("silence", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("not a continuous mix", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Export_Rejects_AnUnknownSetName()
     {
         DjSetSession session = await SessionWithSetAsync(
@@ -204,7 +275,11 @@ public sealed class SetMixExportGateTests : IDisposable
     private Task<DjSetSession> SessionWithSetAsync(params StudioClip[] clips)
         => SessionWithSetAsync(createFiles: true, clips);
 
-    private async Task<DjSetSession> SessionWithSetAsync(bool createFiles, params StudioClip[] clips)
+    private Task<DjSetSession> SessionWithSetAsync(bool createFiles, params StudioClip[] clips)
+        => SessionWithSetAsync(createFiles, new ToneDecoder(), NullLoudnessMeter.Instance, clips);
+
+    private async Task<DjSetSession> SessionWithSetAsync(
+        bool createFiles, IAudioDecoder decoder, ILoudnessMeter meter, params StudioClip[] clips)
     {
         Directory.CreateDirectory(_directory);
         if (createFiles)
@@ -223,7 +298,7 @@ public sealed class SetMixExportGateTests : IDisposable
             new JsonHotCueStore(_directory), new JsonPlaylistStore(_directory), p => ImportFileProbe.Stat(p));
         var library = new LibrarySession(
             new EmptyEnumerator(),
-            new EmptyDecoder(),
+            decoder,
             new TrackAnalyzer(),
             NullTrackMetadataReader.Instance,
             catalogStore,
@@ -240,8 +315,8 @@ public sealed class SetMixExportGateTests : IDisposable
         return new DjSetSession(
             library,
             projectStore,
-            new OfflineMixRenderer(new EmptyDecoder()),
-            NullLoudnessMeter.Instance,
+            new OfflineMixRenderer(decoder),
+            meter,
             NullLogger<DjSetSession>.Instance);
     }
 
@@ -252,8 +327,45 @@ public sealed class SetMixExportGateTests : IDisposable
             => Array.Empty<ScannedFile>();
     }
 
-    /// <summary>Decodes nothing: the gate is what is under test, so a rendered mix only has to exist.</summary>
-    private sealed class EmptyDecoder : IAudioDecoder
+    /// <summary>
+    /// Decodes a constant level, so a rendered mix actually contains audio. It has to: the export now
+    /// refuses a silent mix, and a fixture that decoded nothing would have every gate test passing on a
+    /// file of digital silence — which is the defect these tests exist to keep out.
+    /// </summary>
+    private sealed class ToneDecoder : IAudioDecoder
+    {
+        private const float Level = 0.5f;
+        private const int BlockFloats = 4096;
+
+        private readonly double _seconds;
+
+        /// <param name="seconds">How much audio the file yields. The default covers every clip in this
+        /// fixture; a shorter one leaves the rest of the clip as silence, which is its own defect.</param>
+        internal ToneDecoder(double seconds = 90.0) => _seconds = seconds;
+
+        public bool CanDecode(string filePath) => true;
+
+        public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
+            string filePath, int targetSampleRate,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            var block = new float[BlockFloats];
+            Array.Fill(block, Level);
+
+            long remaining = (long)(_seconds * targetSampleRate);
+            while (remaining > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int take = (int)Math.Min(BlockFloats, remaining);
+                yield return block.AsMemory(0, take);
+                remaining -= take;
+            }
+        }
+    }
+
+    /// <summary>Decodes nothing at all — the failure BASS produced when it was not initialised.</summary>
+    private sealed class SilentDecoder : IAudioDecoder
     {
         public bool CanDecode(string filePath) => true;
 
@@ -264,5 +376,16 @@ public sealed class SetMixExportGateTests : IDisposable
             await Task.CompletedTask;
             yield break;
         }
+    }
+
+    /// <summary>Reports one fixed measurement, so the export's reaction to it can be tested.</summary>
+    private sealed class FixedLoudnessMeter : ILoudnessMeter
+    {
+        private readonly double? _lufs;
+
+        internal FixedLoudnessMeter(double? lufs) => _lufs = lufs;
+
+        public Task<double?> MeasureIntegratedLufsAsync(
+            string path, CancellationToken cancellationToken = default) => Task.FromResult(_lufs);
     }
 }

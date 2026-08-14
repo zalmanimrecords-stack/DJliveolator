@@ -34,6 +34,11 @@ public sealed class OfflineMixRenderer
     // "released one block too early" bugs.
     private const double ReleaseMarginSeconds = 1.0;
 
+    // Below this on both channels a frame counts as silence for MixRenderResult. -80 dBFS: far under
+    // anything audible, far over float/limiter residue, and under the 16-bit LSB (-90 dBFS) that a
+    // digitally silent export measures at.
+    private const float SilenceFloor = 1e-4f;
+
     private readonly IAudioDecoder _decoder;
     private readonly BassFxRenderDecoder _stretchDecoder;
 
@@ -72,8 +77,12 @@ public sealed class OfflineMixRenderer
     /// arrangement is ever held in memory, so an hour-long set renders in roughly the footprint of the two
     /// or three tracks actually sounding — and the old ~2 GB single-array ceiling (about 101 minutes at
     /// 44.1 kHz without <c>gcAllowVeryLargeObjects</c>) is gone.</para>
+    /// <para>Returns what was actually produced. A source that fails to decode still degrades to silence
+    /// rather than aborting the render (global #16/#26), but it is now reported in
+    /// <see cref="MixRenderResult.SilentSources"/> instead of only to a log the caller may not have wired
+    /// up — so a mix with silent stretches cannot be mistaken for a finished one.</para>
     /// </summary>
-    public async Task RenderAsync(
+    public async Task<MixRenderResult> RenderAsync(
         StudioProject project,
         string outputPath,
         int sampleRate = 44_100,
@@ -101,6 +110,12 @@ public sealed class OfflineMixRenderer
         // Decoded lazily on first use rather than all up front, so only the sources currently sounding
         // (plus any not yet evicted) are resident.
         var sources = new Dictionary<string, StereoBuffer>(StringComparer.OrdinalIgnoreCase);
+
+        // What the render produced, for MixRenderResult. `decoded` also stops a source that was released
+        // and re-decoded from being counted (or reported silent) twice.
+        var decoded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var silentSources = new List<string>();
+        long silentFrames = 0;
 
         int decks = plan.DeckCount;
         // Per-deck biquad cascade (low -> mid -> high -> filter), each a single 2-channel StatefulBiquad
@@ -170,6 +185,14 @@ public sealed class OfflineMixRenderer
                                 state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
                             .ConfigureAwait(false);
                         sources[key] = src;
+
+                        // A decode that came back with nothing is a clip the mix will not contain. It is
+                        // deliberately not fatal here, but it must reach the caller.
+                        if (decoded.Add(key) && src.Length == 0 &&
+                            !silentSources.Contains(state.SourcePath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            silentSources.Add(state.SourcePath);
+                        }
                     }
 
                     // Identify the active source on this deck. A different clip (path, warp, or timeline anchor)
@@ -219,8 +242,11 @@ public sealed class OfflineMixRenderer
             int keep = (int)Math.Min(blockLen - skip, totalFrames - written);
             if (keep > 0)
             {
-                writer.Write(block.AsSpan(skip * OutputChannels, keep * OutputChannels));
+                int outputStart = skip * OutputChannels;
+                int outputFloats = keep * OutputChannels;
+                writer.Write(block.AsSpan(outputStart, outputFloats));
                 written += keep;
+                silentFrames += CountSilentFrames(block, outputStart, outputFloats);
             }
             emitted += blockLen;
 
@@ -229,6 +255,22 @@ public sealed class OfflineMixRenderer
         }
 
         progress?.Report(1.0);
+        return new MixRenderResult(decoded.Count, silentSources, written, silentFrames);
+    }
+
+    // Frames with both channels under the silence floor, counted on the block already in hand so the
+    // finished file never has to be read back. Takes the array rather than a span because this runs inside
+    // an async method, where a ref-struct local is not allowed at the project's language version.
+    private static long CountSilentFrames(float[] interleaved, int start, int floats)
+    {
+        long silent = 0;
+        for (int i = start; i + Right < start + floats; i += OutputChannels)
+        {
+            if (Math.Abs(interleaved[i + Left]) < SilenceFloor && Math.Abs(interleaved[i + Right]) < SilenceFloor)
+                silent++;
+        }
+
+        return silent;
     }
 
     // The last timeline second each (path, factor) buffer is read at: the clip's start plus its own
