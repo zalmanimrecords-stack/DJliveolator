@@ -1,6 +1,7 @@
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
@@ -17,6 +18,13 @@ namespace Liveolator.Core.Tests.Library;
 public class CatalogReanalysisServiceTests
 {
     private static readonly DateTime T = new(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>
+    /// Reachability probe for the tests whose subject is the pass itself. Their fixtures are synthetic paths
+    /// with no file on disk, which the real probe (correctly) refuses to decode — so they state here that
+    /// reachability is not what they are testing, rather than depending on the default.
+    /// </summary>
+    private static readonly Func<string, bool> AllReachable = _ => true;
 
     private static MusicTrack Failed(string path)
         => new(new ScannedFile(path, 10, T), null, null, null, TrackCues.None, MediaAnalysisStatus.Failed, "old ffmpeg error");
@@ -50,7 +58,7 @@ public class CatalogReanalysisServiceTests
         var store = new RecordingCatalogStore();
         var progress = new List<ReanalysisProgress>();
 
-        var service = new CatalogReanalysisService(library, store);
+        var service = new CatalogReanalysisService(library, store, isLocallyDecodable: AllReachable);
         ReanalysisOutcome outcome = await service.RunAsync(new TestProgress<ReanalysisProgress>(progress.Add));
 
         // a was decoded and now has a real BPM; b was skipped entirely; c stayed Failed (decode threw).
@@ -69,6 +77,73 @@ public class CatalogReanalysisServiceTests
         Assert.NotEmpty(store.Saved);
         MusicTrack savedA = store.Saved[^1].Single(t => t.File.Path == "a.wav");
         Assert.NotNull(savedA.Bpm);
+    }
+
+    /// <summary>
+    /// A row that is pending only because the analyzer version moved on, but whose analysis is perfectly
+    /// good — the shape of most of a real catalog after a version bump, and the shape that had everything
+    /// to lose.
+    /// </summary>
+    private static MusicTrack StaleButAnalyzed(string path, double bpm)
+        => Analyzed(path, bpm) with
+        {
+            AnalyzerVersion = TrackAnalyzer.CurrentVersion - 1,
+            Cues = new TrackCues(TimeSpan.FromSeconds(1), null, null, TimeSpan.FromSeconds(200)),
+            Structure = new SongStructure(
+                new[] { new SongSection(0.0, SongSectionLabel.Intro), new SongSection(30.0, SongSectionLabel.Drop) },
+                "test"),
+        };
+
+    [Fact]
+    public async Task RunAsync_WithAnUnreachableFile_SkipsIt_WithoutTouchingItsAnalysis()
+    {
+        // The file is gone (deleted, or on a disconnected share). A decode cannot succeed, so it must not
+        // be attempted: force-decoding an unreachable path or an online-only cloud placeholder is what
+        // stalls the pass, and the failure it produces used to blank the row's analysis.
+        var decoder = new MapAudioDecoder(new()
+        {
+            ["gone.wav"] = TestSignals.ClickTrain(120.0, 44100, seconds: 10),
+        });
+        MusicLibrary library = LibraryWith(decoder, StaleButAnalyzed("gone.wav", 128.0));
+        var store = new RecordingCatalogStore();
+
+        var service = new CatalogReanalysisService(library, store, isLocallyDecodable: _ => false);
+        ReanalysisOutcome outcome = await service.RunAsync();
+
+        Assert.Empty(decoder.DecodeCalls);      // never touched the unreachable file
+        Assert.Equal(0, outcome.Considered);
+        Assert.Equal(1, outcome.Skipped);       // reported, so the pending count that never drops is explainable
+        Assert.Empty(store.Saved);              // nothing changed ⇒ nothing written
+
+        MusicTrack after = library.TryGet("gone.wav")!;
+        Assert.Equal(128.0, after.Bpm!.Bpm);
+        Assert.NotNull(after.Key);
+        Assert.NotNull(after.Duration);
+        Assert.NotNull(after.Structure);
+        Assert.Equal(TimeSpan.FromSeconds(1), after.Cues.IntroStart);
+        Assert.NotEqual(MediaAnalysisStatus.Failed, after.Status);
+        Assert.Contains("gone.wav", library.PathsNeedingAnalysis()); // still pending for when it returns
+    }
+
+    [Fact]
+    public async Task ReanalyzeAsync_WhenTheDecodeFails_RecordsTheFailure_ButKeepsThePriorAnalysis()
+    {
+        // Reachable yet undecodable — a corrupt file, or a share that drops mid-read, which the
+        // reachability probe cannot predict. The failure must be recorded and must never destroy a grid
+        // that is still perfectly usable. ForceReanalyzeAsync has always behaved this way; the pending
+        // path rebuilt the entry from scratch instead and lost BPM, key, cues and structure.
+        var decoder = new MapAudioDecoder(new() { ["bad.wav"] = null });
+        MusicLibrary library = LibraryWith(decoder, StaleButAnalyzed("bad.wav", 128.0));
+
+        Assert.False(await library.ReanalyzeAsync("bad.wav")); // still not analyzed at the current version
+
+        MusicTrack after = library.TryGet("bad.wav")!;
+        Assert.Equal(128.0, after.Bpm!.Bpm);
+        Assert.NotNull(after.Key);
+        Assert.NotNull(after.Duration);
+        Assert.NotNull(after.Structure);
+        Assert.Equal(TimeSpan.FromSeconds(200), after.Cues.OutroEnd);
+        Assert.NotNull(after.Error);                           // the failure is visible, not swallowed
     }
 
     [Fact]
@@ -99,7 +174,7 @@ public class CatalogReanalysisServiceTests
         using var cts = new CancellationTokenSource();
 
         // Cancel as soon as the first track is persisted/analyzed so the run stops mid-way but keeps a's work.
-        var service = new CatalogReanalysisService(library, store, persistEvery: 1);
+        var service = new CatalogReanalysisService(library, store, persistEvery: 1, isLocallyDecodable: AllReachable);
         var progress = new TestProgress<ReanalysisProgress>(_ => cts.Cancel());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RunAsync(progress, cts.Token));
@@ -122,7 +197,7 @@ public class CatalogReanalysisServiceTests
         library.SetManualBeatGrid("manual.wav", bpm: 100.0, firstBeatSeconds: 0.2);
         var store = new RecordingCatalogStore();
 
-        var service = new CatalogReanalysisService(library, store, force: true);
+        var service = new CatalogReanalysisService(library, store, force: true, isLocallyDecodable: AllReachable);
         ReanalysisOutcome outcome = await service.RunAsync();
 
         // auto.wav was re-decoded despite being analyzed, and now reflects the click train (~120).

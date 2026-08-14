@@ -9,9 +9,12 @@ namespace Liveolator.Core.Library.Music;
 public readonly record struct ReanalysisProgress(int Done, int Total, int Analyzed);
 
 /// <summary>Result of a completed (or cancelled) re-analysis pass.</summary>
-/// <param name="Considered">Tracks that needed analysis when the pass started.</param>
+/// <param name="Considered">Tracks that needed analysis when the pass started and could be decoded.</param>
 /// <param name="Analyzed">How many were successfully analyzed.</param>
-public readonly record struct ReanalysisOutcome(int Considered, int Analyzed);
+/// <param name="Skipped">Tracks that needed analysis but whose file was unreachable right now, so the pass
+/// left them alone. Reported rather than hidden: without it a pending count that never drops looks like a
+/// stuck pass instead of a disconnected share.</param>
+public readonly record struct ReanalysisOutcome(int Considered, int Analyzed, int Skipped = 0);
 
 /// <summary>
 /// Re-analyzes catalogued tracks that still lack analysis (Failed / no BPM) — typically a catalog built
@@ -27,6 +30,8 @@ public sealed class CatalogReanalysisService
     private readonly int _persistEvery;
     private readonly Action<string>? _onError;
     private readonly bool _force;
+    // Reachability probe, injected so tests stay pure (the same seam LibrariesViewModel uses for auto-cue).
+    private readonly Func<string, bool> _isLocallyDecodable;
 
     /// <param name="library">The catalog to re-analyze in place.</param>
     /// <param name="store">Persists the updated catalog; null skips persistence (in-memory only).</param>
@@ -37,15 +42,21 @@ public sealed class CatalogReanalysisService
     /// manually-corrected ones (which stay locked). When false (default), only the stale/failed tracks
     /// are analyzed.
     /// </param>
+    /// <param name="isLocallyDecodable">
+    /// Probe for "can this file be decoded right now without a blocking fetch". Defaults to
+    /// <see cref="TrackFileReachability.IsLocallyDecodable"/>; tests inject their own so they need no real
+    /// files on disk.
+    /// </param>
     public CatalogReanalysisService(
         MusicLibrary library, IMusicCatalogStore? store = null, int persistEvery = 25,
-        Action<string>? onError = null, bool force = false)
+        Action<string>? onError = null, bool force = false, Func<string, bool>? isLocallyDecodable = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store;
         _persistEvery = persistEvery > 0 ? persistEvery : 1;
         _onError = onError;
         _force = force;
+        _isLocallyDecodable = isLocallyDecodable ?? TrackFileReachability.IsLocallyDecodable;
     }
 
     /// <summary>
@@ -57,12 +68,27 @@ public sealed class CatalogReanalysisService
     public async Task<ReanalysisOutcome> RunAsync(
         IProgress<ReanalysisProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<string> pending = _force ? _library.PathsForFullRemap() : _library.PathsNeedingAnalysis();
+        IReadOnlyList<string> eligible = _force ? _library.PathsForFullRemap() : _library.PathsNeedingAnalysis();
+
+        // Skip what cannot be decoded right now instead of trying and failing. Force-decoding a file on a
+        // disconnected share, or an un-downloaded OneDrive placeholder, stalls this pass on its worker
+        // thread — and the failure it produced used to overwrite the row's still-good analysis. A skipped
+        // row stays pending, so it is picked up unchanged once the file is back.
+        var pending = new List<string>(eligible.Count);
+        int skipped = 0;
+        foreach (string path in eligible)
+        {
+            if (_isLocallyDecodable(path))
+                pending.Add(path);
+            else
+                skipped++;
+        }
+
         int total = pending.Count;
         if (total == 0)
         {
             progress?.Report(new ReanalysisProgress(0, 0, 0));
-            return new ReanalysisOutcome(0, 0);
+            return new ReanalysisOutcome(0, 0, skipped);
         }
 
         int done = 0, analyzed = 0;
@@ -109,7 +135,7 @@ public sealed class CatalogReanalysisService
                 await PersistAsync().ConfigureAwait(false);
         }
 
-        return new ReanalysisOutcome(total, analyzed);
+        return new ReanalysisOutcome(total, analyzed, skipped);
     }
 
     private async Task PersistAsync()

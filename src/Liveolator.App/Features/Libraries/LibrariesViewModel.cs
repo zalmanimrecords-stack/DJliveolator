@@ -599,12 +599,16 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     // to analyze or no store to persist to.
     private void StartBackgroundReanalysis(CancellationToken cancellationToken)
     {
-        if (_store is null || _library.PathsNeedingAnalysis().Count == 0)
+        // "Nothing to do" must mean the same thing here as inside the pass, or we spin up a background task
+        // and announce a completed analysis for a library the pass will skip entirely — every file offline
+        // or an online-only cloud placeholder.
+        if (_store is null || !_library.PathsNeedingAnalysis().Any(_isLocallyDecodable))
             return;
 
         var service = new CatalogReanalysisService(
             _library, _store,
-            onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e));
+            onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e),
+            isLocallyDecodable: _isLocallyDecodable);
 
         // Tie the pass to the view-model lifetime (Dispose cancels it) while still honouring any external
         // token the caller supplied.
@@ -619,9 +623,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                         ScanStatus = p.Done >= p.Total
                             ? $"Analysis complete — {p.Analyzed} tracks updated"
                             : $"Analyzing library in background… {p.Done}/{p.Total}";
-                        // Surface freshly-analyzed BPM/key as they come in — eager for the first dozen,
-                        // then every 25 (ShouldRevealDuringScan); the final tick always refreshes.
-                        if (p.Done >= p.Total || ShouldRevealDuringScan(p.Done))
+                        // Surface freshly-analyzed BPM/key as they come in — eager for the first dozen, then
+                        // every 25 (ShouldRevealDuringScan). The terminal refresh belongs solely to the
+                        // post-await block below, exactly as in the "Rescan all" pass: refreshing on the
+                        // final tick too fires two RefreshRows back-to-back on different threads, which
+                        // duplicates rows and can throw mid-enumeration.
+                        if (p.Done < p.Total && ShouldRevealDuringScan(p.Done))
                             RefreshRows();
                     }));
 

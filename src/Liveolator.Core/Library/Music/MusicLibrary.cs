@@ -317,7 +317,15 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         }
         catch (Exception ex)
         {
-            rebuilt = CreateFailedEntry(existing.File, ex.Message);
+            // Record the failure WITHOUT destroying analysis we already have. A re-analysis is an attempt to
+            // improve a row, so when the decode fails the row's existing grid is still the best available —
+            // exactly what ForceReanalyzeAsync has always done. Rebuilding the entry from scratch here
+            // (CreateFailedEntry) blanked BPM, key, cues and structure on every row that was pending merely
+            // because the analyzer version moved on, which is most of a catalog after a version bump.
+            rebuilt = existing with
+            {
+                Status = MediaAnalysisStatus.Failed, Error = ex.Message, LastAnalyzedUtc = DateTime.UtcNow,
+            };
         }
 
         Upsert(rebuilt);
