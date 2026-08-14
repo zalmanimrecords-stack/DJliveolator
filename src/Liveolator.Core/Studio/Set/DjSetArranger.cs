@@ -190,7 +190,8 @@ public sealed class DjSetArranger
             windows.Add(new CrossfadeWindow(outSlot, inSlot, blendStart, blendSeconds));
             transitions.Add(Report(
                 transitions.Count, current, next, entries[i].Rationale, shape,
-                blendStart, blendSeconds, tempoBpm, currentPhaseReady, nextPhaseReady));
+                blendStart, blendSeconds, tempoBpm,
+                currentWarped, nextWarped, currentPhaseReady, nextPhaseReady));
 
             current = next;
             currentSourceIn = shape.In.SourceSeconds;
@@ -246,13 +247,15 @@ public sealed class DjSetArranger
         double blendSeconds,
         double tempoBpm,
         bool fromWarped,
-        bool toWarped)
+        bool toWarped,
+        bool fromPhaseReady,
+        bool toPhaseReady)
     {
         GridConfidence fromGrid = GridConfidenceCalculator.Evaluate(from.Bpm);
         GridConfidence toGrid = GridConfidenceCalculator.Evaluate(to.Bpm);
 
         var warnings = shape.Warnings.ToList();
-        if (!fromWarped || !toWarped)
+        if (!fromPhaseReady || !toPhaseReady)
             warnings.Add(SetWarning.LowGridConfidence);
         if (!fromGrid.Analyzed || !toGrid.Analyzed)
             warnings.Add(SetWarning.GridNotAnalyzed);
@@ -274,7 +277,7 @@ public sealed class DjSetArranger
             KeyFrom: from.Key?.Camelot,
             KeyTo: to.Key?.Camelot,
             KeyRelationship: rationale?.Relationship,
-            PhaseLocked: fromWarped && toWarped,
+            PhaseLocked: fromPhaseReady && toPhaseReady,
             GridConfidenceFrom: fromGrid.Display,
             GridConfidenceTo: toGrid.Display,
             Warnings: warnings.Distinct().ToArray());

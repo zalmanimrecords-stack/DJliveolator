@@ -324,6 +324,16 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         return !NeedsAnalysis(rebuilt);
     }
 
+    /// <summary>
+    /// Re-runs offline analysis for one catalogued track unconditionally — the explicit "re-analyze this"
+    /// action, and the only way a hand-corrected track ever re-grids (<see cref="NeedsAnalysis"/> and
+    /// <see cref="PathsForFullRemap"/> both exempt it, so an analyzer-version bump skips exactly those rows).
+    /// <para><b>A hand-corrected row keeps its corrections.</b> Key, tempo, the manual lock and the BPM
+    /// provenance survive; only the analyzer's own output is refreshed. That matters because the grid ANCHOR
+    /// is analyzer-owned and improves between versions (v12 moved the beat phase onto the kick band) while
+    /// the tempo and key may be the DJ's — clearing the lock and overwriting them, as this used to, meant a
+    /// re-grid could only be done as a three-step dance with a window where the correction was gone.</para>
+    /// </summary>
     public async Task<bool> ForceReanalyzeAsync(
         string path,
         CancellationToken cancellationToken = default)
@@ -338,17 +348,18 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             TrackAnalysisResult result = await _analyzer
                 .AnalyzeAsync(_decoder, path, cancellationToken)
                 .ConfigureAwait(false);
+            bool manual = existing.AnalysisIsManual;
             Upsert(existing with
             {
-                Bpm = result.Bpm,
-                Key = result.Key,
+                Bpm = manual ? RegridManual(existing.Bpm, result.Bpm) : result.Bpm,
+                Key = manual ? existing.Key : result.Key,
                 Duration = result.Duration,
                 Cues = result.Cues,
                 Structure = result.Structure,
-                Status = TrackStatusPolicy.For(result),
-                Error = null,
+                Status = manual ? existing.Status : TrackStatusPolicy.For(result),
+                Error = manual ? existing.Error : null,
                 AnalyzerVersion = TrackAnalyzer.CurrentVersion,
-                AnalysisIsManual = false,
+                AnalysisIsManual = manual,
                 LastAnalyzedUtc = DateTime.UtcNow,
             });
             return true;
@@ -365,6 +376,21 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             });
             return false;
         }
+    }
+
+    // The fresh GRID (beat anchor, downbeat, kick strikes, grid/phase confidence signals) at the tempo the
+    // hand-corrected row already carries. A phase measured at a different tempo does not transfer — it is an
+    // offset within a beat of another length — so when the detector disagrees about the tempo, the DJ's whole
+    // grid stands and only the non-grid analysis (cues, structure, duration) refreshes.
+    private static Analysis.Bpm.BpmResult? RegridManual(
+        Analysis.Bpm.BpmResult? manual, Analysis.Bpm.BpmResult fresh)
+    {
+        if (manual is null)
+            return fresh;
+
+        return Math.Abs(fresh.Bpm - manual.Bpm) < 0.05
+            ? fresh with { Bpm = manual.Bpm, Confidence = manual.Confidence }
+            : manual;
     }
 
     public bool UpdateManualDetails(

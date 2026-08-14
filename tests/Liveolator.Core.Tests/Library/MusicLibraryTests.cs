@@ -184,6 +184,46 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task ForceReanalyze_AHandCorrectedTrack_RefreshesTheGrid_ButKeepsTheCorrections()
+    {
+        // The v12 re-grid problem: a hand-corrected row is exempt from version-bump re-analysis
+        // (NeedsAnalysis skips AnalysisIsManual), so a bumped analyzer leaves exactly those tracks on the
+        // old grid — and the force path used to clear the lock and overwrite the DJ's key, so refreshing
+        // them meant a three-step dance with a window where the correction was gone. One call now does it.
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+        library.SetManualAnalysis("a.mp3", bpm: null, camelot: "7B"); // key-only, as in the psytrance set
+        double detectedBpm = library.TryGet("a.mp3")!.Bpm!.Bpm;
+
+        Assert.True(await library.ForceReanalyzeAsync("a.mp3"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal("7B", track.Key!.Camelot);                        // the DJ's key survives
+        Assert.True(track.AnalysisIsManual);                           // still locked against auto passes
+        Assert.Equal(BpmProvenance.LocalConfirmed, track.BpmProvenance);
+        Assert.Equal(detectedBpm, track.Bpm!.Bpm);                     // same tempo …
+        Assert.Equal(2, decoder.DecodeCalls["a.mp3"]);                  // … but it WAS re-decoded: fresh grid
+        Assert.Equal(TrackAnalyzer.CurrentVersion, track.AnalyzerVersion);
+    }
+
+    [Fact]
+    public async Task ForceReanalyze_AHandCorrectedTempo_IsNeverOverwrittenByTheDetector()
+    {
+        // A tempo the DJ typed outranks the detector, and a phase measured at another tempo does not
+        // transfer — so this row keeps its whole hand-authored grid.
+        MusicLibrary library = await ScannedLibrary();
+        library.SetManualAnalysis("a.mp3", bpm: 145.0, camelot: null);
+
+        await library.ForceReanalyzeAsync("a.mp3");
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal(145.0, track.Bpm!.Bpm);
+        Assert.True(track.AnalysisIsManual);
+    }
+
+    [Fact]
     public async Task Scan_ModifiedFile_PreservesManualBeatGrid_AndReStampsFingerprint()
     {
         var enumerator = new FakeFileEnumerator(File("a.mp3"));

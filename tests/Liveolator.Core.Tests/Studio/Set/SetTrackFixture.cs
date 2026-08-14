@@ -30,7 +30,9 @@ internal static class SetTrackFixture
         double? gridCoherence = TrustedCoherence,
         double? tempoStability = TrustedStability,
         double downbeatSeconds = 0.0,
-        double? integratedLufs = null)
+        double? integratedLufs = null,
+        double? kickPhaseMarginRatio = null,
+        double? phaseWindowDisagreementSeconds = null)
         => new(
             new ScannedFile(path, 1_000, Stamp),
             new BpmResult(bpm, 0.9)
@@ -41,6 +43,8 @@ internal static class SetTrackFixture
                 GridCoherence = gridCoherence,
                 TempoStabilityBpmDelta = tempoStability,
                 KickOnsetsSeconds = kicks ?? Array.Empty<double>(),
+                KickPhaseMarginRatio = kickPhaseMarginRatio,
+                PhaseWindowDisagreementSeconds = phaseWindowDisagreementSeconds,
             },
             new MusicalKey(0, KeyMode.Minor, camelot, 0.9),
             TimeSpan.FromSeconds(durationSeconds),
@@ -53,6 +57,28 @@ internal static class SetTrackFixture
     /// <summary>A track whose beat grid fails the phase-sync gate (loose kick fit, drifting tempo).</summary>
     internal static MusicTrack UntrustedGrid(string path, string camelot = "8A", double bpm = 128.0)
         => Track(path, camelot, bpm, gridCoherence: 0.2, tempoStability: 3.0);
+
+    /// <summary>
+    /// A track whose grid fit and tempo are both fine but whose beat PHASE the analyzer refused to vouch
+    /// for (the kick-identity gate failed — the low band is no louder at the chosen phase than half a beat
+    /// away, so the anchor may be the off-beat). It must mix without a phase lock rather than align on a
+    /// guess: aligning is what put a 78-205 ms flam on every join of the measured set.
+    /// </summary>
+    internal static MusicTrack RefusedPhase(string path, string camelot = "8A", double bpm = 128.0)
+        => Track(path, camelot, bpm, kickPhaseMarginRatio: 0.4, phaseWindowDisagreementSeconds: 0.002);
+
+    /// <summary>
+    /// The measured case this gate exists for: a loose kick FIT (coherence 0.371, well under the phase-sync
+    /// floor) but a beat phase the analyzer directly VOUCHED for — the numbers are "09 - Coming Soon -
+    /// African Jungle", whose anchor was measured 6.4 ms from an audio-derived reference. Coherence must not
+    /// veto an anchor that has been measured right.
+    /// </summary>
+    internal static MusicTrack VouchedPhase(string path, string camelot = "8A", double bpm = 128.0)
+        => Track(
+            path, camelot, bpm,
+            gridCoherence: 0.371,
+            kickPhaseMarginRatio: 2.592,
+            phaseWindowDisagreementSeconds: 0.0);
 
     /// <summary>A track analyzed before grid confidence existed — quality unknown, phase sync preserved.</summary>
     internal static MusicTrack UnanalyzedGrid(string path, string camelot = "8A", double bpm = 128.0)

@@ -55,8 +55,25 @@ public sealed class TrackAnalyzer
     /// classified as the same major key; the classifier moved to Temperley's usage-based profiles to
     /// match. <see cref="Bpm.TempoEstimator"/> also promotes the 1.5x (dotted) sub-harmonic, so a track
     /// whose accents fall every 1.5 beats no longer reads 4/3 fast. Existing tracks re-analyze on next
-    /// scan; a track corrected by hand (<see cref="Library.Music.MusicTrack.AnalysisIsManual"/>) does not.</remarks>
-    public const int CurrentVersion = 11;
+    /// scan; a track corrected by hand (<see cref="Library.Music.MusicTrack.AnalysisIsManual"/>) does not.
+    /// v12: the beat PHASE anchor moved off the percussive/HPSS envelope onto the kick band
+    /// (<see cref="Bpm.LowBandOnsetEnvelope"/>) and now has to EARN publication. Measured on an 11-track
+    /// psytrance set: the HPSS envelope's beat-synchronous average peaks on the OFF-BEAT (the anchor sat
+    /// within 5.8-20.7 ms of the &gt;6 kHz hat peak on 4 of 11 tracks), so every join of a built set was
+    /// mis-phased — +173.0, −205.0, +169.3, +154.0, −205.0, −78.0, +94.6, −143.6, −194.1, −113.8 ms, with
+    /// the first join measuring 162.5 ms of inter-deck offset on the rendered audio. Re-picking the same
+    /// estimator's onsets from the low band agrees with an audio-derived reference within 8.1 ms on 9 of 11
+    /// tracks (2 of 11 before). Publication is gated by <see cref="Bpm.KickPhaseGate"/> — kick identity
+    /// (the low band must be louder at the anchor than half a beat away) and cross-window stability —
+    /// NOT by confidence or coherence, both of which are uninformative about a half-beat error
+    /// (spearman −0.164 and −0.555; the highest-confidence track in the set was 180.9 ms wrong). A phase
+    /// that fails the gates is refused: the anchor falls back to v11's and
+    /// <see cref="Bpm.GridConfidenceCalculator"/> downgrades that track to tempo-only sync. TEMPO detection
+    /// is deliberately untouched — it still refines on the HPSS envelope, and the 12 Beatport-verified
+    /// tempos of the measured set are unchanged. Existing tracks re-analyze on next scan; a hand-corrected
+    /// track needs <see cref="Library.Music.MusicLibrary.ForceReanalyzeAsync"/>, which now refreshes the
+    /// grid while keeping the correction.</remarks>
+    public const int CurrentVersion = 12;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;

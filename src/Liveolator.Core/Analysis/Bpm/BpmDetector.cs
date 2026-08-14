@@ -1,3 +1,5 @@
+using Liveolator.Core.Analysis.Cues;
+
 namespace Liveolator.Core.Analysis.Bpm;
 
 /// <summary>Final BPM measurement for a track.</summary>
@@ -52,6 +54,23 @@ public sealed record BpmResult(double Bpm, double Confidence, double FirstBeatSe
     /// variable/live tempo (the grid drifts, so Sync downgrades to tempo-only). Null on pre-v9 catalogs.
     /// </summary>
     public double? TempoStabilityBpmDelta { get; init; }
+
+    /// <summary>
+    /// Kick-identity evidence for <see cref="FirstBeatSeconds"/>: how far the beat-synchronous low-band hump
+    /// at the anchor stands above the hump half a beat away (<see cref="KickPhaseGate.MarginRatio"/>). Above
+    /// 1 ⇒ the anchor is on the loud low-band event (the kick); below ⇒ it may be the off-beat, which is the
+    /// error that flams a crossfade. Null on pre-v12 catalogs (unknown ⇒ prior behaviour preserved); the raw
+    /// ratio is persisted so the gate threshold can be retuned without re-analyzing.
+    /// </summary>
+    public double? KickPhaseMarginRatio { get; init; }
+
+    /// <summary>
+    /// Stability evidence for <see cref="FirstBeatSeconds"/>: how far the phase fitted over one mid-file
+    /// window sits from the whole-file phase, in seconds. Large ⇒ no single global phase exists (usually a
+    /// declared tempo that is itself wrong), so no anchor can be right for the whole track. Null on pre-v12
+    /// catalogs, or when the track was too short to fit a second window.
+    /// </summary>
+    public double? PhaseWindowDisagreementSeconds { get; init; }
 }
 
 /// <summary>
@@ -66,6 +85,8 @@ public sealed class BpmDetector
     private readonly IKickOnsetEnvelope _kickOnset;
     private readonly DownbeatEstimator _downbeat;
     private readonly GridRefiner _gridRefiner;
+    private readonly IKickOnsetEnvelope _phaseOnset;
+    private readonly BandEnergyEnvelope _bandEnergy = new();
 
     public BpmDetector(
         OnsetEnvelope? onset = null,
@@ -73,7 +94,8 @@ public sealed class BpmDetector
         FirstBeatEstimator? firstBeat = null,
         IKickOnsetEnvelope? kickOnset = null,
         DownbeatEstimator? downbeat = null,
-        GridRefiner? gridRefiner = null)
+        GridRefiner? gridRefiner = null,
+        IKickOnsetEnvelope? phaseOnset = null)
     {
         _onset = onset ?? new OnsetEnvelope();
         _tempo = tempo ?? new TempoEstimator();
@@ -84,6 +106,15 @@ public sealed class BpmDetector
         _kickOnset = kickOnset ?? new PercussiveOnsetEnvelope();
         _downbeat = downbeat ?? new DownbeatEstimator();
         _gridRefiner = gridRefiner ?? new GridRefiner();
+        // PHASE gets its OWN envelope, deliberately not the one tempo refinement runs on. On psytrance the
+        // percussive (HPSS) envelope's beat-synchronous average peaks on the OFF-BEAT — its phase landed
+        // within 5.8-20.7 ms of the >6 kHz hat peak on 4 of 11 measured tracks — because the off-beat layer
+        // is every bit as percussive as the kick and louder. Re-picking the same estimator's onsets from the
+        // low band agreed with an audio-derived reference within 8.1 ms on 9 of 11 tracks, against 2 of 11
+        // for the shipped HPSS onsets. The band split cannot be used for TEMPO in its place: the refined BPM
+        // (verified against Beatport on 12 tracks) comes from the HPSS fit, so the two stages read different
+        // envelopes on purpose.
+        _phaseOnset = phaseOnset ?? new LowBandOnsetEnvelope();
     }
 
     public BpmResult Detect(ReadOnlySpan<float> mono, int sampleRate)
@@ -116,15 +147,25 @@ public sealed class BpmDetector
         if (kickTrusted)
             bpm = kickFit.Bpm;
 
-        // Beat PHASE anchors on the KICK, not the broadband envelope: the kick is the beat anchor two-deck
-        // sync aligns to, so taking phase from broadband onsets (hats/vocals/stabs) pulls the grid off the
-        // down-beat on bass-heavy material — the dominant cause of unsatisfying sync (system review 2026-06-27).
-        // The kick fit's resultant phase is continuous (sub-frame). Fall back to the broadband estimator only
-        // when the kick band is too weak to fit, where the broadband onset is the only phase signal we have.
-        double firstBeatSeconds = kickTrusted
-            ? WrapToBeat(kickFit.FirstBeatSeconds + _kickOnset.AnalysisLatencySeconds(sampleRate), bpm)
-            : _firstBeat.Estimate(envelope, bpm, envelopeRateHz);
+        // The tempo is final here, and everything after it (phase, downbeat, stability) is measured against
+        // the tempo that actually gets published — a phase is an offset inside a beat, so it belongs to one
+        // beat length only.
         bpm = Math.Round(bpm, 2);
+
+        // Beat PHASE is measured on the LOW BAND and must EARN publication (v12). The tempo is final by now,
+        // which is what lets phase use a different envelope: the anchor is re-derived from the kick band and
+        // then gated, and a phase the gates cannot vouch for is REFUSED — analysis falls back to the shipped
+        // anchor rather than emitting a confident wrong one. Neither the estimator's confidence nor the grid
+        // coherence is used as that gate; see KickPhaseGate for why both are uninformative here.
+        PhaseAnchor anchor = MeasurePhase(mono, sampleRate, bpm);
+
+        // Fallbacks, in order: the kick fit's resultant phase (continuous/sub-frame) while the kick structure
+        // is strong, else the broadband estimator, which is then the only phase signal there is.
+        double firstBeatSeconds = anchor.Vouched
+            ? WrapToBeat(anchor.PhaseSeconds, bpm)
+            : kickTrusted
+                ? WrapToBeat(kickFit.FirstBeatSeconds + _kickOnset.AnalysisLatencySeconds(sampleRate), bpm)
+                : _firstBeat.Estimate(envelope, bpm, envelopeRateHz);
         firstBeatSeconds = Math.Round(firstBeatSeconds, 4);
 
         // Downbeat uses the (now-refined) tempo against the kick band; falls back to the beat anchor (no
@@ -135,11 +176,14 @@ public sealed class BpmDetector
 
         // The individual kick strike times, so a deck can later snap its grid onto the real kick nearest
         // the playhead (SET PHASE / one-shot SYNC), not just a global anchor. Rounded to the millisecond
-        // to keep the catalog compact.
-        IReadOnlyList<double> kickOnsets = kickEnvelope.Length > 0
-            ? KickOnsetPicker.Pick(kickEnvelope, kickRateHz, _kickOnset.AnalysisLatencySeconds(sampleRate))
-                .Select(t => Math.Round(t, 3)).ToArray()
-            : Array.Empty<double>();
+        // to keep the catalog compact. They come from whichever envelope produced the published anchor:
+        // a list half a beat off the grid it is snapped against is worse than no list.
+        IReadOnlyList<double> kickOnsets = anchor.Vouched
+            ? anchor.Onsets.Select(t => Math.Round(t, 3)).ToArray()
+            : kickEnvelope.Length > 0
+                ? KickOnsetPicker.Pick(kickEnvelope, kickRateHz, _kickOnset.AnalysisLatencySeconds(sampleRate))
+                    .Select(t => Math.Round(t, 3)).ToArray()
+                : Array.Empty<double>();
 
         return new BpmResult(bpm, Math.Round(confidence, 4), firstBeatSeconds)
         {
@@ -152,7 +196,59 @@ public sealed class BpmDetector
             // tempo proof from the broadband envelope's two halves.
             GridCoherence = Math.Round(kickFit.Coherence, 4),
             TempoStabilityBpmDelta = TempoStabilityDelta(envelope, envelopeRateHz, bpm),
+            // The phase evidence, raw: the Sync gate reads it to decide whether the anchor may be aligned on
+            // (GridConfidenceCalculator), and persisting the raw numbers keeps the thresholds retunable.
+            KickPhaseMarginRatio = anchor.MarginRatio is double margin ? Math.Round(margin, 3) : null,
+            PhaseWindowDisagreementSeconds =
+                anchor.WindowDisagreementSeconds is double drift ? Math.Round(drift, 4) : null,
         };
+    }
+
+    /// <summary>A measured beat phase plus the evidence for it and the onsets it came from.</summary>
+    private readonly record struct PhaseAnchor(
+        double PhaseSeconds,
+        double? MarginRatio,
+        double? WindowDisagreementSeconds,
+        IReadOnlyList<double> Onsets)
+    {
+        public bool Vouched => KickPhaseGate.Passes(MarginRatio, WindowDisagreementSeconds);
+
+        public static PhaseAnchor Unmeasurable { get; } = new(0.0, 0.0, null, Array.Empty<double>());
+    }
+
+    // Measure the beat phase on the kick band and gather the evidence the gates need. The margin is measured
+    // on low-band AMPLITUDE (BandEnergyEnvelope.Low), not on the onset flux: the discriminator is which half
+    // of the beat is LOUDER down there, and a flux envelope fires on the attack of a sustained off-beat bass
+    // note just as it does on a kick.
+    private PhaseAnchor MeasurePhase(ReadOnlySpan<float> mono, int sampleRate, double bpm)
+    {
+        if (bpm <= 0.0)
+            return PhaseAnchor.Unmeasurable;
+
+        double[] flux = _phaseOnset.Compute(mono, sampleRate);
+        if (flux.Length == 0)
+            return PhaseAnchor.Unmeasurable;
+
+        IReadOnlyList<double> onsets = KickOnsetPicker.Pick(
+            flux, _phaseOnset.EnvelopeRateHz(sampleRate), _phaseOnset.AnalysisLatencySeconds(sampleRate));
+        KickPhase phase = KickPhaseEstimator.Estimate(onsets, bpm);
+        if (phase.Total < KickPhaseEstimator.MinimumOnsets)
+            return PhaseAnchor.Unmeasurable;
+
+        BandEnergyFrames bands = _bandEnergy.Compute(mono, sampleRate);
+        double margin = KickPhaseGate.MarginRatio(
+            KickPhaseGate.BeatProfile(bands.Low, bands.FrameRateHz, bpm), bpm, phase.PhaseSeconds);
+        double? disagreement = KickPhaseGate.WindowDisagreementSeconds(onsets, bpm, phase.PhaseSeconds);
+
+        // Publish only the strikes that sit ON the anchor's phase. The band split cannot tell a kick from
+        // another low hit, so the raw picks include off-grid material — and this list exists for SET PHASE to
+        // snap a grid onto, where an off-grid entry is worse than a missing one.
+        double[] onGrid = onsets
+            .Where(t => Math.Abs(t - KickPhaseEstimator.SnapToPhase(t, phase.PhaseSeconds, bpm))
+                        <= KickPhaseEstimator.DefaultToleranceSeconds)
+            .ToArray();
+
+        return new PhaseAnchor(phase.PhaseSeconds, margin, disagreement, onGrid);
     }
 
     // Constant-tempo proof: estimate the tempo over the first and second halves of the onset envelope and
