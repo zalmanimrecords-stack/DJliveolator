@@ -25,6 +25,17 @@ See the "Getting started" section in [`README.md`](README.md). In short: run
 `dotnet build Liveolator.sln`. Please run `dotnet test Liveolator.sln` before
 submitting a PR.
 
+Install the git hooks once after cloning — a secret guard that blocks committing
+or pushing deploy hosts, private keys, and tokens:
+
+```sh
+sh scripts/install-hooks.sh          # macOS / Linux / Git Bash
+pwsh scripts/install-hooks.ps1       # Windows / PowerShell
+```
+
+Never hardcode deploy targets or credentials in source; the release scripts read
+them from `LIVEOLATOR_VPS_*` environment variables.
+
 ## Licensing of contributions
 
 By submitting a contribution you agree that it is licensed under the project's
