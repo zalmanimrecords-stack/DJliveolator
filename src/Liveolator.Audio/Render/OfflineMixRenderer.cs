@@ -41,6 +41,7 @@ public sealed class OfflineMixRenderer
 
     private readonly IAudioDecoder _decoder;
     private readonly BassFxRenderDecoder _stretchDecoder;
+    private readonly ILogger? _log;
 
     // Optional decode override (tests): supplies a StereoBuffer for a (path, warpFactor) so the renderer
     // can be exercised with distinct L/R content without real BASS. Null in production.
@@ -56,6 +57,7 @@ public sealed class OfflineMixRenderer
         _decoder = decoder ?? throw new ArgumentNullException(nameof(decoder));
         _stretchDecoder = new BassFxRenderDecoder(logger);
         _decodeOverride = decodeOverride;
+        _log = logger;
     }
 
     // One decoded buffer per (clip path, warp factor): unwarped clips share the native-rate decode,
@@ -357,10 +359,24 @@ public sealed class OfflineMixRenderer
             maxFrames = frames >= int.MaxValue ? int.MaxValue : (int)Math.Ceiling(frames);
         }
 
-        if (Math.Abs(factor - 1.0) < UnwarpedEpsilon)
-            return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+        // Every clip decodes through the native stereo path, warped or not: routing unwarped clips to the
+        // analysis decoder instead (which is mono by seam contract) silently collapsed any track already at
+        // the project tempo to L=R — eleven minutes of a measured 68-minute export came out in mono.
+        bool unwarped = Math.Abs(factor - 1.0) < UnwarpedEpsilon;
+        StereoBuffer stereo = _stretchDecoder.DecodeStretchedStereo(
+            path, sampleRate, unwarped ? 0.0 : (factor - 1.0) * 100.0, maxFrames);
+        if (stereo.Length > 0 || !unwarped)
+            return stereo;
 
-        return _stretchDecoder.DecodeStretchedStereo(path, sampleRate, (factor - 1.0) * 100.0, maxFrames);
+        // Nothing from BASS (absent native, or a format it cannot open). For an unwarped clip the managed
+        // decoder is an equivalent second attempt apart from channel count, so the mix still renders — in
+        // mono. A WARPED clip must never fall back here: unstretched audio would play at the wrong tempo,
+        // so its empty buffer stands and RenderAsync reports it as a silent source.
+        // Say so: an unannounced mono section inside a stereo mix is exactly the defect this path caused.
+        _log?.LogWarning(
+            "STUDIO render: BASS could not decode '{Path}', falling back to the managed mono decoder — this " +
+            "clip renders in MONO (no stereo image) inside a stereo mix.", path);
+        return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
     }
 
     private static StatefulBiquad[] NewBiquads(int count)
