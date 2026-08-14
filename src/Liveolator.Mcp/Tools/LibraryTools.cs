@@ -175,6 +175,19 @@ public sealed class LibraryTools
         CancellationToken cancellationToken = default)
         => session.ReanalyzePendingAsync(cancellationToken);
 
+    [McpServerTool(Name = "measure_catalog_loudness")]
+    [Description("Measure the integrated loudness (LUFS) of every catalogued track that lacks it, so " +
+                 "build_dj_set can gain each clip to one level instead of playing every master at unity — " +
+                 "without which a set steps up and down in volume at every transition and the crossfades " +
+                 "lurch. Independent of BPM/key analysis, so it never triggers a re-analysis and it also " +
+                 "covers hand-corrected tracks. Requires FFmpeg. Progress is persisted incrementally, so " +
+                 "the pass is resumable and safe to re-run; an unreachable or silent file is simply left " +
+                 "unmeasured and picked up next time.")]
+    public static Task<LoudnessSummary> MeasureCatalogLoudness(
+        LibrarySession session,
+        CancellationToken cancellationToken = default)
+        => session.MeasureLoudnessAsync(cancellationToken);
+
     [McpServerTool(Name = "import_library")]
     [Description("Import tracks, hot cues, beat grids, key, and playlists from another DJ app's library " +
                  "into the catalog, then persist. Formats: Rekordbox, Traktor, VirtualDJ (pass the exported " +

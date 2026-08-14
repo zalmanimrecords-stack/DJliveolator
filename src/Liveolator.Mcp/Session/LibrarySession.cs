@@ -22,6 +22,7 @@ public sealed class LibrarySession
     private readonly IReadOnlyList<ILibraryImporter> _importers;
     private readonly IReadOnlyList<IFolderLibraryImporter> _folderImporters;
     private readonly LibraryImportService _importService;
+    private readonly ILoudnessMeter _loudnessMeter;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly SortedSet<string> _folders = new(StringComparer.OrdinalIgnoreCase);
     private bool _loaded;
@@ -35,10 +36,12 @@ public sealed class LibrarySession
         IEnumerable<ILibraryImporter> importers,
         IEnumerable<IFolderLibraryImporter> folderImporters,
         LibraryImportService importService,
+        ILoudnessMeter loudnessMeter,
         ILogger<LibrarySession> logger)
     {
         _library = new MusicLibrary(enumerator, decoder, analyzer, metadataReader);
         _store = store;
+        _loudnessMeter = loudnessMeter;
         _importers = importers.ToList();
         _folderImporters = folderImporters.ToList();
         _importService = importService;
@@ -222,6 +225,36 @@ public sealed class LibrarySession
             _logger.LogInformation(
                 "Manual analysis set on {Path}: bpm {Bpm}, key {Key}", track.File.Path, bpm, camelot);
             return updated;
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// Measures the integrated loudness of every catalogued track that lacks it, so a set can gain each
+    /// clip to one level. Independent of the analyzer version by design — see
+    /// <see cref="CatalogLoudnessService"/> — so this never triggers a re-analysis.
+    /// </summary>
+    public async Task<LoudnessSummary> MeasureLoudnessAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+            var failures = new List<FailedTrack>();
+            var service = new CatalogLoudnessService(
+                _library,
+                _loudnessMeter,
+                _store,
+                onError: message => failures.Add(new FailedTrack(string.Empty, message)));
+            LoudnessOutcome outcome = await service.RunAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogInformation(
+                "Loudness pass measured {Measured} of {Considered} tracks", outcome.Measured, outcome.Considered);
+            return new LoudnessSummary(
+                outcome.Considered,
+                outcome.Measured,
+                _library.PathsNeedingLoudness().Count,
+                failures);
         }
         finally { _gate.Release(); }
     }

@@ -82,6 +82,9 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             BpmProvenance = prior?.BpmProvenance == BpmProvenance.LocalConfirmed
                 ? BpmProvenance.LocalConfirmed
                 : MetadataMergePolicy.MergeBpm(rebuilt.Bpm, prior?.OnlineBpm, rebuilt.Status).Provenance,
+            // Loudness is measured by its own pass, not by the analyzer, so a re-decode would otherwise
+            // blank it and cost the whole catalog a second measuring run.
+            IntegratedLufs = prior?.IntegratedLufs,
         };
     }
 
@@ -131,7 +134,26 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                    || track.AnalyzerVersion != TrackAnalyzer.CurrentVersion);
     }
 
-    /// <summary>Applies a user-authored beat grid and protects it from automatic re-analysis.</summary>
+    /// <summary>A hand-set tempo this close to the analyzed one is the same tempo (matches <see cref="RegridManual"/>).</summary>
+    private const double SameTempoBpm = 0.05;
+
+    /// <summary>A hand-set anchor within a millisecond of the analyzed one is the same anchor.</summary>
+    private const double SameAnchorSeconds = 0.001;
+
+    /// <summary>
+    /// Applies a user-authored beat grid and protects it from automatic re-analysis.
+    /// <para>What survives is split by what each signal actually measures. The kick strike times and the
+    /// half-vs-half tempo delta are properties of the AUDIO — absolute onset times, and whether the
+    /// recording's tempo is constant — so no hand edit can invalidate them, and dropping them cost the row
+    /// both the deck's SET PHASE anchor list and the signal warping is gated on. The FIT signals are
+    /// different: <see cref="Bpm.BpmResult.GridCoherence"/>, <see cref="Bpm.BpmResult.KickPhaseMarginRatio"/>
+    /// and <see cref="Bpm.BpmResult.PhaseWindowDisagreementSeconds"/> are all evidence for a specific
+    /// <see cref="Bpm.BpmResult.FirstBeatSeconds"/>, so carrying them onto an anchor the DJ moved would let a
+    /// hand-authored grid claim a measurement nobody made — the offbeat-anchor failure with its sign
+    /// flipped. They are kept only when the hand grid IS the analyzed one, i.e. a confirmation rather than a
+    /// correction. A DJ who wants a corrected grid vouched for should re-analyze it
+    /// (<see cref="ForceReanalyzeAsync"/> re-grids at their tempo and measures fresh signals).</para>
+    /// </summary>
     public bool SetManualBeatGrid(string path, double bpm, double firstBeatSeconds)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
@@ -144,10 +166,31 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         if (existing is null)
             return false;
 
-        double confidence = existing.Bpm?.Confidence ?? 1.0;
+        Liveolator.Core.Analysis.Bpm.BpmResult? prior = existing.Bpm;
+        double confidence = prior?.Confidence ?? 1.0;
+        bool confirmsAnalyzedGrid = prior is not null
+            && Math.Abs(prior.Bpm - bpm) < SameTempoBpm
+            && Math.Abs(prior.FirstBeatSeconds - firstBeatSeconds) < SameAnchorSeconds;
+
+        Liveolator.Core.Analysis.Bpm.BpmResult grid = prior is null
+            ? new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, confidence, firstBeatSeconds)
+            : prior with
+            {
+                Bpm = bpm,
+                Confidence = confidence,
+                FirstBeatSeconds = firstBeatSeconds,
+                // A bar can only start on a beat, and this edit sets where the beats land — not which one is
+                // beat 1. So the downbeat follows the new anchor with its confidence honestly at zero.
+                DownbeatSeconds = confirmsAnalyzedGrid ? prior.DownbeatSeconds : firstBeatSeconds,
+                DownbeatConfidence = confirmsAnalyzedGrid ? prior.DownbeatConfidence : 0.0,
+                GridCoherence = confirmsAnalyzedGrid ? prior.GridCoherence : null,
+                KickPhaseMarginRatio = confirmsAnalyzedGrid ? prior.KickPhaseMarginRatio : null,
+                PhaseWindowDisagreementSeconds = confirmsAnalyzedGrid ? prior.PhaseWindowDisagreementSeconds : null,
+            };
+
         Upsert(existing with
         {
-            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, confidence, firstBeatSeconds),
+            Bpm = grid,
             AnalyzerVersion = TrackAnalyzer.CurrentVersion,
             AnalysisIsManual = true,
         });
@@ -250,6 +293,38 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         => All.Where(NeedsAnalysis).Select(t => t.File.Path).ToList();
 
     /// <summary>
+    /// Paths of the catalogued tracks with no loudness measurement yet. Deliberately independent of the
+    /// analyzer version: loudness does not depend on tempo, key or structure, so measuring it must never
+    /// drag a full re-analysis behind it — and a bumped analyzer version would skip exactly the
+    /// hand-corrected tracks (<see cref="MusicTrack.AnalysisIsManual"/>), which still need measuring.
+    /// Failed entries are excluded: nothing decoded, so there is nothing to measure.
+    /// </summary>
+    public IReadOnlyList<string> PathsNeedingLoudness()
+        => All.Where(t => t.IntegratedLufs is null && t.Status != MediaAnalysisStatus.Failed)
+              .Select(t => t.File.Path)
+              .ToList();
+
+    /// <summary>
+    /// Records a measured integrated loudness for <paramref name="path"/>. Returns false for an unknown
+    /// path.
+    /// <para>A null <paramref name="integratedLufs"/> leaves the track indistinguishable from one never
+    /// measured, so a later pass tries it again. That is intended rather than tolerated: the usual reason a
+    /// measurement comes back null is an unreachable file, and this catalog lives partly on a network
+    /// share — a track that failed while the share was offline must be picked up once it is back.</para>
+    /// </summary>
+    public bool SetLoudness(string path, double? integratedLufs)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        MusicTrack? existing = TryGet(path);
+        if (existing is null)
+            return false;
+
+        Upsert(existing with { IntegratedLufs = integratedLufs });
+        return true;
+    }
+
+    /// <summary>
     /// Paths of every catalogued track eligible for a full re-map ("Rescan all") — all tracks except
     /// those the user has manually corrected (<see cref="MusicTrack.AnalysisIsManual"/>), whose hand-set
     /// grid must survive (global #7). Unlike <see cref="PathsNeedingAnalysis"/>, this includes
@@ -282,13 +357,31 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         }
         catch (Exception ex)
         {
-            rebuilt = CreateFailedEntry(existing.File, ex.Message);
+            // Record the failure WITHOUT destroying analysis we already have. A re-analysis is an attempt to
+            // improve a row, so when the decode fails the row's existing grid is still the best available —
+            // exactly what ForceReanalyzeAsync has always done. Rebuilding the entry from scratch here
+            // (CreateFailedEntry) blanked BPM, key, cues and structure on every row that was pending merely
+            // because the analyzer version moved on, which is most of a catalog after a version bump.
+            rebuilt = existing with
+            {
+                Status = MediaAnalysisStatus.Failed, Error = ex.Message, LastAnalyzedUtc = DateTime.UtcNow,
+            };
         }
 
         Upsert(rebuilt);
         return !NeedsAnalysis(rebuilt);
     }
 
+    /// <summary>
+    /// Re-runs offline analysis for one catalogued track unconditionally — the explicit "re-analyze this"
+    /// action, and the only way a hand-corrected track ever re-grids (<see cref="NeedsAnalysis"/> and
+    /// <see cref="PathsForFullRemap"/> both exempt it, so an analyzer-version bump skips exactly those rows).
+    /// <para><b>A hand-corrected row keeps its corrections.</b> Key, tempo, the manual lock and the BPM
+    /// provenance survive; only the analyzer's own output is refreshed. That matters because the grid ANCHOR
+    /// is analyzer-owned and improves between versions (v12 moved the beat phase onto the kick band) while
+    /// the tempo and key may be the DJ's — clearing the lock and overwriting them, as this used to, meant a
+    /// re-grid could only be done as a three-step dance with a window where the correction was gone.</para>
+    /// </summary>
     public async Task<bool> ForceReanalyzeAsync(
         string path,
         CancellationToken cancellationToken = default)
@@ -303,17 +396,18 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             TrackAnalysisResult result = await _analyzer
                 .AnalyzeAsync(_decoder, path, cancellationToken)
                 .ConfigureAwait(false);
+            bool manual = existing.AnalysisIsManual;
             Upsert(existing with
             {
-                Bpm = result.Bpm,
-                Key = result.Key,
+                Bpm = manual ? RegridManual(existing.Bpm, result.Bpm) : result.Bpm,
+                Key = manual ? existing.Key : result.Key,
                 Duration = result.Duration,
                 Cues = result.Cues,
                 Structure = result.Structure,
-                Status = TrackStatusPolicy.For(result),
-                Error = null,
+                Status = manual ? existing.Status : TrackStatusPolicy.For(result),
+                Error = manual ? existing.Error : null,
                 AnalyzerVersion = TrackAnalyzer.CurrentVersion,
-                AnalysisIsManual = false,
+                AnalysisIsManual = manual,
                 LastAnalyzedUtc = DateTime.UtcNow,
             });
             return true;
@@ -330,6 +424,21 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
             });
             return false;
         }
+    }
+
+    // The fresh GRID (beat anchor, downbeat, kick strikes, grid/phase confidence signals) at the tempo the
+    // hand-corrected row already carries. A phase measured at a different tempo does not transfer — it is an
+    // offset within a beat of another length — so when the detector disagrees about the tempo, the DJ's whole
+    // grid stands and only the non-grid analysis (cues, structure, duration) refreshes.
+    private static Analysis.Bpm.BpmResult? RegridManual(
+        Analysis.Bpm.BpmResult? manual, Analysis.Bpm.BpmResult fresh)
+    {
+        if (manual is null)
+            return fresh;
+
+        return Math.Abs(fresh.Bpm - manual.Bpm) < 0.05
+            ? fresh with { Bpm = manual.Bpm, Confidence = manual.Confidence }
+            : manual;
     }
 
     public bool UpdateManualDetails(
@@ -356,8 +465,12 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
         };
         Upsert(existing with
         {
-            Bpm = new Liveolator.Core.Analysis.Bpm.BpmResult(
-                bpm, Confidence: 1.0, existing.Bpm?.FirstBeatSeconds ?? 0),
+            // Corrects the TEMPO and leaves the anchor alone, so it keeps the whole measured grid — the same
+            // treatment SetManualAnalysis already gives a tempo correction. Building a fresh BpmResult here
+            // carried the anchor across and silently discarded the kick list and every grid signal with it.
+            Bpm = existing.Bpm is { } prior
+                ? prior with { Bpm = bpm, Confidence = 1.0 }
+                : new Liveolator.Core.Analysis.Bpm.BpmResult(bpm, Confidence: 1.0),
             Key = key,
             Metadata = metadata,
             Status = MediaAnalysisStatus.Ok,

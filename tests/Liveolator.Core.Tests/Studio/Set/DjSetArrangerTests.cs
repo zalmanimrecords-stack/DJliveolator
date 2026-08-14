@@ -245,6 +245,163 @@ public class DjSetArrangerTests
     }
 
     [Fact]
+    public void Build_GainsUnequalMasters_ToOneLevel()
+    {
+        // Two records 7 dB apart is ordinary for commercial masters. At unity the mix would step at the
+        // join and the equal-power crossfade would sum two different loudnesses; gained, they sit level.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("loud.mp3", "8A", 128, integratedLufs: -6.0,
+                structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.Track("quiet.mp3", "8A", 128, integratedLufs: -13.0),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip loud = Assert.Single(plan.Project.Clips, c => c.TrackPath == "loud.mp3");
+        StudioClip quiet = Assert.Single(plan.Project.Clips, c => c.TrackPath == "quiet.mp3");
+
+        Assert.True(loud.Gain < quiet.Gain, "the louder master must be pulled down relative to the quieter one");
+        Assert.Equal(
+            -6.0 + (20.0 * Math.Log10(loud.Gain)),
+            -13.0 + (20.0 * Math.Log10(quiet.Gain)),
+            precision: 6);
+    }
+
+    [Fact]
+    public void Build_LeavesAnUnmeasuredCatalog_AtUnityGain()
+    {
+        // Backward compatibility: a catalog with no loudness measured yet must arrange exactly as before.
+        DjSetPlan plan = BuildStandard();
+
+        Assert.All(plan.Project.Clips, clip => Assert.Equal(1.0, clip.Gain));
+    }
+
+    [Fact]
+    public void Build_StillWarps_ARecordWithASteadyTempoButASmearedKick()
+    {
+        // A phase downgrade is not a tempo downgrade. Leaving a rock-steady record at its native rate
+        // against the set tempo guarantees the drift the confidence gate exists to prevent, so it warps —
+        // and only loses the phase lock and the long blend, which are what the loose grid fit really costs.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.SmearedKick("soft-kick.mp3", "8A", 127),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip softKick = Assert.Single(plan.Project.Clips, c => c.TrackPath == "soft-kick.mp3");
+        Assert.True(softKick.WarpEnabled, "a steady tempo must still be warped to the set tempo");
+
+        SetTransition transition = Assert.Single(plan.Transitions);
+        Assert.False(transition.PhaseLocked);
+        Assert.Equal(SetBuildOptions.LowConfidenceOverlapBars, transition.OverlapBars);
+        Assert.Contains(SetWarning.LowGridConfidence, transition.Warnings);
+    }
+
+    [Fact]
+    public void Build_ARefusedPhase_FallsBackToNoLockInsteadOfAligningOnAGuess()
+    {
+        // The analyzer could not vouch for this track's beat phase (kick-identity gate failed). The set must
+        // still be built and still warped — but with no phase lock and the short blend, so a possibly
+        // half-beat-off anchor can no longer flam a 32-bar crossfade.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.RefusedPhase("unvouched.mp3", "8A", 127),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip clip = Assert.Single(plan.Project.Clips, c => c.TrackPath == "unvouched.mp3");
+        Assert.True(clip.WarpEnabled, "a refused phase must never stop the tempo match");
+        SetTransition transition = Assert.Single(plan.Transitions);
+        Assert.False(transition.PhaseLocked);
+        Assert.Equal(SetBuildOptions.LowConfidenceOverlapBars, transition.OverlapBars);
+        Assert.Contains(SetWarning.LowGridConfidence, transition.Warnings);
+    }
+
+    [Fact]
+    public void Build_AVouchedPhase_PhaseLocks_AndKeepsTheFullBlend_ThoughTheKickFitIsLoose()
+    {
+        // The measured payoff: four tracks of the 11-track set (03, 07, 08, 09) have anchors within
+        // 6.4-15.8 ms of an audio-derived reference and the kick-identity gate vouches for them, yet their
+        // grid COHERENCE (0.368-0.533) sat under the phase floor and clamped every one of their joins to 8
+        // bars with no phase lock. A direct measurement of the anchor outranks a proxy for it.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.VouchedPhase("vouched.mp3", "8A", 127),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip clip = Assert.Single(plan.Project.Clips, c => c.TrackPath == "vouched.mp3");
+        Assert.True(clip.WarpEnabled);
+        SetTransition transition = Assert.Single(plan.Transitions);
+        Assert.True(transition.PhaseLocked, "a vouched anchor must be phase-aligned");
+        Assert.Equal(Options.NormalizedOverlapBars, transition.OverlapBars);
+        Assert.DoesNotContain(SetWarning.LowGridConfidence, transition.Warnings);
+    }
+
+    [Fact]
+    public void Build_KeepsAVouchedPhase_EvenWhenAskedToExcludeLowConfidence()
+    {
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.VouchedPhase("vouched.mp3", "8A", 128),
+        };
+
+        DjSetPlan plan = _arranger.Build(
+            pool, pool[0], new HarmonicSetOptions(2), new SetBuildOptions(ExcludeLowGridConfidence: true));
+
+        Assert.Contains(plan.Project.Clips, c => c.TrackPath == "vouched.mp3");
+        Assert.Empty(plan.Rejected);
+    }
+
+    [Fact]
+    public void Build_ReportsTheRealWarp_OnAJoinThatLostItsPhaseLock()
+    {
+        // The clip IS stretched to the set tempo (phase and warp are separate gates), so the transition
+        // report must say so — a reported 0% next to a warped clip reads as an unwarped join that is drifting.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+            SetTrackFixture.RefusedPhase("unvouched.mp3", "8A", 124),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        SetTransition transition = Assert.Single(plan.Transitions);
+        Assert.False(transition.PhaseLocked);
+        Assert.All(
+            plan.Project.Clips.Select(c => c.WarpEnabled),
+            warped => Assert.True(warped));
+        Assert.NotEqual(0.0, transition.FromWarpPercent);
+        Assert.NotEqual(0.0, transition.ToWarpPercent);
+    }
+
+    [Fact]
+    public void Build_ExcludesARefusedPhase_WhenAskedToExcludeLowConfidence()
+    {
+        // How "05 - 145 - 6A - Vibe Tribe and Spade - Beyond and Beyond" is kept out of a set: its declared
+        // tempo is itself wrong, so no single global phase exists and the analyzer refuses one.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.RefusedPhase("unvouched.mp3", "8A", 128),
+        };
+
+        DjSetPlan plan = _arranger.Build(
+            pool, pool[0], new HarmonicSetOptions(2), new SetBuildOptions(ExcludeLowGridConfidence: true));
+
+        Assert.DoesNotContain(plan.Project.Clips, c => c.TrackPath == "unvouched.mp3");
+        Assert.Equal(RejectReason.LowGridConfidence, Assert.Single(plan.Rejected).Reason);
+    }
+
+    [Fact]
     public void Build_ExcludesUntrustedGrids_OnlyWhenAsked()
     {
         MusicTrack[] pool =

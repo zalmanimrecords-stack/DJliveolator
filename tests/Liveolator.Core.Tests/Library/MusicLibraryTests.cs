@@ -184,6 +184,46 @@ public class MusicLibraryTests
     }
 
     [Fact]
+    public async Task ForceReanalyze_AHandCorrectedTrack_RefreshesTheGrid_ButKeepsTheCorrections()
+    {
+        // The v12 re-grid problem: a hand-corrected row is exempt from version-bump re-analysis
+        // (NeedsAnalysis skips AnalysisIsManual), so a bumped analyzer leaves exactly those tracks on the
+        // old grid — and the force path used to clear the lock and overwrite the DJ's key, so refreshing
+        // them meant a three-step dance with a window where the correction was gone. One call now does it.
+        var enumerator = new FakeFileEnumerator(File("a.mp3"));
+        var decoder = new MapAudioDecoder(new() { ["a.mp3"] = TestSignals.ClickTrain(120, Sr, 8) });
+        var library = new MusicLibrary(enumerator, decoder);
+        await library.ScanAsync(new[] { "music" });
+        library.SetManualAnalysis("a.mp3", bpm: null, camelot: "7B"); // key-only, as in the psytrance set
+        double detectedBpm = library.TryGet("a.mp3")!.Bpm!.Bpm;
+
+        Assert.True(await library.ForceReanalyzeAsync("a.mp3"));
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal("7B", track.Key!.Camelot);                        // the DJ's key survives
+        Assert.True(track.AnalysisIsManual);                           // still locked against auto passes
+        Assert.Equal(BpmProvenance.LocalConfirmed, track.BpmProvenance);
+        Assert.Equal(detectedBpm, track.Bpm!.Bpm);                     // same tempo …
+        Assert.Equal(2, decoder.DecodeCalls["a.mp3"]);                  // … but it WAS re-decoded: fresh grid
+        Assert.Equal(TrackAnalyzer.CurrentVersion, track.AnalyzerVersion);
+    }
+
+    [Fact]
+    public async Task ForceReanalyze_AHandCorrectedTempo_IsNeverOverwrittenByTheDetector()
+    {
+        // A tempo the DJ typed outranks the detector, and a phase measured at another tempo does not
+        // transfer — so this row keeps its whole hand-authored grid.
+        MusicLibrary library = await ScannedLibrary();
+        library.SetManualAnalysis("a.mp3", bpm: 145.0, camelot: null);
+
+        await library.ForceReanalyzeAsync("a.mp3");
+
+        MusicTrack track = library.TryGet("a.mp3")!;
+        Assert.Equal(145.0, track.Bpm!.Bpm);
+        Assert.True(track.AnalysisIsManual);
+    }
+
+    [Fact]
     public async Task Scan_ModifiedFile_PreservesManualBeatGrid_AndReStampsFingerprint()
     {
         var enumerator = new FakeFileEnumerator(File("a.mp3"));
@@ -208,6 +248,105 @@ public class MusicLibraryTests
         // (no perpetual "Modified" that would keep trying to rebuild the locked track).
         await library.ScanAsync(new[] { "music" });
         Assert.Equal(1, decoder.DecodeCalls["a.mp3"]);
+    }
+
+    /// <summary>
+    /// Seeds a track carrying the full v12 grid evidence, so a hand edit's effect on each signal is visible.
+    /// </summary>
+    private static MusicLibrary LibraryWithFullyMeasuredGrid(out MusicTrack seeded)
+    {
+        var library = new MusicLibrary(new FakeFileEnumerator(), new MapAudioDecoder(new()));
+        seeded = new MusicTrack(
+            File("a.mp3"),
+            new Core.Analysis.Bpm.BpmResult(140.0, 0.9, FirstBeatSeconds: 0.125)
+            {
+                DownbeatSeconds = 2.125,
+                BeatsPerBar = 4,
+                DownbeatConfidence = 0.7,
+                KickOnsetsSeconds = new[] { 0.125, 0.554, 0.982, 1.411 },
+                GridCoherence = 0.88,
+                TempoStabilityBpmDelta = 0.08,
+                KickPhaseMarginRatio = 3.4,
+                PhaseWindowDisagreementSeconds = 0.002,
+            },
+            new MusicalKey(0, KeyMode.Minor, "8A", 0.9),
+            TimeSpan.FromMinutes(6), TrackCues.None, MediaAnalysisStatus.Ok, null,
+            AnalyzerVersion: TrackAnalyzer.CurrentVersion);
+        library.Restore(new[] { seeded });
+        return library;
+    }
+
+    [Fact]
+    public void SetManualBeatGrid_KeepsWhatWasMeasuredFromTheAUDIO()
+    {
+        // Kick strike times are absolute, and the half-vs-half tempo delta says whether the recording's
+        // tempo is constant. Neither depends on the grid the DJ declares, so neither may be lost — the kick
+        // list is what a deck snaps SET PHASE onto, and the tempo delta is what warping is gated on.
+        MusicLibrary library = LibraryWithFullyMeasuredGrid(out _);
+
+        Assert.True(library.SetManualBeatGrid("a.mp3", bpm: 138.0, firstBeatSeconds: 0.400));
+
+        Core.Analysis.Bpm.BpmResult grid = library.TryGet("a.mp3")!.Bpm!;
+        Assert.Equal(138.0, grid.Bpm);
+        Assert.Equal(0.400, grid.FirstBeatSeconds);
+        Assert.Equal(new[] { 0.125, 0.554, 0.982, 1.411 }, grid.KickOnsetsSeconds);
+        Assert.Equal(0.08, grid.TempoStabilityBpmDelta);
+        Assert.Equal(4, grid.BeatsPerBar);
+    }
+
+    [Fact]
+    public void SetManualBeatGrid_AtANewAnchor_DropsTheEvidenceForTheOldOne()
+    {
+        // GridCoherence, the kick-identity margin and the cross-window disagreement are all evidence FOR a
+        // specific FirstBeatSeconds. Carrying them onto an anchor the DJ moved would let a hand-authored
+        // grid claim a measurement nobody made — the offbeat-anchor failure with the sign flipped.
+        MusicLibrary library = LibraryWithFullyMeasuredGrid(out _);
+
+        library.SetManualBeatGrid("a.mp3", bpm: 138.0, firstBeatSeconds: 0.400);
+
+        Core.Analysis.Bpm.BpmResult grid = library.TryGet("a.mp3")!.Bpm!;
+        Assert.Null(grid.GridCoherence);
+        Assert.Null(grid.KickPhaseMarginRatio);
+        Assert.Null(grid.PhaseWindowDisagreementSeconds);
+        // A bar can only start on a beat, and the DJ set the beats — not which one is beat 1.
+        Assert.Equal(0.400, grid.DownbeatSeconds);
+        Assert.Equal(0.0, grid.DownbeatConfidence);
+    }
+
+    [Fact]
+    public void SetManualBeatGrid_ConfirmingTheAnalyzedGrid_KeepsItsEvidence()
+    {
+        // Re-stating the grid the analyzer already found is a confirmation, not a correction: the evidence
+        // still describes exactly this anchor, so the row must not lose its verdict for agreeing.
+        MusicLibrary library = LibraryWithFullyMeasuredGrid(out _);
+
+        library.SetManualBeatGrid("a.mp3", bpm: 140.0, firstBeatSeconds: 0.125);
+
+        Core.Analysis.Bpm.BpmResult grid = library.TryGet("a.mp3")!.Bpm!;
+        Assert.Equal(0.88, grid.GridCoherence);
+        Assert.Equal(3.4, grid.KickPhaseMarginRatio);
+        Assert.Equal(0.002, grid.PhaseWindowDisagreementSeconds);
+        Assert.Equal(2.125, grid.DownbeatSeconds);
+        Assert.Equal(0.7, grid.DownbeatConfidence);
+    }
+
+    [Fact]
+    public void UpdateManualDetails_CorrectingTheTempo_KeepsTheWholeGrid()
+    {
+        // This path corrects the TEMPO and leaves the anchor alone, so it must behave like
+        // SetManualAnalysis, which already rebuilds with `prior with { … }`. It instead constructed a fresh
+        // BpmResult carrying only the anchor, silently discarding the kick list and every grid signal.
+        MusicLibrary library = LibraryWithFullyMeasuredGrid(out _);
+
+        Assert.True(library.UpdateManualDetails("a.mp3", 138.5, "9A", "Psytrance", null));
+
+        Core.Analysis.Bpm.BpmResult grid = library.TryGet("a.mp3")!.Bpm!;
+        Assert.Equal(138.5, grid.Bpm);
+        Assert.Equal(0.125, grid.FirstBeatSeconds);            // anchor untouched, as documented
+        Assert.Equal(4, grid.KickOnsetsSeconds.Count);
+        Assert.Equal(0.08, grid.TempoStabilityBpmDelta);
+        Assert.Equal(0.88, grid.GridCoherence);
+        Assert.Equal(3.4, grid.KickPhaseMarginRatio);
     }
 
     [Fact]

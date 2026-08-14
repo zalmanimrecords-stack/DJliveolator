@@ -9,14 +9,20 @@ namespace Liveolator.Audio.Render;
 /// Decodes a track and time-stretches it with BASS_FX (SoundTouch) - tempo changed, pitch preserved
 /// (keylock) - for the STUDIO offline render's warp. The decode stream -> a BASS_FX tempo stream -> a
 /// BASSmix mixer that resamples to the render rate and produces interleaved stereo (matching the rest of
-/// the stereo renderer; a mono source is upmixed to both channels by the mixer). Native; BASS must
-/// already be initialised (it is, inside the running app). Failures degrade to an empty buffer with a
-/// warning, never a throw (global #16/#26).
+/// the stereo renderer; a mono source is upmixed to both channels by the mixer). Native; BASS is brought
+/// up on demand through <see cref="BassAudioDecoder.EnsureUsable"/> (the same tolerant no-sound init the
+/// offline decoder uses), so a host that renders without a playback device - the MCP server - gets audio
+/// rather than a silent mix. Failures degrade to an empty buffer with a warning, never a throw
+/// (global #16/#26); the empty buffer is what <see cref="OfflineMixRenderer"/> counts and reports, so a
+/// failed decode can no longer pass for a rendered mix.
 /// </summary>
 public sealed class BassFxRenderDecoder
 {
     private const int RenderChannels = 2;     // stereo render output (interleaved L/R)
     private const int PullFloats = 8192;
+
+    /// <summary>Below this the clip is at the project tempo and no time-stretch pass is built.</summary>
+    private const double TempoEpsilon = 1e-4;
 
     private readonly ILogger? _log;
 
@@ -31,6 +37,16 @@ public sealed class BassFxRenderDecoder
     /// </summary>
     internal StereoBuffer DecodeStretchedStereo(string path, int sampleRate, double tempoPercent, int maxFrames = int.MaxValue)
     {
+        // The render host need not have a playback device up: a no-sound init is enough for decode streams,
+        // and skipping it is exactly how an offline render silently produced 69 minutes of nothing.
+        if (!BassAudioDecoder.EnsureUsable())
+        {
+            _log?.LogWarning(
+                "STUDIO warp: BASS is unavailable (init failed or the native library is missing), so '{Path}' " +
+                "cannot be time-stretched and would render as silence.", path);
+            return Empty();
+        }
+
         int decode = Bass.CreateStream(path, 0, 0, BassFlags.Decode | BassFlags.Float);
         if (decode == 0)
         {
@@ -38,15 +54,22 @@ public sealed class BassFxRenderDecoder
             return Empty();
         }
 
-        int tempo = BassFx.TempoCreate(decode, BassFlags.Decode | BassFlags.FxFreeSource);
-        if (tempo == 0)
+        // A clip already at the project tempo needs no time-stretching: feed the decode stream straight to
+        // the mixer rather than through a WSOLA pass whose ratio happens to be 1:1.
+        int source = decode;
+        if (Math.Abs(tempoPercent) > TempoEpsilon)
         {
-            _log?.LogWarning("STUDIO warp: BASS_FX TempoCreate failed: {Error}.", Bass.LastError);
-            Bass.StreamFree(decode);
-            return Empty();
-        }
+            int tempo = BassFx.TempoCreate(decode, BassFlags.Decode | BassFlags.FxFreeSource);
+            if (tempo == 0)
+            {
+                _log?.LogWarning("STUDIO warp: BASS_FX TempoCreate failed: {Error}.", Bass.LastError);
+                Bass.StreamFree(decode);
+                return Empty();
+            }
 
-        Bass.ChannelSetAttribute(tempo, ChannelAttribute.Tempo, (float)tempoPercent);
+            Bass.ChannelSetAttribute(tempo, ChannelAttribute.Tempo, (float)tempoPercent);
+            source = tempo;
+        }
 
         // Stereo mixer at the render rate resamples the (file-rate, mono-or-stereo) tempo stream to match;
         // BASSmix upmixes a mono source to both channels, so the output is always interleaved L/R.
@@ -54,15 +77,15 @@ public sealed class BassFxRenderDecoder
         if (mixer == 0)
         {
             _log?.LogWarning("STUDIO warp: CreateMixerStream failed: {Error}.", Bass.LastError);
-            Bass.StreamFree(tempo);
+            Bass.StreamFree(source);
             return Empty();
         }
 
-        if (!BassMix.MixerAddChannel(mixer, tempo, BassFlags.Default))
+        if (!BassMix.MixerAddChannel(mixer, source, BassFlags.Default))
         {
             _log?.LogWarning("STUDIO warp: MixerAddChannel failed: {Error}.", Bass.LastError);
             Bass.StreamFree(mixer);
-            Bass.StreamFree(tempo);
+            Bass.StreamFree(source);
             return Empty();
         }
 
@@ -84,7 +107,7 @@ public sealed class BassFxRenderDecoder
         }
 
         Bass.StreamFree(mixer);
-        Bass.StreamFree(tempo); // FxFreeSource frees the underlying decode stream too
+        Bass.StreamFree(source); // a tempo stream (FxFreeSource) frees the underlying decode stream too
         return Deinterleave(interleaved);
     }
 

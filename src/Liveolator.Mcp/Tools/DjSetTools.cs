@@ -132,4 +132,38 @@ public sealed class DjSetTools
             .RenderPreviewAsync(name.Trim(), outputDirectory, sampleRate, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    [McpServerTool(Name = "export_set_mix")]
+    [Description("Render a saved set to ONE continuous mix WAV, ready to upload, alongside a " +
+                 "machine-readable tracklist and a YouTube chapter/description text file. Unlike " +
+                 "render_set_preview (which renders only the joins, for judging), this produces the whole " +
+                 "mix; it streams to disk, so length is not bounded by memory. " +
+                 "REFUSES BY DEFAULT when the mix is not fit to publish — a clip running at its native " +
+                 "tempo against the set tempo, a clip left at unity gain (run measure_catalog_loudness " +
+                 "first), or a blend clamped under the 8-bar floor — and returns each problem with its " +
+                 "remedy instead of a file. Pass force to render anyway once you have listened and " +
+                 "decided. Unreachable source files always fail, force or not, so a mix never ships with " +
+                 "silent stretches. Reports the measured integrated LUFS of the file it produced.")]
+    public static async Task<SetMixExport> ExportSetMix(
+        DjSetSession session,
+        [Description("Name of the saved set to export.")] string name,
+        [Description("Absolute path of the folder to write the mix and tracklist into. Created if missing.")]
+        string outputDirectory,
+        [Description("Render anyway when the publish gate finds problems. Default false.")] bool force = false,
+        [Description("Render sample rate in Hz. Default 44100 — the source rate of essentially all " +
+                     "released dance music, so leave it alone unless you have a reason.")]
+        int sampleRate = 44_100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Supply the name of a saved set to export.", nameof(name));
+        if (string.IsNullOrWhiteSpace(outputDirectory))
+            throw new ArgumentException("Supply an output directory for the mix.", nameof(outputDirectory));
+        if (sampleRate is < MinSampleRate or > MaxSampleRate)
+            throw new ArgumentException($"Sample rate must be between {MinSampleRate} and {MaxSampleRate} Hz.", nameof(sampleRate));
+
+        return await session
+            .ExportMixAsync(name.Trim(), outputDirectory, sampleRate, force, cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

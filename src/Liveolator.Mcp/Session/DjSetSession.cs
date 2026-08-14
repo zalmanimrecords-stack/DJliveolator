@@ -1,4 +1,7 @@
+using System.Text.Json;
 using Liveolator.Audio.Render;
+using Liveolator.Core.Analysis;
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
@@ -26,17 +29,20 @@ public sealed class DjSetSession
     private readonly LibrarySession _library;
     private readonly IStudioProjectStore _store;
     private readonly OfflineMixRenderer _renderer;
+    private readonly ILoudnessMeter _loudnessMeter;
     private readonly ILogger<DjSetSession> _logger;
 
     public DjSetSession(
         LibrarySession library,
         IStudioProjectStore store,
         OfflineMixRenderer renderer,
+        ILoudnessMeter loudnessMeter,
         ILogger<DjSetSession> logger)
     {
         _library = library;
         _store = store;
         _renderer = renderer;
+        _loudnessMeter = loudnessMeter;
         _logger = logger;
     }
 
@@ -206,6 +212,249 @@ public sealed class DjSetSession
             project.Name, outputDirectory, clips.Count,
             Math.Round(clips.Sum(c => c.DurationSeconds), 1), clips);
     }
+
+    /// <summary>
+    /// Renders a saved set to ONE continuous mix, plus the tracklist artifacts a publish needs.
+    /// <para>Refuses by default when the mix is not fit to publish and returns the reasons and remedies
+    /// instead — a level-stepping, drifting mix is worse than no file. <paramref name="force"/> renders
+    /// anyway, for when the owner has listened and decided.</para>
+    /// <para>Unreachable source files always fail, force or not: this catalog lives partly on a network
+    /// share, and a share that drops mid-render would otherwise produce a long mix with silent stretches
+    /// that nothing reports. A mix that comes back silent — a source that decoded to nothing, a non-finite
+    /// measured loudness, or mostly-silent output — fails on the same terms, after the render; see
+    /// <see cref="RequireAudibleMix"/>.</para>
+    /// </summary>
+    /// <exception cref="ArgumentException">No set is saved under that name, or a source file is missing.</exception>
+    /// <exception cref="InvalidOperationException">The render produced a mix that is silent where it
+    /// should play. Force does not bypass this.</exception>
+    public async Task<SetMixExport> ExportMixAsync(
+        string name,
+        string outputDirectory,
+        int sampleRate,
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        StudioProject? project = await _store.LoadAsync(name, cancellationToken).ConfigureAwait(false);
+        if (project is null)
+            throw new ArgumentException($"No saved set named '{name}'. Build one first, or list the saved sets.");
+        if (project.Clips.Count == 0)
+            throw new ArgumentException($"The set '{name}' has no clips to render.");
+
+        Directory.CreateDirectory(outputDirectory);
+
+        // Reachability first: cheaper to fail now than 70 minutes into a render.
+        string[] missing = project.Clips
+            .Select(c => c.TrackPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(p => !File.Exists(p))
+            .ToArray();
+        if (missing.Length > 0)
+            throw new ArgumentException(
+                $"{missing.Length} source file(s) are not reachable, so the mix would contain silent " +
+                $"stretches. Check the drive holding: {string.Join(", ", missing.Take(3))}" +
+                (missing.Length > 3 ? $" (+{missing.Length - 3} more)" : string.Empty));
+
+        IReadOnlyList<MusicTrack> catalog = await _library.SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<MixTrackEntry> tracks = Tracklist(project, catalog);
+        IReadOnlyList<MixGateIssue> issues = PublishGate(project);
+
+        if (issues.Count > 0 && !force)
+        {
+            _logger.LogInformation(
+                "Refused to export '{Name}': {Count} publish-gate issue(s)", name, issues.Count);
+            return new SetMixExport(
+                Rendered: false, AudioPath: null, TracklistPath: null, ChaptersPath: null,
+                DurationSeconds: Math.Round(project.DurationSeconds, 1),
+                IntegratedLufs: null, CeilingDbTp: LimiterSettings.Default.CeilingDbTp,
+                Issues: issues, Tracks: tracks);
+        }
+
+        string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
+        string audioPath = Path.Combine(outputDirectory, $"{safeName}.wav");
+        MixRenderResult render = await _renderer
+            .RenderAsync(project, audioPath, sampleRate, progress: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Measure what was actually produced rather than assuming the target was hit.
+        double? lufs = await _loudnessMeter
+            .MeasureIntegratedLufsAsync(audioPath, cancellationToken).ConfigureAwait(false);
+
+        // Before any artifact is written: a mix that does not contain the audio it claims to is not a
+        // deliverable, and half a publish package is worse than none.
+        RequireAudibleMix(name, audioPath, render, lufs);
+
+        string tracklistPath = Path.Combine(outputDirectory, $"{safeName}-tracklist.json");
+        string chaptersPath = Path.Combine(outputDirectory, $"{safeName}-youtube.txt");
+        await File.WriteAllTextAsync(
+                tracklistPath,
+                JsonSerializer.Serialize(tracks, TracklistJson),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await File.WriteAllLinesAsync(
+                chaptersPath,
+                tracks.Select(t => $"{t.Timestamp} {Credit(t)}"),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "Exported '{Name}' to {Path} ({Seconds:F0}s, {Lufs} LUFS)",
+            name, audioPath, project.DurationSeconds, lufs?.ToString("F1") ?? "unmeasured");
+
+        return new SetMixExport(
+            Rendered: true, audioPath, tracklistPath, chaptersPath,
+            Math.Round(project.DurationSeconds, 1),
+            lufs is null ? null : Math.Round(lufs.Value, 2),
+            LimiterSettings.Default.CeilingDbTp,
+            issues, tracks);
+    }
+
+    /// <summary>
+    /// Refuses a mix that does not contain the audio it claims to.
+    /// <para>Sits deliberately outside the publish gate, so <c>force</c> does not reach past it — the same
+    /// standing as an unreachable source file, and for the same reason. Every decode failure degrades to
+    /// silence rather than a throw (global #16/#26), so without this a 69-minute unattended render of
+    /// digital silence reports success. It did: every warped clip decoded to nothing because BASS was not
+    /// initialised in the render host, and whole-file loudness read a healthy -10.3 LUFS because the two
+    /// clips that happened to need no warp carried the average.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The mix is silent where it should not be.</exception>
+    private void RequireAudibleMix(string name, string audioPath, MixRenderResult render, double? lufs)
+    {
+        if (render.SilentSources.Count > 0)
+        {
+            _logger.LogError(
+                "Export of '{Name}' produced no audio for {Count} of {Total} source(s): {Sources}",
+                name, render.SilentSources.Count, render.SourceCount, string.Join(", ", render.SilentSources));
+            throw new InvalidOperationException(
+                $"{render.SilentSources.Count} of {render.SourceCount} source(s) decoded to nothing, so the mix " +
+                $"is silent where they should play: {string.Join(", ", render.SilentSources.Take(3))}" +
+                (render.SilentSources.Count > 3 ? $" (+{render.SilentSources.Count - 3} more)" : string.Empty) +
+                $". Nothing was published. The incomplete file is at {audioPath} — check the app log for the " +
+                "decode warnings, and that the native BASS libraries (including bassflac for flac sources) are " +
+                "present next to the render host.");
+        }
+
+        // Null is "not measured" and stays a normal outcome; a measured -infinity is a silent file.
+        if (lufs is { } measured && !double.IsFinite(measured))
+        {
+            _logger.LogError("Export of '{Name}' measured {Lufs} LUFS — the file carries no signal", name, measured);
+            throw new InvalidOperationException(
+                $"The rendered mix measured {measured} LUFS, which means it carries no signal. Nothing was " +
+                $"published. The incomplete file is at {audioPath}.");
+        }
+
+        if (render.SilentFraction > MaxSilentFraction)
+        {
+            _logger.LogError(
+                "Export of '{Name}' is {Percent:P0} silence", name, render.SilentFraction);
+            throw new InvalidOperationException(
+                $"{render.SilentFraction:P0} of the rendered mix is silence, so it is not a continuous mix. " +
+                $"Nothing was published. The incomplete file is at {audioPath}.");
+        }
+    }
+
+    /// <summary>
+    /// How much of a mix may be silence before it is refused. A continuous mix is silent essentially
+    /// nowhere — even a long fade-in and fade-out is under a percent — so half is a floor no plausible
+    /// set trips and every broken render does. Kept here rather than in the renderer: measuring the
+    /// silence is an audio fact, deciding what is publishable is this gate's business.
+    /// </summary>
+    private const double MaxSilentFraction = 0.5;
+
+    private static readonly JsonSerializerOptions TracklistJson = new() { WriteIndented = true };
+
+    private static string Credit(MixTrackEntry track)
+        => string.IsNullOrWhiteSpace(track.Artist) ? track.Title : $"{track.Artist} - {track.Title}";
+
+    // mm:ss, or h:mm:ss once past the hour — the form YouTube parses into chapters.
+    private static string Timestamp(double seconds)
+    {
+        var t = TimeSpan.FromSeconds(Math.Max(0.0, seconds));
+        return t.TotalHours >= 1.0
+            ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}"
+            : $"{t.Minutes}:{t.Seconds:00}";
+    }
+
+    private static IReadOnlyList<MixTrackEntry> Tracklist(
+        StudioProject project, IReadOnlyList<MusicTrack> catalog)
+    {
+        Dictionary<string, MusicTrack> byPath = catalog
+            .GroupBy(t => t.File.Path, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        return project.Clips
+            .OrderBy(c => c.TimelineStartSeconds)
+            .Select((clip, index) =>
+            {
+                byPath.TryGetValue(clip.TrackPath, out MusicTrack? track);
+                return new MixTrackEntry(
+                    index + 1,
+                    track?.Artist,
+                    track?.Title ?? Path.GetFileNameWithoutExtension(clip.TrackPath),
+                    Math.Round(clip.TimelineStartSeconds, 2),
+                    Timestamp(clip.TimelineStartSeconds));
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// What would embarrass the owner if this mix went public. Each issue names its remedy, because a
+    /// refusal the caller cannot act on is just an obstacle.
+    /// </summary>
+    private static IReadOnlyList<MixGateIssue> PublishGate(StudioProject project)
+    {
+        var issues = new List<MixGateIssue>();
+
+        foreach (StudioClip clip in project.Clips.OrderBy(c => c.TimelineStartSeconds))
+        {
+            string where = Path.GetFileNameWithoutExtension(clip.TrackPath);
+
+            // An unwarped clip runs at its own tempo against the set tempo, so it drifts for its whole
+            // length — the single worst defect a "beat-matched" mix can ship with.
+            if (!clip.WarpEnabled && clip.SourceBpm > 0 && Math.Abs(clip.SourceBpm - project.Bpm) > TempoMatchToleranceBpm)
+            {
+                issues.Add(new MixGateIssue(
+                    where,
+                    $"plays at its native {clip.SourceBpm:F2} BPM against the set's {project.Bpm:F2}, so it drifts",
+                    "Re-analyze the track so its tempo is trusted, or rebuild the set with " +
+                    "excludeLowGridConfidence: true to leave it out."));
+            }
+
+            // Unity gain means no loudness measurement, so this clip steps in level against its neighbours.
+            if (Math.Abs(clip.Gain - 1.0) < GainEpsilon)
+            {
+                issues.Add(new MixGateIssue(
+                    where,
+                    "sits at unity gain, so it is not level-matched to the rest of the mix",
+                    "Run measure_catalog_loudness, then rebuild the set."));
+            }
+        }
+
+        IReadOnlyList<Join> joins = Joins(project);
+        double minBlendSeconds = SetBuildOptions.MinOverlapBars * SetBuildOptions.BarSeconds(project.Bpm);
+        foreach (Join join in joins)
+        {
+            double blend = join.EndSeconds - join.StartSeconds;
+            if (blend + BlendToleranceSeconds < minBlendSeconds)
+            {
+                issues.Add(new MixGateIssue(
+                    $"{Path.GetFileNameWithoutExtension(join.FromPath)} → {Path.GetFileNameWithoutExtension(join.ToPath)}",
+                    $"blends for only {blend:F1}s, under the {minBlendSeconds:F1}s floor, so it reads as a cut",
+                    "Rebuild with a longer overlapBars, or fix the grid confidence that forced the clamp."));
+            }
+        }
+
+        return issues;
+    }
+
+    /// <summary>A clip within this of the set tempo needs no stretch, so leaving it unwarped is correct.</summary>
+    private const double TempoMatchToleranceBpm = 0.01;
+
+    /// <summary>Gain this close to 1.0 is unity — i.e. no loudness measurement was applied.</summary>
+    private const double GainEpsilon = 1e-6;
+
+    /// <summary>Rounding slack when comparing a blend against the bar-derived floor.</summary>
+    private const double BlendToleranceSeconds = 0.05;
 
     /// <summary>Where two consecutive clips overlap: the incoming clip's start until the outgoing one ends.</summary>
     private readonly record struct Join(string FromPath, string ToPath, double StartSeconds, double EndSeconds);

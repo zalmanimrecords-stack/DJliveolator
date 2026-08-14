@@ -90,12 +90,14 @@ public sealed class DjSetPreviewRenderTests : IDisposable
             Array.Empty<ILibraryImporter>(),
             Array.Empty<IFolderLibraryImporter>(),
             importService,
+            NullLoudnessMeter.Instance,
             NullLogger<LibrarySession>.Instance);
 
         return new DjSetSession(
             library,
             new JsonStudioProjectStore(_directory),
             new OfflineMixRenderer(new CompositeAudioDecoder(new FfmpegOptions(null))),
+            new FfmpegLoudnessMeter(),
             NullLogger<DjSetSession>.Instance);
     }
 

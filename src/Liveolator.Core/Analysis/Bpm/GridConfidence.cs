@@ -11,19 +11,31 @@ namespace Liveolator.Core.Analysis.Bpm;
 /// <param name="PhaseSyncReady">True ⇒ offer beat/phase sync; false ⇒ downgrade to tempo-only.</param>
 /// <param name="Analyzed">False when the signals are absent (pre-v9 catalog) — <see cref="PhaseSyncReady"/>
 /// then preserves the prior behaviour (allow phase sync) until the track re-analyzes.</param>
-public readonly record struct GridConfidence(double? Display, bool PhaseSyncReady, bool Analyzed)
+/// <param name="TempoTrusted">True ⇒ the detected tempo is stable enough to warp by. Deliberately separate
+/// from <see cref="PhaseSyncReady"/>: the two signals answer different questions, and a smeared kick (weak
+/// grid fit) says nothing about whether the tempo is constant. Consumers that stretch audio must gate on
+/// this, not on <see cref="PhaseSyncReady"/> — treating a phase downgrade as a tempo downgrade leaves the
+/// track at its native rate against the set tempo, which guarantees the drift the gate exists to prevent.</param>
+public readonly record struct GridConfidence(
+    double? Display,
+    bool PhaseSyncReady,
+    bool Analyzed,
+    bool TempoTrusted = true)
 {
     /// <summary>A track analyzed before grid-confidence existed: quality unknown, phase sync preserved.</summary>
-    public static GridConfidence Unknown { get; } = new(Display: null, PhaseSyncReady: true, Analyzed: false);
+    public static GridConfidence Unknown { get; } =
+        new(Display: null, PhaseSyncReady: true, Analyzed: false, TempoTrusted: true);
 }
 
 /// <summary>
 /// Fuses the analyzed grid signals into a <see cref="GridConfidence"/>. Pure and hardware-free (unit-tests
 /// under xUnit). Design decisions (SYNC-BEHAVIOR-SPEC §7, owner-approved 2026-07-17):
 /// <list type="bullet">
-/// <item><b>Weakest-link gate.</b> A confident phase-lock genuinely needs BOTH a tight grid fit AND a
-/// stable tempo — so the gate is the <em>minimum</em> of the must-pass signals, not an average (an average
-/// lets one strong signal mask a fatal weak one).</item>
+/// <item><b>Weakest-link gate.</b> A confident phase-lock needs the anchor to be right AND the tempo to be
+/// constant — so the gate is the <em>minimum</em> of the must-pass signals, not an average (an average lets
+/// one strong signal mask a fatal weak one). Since v12 the anchor term is the measured
+/// <see cref="KickPhaseGate"/> verdict where it exists, and the grid fit only stands in for it on tracks
+/// analyzed before that measurement (see <see cref="Evaluate(double?, double?, double?, double?)"/>).</item>
 /// <item><b>Conservative, asymmetric floor.</b> 0.6 — the calibrated equivalent of the Essentia/Zapata
 /// "good ≈ 1.5-bit" beat-tracking line — biased toward downgrade.</item>
 /// <item><b>Downbeat is deliberately NOT in the beat-level gate.</b> Four-on-the-floor has low downbeat
@@ -54,18 +66,50 @@ public static class GridConfidenceCalculator
     public static GridConfidence Evaluate(BpmResult? result)
         => result is null
             ? GridConfidence.Unknown
-            : Evaluate(result.GridCoherence, result.TempoStabilityBpmDelta);
+            : Evaluate(
+                result.GridCoherence,
+                result.TempoStabilityBpmDelta,
+                result.KickPhaseMarginRatio,
+                result.PhaseWindowDisagreementSeconds);
 
-    /// <summary>Evaluate from the raw persisted signals. Either signal absent ⇒ pre-v9 catalog ⇒ Unknown.</summary>
-    public static GridConfidence Evaluate(double? gridCoherence, double? tempoStabilityBpmDelta)
+    /// <summary>
+    /// Evaluate from the raw persisted signals. Either grid signal absent ⇒ pre-v9 catalog ⇒ Unknown.
+    /// <para><b>The phase signals (v12) DECIDE phase readiness whenever they exist</b>, and
+    /// <see cref="BpmResult.GridCoherence"/> only decides it for a track that has none. The
+    /// <see cref="KickPhaseGate"/> measures the anchor itself — the low band louder at the anchor than half a
+    /// beat away, and the same phase found again over a second window — whereas coherence measures how
+    /// tightly onsets sit on the grid, which was proven uninformative about whether the anchor is the KICK
+    /// (spearman −0.555 over the measured set, with coherence 0.641 carrying a 193.8 ms error, so no usable
+    /// floor exists). Letting the proxy veto the direct measurement cost four of eleven tracks their phase
+    /// lock and the long blend while their anchors were right to 6.4-15.8 ms.</para>
+    /// <para>Tempo stability stays a must-pass for phase either way: over a record whose tempo moves there is
+    /// no single phase to align to, and it is the signal the warp is gated on, so a phase lock is never
+    /// offered for a clip that will not be stretched.</para>
+    /// </summary>
+    public static GridConfidence Evaluate(
+        double? gridCoherence,
+        double? tempoStabilityBpmDelta,
+        double? kickPhaseMarginRatio = null,
+        double? phaseWindowDisagreementSeconds = null)
     {
         if (gridCoherence is not double coherence || tempoStabilityBpmDelta is not double bpmDelta)
             return GridConfidence.Unknown;
 
+        bool phaseMeasured = kickPhaseMarginRatio is not null || phaseWindowDisagreementSeconds is not null;
         double coherenceN = NormalizeCoherence(coherence);
         double stabilityN = NormalizeStability(bpmDelta);
-        bool ready = coherenceN >= PhaseSyncFloor && stabilityN >= PhaseSyncFloor;
-        return new GridConfidence(Display: coherenceN * stabilityN, PhaseSyncReady: ready, Analyzed: true);
+        bool anchorTrusted = phaseMeasured
+            ? KickPhaseGate.Passes(kickPhaseMarginRatio, phaseWindowDisagreementSeconds)
+            : coherenceN >= PhaseSyncFloor;
+        bool ready = anchorTrusted && stabilityN >= PhaseSyncFloor;
+        // Warping needs only a constant tempo; aligning phase additionally needs a trustworthy anchor. Gating
+        // the stretch on the fused verdict would refuse to tempo-match a rock-steady record whose anchor is
+        // merely unproven, which is the one case where stretching is unambiguously right.
+        return new GridConfidence(
+            Display: coherenceN * stabilityN,
+            PhaseSyncReady: ready,
+            Analyzed: true,
+            TempoTrusted: stabilityN >= PhaseSyncFloor);
     }
 
     private static double NormalizeCoherence(double coherence)

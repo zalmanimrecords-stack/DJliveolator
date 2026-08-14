@@ -14,12 +14,17 @@ namespace Liveolator.Core.Studio.Set;
 /// <param name="ExcludeLowGridConfidence">When true, a track whose beat grid is not trustworthy is kept
 /// out of the set entirely instead of being mixed short and unwarped.</param>
 /// <param name="StartDeckSlot">Deck lane (0 or 1) the first clip lands on; clips then alternate.</param>
+/// <param name="TargetLufs">Integrated loudness every clip is gained toward, so unequal masters sit level
+/// through each crossfade. −9 suits dance music, whose masters already sit around −8 to −6: a target near
+/// their natural level leaves the master limiter barely working. Streaming platforms only ever attenuate on
+/// normalization, so aiming lower would sound identical after their pass and merely spend headroom.</param>
 public sealed record SetBuildOptions(
     string ProjectName = "DJ Set",
     int OverlapBars = 16,
     double MaxWarpPercent = 6.0,
     bool ExcludeLowGridConfidence = false,
-    int StartDeckSlot = 0)
+    int StartDeckSlot = 0,
+    double TargetLufs = -9.0)
 {
     /// <summary>The project meter. Two decks in 4/4 is the DJ model and the only tested render path.</summary>
     public const int BeatsPerBar = 4;

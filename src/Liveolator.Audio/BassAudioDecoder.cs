@@ -105,16 +105,20 @@ public sealed class BassAudioDecoder : IAudioDecoder
         }
     }
 
-    // One-time, tolerant: make sure BASS can decode on any thread (no-sound device is enough), and load
-    // optional decode add-ons so flac/m4a join the supported set when their dll ships next to bass.
-    private static void EnsureUsable()
+    /// <summary>
+    /// One-time, tolerant: make sure BASS can decode on any thread (no-sound device is enough), and load
+    /// optional decode add-ons so flac/m4a join the supported set when their dll ships next to bass.
+    /// Returns whether BASS is usable at all. Shared with <see cref="Render.BassFxRenderDecoder"/>, which
+    /// needs the very same init: a host that renders without it produces a silent mix.
+    /// </summary>
+    internal static bool EnsureUsable()
     {
         if (_initAttempted)
-            return;
+            return _usable;
         lock (InitGate)
         {
             if (_initAttempted)
-                return;
+                return _usable;
             _initAttempted = true;
 
             var supported = new HashSet<string>(CoreExtensions, StringComparer.OrdinalIgnoreCase);
@@ -147,6 +151,7 @@ public sealed class BassAudioDecoder : IAudioDecoder
                 _usable = false; // native bass absent (e.g. CI / a box without the fetched libs)
             }
             _supported = supported;
+            return _usable;
         }
     }
 

@@ -1,4 +1,5 @@
 using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Dsp;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Playlist;
@@ -153,14 +154,16 @@ public sealed class DjSetArranger
         var openingWarnings = new List<SetWarning>();
         double currentSourceIn = SetTransitionPlanner.PlanMixIn(current, openingWarnings).SourceSeconds;
         double currentStart = 0.0;
-        bool currentWarped = IsPhaseReady(current);
+        bool currentWarped = IsTempoTrusted(current);
+        bool currentPhaseReady = IsPhaseReady(current);
 
         for (int i = 1; i < entries.Count; i++)
         {
             MusicTrack next = entries[i].Track;
-            bool nextWarped = IsPhaseReady(next);
+            bool nextWarped = IsTempoTrusted(next);
+            bool nextPhaseReady = IsPhaseReady(next);
             TransitionShape? shape = SetTransitionPlanner.Plan(
-                current, currentSourceIn, next, options, currentWarped, nextWarped);
+                current, currentSourceIn, next, options, currentPhaseReady, nextPhaseReady);
             if (shape is null)
             {
                 // Nothing left to mix out of, or the incoming record ends inside the blend. Dropping the
@@ -187,12 +190,14 @@ public sealed class DjSetArranger
             windows.Add(new CrossfadeWindow(outSlot, inSlot, blendStart, blendSeconds));
             transitions.Add(Report(
                 transitions.Count, current, next, entries[i].Rationale, shape,
-                blendStart, blendSeconds, tempoBpm, currentWarped, nextWarped));
+                blendStart, blendSeconds, tempoBpm,
+                currentWarped, nextWarped, currentPhaseReady, nextPhaseReady));
 
             current = next;
             currentSourceIn = shape.In.SourceSeconds;
             currentStart = blendStart;
             currentWarped = nextWarped;
+            currentPhaseReady = nextPhaseReady;
         }
 
         // The closing track plays out to the end of the file.
@@ -221,7 +226,9 @@ public sealed class DjSetArranger
             SourceOut: TimeSpan.FromSeconds(Math.Min(sourceOut, track.Duration!.Value.TotalSeconds)),
             SourceBpm: bpm.Bpm,
             WarpEnabled: warped,
-            Gain: 1.0,
+            // Gained to one level so unequal masters blend instead of stepping at every join. An unmeasured
+            // track resolves to unity, which is exactly the old behaviour for a catalog not yet measured.
+            Gain: LoudnessGain.For(track.IntegratedLufs, options.TargetLufs),
             // Levels come entirely from the automation lanes: folding a linear clip fade into the
             // equal-power deck curve would put the −3 dB dip straight back in.
             FadeInSeconds: 0.0,
@@ -240,13 +247,15 @@ public sealed class DjSetArranger
         double blendSeconds,
         double tempoBpm,
         bool fromWarped,
-        bool toWarped)
+        bool toWarped,
+        bool fromPhaseReady,
+        bool toPhaseReady)
     {
         GridConfidence fromGrid = GridConfidenceCalculator.Evaluate(from.Bpm);
         GridConfidence toGrid = GridConfidenceCalculator.Evaluate(to.Bpm);
 
         var warnings = shape.Warnings.ToList();
-        if (!fromWarped || !toWarped)
+        if (!fromPhaseReady || !toPhaseReady)
             warnings.Add(SetWarning.LowGridConfidence);
         if (!fromGrid.Analyzed || !toGrid.Analyzed)
             warnings.Add(SetWarning.GridNotAnalyzed);
@@ -268,16 +277,25 @@ public sealed class DjSetArranger
             KeyFrom: from.Key?.Camelot,
             KeyTo: to.Key?.Camelot,
             KeyRelationship: rationale?.Relationship,
-            PhaseLocked: fromWarped && toWarped,
+            PhaseLocked: fromPhaseReady && toPhaseReady,
             GridConfidenceFrom: fromGrid.Display,
             GridConfidenceTo: toGrid.Display,
             Warnings: warnings.Distinct().ToArray());
     }
 
     /// <summary>
-    /// A track only warps when its grid can be trusted. Stretching by a ratio derived from a guessed tempo
-    /// is wrong twice over — the wrong amount, and no way to verify the result — so a low-confidence track
-    /// plays at its native rate and takes the shortest blend instead.
+    /// A track warps when its <em>tempo</em> can be trusted. Stretching by a ratio derived from a guessed
+    /// tempo is wrong twice over — the wrong amount, and no way to verify the result — so a record whose
+    /// tempo actually drifts plays at its native rate. A loose grid fit is not that case: the ratio is
+    /// sound, only the phase is unknown, and refusing to stretch there leaves the record running against
+    /// the set tempo for the whole clip, which drifts far worse than the lock it was protecting.
+    /// </summary>
+    private static bool IsTempoTrusted(MusicTrack track)
+        => GridConfidenceCalculator.Evaluate(track.Bpm).TempoTrusted;
+
+    /// <summary>
+    /// Whether the grid is tight enough to align phase against, which decides the phase lock and the blend
+    /// length — never whether the clip is stretched (see <see cref="IsTempoTrusted"/>).
     /// </summary>
     private static bool IsPhaseReady(MusicTrack track)
         => GridConfidenceCalculator.Evaluate(track.Bpm).PhaseSyncReady;

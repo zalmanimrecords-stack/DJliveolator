@@ -92,16 +92,56 @@ public class OfflineMixRendererTests
     public async Task Render_OpenEndedClip_DecodesTheWholeFile()
     {
         // No out-point ⇒ the clip may need the whole file, so the decode is not capped.
+        // It shares the timeline with a bounded clip because the render length comes only from clips with a
+        // KNOWN end (MixPlan.DurationSeconds): an open-ended clip on its own is a zero-length timeline, and
+        // sources are decoded when first read, so there would be nothing to decode.
         const int rate = 8_000;
         int total = rate * 5;
         var decoder = new CountingDecoder(blockSize: 1_000, totalSamples: total);
         var project = new StudioProject("p", 120,
-            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, SourceOut: null) },
+            new[]
+            {
+                new StudioClip(0, "/m/open.wav", 0, TimeSpan.Zero, SourceOut: null),
+                new StudioClip(1, "/m/bounded.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(5)),
+            },
             Array.Empty<AutomationLane>());
 
         await Render(project, decoder, rate);
 
         Assert.Equal(total, decoder.YieldedSamples);
+    }
+
+    [Fact]
+    public async Task Render_WritesExactlyTheTimelineLength_DespiteTheLimitersLookAhead()
+    {
+        // The limiter delays its output by LatencySamples, so the render pushes an extra look-ahead window
+        // of silence through and drops the primed frames. Get that wrong and every mix is offset from — or
+        // longer than — its own timeline, which is exactly what makes slices fail to line up.
+        const int rate = 8_000;
+        const int seconds = 3;
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(seconds)) },
+            Array.Empty<AutomationLane>());
+
+        float[] left = await Render(project, new ConstantDecoder(0.25f, rate * seconds), rate);
+
+        Assert.Equal(rate * seconds, left.Length);
+    }
+
+    [Fact]
+    public async Task Render_KeepsTheAudioAtTheStart_RatherThanLeadingWithLookAheadSilence()
+    {
+        // A companion to the length check: the right COUNT of frames could still be the wrong ones. If the
+        // primed frames were kept, the mix would open with a window of silence and lose its own tail.
+        const int rate = 8_000;
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(2)) },
+            Array.Empty<AutomationLane>());
+
+        float[] left = await Render(project, new ConstantDecoder(0.5f, rate * 2), rate);
+
+        // Sampled past any limiter attack ramp but well inside the clip.
+        Assert.True(Math.Abs(left[rate]) > 0.1f, $"silent mid-clip ({left[rate]})");
     }
 
     // The render output is interleaved 16-bit stereo (L0,R0,L1,R1,...). These helpers read back each channel.

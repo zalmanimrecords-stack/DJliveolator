@@ -31,3 +31,14 @@ public sealed record ReanalysisSummary(
     int Analyzed,
     int Remaining,
     IReadOnlyList<FailedTrack> Failures);
+
+/// <summary>Outcome of measuring the integrated loudness of catalog entries that lacked it.</summary>
+/// <param name="Considered">Tracks with no loudness value when the pass started.</param>
+/// <param name="Measured">How many now carry a value.</param>
+/// <param name="Remaining">Still unmeasured — an unreachable or silent file yields no value, and is
+/// retried by a later pass rather than marked permanently unmeasurable.</param>
+public sealed record LoudnessSummary(
+    int Considered,
+    int Measured,
+    int Remaining,
+    IReadOnlyList<FailedTrack> Failures);
