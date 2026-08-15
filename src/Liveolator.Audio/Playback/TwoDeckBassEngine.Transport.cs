@@ -266,7 +266,7 @@ public sealed partial class TwoDeckBassEngine
         s.FirstBeat = 0.0;       // first-beat anchor likewise belongs to the track
         s.KickOnsets = Array.Empty<double>();
         s.Downbeat = 0.0;        // and so does the bar-1 anchor — stale, it would bar-snap the wrong "one"
-        s.PhaseSyncReady = true; // grid confidence is per-track; default to confident/preserve until the load re-supplies it
+        s.PhaseSyncReady = false; // grid confidence is per-track: no verdict for the NEW track yet, so no phase lock until the load supplies one
         s.LoopBeats = 0.0;       // a new track has no active loop
         s.IsStemDeck = false;    // whether the NEXT track is a stem deck is decided at its load
         Array.Clear(s.StemMuted); // fresh decoders open at unity — stem mute is per-track, reset to audible

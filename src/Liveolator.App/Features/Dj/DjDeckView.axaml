@@ -31,10 +31,17 @@
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="FontSize" Value="10" />
     </Style>
-    <!-- SYNC declined (tempos > ±15% apart → OutOfRange): a distinct red-outlined "can't sync" state so the
+    <!-- SYNC declined (tempos too far apart → OutOfRange): a distinct red-outlined "can't sync" state so the
          decline isn't a silent no-op. Paired with a "✕ SYNC" label (never colour-only, per the design line). -->
     <Style Selector="Button.key.cantsync">
       <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    </Style>
+    <!-- SYNC latched AND the phase settled inside the lock zone: green, so "tempo matched" and "actually
+         locked in the pocket" are distinguishable at a glance (mirrors DJ PRO). -->
+    <Style Selector="Button.key.locked">
+      <Setter Property="Background" Value="{DynamicResource Green}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Green}" />
     </Style>
 
     <!-- Deck colour identity: deck A wears the house Accent, deck B a cool teal (the root's .deck-b class is
@@ -83,7 +90,7 @@
          tier-dependent (Theme/ResponsiveLayout.axaml via .deck-root): a centered 460 column on
          laptops, stretching to fill on wide/4K. VerticalAlignment=Stretch lets the * row claim the slack. -->
     <Grid Classes="deck-root" Classes.deck-b="{Binding IsDeckB}" Margin="10,8"
-          RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Top">
+          RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" VerticalAlignment="Top">
 
       <!-- header: badge · title/meta · elapsed/remaining (bottom margins stand in for the old StackPanel
            Spacing=8, since Grid has no RowSpacing in this Avalonia version) -->
@@ -206,26 +213,42 @@
                 Command="{Binding PlayPauseCommand}" Margin="0,0,5,0" ToolTip.Tip="Play / pause">
           <Path Data="M 0,0 L 17,10 L 0,20 Z" Fill="{DynamicResource Accent}" />
         </Button>
-        <!-- One-shot SYNC: single-press beatmatch + kick-phase snap to the other deck, key preserved,
-             then free. Momentary, no latch. When the engine reports OutOfRange (tempos > ±15% apart) the
-             button flips to a red "✕ SYNC" so the decline is visible, not a silent no-op. -->
-        <Button Grid.Column="2" Classes="key" Classes.cantsync="{Binding IsSyncOutOfRange}" Height="42"
+        <!-- SYNC: beatmatch + kick-phase snap to the other deck, key preserved. The view-model dispatches
+             it as a TOGGLE and the handler latches, so this is a sync LOCK, not a momentary press. Two
+             declines must stay visible rather than reading as a silent no-op: OutOfRange (tempos too far
+             apart) flips the button to a red "✕ SYNC", and a grid the analyzer will not vouch for shows the
+             tempo-only hint below. -->
+        <Button Grid.Column="2" Classes="key" Classes.cantsync="{Binding IsSyncOutOfRange}"
+                Classes.on="{Binding IsSync}" Classes.locked="{Binding IsSyncLockedTight}" Height="42"
                 Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
-                ToolTip.Tip="Match tempo + phase to the other deck once (key preserved)">
+                ToolTip.Tip="Match tempo + phase to the other deck (key preserved)">
           <Panel>
             <TextBlock Text="SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
                        IsVisible="{Binding !IsSyncOutOfRange}" />
             <TextBlock Text="✕ SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="{DynamicResource Red}" IsVisible="{Binding IsSyncOutOfRange}"
-                       ToolTip.Tip="Tempos too far apart to beatmatch (more than ±15%)" />
+                       ToolTip.Tip="Tempos too far apart to beatmatch" />
           </Panel>
         </Button>
       </Grid>
 
+      <!-- Why SYNC is holding tempo only. Without this a tempo-only deck looked IDENTICAL to one locked in
+           the pocket, so the DJ opened the fader believing the phase was held. Two states, because the
+           remedy differs: an unmeasured grid is fixed by re-analyzing, a refused one is not. Both collapse
+           to zero height when the grid is good, so the LIVE one-screen fold is unaffected. -->
+      <TextBlock Grid.Row="3" Classes="mono" FontSize="10" HorizontalAlignment="Center" Margin="0,0,0,4"
+                 Foreground="{DynamicResource Amber}" Text="◆ GRID UNCERTAIN · TEMPO-ONLY"
+                 IsVisible="{Binding IsGridUncertain}"
+                 ToolTip.Tip="The beatgrid did not pass the kick-phase check, so SYNC matches tempo without locking phase. Ride the phase by hand, or set the grid yourself." />
+      <TextBlock Grid.Row="3" Classes="mono" FontSize="10" HorizontalAlignment="Center" Margin="0,0,0,4"
+                 Foreground="{DynamicResource Amber}" Text="◆ GRID NOT ANALYZED · TEMPO-ONLY"
+                 IsVisible="{Binding IsGridNotAnalyzed}"
+                 ToolTip.Tip="This track has no analyzed beatgrid yet, so SYNC matches tempo without locking phase. Re-analyze the track for full beat sync." />
+
       <!-- KEY · KEY-LOCK · pitch%: the loaded track's musical key (from the catalog) on the left, the KEY LOCK
            tempo/pitch-mode toggle in the centre (filling what used to be dead space), and the live signed
            pitch offset (DeckPitch, hardware/MIDI-driven) on the right. -->
-      <Grid Grid.Row="3" Margin="0,0,0,8" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+      <Grid Grid.Row="4" Margin="0,0,0,8" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
         <TextBlock Grid.Column="0" Classes="section" VerticalAlignment="Center" Text="KEY" />
         <TextBlock Grid.Column="1" Classes="mono accent" Margin="8,0,0,0" FontSize="{DynamicResource FontTrackKey}"
                    VerticalAlignment="Center" Text="{Binding TrackKey}"
@@ -241,7 +264,7 @@
       </Grid>
 
       <!-- BPM: horizontal fader (0..1 normalised) + nudge buttons for manual beat-sync -->
-      <Border Grid.Row="4" Classes="hardware-well" Padding="10,8">
+      <Border Grid.Row="5" Classes="hardware-well" Padding="10,8">
         <StackPanel Spacing="6">
           <Grid ColumnDefinitions="Auto,*,Auto">
             <TextBlock Classes="section" VerticalAlignment="Center" Text="BPM" />

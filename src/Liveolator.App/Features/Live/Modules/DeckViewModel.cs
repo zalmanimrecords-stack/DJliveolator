@@ -152,6 +152,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private bool _isTempoSync;
     private bool _isTempoSyncOutOfRange;
     private bool _isGridUncertain;
+    private bool _isGridNotAnalyzed;
     private decimal _minimumBpm;
     private decimal _maximumBpm;
     private bool _isBpmEnabled;
@@ -808,6 +809,16 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     {
         get => _isGridUncertain;
         private set => this.RaiseAndSetIfChanged(ref _isGridUncertain, value);
+    }
+
+    /// <summary>True when the loaded track carries no grid signals at all — it predates the analyzer version
+    /// that measures them, or was never analyzed. Distinct from <see cref="IsGridUncertain"/> because the
+    /// REMEDY differs: this one is fixed by re-analyzing the track, whereas a measured-and-refused grid means
+    /// riding the phase by hand. Both downgrade SYNC to tempo-only.</summary>
+    public bool IsGridNotAnalyzed
+    {
+        get => _isGridNotAnalyzed;
+        private set => this.RaiseAndSetIfChanged(ref _isGridNotAnalyzed, value);
     }
 
     /// <summary>True when this deck is the sync MASTER — the reference the other (synced) deck locks onto
@@ -1830,16 +1841,24 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // through the action seam so the engine gate and the "grid uncertain" indicator follow one signal. Only
     // emitted once the track has grid-confidence signals (analyzer v9+); an older / not-yet-analyzed track
     // leaves the engine at its confident default, preserving phase sync until the background re-analysis runs.
+    // Push the loaded track's grid verdict to the engine. ALWAYS dispatches, including for a track with no
+    // signals: returning early left the slot on whatever the previous track set, and while the engine now
+    // defaults to tempo-only, saying nothing would still leave the deck's own indicator unable to tell
+    // "not analyzed" (remedy: re-analyze) from "measured and refused" (remedy: ride the phase by hand).
+    //
+    // Analyzed is required as well as PhaseSyncReady, because GridConfidence.Unknown reports
+    // PhaseSyncReady TRUE — correct for offline set-building, where "not judged" must not block, and
+    // exactly the fail-open this live gate exists to close.
     private void DispatchGridConfidence(BpmResult analysis)
     {
         if (_dispatcher is null)
             return;
         GridConfidence confidence = GridConfidenceCalculator.Evaluate(analysis);
-        if (!confidence.Analyzed)
-            return;
+        bool ready = confidence is { Analyzed: true, PhaseSyncReady: true };
+        IsGridNotAnalyzed = !confidence.Analyzed;
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetPhaseSyncReady, ActionInputMode.Absolute,
-            Value: confidence.PhaseSyncReady ? 1.0 : 0.0, Slot: _slot, Origin: AnalysisOrigin));
+            Value: ready ? 1.0 : 0.0, Slot: _slot, Origin: AnalysisOrigin));
     }
 
     // Fire-and-forget waveform decode at the event boundary; cancels any prior in-flight load so a quick

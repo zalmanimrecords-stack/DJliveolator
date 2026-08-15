@@ -27,7 +27,9 @@ internal sealed class FakeMultiDeckPlaybackEngine : IMultiDeckPlaybackEngine
         _baseBpm = new double[deckCount];
         _firstBeat = new double[deckCount];
         _kickOnsets = Enumerable.Repeat<IReadOnlyList<double>>(Array.Empty<double>(), deckCount).ToArray();
-        _phaseSyncReady = Enumerable.Repeat(true, deckCount).ToArray(); // default confident (preserve phase sync)
+        // Mirrors the real engine: a slot with no grid verdict is NOT phase-sync ready (tempo-only). Left
+        // at true, a test asserting "the load vouched this deck" would pass without the load doing anything.
+        _phaseSyncReady = new bool[deckCount];
     }
 
     /// <summary>Ordered log of (operation, slot, arg) so a test can assert the exact sequence.</summary>

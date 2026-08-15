@@ -356,14 +356,27 @@ Flush:
             return;
         }
 
-        // Tempo-only: hold the beatmatched tempo but run NO phase correction or re-snap. Two ways in — the
-        // DJ chose Tempo Sync (§4), or the grid-confidence gate forced it on an untrustworthy grid (§7).
-        // Either way the follower tracks the master's tempo and the DJ owns the phase. Reported Active
-        // (engaged, tempo held) rather than progressing to Locked.
-        if (!s.PhaseSyncReady || s.SyncMode == SyncMode.TempoOnly)
+        // Tempo-only: hold the beatmatched tempo but run NO phase correction or re-snap. Three ways in — the
+        // DJ chose Tempo Sync (§4), the follower's own grid failed the confidence gate, or the LEADER's did
+        // (§7). The leader matters just as much: the anchor the follower is aligned onto is built from the
+        // leader, so locking onto a refused leader imports its error wholesale — the gate was one-sided and
+        // read false on the very deck that was the master. Either way the follower tracks the master's tempo
+        // and the DJ owns the phase. Reported Active (engaged, tempo held) rather than progressing to Locked.
+        if (!s.PhaseSyncReady || !leader.PhaseSyncReady || s.SyncMode == SyncMode.TempoOnly)
         {
             _backend.SetDeckRate(deck.Handle, sr.Rate);
             SetSyncStateLocked(slot, SyncLockState.Active);
+            // Every other declined-sync path logs; this one did not, so a downgrade was invisible even in
+            // the log. Name which side closed the gate — that is what the DJ has to act on.
+            if (!s.PhaseSyncReady || !leader.PhaseSyncReady)
+            {
+                _logger.LogInformation(
+                    "Deck slot {Slot} sync is tempo-only: grid uncertain on {Side}.",
+                    slot,
+                    !s.PhaseSyncReady && !leader.PhaseSyncReady ? "both decks"
+                        : !s.PhaseSyncReady ? "this deck" : "the leader");
+            }
+
             return;
         }
 
@@ -560,10 +573,23 @@ Flush:
             return;
         }
 
+        // NOT gated on "has an anchor": DeckSlot.FirstBeat documents 0.0 as "unknown", but the analyzer's
+        // WrapToBeat legitimately RETURNS 0.0 for a track whose phase lands on the file start, so refusing
+        // on 0.0 would falsely strip phase sync from real tracks. The two cases are genuinely
+        // indistinguishable in the current type, and separating them needs a nullable anchor plumbed
+        // through DeckSlot, the action and the MIDI codec — deliberately out of scope here.
         DeckSlot leader = _slots[slot == 0 ? 1 : 0];
         if (leader.Deck is not { } leaderDeck || leader.BaseBpm <= 0.0)
         {
             _logger.LogInformation("Deck slot {Slot} quantize: no valid leader; phase unchanged.", slot);
+            return;
+        }
+
+        // The leader supplies the anchor, so its grid must be vouched for too — see CorrectSlaveLocked.
+        if (!leader.PhaseSyncReady)
+        {
+            _logger.LogInformation(
+                "Deck slot {Slot} phase align skipped: the leader's grid is uncertain (tempo-only).", slot);
             return;
         }
 

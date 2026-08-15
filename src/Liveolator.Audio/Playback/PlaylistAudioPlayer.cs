@@ -139,6 +139,20 @@ public sealed class PlaylistAudioPlayer : IDisposable
                 Value: analysis?.FirstBeatSeconds ?? 0.0,
                 Slot: _slot,
                 Argument: DeckKickOnsetCodec.Encode(analysis?.KickOnsetsSeconds)));
+            // Gate an automatic load exactly like a UI load. This path used to send the anchor and the kick
+            // list but no VERDICT, so the engine kept whatever the slot held; now that a slot without one is
+            // tempo-only, staying silent would quietly cost every queue/auto-advance track its phase lock.
+            //
+            // Analyzed is required as well as PhaseSyncReady: GridConfidence.Unknown - what an unanalyzed or
+            // pre-v9 track evaluates to - still reports PhaseSyncReady TRUE, because offline set-building
+            // treats "not judged" as "do not block". Live, that is precisely the fail-open this gate exists
+            // to close, so an unjudged grid is tempo-only here.
+            GridConfidence confidence = GridConfidenceCalculator.Evaluate(analysis);
+            _dispatcher.Dispatch(new PerformanceAction(
+                PerformanceActionKind.DeckSetPhaseSyncReady,
+                ActionInputMode.Absolute,
+                Value: confidence is { Analyzed: true, PhaseSyncReady: true } ? 1.0 : 0.0,
+                Slot: _slot));
             if (shouldAutoPlay && !_engine.IsPlaying(_slot))
                 _dispatcher.Dispatch(new PerformanceAction(
                     PerformanceActionKind.DeckPlayPause, Slot: _slot));

@@ -78,10 +78,14 @@ internal sealed class DeckSlot
     public double Downbeat;
 
     /// <summary>Whether the analyzed grid is trustworthy enough to PHASE-sync (SYNC-BEHAVIOR-SPEC §7). When
-    /// false, Sync tempo-matches only and skips phase alignment. Defaults true (confident) and resets to
-    /// true on unload — a track without grid-confidence signals preserves phase sync; the load path pushes
-    /// the real value when the track's confidence is known.</summary>
-    public bool PhaseSyncReady = true;
+    /// false, Sync tempo-matches only and skips phase alignment.
+    /// <para><b>Defaults FALSE, and every load resets it to false.</b> It used to default true, so a slot
+    /// nobody had judged offered a confident phase lock — and the anchor it locked onto came from the
+    /// pre-v12 broadband envelope that measured 37–214 ms wrong. Unknown must mean tempo-only: an
+    /// unnecessary downgrade costs a DJ far less than a confident-but-wrong lock that drifts on a full
+    /// floor. The load path pushes the real verdict, so a judged track is ready within the same load.</para>
+    /// </summary>
+    public bool PhaseSyncReady;
 
     /// <summary>Active loop length in beats; 0 = no loop. Cleared on unload.</summary>
     public double LoopBeats;

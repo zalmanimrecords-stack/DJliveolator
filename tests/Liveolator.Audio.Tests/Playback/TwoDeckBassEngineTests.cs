@@ -630,6 +630,10 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // follower 101
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 128.0);
+        // Both grids vouched for: since the gate fails CLOSED, a phase-lock assertion must state
+        // this precondition or it silently exercises the tempo-only path instead.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.PlayPause(0);
         backend.PositionFraction[100] = 0.0;   // leader on the beat
         backend.PositionFraction[101] = 0.002; // follower off the beat (0.2 s of a 100 s track)
@@ -657,19 +661,6 @@ public class TwoDeckBassEngineTests
 
         Assert.Equal(1.0, backend.Rate[101], 6);                  // still tempo matched
         Assert.Equal(0.002, backend.PositionFraction[101], 6);    // but the phase is left untouched
-    }
-
-    [Fact]
-    public void PhaseSyncReady_DefaultsTrue_AndResetsToTrueOnLoad()
-    {
-        using var engine = NewEngine(out _, out _);
-        engine.Load(0, @"C:\a.wav");
-        Assert.True(engine.DeckPhaseSyncReady(0)); // confident by default
-
-        engine.SetDeckPhaseSyncReady(0, false);
-        engine.Load(0, @"C:\b.wav"); // grid confidence is per-track — a new load resets to confident/preserve
-
-        Assert.True(engine.DeckPhaseSyncReady(0));
     }
 
     [Fact]
@@ -757,6 +748,10 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav");
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 128.0);
+        // Both grids vouched for: since the gate fails CLOSED, a phase-lock assertion must state
+        // this precondition or it silently exercises the tempo-only path instead.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.PlayPause(0);
         backend.PositionFraction[100] = 0.0;
         backend.PositionFraction[101] = 0.002;
@@ -779,6 +774,10 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // follower 101
         engine.SetDeckBaseBpm(0, 128.0);
         engine.SetDeckBaseBpm(1, 128.0);
+        // Both grids vouched for: since the gate fails CLOSED, a phase-lock assertion must state
+        // this precondition or it silently exercises the tempo-only path instead.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.PlayPause(0);                   // leader playing
         backend.PositionFraction[100] = 0.0;   // leader on the beat
         engine.SetSyncLock(1, true);           // follower armed while STOPPED
@@ -1451,6 +1450,10 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // follower, handle 101
         engine.SetDeckBaseBpm(0, 120.0);
         engine.SetDeckBaseBpm(1, 120.0);
+        // Both grids vouched for: since the gate fails CLOSED, a phase-lock assertion must state
+        // this precondition or it silently exercises the tempo-only path instead.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.SetDeckFirstBeat(0, 0.0);
         engine.SetDeckFirstBeat(1, 0.0);
         // Length defaults to 100 s. Leader at 0.25 s (half a 120-BPM beat into its grid); follower on a
@@ -1503,6 +1506,10 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // follower, handle 101
         engine.SetDeckBaseBpm(0, 120.0);  // beat = 0.5 s, bar (4/4) = 2 s
         engine.SetDeckBaseBpm(1, 120.0);
+        // Both grids vouched for: since the gate fails CLOSED, a phase-lock assertion must state
+        // this precondition or it silently exercises the tempo-only path instead.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.SetDeckDownbeat(0, 0.5);
         engine.SetDeckDownbeat(1, 0.5);
         // Leader one beat PAST its downbeat (1.0 s); follower exactly ON its downbeat (0.5 s). Both sit on

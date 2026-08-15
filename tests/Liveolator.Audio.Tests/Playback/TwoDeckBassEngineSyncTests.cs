@@ -26,6 +26,11 @@ public class TwoDeckBassEngineSyncTests
         engine.Load(1, @"C:\slave.wav");  // handle 101 — slave
         engine.SetDeckBaseBpm(0, Bpm);
         engine.SetDeckBaseBpm(1, Bpm);
+        // Both grids vouched for. Since the gate began failing CLOSED (a slot with no verdict is
+        // tempo-only), a phase-lock test has to state this precondition rather than inherit a permissive
+        // default — otherwise it would silently be testing the tempo-only path instead of the lock loop.
+        engine.SetDeckPhaseSyncReady(0, true);
+        engine.SetDeckPhaseSyncReady(1, true);
         engine.PlayPause(0);
         return engine;
     }

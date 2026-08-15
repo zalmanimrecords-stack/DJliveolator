@@ -1440,11 +1440,14 @@ public sealed class DeckViewModelTests
     }
 
     [Fact]
-    public void Load_WithPreV9Grid_DoesNotDispatchPhaseSyncReady_PreservingPhaseSync()
+    public void Load_WithAnUnjudgedGrid_DispatchesTempoOnly_AndSaysItIsNotAnalyzed()
     {
+        // Inverted deliberately (2026-08-15). This used to assert that a track with no grid signals
+        // dispatched NOTHING, "preserving phase sync" — i.e. it phase-locked onto an anchor from the
+        // pre-v12 broadband envelope that measured 37–214 ms wrong. Unknown now means tempo-only, and the
+        // deck says WHICH kind of unknown, because the remedy differs: re-analyze, versus ride it by hand.
         var dispatcher = new FakeDispatcher();
-        // An older catalog track: no grid-confidence signals (both null) → Unknown → leave the gate alone.
-        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, 0.29);
+        var analysis = new Liveolator.Core.Analysis.Bpm.BpmResult(128.0, 0.9, 0.29); // both signals null
         var vm = new DeckViewModel(
             slot: 0, dispatcher, FakeWaveformProvider.WithDuration(120),
             trackInfo: null, analysisInfo: _ => analysis);
@@ -1452,7 +1455,9 @@ public sealed class DeckViewModelTests
         dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 128.0, Argument: @"C:\a.flac"));
 
-        Assert.DoesNotContain(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetPhaseSyncReady);
+        Assert.Contains(dispatcher.Dispatched, a =>
+            a.Kind == PerformanceActionKind.DeckSetPhaseSyncReady && a.Value == 0.0 && a.Slot == 0);
+        Assert.True(vm.IsGridNotAnalyzed);
     }
 
     // --- Background BPM analysis: a load with no analysis anywhere self-heals by analyzing the file ---

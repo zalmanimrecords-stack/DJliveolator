@@ -27,7 +27,7 @@ public sealed class PlaylistAudioPlayerTests
 
         playlist.RaiseNowChanged(Entry("a.wav"));
 
-        Assert.Equal(new[] { "Load(1,a.wav)", "PlayPause(1)" }, engine.Calls);
+        Assert.Equal(new[] { "Load(1,a.wav)", "SetDeckPhaseSyncReady(1,False)", "PlayPause(1)" }, engine.Calls);
         Assert.Equal("a.wav", engine.LoadedOn(1));
         Assert.True(engine.IsPlaying(1));
     }
@@ -51,6 +51,65 @@ public sealed class PlaylistAudioPlayerTests
 
         Assert.Equal(126.0, engine.DeckBaseBpm(1), precision: 6);
         Assert.Equal(0.375, engine.DeckFirstBeat(1), precision: 6);
+    }
+
+    [Fact]
+    public void NowChanged_DispatchesTheGridVerdict_SoAQueueLoadIsGatedLikeAUiLoad()
+    {
+        // The queue/auto-advance path supplied a BPM, an anchor and the kick list but NEVER a grid verdict,
+        // so the engine kept whatever the slot happened to hold. Now that a slot with no verdict is
+        // tempo-only, silence here would strip phase sync from every automatic load — the deck must be told.
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        var dispatcher = new PerformanceActionDispatcher(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            dispatcher,
+            engine,
+            // Vouched: tight kick fit, constant tempo, kick clearly louder than the off-beat, phase stable.
+            analysisResolver: path => path == "good.wav"
+                ? new BpmResult(140.0, 0.9, 0.125)
+                {
+                    GridCoherence = 0.88,
+                    TempoStabilityBpmDelta = 0.08,
+                    KickPhaseMarginRatio = 3.4,
+                    PhaseWindowDisagreementSeconds = 0.002,
+                }
+                : null,
+            slot: 1);
+
+        playlist.RaiseNowChanged(Entry("good.wav"));
+
+        Assert.True(engine.DeckPhaseSyncReady(1));
+    }
+
+    [Fact]
+    public void NowChanged_WithARefusedGrid_LeavesTheQueueLoadedDeckTempoOnly()
+    {
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        var dispatcher = new PerformanceActionDispatcher(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            dispatcher,
+            engine,
+            // The kick is no louder at the anchor than half a beat away — the anchor may be the off-beat.
+            analysisResolver: path => new BpmResult(140.0, 0.9, 0.125)
+            {
+                GridCoherence = 0.88,
+                TempoStabilityBpmDelta = 0.08,
+                KickPhaseMarginRatio = 0.4,
+                PhaseWindowDisagreementSeconds = 0.002,
+            },
+            slot: 1);
+
+        playlist.RaiseNowChanged(Entry("dodgy.wav"));
+
+        Assert.False(engine.DeckPhaseSyncReady(1));
     }
 
     [Fact]
@@ -84,7 +143,7 @@ public sealed class PlaylistAudioPlayerTests
 
         playlist.RaiseNowChanged(Entry("a.wav"));
 
-        Assert.Equal(new[] { "Load(0,a.wav)" }, engine.Calls);
+        Assert.Equal(new[] { "Load(0,a.wav)", "SetDeckPhaseSyncReady(0,False)" }, engine.Calls);
         Assert.False(engine.IsPlaying(0));
     }
 
@@ -157,7 +216,7 @@ public sealed class PlaylistAudioPlayerTests
             slot: 0,
             autoPlayExistingNow: false);
 
-        Assert.Equal(new[] { "Load(0,restored.wav)" }, engine.Calls);
+        Assert.Equal(new[] { "Load(0,restored.wav)", "SetDeckPhaseSyncReady(0,False)" }, engine.Calls);
         Assert.Equal("restored.wav", engine.LoadedOn(0));
         Assert.False(engine.IsPlaying(0));
     }
@@ -176,7 +235,7 @@ public sealed class PlaylistAudioPlayerTests
 
         playlist.RaiseNowChanged(Entry("next.wav"));
 
-        Assert.Equal(new[] { "Load(0,next.wav)", "PlayPause(0)" }, engine.Calls);
+        Assert.Equal(new[] { "Load(0,next.wav)", "SetDeckPhaseSyncReady(0,False)", "PlayPause(0)" }, engine.Calls);
         Assert.True(engine.IsPlaying(0));
     }
 
