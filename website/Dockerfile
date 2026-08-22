@@ -9,7 +9,13 @@ RUN npm ci
 
 # Build the static output into /app/dist.
 COPY . .
-RUN npm run build
+
+# The release record is fetched from WordPress during the build, so an unchanged
+# source tree can still owe a new build. SITE_REV carries the revision the
+# publish agent wants and invalidates this layer whenever it changes — without
+# it Docker would reuse the cached build and the site would never update.
+ARG SITE_REV=local
+RUN echo "building for release rev ${SITE_REV}" && npm run build
 
 # Stage 2 — serve the static files. No Node at runtime.
 FROM nginx:1.27-alpine AS runtime

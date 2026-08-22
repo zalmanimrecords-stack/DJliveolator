@@ -177,30 +177,12 @@ Write-Host "  site.ts updated (version $Version$(if($sizeText){", $sizeText"})).
 # setting, so it must be pointed at this new filename or emailed links will 404.
 Write-Host "  REMINDER: update WordPress -> Newsletter -> Settings -> Gated downloads (Liveolator path/version = $Version). See website/DEPLOY.md." -ForegroundColor Yellow
 
-# --- Update version.json (the app's machine-readable update manifest) ----------
-# The in-app startup update check (Liveolator.App.Features.Update) GETs this from the
-# site root and compares its "version" to the running build.
-# The URL points at the DOWNLOAD PAGE, not the direct /downloads/*.exe path: downloads are
-# email-gated and nginx returns 403 for any unsigned direct link, so the app must send the
-# user through the same gate the site's Download button uses. site.ts keeps the direct path
-# (that is the one WordPress signs) - only this manifest differs.
-$siteOrigin     = 'https://liveolator.zalmanim.com'
-$versionJsonPath = Join-Path $repoRoot 'website/public/version.json'
-$downloadAbs    = "$siteOrigin/#download"
-$vjLines = New-Object System.Collections.Generic.List[string]
-$vjLines.Add('{')
-$vjLines.Add('  "version": ' + (ConvertTo-JsonString ([string]$Version)) + ',')
-$vjLines.Add('  "downloadUrl": ' + (ConvertTo-JsonString $downloadAbs) + ',')
-$vjLines.Add('  "notes": [')
-$vjNotes = @($Notes)
-for ($k = 0; $k -lt $vjNotes.Count; $k++) {
-    $vjComma = if ($k -lt ($vjNotes.Count - 1)) { ',' } else { '' }
-    $vjLines.Add('    ' + (ConvertTo-JsonString ([string]$vjNotes[$k])) + $vjComma)
-}
-$vjLines.Add('  ]')
-$vjLines.Add('}')
-Write-Utf8NoBom $versionJsonPath (($vjLines -join "`n") + "`n")
-Write-Host "  version.json updated (update manifest for v$Version)." -ForegroundColor Green
+# --- The app's update manifest --------------------------------------------------
+# Not written here any more. /version.json is generated at build time from site.ts
+# + changelog.json (website/src/pages/version.json.ts), because the release record
+# now also changes in wp-admin -> Product Sites: a copy committed under public/
+# went stale the moment a version was bumped there, and every installed app kept
+# being told it was up to date.
 
 # --- Refresh website screenshots from the latest UI-shot captures --------------
 # Keeps the site's screenshots in step with the app. -CaptureShots re-renders them
@@ -258,10 +240,12 @@ try {
     Push-Location (Join-Path $repoRoot 'website/public')
     & scp @sshOpts -r 'screenshots' "${VpsHost}:$RemoteDir/public/"
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "scp screenshots failed ($LASTEXITCODE)." }
-    # The app's update manifest - must reach the live site so the startup check sees the new version.
-    & scp @sshOpts 'version.json' "${VpsHost}:$RemoteDir/public/version.json"
     Pop-Location
-    if ($LASTEXITCODE -ne 0) { throw "scp version.json failed ($LASTEXITCODE)." }
+    # A public/version.json left over from before /version.json became a generated
+    # route would be copied over the built one and shadow it, so the site would go
+    # on serving the version from the last hand-written manifest.
+    & ssh @sshOpts $VpsHost "rm -f $RemoteDir/public/version.json"
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not remove a stale remote public/version.json ($LASTEXITCODE)." }
 
     & ssh @sshOpts $VpsHost "cd $RemoteDir && docker compose up -d --build"
     if ($LASTEXITCODE -ne 0) { throw "remote rebuild failed ($LASTEXITCODE)." }
