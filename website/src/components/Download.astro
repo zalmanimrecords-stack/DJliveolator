@@ -41,6 +41,9 @@ import { site } from "../data/site";
           autocomplete="off"
           aria-hidden="true"
         />
+        <!-- Filled in by the script when the visitor arrived from a changelog
+             link, so nobody asks for 2.0 and is surprised by the current build. -->
+        <p class="dl-gate-version" hidden></p>
         <p class="dl-gate-msg" role="status" aria-live="polite" hidden></p>
         <p class="dl-gate-fine">
           We email you a secure download link that works for 24 hours. We don't
@@ -144,6 +147,12 @@ import { site } from "../data/site";
     height: 1px;
     opacity: 0;
   }
+  .dl-gate-version {
+    margin: 10px 0 0;
+    font-size: 0.9rem;
+    opacity: 0.85;
+  }
+
   .dl-gate-msg {
     margin-top: 14px;
     padding: 10px 12px;
@@ -165,7 +174,7 @@ import { site } from "../data/site";
   }
 </style>
 
-<script define:vars={{ apiUrl: site.downloadApiUrl, product: site.productSlug }}>
+<script define:vars={{ apiUrl: site.downloadApiUrl, product: site.productSlug, currentVersion: site.version }}>
   // Email-gated download: POST the address to the WP backend, which emails a
   // signed 24h link. Sent as form-urlencoded so the browser skips a CORS
   // preflight; the backend returns an Access-Control-Allow-Origin for this site.
@@ -180,6 +189,20 @@ import { site } from "../data/site";
       msg.hidden = false;
     };
 
+    // A changelog entry links here with ?v=<version>, because those links used
+    // to point straight at the file and every one of them answered 403 once
+    // downloads became email-gated. The gate validates the version server-side;
+    // this only carries it and says out loud which build is being requested.
+    const wanted = (new URLSearchParams(location.search).get("v") || "").trim();
+    const versionNote = form.querySelector(".dl-gate-version");
+    if (wanted && /^[0-9]+(\.[0-9]+){0,3}$/.test(wanted)) {
+      versionNote.textContent =
+        wanted === currentVersion
+          ? `Sending you the current build, v${wanted}.`
+          : `Sending you v${wanted} — an older build. The current one is v${currentVersion}.`;
+      versionNote.hidden = false;
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const email = form.email.value.trim();
@@ -192,6 +215,9 @@ import { site } from "../data/site";
       const body = new URLSearchParams();
       body.set("email", email);
       body.set("product", product);
+      if (wanted) {
+        body.set("version", wanted);
+      }
       body.set("newsletter_opt_in", form.newsletter_opt_in.checked ? "1" : "0");
       body.set("company", form.company.value);
 

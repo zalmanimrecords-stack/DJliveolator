@@ -23,7 +23,8 @@ const DOWNLOADABLE = 6;
       <p>
         Every {site.name} build, newest first. It's {site.stage.toLowerCase()} —
         things move fast and occasionally break. The most recent builds stay
-        downloadable below, so you can roll back if a new one misbehaves. Spotted
+        downloadable below — pick one and we email you a link, so you can roll
+        back if a new one misbehaves. Spotted
         something off? <a href="/#feedback">Tell us</a>.
       </p>
     </header>
@@ -39,10 +40,9 @@ const DOWNLOADABLE = 6;
               {i < DOWNLOADABLE && (
                 <a
                   class="rel-dl"
-                  href={`/downloads/LiveolatorSetup-${rel.version}.exe`}
-                  download
+                  href={`/?v=${rel.version}#download`}
                 >
-                  Download .exe
+                  Email me this build
                 </a>
               )}
             </div>
