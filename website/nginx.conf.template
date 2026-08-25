@@ -28,6 +28,14 @@ server {
         image/svg+xml;
 
     # Astro emits content-hashed assets here — safe to cache forever.
+    # Which wp-admin release revision this build was made from. The VPS publish
+    # agent and the Product Sites screen both poll it to tell whether a rebuild
+    # landed, so it must never be served from a cache — an edge copy of the
+    # previous build would read as "still pending" forever.
+    location = /rev.txt {
+        add_header Cache-Control "no-store" always;
+    }
+
     location /_astro/ {
         expires 1y;
         add_header Cache-Control "public, immutable";

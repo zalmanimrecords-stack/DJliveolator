@@ -1,9 +1,16 @@
+import { loadReleaseFeed } from "./release-feed";
+
 /**
  * Single source of truth for site content and links.
  * Edit values here rather than in the markup.
+ *
+ * Exception: the release fields (`version`, `downloadUrl`, `downloadSize`) are
+ * managed in wp-admin → Product Sites and overlaid at build time — see the
+ * bottom of this file. The values below stay as the offline fallback for
+ * `astro dev` and for a build that cannot reach WordPress.
  */
 
-export const site = {
+const defaults = {
   name: "Liveolator",
   tagline: "Mix the music. Move the visuals. One beat.",
   description:
@@ -57,6 +64,31 @@ export const site = {
   // Bump when the privacy policy (/privacy) is revised.
   privacyUpdated: "2026-06-21",
 } as const;
+
+/**
+ * The release record from wp-admin, or null when it could not be read. Fetched
+ * once here (ES modules are evaluated once) and reused by `changelog.ts`.
+ */
+export const releaseFeed = await loadReleaseFeed(defaults.productSlug);
+
+/**
+ * The revision this build was made from, published at `/rev.txt` so the publish
+ * agent and the wp-admin screen can both tell whether what is live matches what
+ * is saved. A build that fell back to the committed values deliberately reports
+ * no revision rather than a stale one — that mismatch is the retry signal.
+ */
+export const buildRev = releaseFeed?.rev ?? "none";
+
+export const site = {
+  ...defaults,
+  ...(releaseFeed
+    ? {
+        version: releaseFeed.version,
+        downloadUrl: releaseFeed.downloadPath,
+        downloadSize: releaseFeed.downloadSize,
+      }
+    : {}),
+};
 
 export type Feature = {
   tag: string;

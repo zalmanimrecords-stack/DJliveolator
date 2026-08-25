@@ -39,9 +39,11 @@ On launch the app checks the website for a newer build and, if one exists, shows
   `StartupUpdateChecker` (orchestration, no Avalonia — fire-and-forget from `App.axaml.cs`, swallows all
   failures), `IUpdatePrompt`/`AvaloniaUpdatePrompt` + `UpdateAvailableWindow`, and `IUrlOpener`/
   `SystemUrlOpener` (cross-platform browser launch). Wired in `ServiceConfig.WireUpdateCheck`.
-- **Website:** `website/public/version.json` (served at `/version.json`) is regenerated + deployed by
-  `scripts/publish-website-release.ps1` from the same values it writes to `site.ts`, so the check stays
-  in step with every build.
+- **Website:** `/version.json` is a generated route (`website/src/pages/version.json.ts`) built from
+  `site.ts` + `changelog.json`, whose release fields are themselves overlaid at build time from
+  wp-admin -> Product Sites. It used to be a file committed under `public/` and written by
+  `scripts/publish-website-release.ps1`; that went stale as soon as a version was bumped in wp-admin
+  instead of by the script, and a stale manifest tells every installed app it is up to date.
 - **Tests:** Core checker (newer/older/equal/null/garbage/skip/`v`-prefix), `UpdateSettings`, Online
   source (parse/404/garbage/missing fields), Media snapshot round-trip + legacy load, App coordinator
   (disabled/up-to-date/download/skip/later/already-skipped/fetch-failure) — all green.

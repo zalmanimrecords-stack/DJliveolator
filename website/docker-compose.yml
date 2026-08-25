@@ -11,7 +11,13 @@
 # (Cloudflare, proxied — same as the sibling subdomains). See DEPLOY.md.
 services:
   site:
-    build: .
+    build:
+      context: .
+      args:
+        # Release revision being built, passed by the publish agent so Docker
+        # rebuilds instead of reusing a cached layer when only the WordPress
+        # release record changed. Empty for a hand-run build.
+        SITE_REV: ${SITE_REV:-local}
     image: liveolator-site:latest
     container_name: liveolator-site
     restart: unless-stopped

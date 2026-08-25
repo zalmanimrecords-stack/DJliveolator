@@ -107,5 +107,71 @@ const jsonLd = {
         els.forEach((el) => el.classList.add("in"));
       }
     </script>
+
+    <script>
+      // Aggregate page count, reported to our own server at zalmanim.com — the
+      // same first-party beacon the label's WordPress sites use, so all five
+      // appear on one screen instead of this one being a blind spot.
+      //
+      // text/plain, not JSON: this is a cross-origin POST, and the three
+      // "simple" content types are the ones a browser will send without a
+      // preflight. sendBeacon cannot answer a preflight, so JSON here would mean
+      // the request is silently never made.
+      //
+      // No cookie, no identifier from this side: only the path and the referring
+      // site travel. The server never stores the IP.
+      (() => {
+        const OFF = "zbiOff";
+        const flag = new URLSearchParams(location.search).get("zbi");
+        try {
+          // The WordPress sites simply never print their beacon for a logged-in
+          // user. A static build cannot know who is looking, so this is how the
+          // people who run the site keep their own visits out of the numbers.
+          if (flag === "off") localStorage.setItem(OFF, "1");
+          if (flag === "on") localStorage.removeItem(OFF);
+          if (localStorage.getItem(OFF)) return;
+        } catch {
+          // Storage denied (private window, blocked site data). Counting a visit
+          // is not worth failing over.
+        }
+
+        const send = () => {
+          // A prerendered page is not a visit until it is actually shown.
+          if (document.visibilityState === "prerender") return;
+
+          const body = JSON.stringify({
+            p: location.pathname + location.search,
+            r: document.referrer || "",
+          });
+          const url = "https://www.zalmanim.com/wp-json/zbi/v1/hit";
+
+          if (navigator.sendBeacon) {
+            navigator.sendBeacon(url, new Blob([body], { type: "text/plain" }));
+            return;
+          }
+          fetch(url, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body,
+            keepalive: true,
+          }).catch(() => {});
+        };
+
+        if (document.readyState === "complete") send();
+        else window.addEventListener("load", send, { once: true });
+      })();
+    </script>
+
+    <!--
+      Support chat. Served by zalmanim.com, which owns the conversation, the
+      inbox and the reply: this site is static and has no back end to answer
+      anyone with. The `site` key is what makes the widget introduce itself as
+      Liveolator rather than as the record label.
+    -->
+    <script
+      defer
+      src="https://www.zalmanim.com/wp-admin/admin-ajax.php?action=zfb_embed&amp;site=liveolator"
+    ></script>
   </body>
 </html>
