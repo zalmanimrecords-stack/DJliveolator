@@ -7,7 +7,7 @@ import { site } from "../data/site";
 
 <Base
   title={`Privacy — ${site.name}`}
-  description={`How ${site.name} handles your data. No analytics, no tracking, no advertising cookies.`}
+  description={`How ${site.name} handles your data. No third-party analytics, no advertising, no cross-site tracking.`}
 >
   <Nav />
   <main class="page">
@@ -15,9 +15,10 @@ import { site } from "../data/site";
       <p class="eyebrow">Privacy</p>
       <h1>Privacy policy</h1>
       <p>
-        Short version: this site has <strong>no analytics, no tracking, and no
-        advertising cookies</strong>. We only process the minimum needed to serve
-        the site and to reply if you contact us.
+        Short version: <strong>no third-party analytics, no advertising, and no
+        cross-site tracking</strong>. We count page views ourselves, without
+        cookies and without storing your IP address, and otherwise process only
+        the minimum needed to serve the site and to reply if you contact us.
       </p>
       <p class="updated">Last updated {site.privacyUpdated}</p>
     </header>
@@ -56,10 +57,27 @@ import { site } from "../data/site";
             correspondence, and taking steps at your request. We keep these emails
             only as long as needed to deal with your message.
           </li>
+          <li>
+            <strong>Aggregate page counts.</strong> If your browser runs
+            JavaScript, each page you open reports its own address and the site
+            that linked you to our own server at zalmanim.com — no third party, no
+            advertising network, and <em>no cookie</em>. Your IP address is
+            <em>not</em> stored: it is combined with your browser string and a
+            secret that is thrown away and regenerated every day, and only the
+            resulting hash is kept, so two visits on the same day can be told
+            apart without anyone knowing whose they were. Once the day turns, even
+            that link is gone. We also keep a coarse country (from Cloudflare) and
+            whether you were on a phone or a desktop. <em>Purpose:</em> to know
+            which pages people actually use. <em>Legal basis:</em> our legitimate
+            interest in basic, privacy-preserving usage figures. To switch it off
+            for your browser, open any page of this site with
+            <code>?zbi=off</code> at the end of the address.
+          </li>
         </ul>
         <p>
-          We do <strong>not</strong> use analytics, advertising, profiling, or
-          tracking of any kind, and we do not sell or share your data.
+          Beyond that aggregate count, we do <strong>not</strong> use third-party
+          analytics, advertising, profiling, or tracking that follows you between
+          sites, and we do not sell or share your data.
         </p>
       </section>
 
