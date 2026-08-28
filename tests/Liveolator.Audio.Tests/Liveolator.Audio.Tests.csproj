@@ -24,4 +24,10 @@
     <ProjectReference Include="..\..\src\Liveolator.Audio\Liveolator.Audio.csproj" />
   </ItemGroup>
 
+  <!-- A real stereo AAC file (left = 440 Hz, right = silence) for BassAacNativeSmokeTests: proving the
+       m4a path decodes in stereo needs an actual AAC bitstream, which cannot be synthesised in-test. -->
+  <ItemGroup>
+    <None Include="Assets\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

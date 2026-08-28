@@ -37,13 +37,24 @@ Audio
       Copyright (c) Mathew Sachin and contributors.
       License: MIT
 
-  BASS, BASS_FX, BASSmix native libraries (un4seen Developments Ltd.)
+  BASS, BASS_FX, BASSmix, BASSFLAC native libraries (un4seen Developments Ltd.)
       Copyright (c) 1999-2024 un4seen Developments Ltd. All rights reserved.
       License: BASS Free license (non-commercial use). Liveolator is
       distributed free of charge and does not generate revenue (no sales,
       no advertising), which is the condition of the free license. See the
       "BASS LICENSE" note below. If Liveolator is ever monetized, a paid
       BASS license is required (https://www.un4seen.com/).
+
+  BASS_AAC native library (AAC / M4A / MP4 decoding)
+      Copyright (c) 2002-2012 Sebastian Andersson. All rights reserved.
+      Portions copyright (c) 2006 M. Bakker, Nero AG. All rights reserved.
+      Based on the FAAD2 decoder. NOT un4seen's own code and NOT covered by
+      the BASS license above.
+      License: GNU General Public License (the add-on ships the GPL version 2
+      text). Free to use and distribute under the GPL. Commercial use is
+      licensed separately by Nero AG (Mpeg4AAClicense@nero.com), and AAC
+      patent licensing is separate again (https://www.via-la.com/licensing-2/aac/).
+      See the "BASS_AAC LICENSE" note below.
 
   z440.atl.core (ATL.NET — audio tag/metadata reader)
       Copyright (c) Zeugma440 and contributors.
@@ -84,6 +95,27 @@ charge and not generating revenue (through sales, advertising, etc.).
 Liveolator meets this condition. The free license carries no royalties.
 Reselling or sub-licensing BASS itself is prohibited. Full terms and the
 commercial/shareware options are at https://www.un4seen.com/.
+
+
+BASS_AAC LICENSE (Sebastian Andersson / Nero AG) — summary
+----------------------------------------------------------
+bass_aac is a third-party BASS add-on, not un4seen code, so the BASS license
+above does not cover it. Its readme states it is "free to use and distribute
+as long as you follow the guidelines of the GPL", and the distribution ships
+the GPL version 2 text; commercial use is directed to Nero AG at
+Mpeg4AAClicense@nero.com. Separately, the AAC format itself is patent-
+encumbered and licensed through Via LA (https://www.via-la.com/licensing-2/aac/).
+
+Two consequences for shipping:
+  * bass_aac is fetched by scripts/fetch-bass and IS bundled in the Windows
+    installer payload, so this is distribution, not merely local use.
+  * Liveolator's open-source plan is GPLv3. The bass_aac readme says only
+    "the GPL" and ships the v2 text without an explicit "or any later
+    version" grant, so GPLv2-only vs GPLv3 compatibility is an open question
+    for the owner to settle (alongside the BASS linking exception the
+    proprietary un4seen libraries already need). On Windows, macOS and iOS,
+    core BASS decodes AAC/MP4 through the OS codecs, so dropping bass_aac on
+    those platforms is a viable fallback if the answer is no.
 
 
 ===================================================================
