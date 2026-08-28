@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.8.0",
+    "date": "2026-08-28",
+    "notes": [
+      "You choose the set tempo. Building a set no longer averages your records into a tempo nobody asked for — name it, and every track is matched to it.",
+      "Nudge a track's beat grid by ear. When two records beat-match but the kicks still flam, shift the grid in milliseconds without re-analyzing the track or losing its grid confidence.",
+      "A set says why it is not longer. Every track that failed to reach the timeline is now reported with the actual reason.",
+      "Mix points land where the floor is moving, and the bass swap trades between the two records instead of dipping through silence.",
+      "The export gate judges a mix before it renders: a clip at the wrong tempo, a clip left at unity gain, or a blend clamped too short is refused with the fix rather than shipped.",
+      "Offline renders report per-window holes, so a silent stretch can never pass as a finished mix."
+    ]
+  },
+  {
     "version": "0.7.1",
     "date": "2026-08-15",
     "notes": [
