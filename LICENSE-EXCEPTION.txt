@@ -13,7 +13,7 @@ ADDITIONAL PERMISSION under GNU GPL version 3 section 7
 -------------------------------------------------------
 As a special exception, the copyright holder of Liveolator gives you
 permission to combine Liveolator with the BASS audio libraries and their
-add-ons (BASS, BASS_FX, BASSmix) published by un4seen Developments Ltd.
+add-ons (BASS, BASS_FX, BASSmix, BASSFLAC) published by un4seen Developments Ltd.
 (https://www.un4seen.com/), and to convey and/or distribute the resulting
 combined work, provided you also comply with the terms of the BASS license
 that covers your use of BASS. You may extend this exception to your version
@@ -25,3 +25,19 @@ the GNU GPL, and are NOT distributed with the Liveolator source code. They
 are obtained separately from un4seen under un4seen's own license terms, and
 are subject to a per-user cost if Liveolator (or a derivative) is ever sold
 or otherwise monetized. See THIRD-PARTY-NOTICES.txt for details.
+
+
+NOT COVERED BY THE EXCEPTION: BASS_AAC
+--------------------------------------
+scripts/fetch-bass also fetches bass_aac (AAC / M4A / MP4 decoding). It is
+NOT un4seen code and needs no exception: it is a third-party FAAD2-based
+add-on by Sebastian Andersson (portions copyright Nero AG) distributed under
+the GNU General Public License. Its distribution ships the GPL version 2 text
+with no explicit "or any later version" grant, so whether it may be combined
+with GPLv3 Liveolator is an open question that the copyright holder has not
+settled; separately, the AAC format carries its own patent licensing (Via LA)
+and commercial use is licensed by Nero AG. Like the BASS libraries it is NOT
+distributed with the Liveolator source code. Builds that must avoid it can
+delete the optional bass_aac line from scripts/bass-libraries.manifest; on
+Windows, macOS and iOS core BASS decodes AAC/MP4 through the OS codecs
+regardless. See THIRD-PARTY-NOTICES.txt.
