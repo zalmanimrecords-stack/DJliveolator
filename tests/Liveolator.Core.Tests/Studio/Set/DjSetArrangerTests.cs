@@ -751,4 +751,72 @@ public class DjSetArrangerTests
         Assert.Equal(outgoingEnd, transition.EndSeconds, 3);
         Assert.True(transition.OverlapSeconds > 0.0);
     }
+
+    // ---- the DJ picks the tempo ----------------------------------------------------------------
+
+    [Fact]
+    public void Build_WithAnExplicitTempo_UsesIt_NotTheMedian()
+    {
+        // The median is a default, not a rule: the DJ owns the set tempo. The standard pool medians at
+        // 128.5, so 140 could never be reached by accident.
+        DjSetPlan plan = BuildStandard(Options with { TempoBpm = 140.0, MaxWarpPercent = 12.0 });
+
+        Assert.Equal(140.0, plan.TempoBpm, 6);
+        Assert.All(plan.Transitions, t => Assert.Equal(140.0, t.TempoBpm, 6));
+    }
+
+    [Fact]
+    public void Build_WithoutAnExplicitTempo_StillUsesTheMedian()
+    {
+        // Back-compat: every existing caller keeps the behaviour it has today.
+        DjSetPlan median = BuildStandard();
+        DjSetPlan explicitNull = BuildStandard(Options with { TempoBpm = null });
+
+        Assert.Equal(median.TempoBpm, explicitNull.TempoBpm, 6);
+    }
+
+    [Fact]
+    public void Build_WithAnExplicitTempo_StillRejectsTracksBeyondTheWarpLimit()
+    {
+        // The chosen tempo does not suspend the warp ceiling — a 128 BPM record cannot be dragged to 160
+        // just because the DJ typed 160. It is rejected, and named, exactly as it would be against a median.
+        DjSetPlan plan = BuildStandard(Options with { TempoBpm = 160.0, MaxWarpPercent = 6.0 });
+
+        Assert.NotEmpty(plan.Rejected);
+        Assert.Contains(plan.Rejected, r =>
+            r.Reason is RejectReason.OutsideTempoRange or RejectReason.SeedOutsideTempoRange);
+    }
+
+    [Fact]
+    public void Build_WithAnExplicitTempo_SoundsEveryDeckAtThatTempo()
+    {
+        // The invariant that matters: what the deck actually sounds at, source tempo x warp factor.
+        DjSetPlan plan = BuildStandard(Options with { TempoBpm = 140.0, MaxWarpPercent = 12.0 });
+        var mix = new MixPlan(plan.Project);
+
+        foreach (SetTransition transition in plan.Transitions)
+        {
+            double middle = transition.StartSeconds + (transition.OverlapSeconds / 2.0);
+            var sounding = Enumerable.Range(0, MixerState.DeckCount)
+                .Select(slot => mix.EvaluateDeck(slot, middle))
+                .Where(state => state.HasAudio)
+                .ToList();
+
+            Assert.Equal(2, sounding.Count);
+            foreach (DeckMixState state in sounding)
+            {
+                double sourceBpm = plan.Project.Clips.First(c => c.TrackPath == state.SourcePath).SourceBpm;
+                Assert.Equal(140.0, sourceBpm * state.WarpFactor, 9);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    public void Options_RejectATempoThatCannotProduceASet(double tempo)
+    {
+        var options = Options with { TempoBpm = tempo };
+        Assert.Throws<ArgumentOutOfRangeException>(options.Validate);
+    }
 }

@@ -51,6 +51,10 @@ public sealed class DjSetTools
                      "where stretching shows up much sooner. Tracks needing more are rejected and reported.")] double maxWarpPercent = 6.0,
         [Description("Leave out tracks whose beat grid is not trustworthy, instead of mixing them short " +
                      "and unstretched. Default false.")] bool excludeLowGridConfidence = false,
+        [Description("The tempo every track is warped to. Omit to take the median of the tracks that end " +
+                     "up selected — a default, not a rule, and one a tempo-weighted pool pins in place. Set " +
+                     "it when the set tempo is a decision rather than an average. It does not suspend " +
+                     "maxWarpPercent: a track that cannot reach it is still rejected and named.")] double? tempoBpm = null,
         [Description("Name to save the set under. Reusing a name replaces that set.")] string name = "DJ Set",
         CancellationToken cancellationToken = default)
     {
@@ -71,6 +75,8 @@ public sealed class DjSetTools
                 nameof(overlapBars));
         if (maxWarpPercent is < MinWarpPercent or > MaxWarpPercent)
             throw new ArgumentException($"The warp limit must be between {MinWarpPercent} and {MaxWarpPercent} percent.", nameof(maxWarpPercent));
+        if (tempoBpm is <= 0.0)
+            throw new ArgumentException("The set tempo must be positive.", nameof(tempoBpm));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Set name cannot be empty.", nameof(name));
 
@@ -78,7 +84,8 @@ public sealed class DjSetTools
             ProjectName: name.Trim(),
             OverlapBars: overlapBars,
             MaxWarpPercent: maxWarpPercent,
-            ExcludeLowGridConfidence: excludeLowGridConfidence);
+            ExcludeLowGridConfidence: excludeLowGridConfidence,
+            TempoBpm: tempoBpm);
 
         return await session
             .BuildAsync(

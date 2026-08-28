@@ -60,9 +60,11 @@ public sealed class DjSetArranger
         if (ordered.Count == 0)
             return Empty(options, rejected);
 
-        // Tempo comes from the tracks actually chosen, not the whole library: the harmonic chain already
-        // keeps consecutive tracks tempo-adjacent, so their median is a tempo most of them reach cheaply.
-        double tempoBpm = MedianBpm(ordered.Select(e => e.Track));
+        // The DJ's tempo wins when given. Otherwise it comes from the tracks actually chosen, not the whole
+        // library: the harmonic chain already keeps consecutive tracks tempo-adjacent, so their median is a
+        // tempo most of them reach cheaply. The median is only ever a default — it is derived from the
+        // selection, so a pool weighted toward one tempo pins the set there whatever the room wants.
+        double tempoBpm = options.TempoBpm ?? MedianBpm(ordered.Select(e => e.Track));
         List<SetEntry> withinRange = WithinWarpLimit(ordered, tempoBpm, options, rejected);
         if (withinRange.Count == 0)
             return Empty(options, rejected);

@@ -89,7 +89,14 @@ public sealed class LibrarySession
             var progress = new Progress<ScanProgress>(p => processed = Math.Max(processed, p.Total));
 
             var stopwatch = Stopwatch.StartNew();
-            await _library.ScanAsync(requested, progress, cancellationToken).ConfigureAwait(false);
+            // Persist each track as it is analyzed. Without this the only write was the whole-catalog
+            // save below, so a scan cut short — a client timeout, a dropped network share — threw away
+            // every track it had already analyzed. Matters most on a large SMB library, where a full
+            // pass runs for hours.
+            await _library.ScanAsync(
+                requested, progress, cancellationToken,
+                onEntryProcessed: (track, ct) => _store.SaveTrackAsync(track, ct),
+                onEntryRemoved: (path, ct) => _store.DeleteTrackAsync(path, ct)).ConfigureAwait(false);
             stopwatch.Stop();
 
             await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
@@ -207,7 +214,7 @@ public sealed class LibrarySession
     /// is not catalogued.
     /// </summary>
     public async Task<MusicTrack?> SetManualAnalysisAsync(
-        string path, double? bpm, string? camelot, CancellationToken cancellationToken)
+        string path, double? bpm, string? camelot, double? downbeatOffsetSeconds, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -217,13 +224,14 @@ public sealed class LibrarySession
             if (_library.TryGetByPathOrName(path) is not { } track)
                 return null;
 
-            MusicTrack? updated = _library.SetManualAnalysis(track.File.Path, bpm, camelot);
+            MusicTrack? updated = _library.SetManualAnalysis(track.File.Path, bpm, camelot, downbeatOffsetSeconds);
             if (updated is null)
                 return null;
 
             await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation(
-                "Manual analysis set on {Path}: bpm {Bpm}, key {Key}", track.File.Path, bpm, camelot);
+                "Manual analysis set on {Path}: bpm {Bpm}, key {Key}, grid nudge {NudgeSeconds}s",
+                track.File.Path, bpm, camelot, downbeatOffsetSeconds);
             return updated;
         }
         finally { _gate.Release(); }

@@ -207,11 +207,12 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
     /// usually right even when its rate was not. Returns the updated track, or null for an unknown path.</para>
     /// </summary>
     /// <exception cref="ArgumentException">Neither value was supplied, or the Camelot code is not 1A–12B.</exception>
-    public MusicTrack? SetManualAnalysis(string path, double? bpm, string? camelot)
+    public MusicTrack? SetManualAnalysis(
+        string path, double? bpm, string? camelot, double? downbeatOffsetSeconds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
-        if (bpm is null && string.IsNullOrWhiteSpace(camelot))
-            throw new ArgumentException("Supply a BPM, a Camelot key, or both — there is nothing to correct otherwise.");
+        if (bpm is null && string.IsNullOrWhiteSpace(camelot) && downbeatOffsetSeconds is null)
+            throw new ArgumentException("Supply a BPM, a Camelot key, a grid nudge, or any combination — there is nothing to correct otherwise.");
         if (bpm is <= 0)
             throw new ArgumentOutOfRangeException(nameof(bpm), bpm, "BPM must be positive.");
 
@@ -228,6 +229,18 @@ public sealed class MusicLibrary : MediaLibrary<MusicTrack>
                 ? prior with { Bpm = value, Confidence = 1.0 }
                 : new Liveolator.Core.Analysis.Bpm.BpmResult(value, Confidence: 1.0))
             : existing.Bpm;
+
+        // The grid nudge rides alongside the detected anchor rather than replacing it, so analysis stays
+        // reproducible and — the reason this is a field and not an edit — the grid-confidence signals keep
+        // describing the detection they were computed from. A track with no tempo has no grid to nudge.
+        if (downbeatOffsetSeconds is { } nudge)
+        {
+            if (corrected is null)
+                throw new ArgumentException(
+                    "A grid nudge needs a tempo: supply one here, or analyze the track first.",
+                    nameof(downbeatOffsetSeconds));
+            corrected = corrected with { DownbeatOffsetSeconds = nudge };
+        }
         MusicalKey? resolvedKey = key ?? existing.Key;
 
         // Only a track that now has BOTH a tempo and a key is fully analyzed; correcting one value on a

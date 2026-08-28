@@ -77,4 +77,58 @@ public sealed class BeatGridTests
         Assert.Equal(4, grid.BeatsPerBar);
         Assert.Equal(0.6, grid.Confidence, 6);
     }
+
+    // ---- manual grid nudge ----------------------------------------------------------------------
+
+    [Fact]
+    public void FromBpmResult_AppliesTheDownbeatOffset_ToTheAnchor()
+    {
+        // The DJ's grid nudge: the detector found the downbeat 20 ms early, so the correction rides
+        // alongside the detected value instead of overwriting it. Analysis stays reproducible; the grid moves.
+        var bpm = new BpmResult(140.0, Confidence: 0.8)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatOffsetSeconds = 0.020,
+        };
+
+        BeatGrid grid = BeatGrid.FromBpmResult(bpm);
+
+        Assert.Equal(1.020, grid.DownbeatSeconds, 6);
+    }
+
+    [Fact]
+    public void FromBpmResult_WithNoOffset_IsUnchanged()
+    {
+        // Back-compat: every catalog written before the offset existed must grid exactly as it did.
+        var bpm = new BpmResult(140.0, Confidence: 0.8) { DownbeatSeconds = 1.0 };
+
+        Assert.Equal(1.0, BeatGrid.FromBpmResult(bpm).DownbeatSeconds, 6);
+    }
+
+    [Fact]
+    public void DownbeatOffset_ShiftsEveryDownbeat_ByExactlyTheOffset()
+    {
+        // 140 BPM -> bar = 1.714285... s. Nudging the anchor must move the whole grid rigidly, not just
+        // the first bar, or a correction that fixes the intro drifts back out by the drop.
+        var bpm = new BpmResult(140.0, Confidence: 0.8) { DownbeatSeconds = 1.0 };
+        var nudged = bpm with { DownbeatOffsetSeconds = 0.020 };
+
+        BeatGrid plain = BeatGrid.FromBpmResult(bpm);
+        BeatGrid shifted = BeatGrid.FromBpmResult(nudged);
+
+        foreach (double probe in new[] { 5.0, 60.0, 300.0 })
+            Assert.Equal(plain.NearestDownbeatTo(probe) + 0.020, shifted.NearestDownbeatTo(probe + 0.020), 6);
+    }
+
+    [Fact]
+    public void DownbeatOffset_MayBeNegative_ToPullTheGridEarlier()
+    {
+        var bpm = new BpmResult(140.0, Confidence: 0.8)
+        {
+            DownbeatSeconds = 1.0,
+            DownbeatOffsetSeconds = -0.012,
+        };
+
+        Assert.Equal(0.988, BeatGrid.FromBpmResult(bpm).DownbeatSeconds, 6);
+    }
 }

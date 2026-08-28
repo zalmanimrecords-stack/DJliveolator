@@ -22,6 +22,17 @@ public sealed record BpmResult(double Bpm, double Confidence, double FirstBeatSe
     /// </summary>
     public double DownbeatSeconds { get; init; }
 
+    /// <summary>
+    /// A hand-applied correction to <see cref="DownbeatSeconds"/>, in seconds, positive to push the grid
+    /// later. The DJ's grid nudge: when the detector lands the anchor a few milliseconds off the kick, this
+    /// moves the grid without overwriting what analysis found and without re-running it — so the detected
+    /// value stays reproducible and, critically, the grid-confidence signals keep their meaning. Re-analysis
+    /// would recompute the anchor from scratch and can land on a worse one, which is why nudging is a
+    /// separate field rather than an edit to <see cref="DownbeatSeconds"/>. Init-only with a default of 0 so
+    /// existing serialized catalogs grid exactly as they did (positional-record back-compat).
+    /// </summary>
+    public double DownbeatOffsetSeconds { get; init; }
+
     /// <summary>The assumed meter; 4 for 4/4. Defaults to 4 for back-compat with pre-downbeat catalogs.</summary>
     public int BeatsPerBar { get; init; } = 4;
 
