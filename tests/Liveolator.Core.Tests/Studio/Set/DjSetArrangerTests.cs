@@ -549,4 +549,199 @@ public class DjSetArrangerTests
 
         Assert.Equal("Friday Warmup", plan.Project.Name);
     }
+
+    // ---- why the set came back short --------------------------------------------------------------
+    //
+    // The two commonest ways a set ends early — the key ring closing and the tempo trend locking out — were
+    // both invisible: a build that returned one clip out of a four-track pool reported an EMPTY rejection
+    // list, so the only reading left was "the library is thin" and the next call was the wrong one.
+
+    [Fact]
+    public void Build_ReportsTracksTheChainNeverPicked()
+    {
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.Track("b.mp3", "8A", 128),
+            SetTrackFixture.Track("far1.mp3", "2A", 128),
+            SetTrackFixture.Track("far2.mp3", "3B", 128),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(4), Options);
+
+        Assert.Equal(2, plan.TrackCount);
+        Assert.Equal(
+            new[] { "far1.mp3", "far2.mp3" },
+            plan.Rejected.Where(r => r.Reason == RejectReason.NoHarmonicMatch).Select(r => r.Path).OrderBy(p => p).ToArray());
+    }
+
+    [Fact]
+    public void Build_ReportsTracksTheTrendLockedOut()
+    {
+        // Rising is non-decreasing at every step with no lookahead, so seeding at the pool's top tempo
+        // finishes the chain immediately. "Drop the trend, or reseed low" is only a possible next call if
+        // the report says the trend was what closed it.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("top.mp3", "8A", 130),
+            SetTrackFixture.Track("b.mp3", "8A", 126),
+            SetTrackFixture.Track("c.mp3", "8A", 127),
+            SetTrackFixture.Track("d.mp3", "8A", 128),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(4, 6.0, BpmTrend.Rising), Options);
+
+        Assert.Equal(1, plan.TrackCount);
+        Assert.Equal(3, plan.Rejected.Count(r => r.Reason == RejectReason.BlockedByTrend));
+        Assert.DoesNotContain(plan.Rejected, r => r.Reason == RejectReason.NoHarmonicMatch);
+    }
+
+    [Fact]
+    public void Build_DistinguishesTheLengthCap_FromARejection()
+    {
+        // build_dj_set defaults to 8 tracks against a 1,300-track catalog. Every unplaced record is not a
+        // rejection there — it is a request that was honoured, and it must read as one.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.Track("b.mp3", "8A", 128),
+            SetTrackFixture.Track("c.mp3", "8A", 128),
+            SetTrackFixture.Track("d.mp3", "8A", 128),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        Assert.Equal(2, plan.TrackCount);
+        RejectedCandidate cap = Assert.Single(plan.Rejected);
+        Assert.Equal(RejectReason.LengthCapReached, cap.Reason);
+        Assert.Contains("2", cap.Title);
+        Assert.Contains("untried", cap.Title);
+    }
+
+    [Fact]
+    public void Build_DoesNotSilentlyDropTheSeed()
+    {
+        // The seed helps choose the median tempo and is then filtered against it like any other track, so
+        // the caller can get a set that does not start where it asked. Reported distinctly because the
+        // remedy is different: reseed, not widen the warp limit.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("seed.mp3", "8A", 128),
+            SetTrackFixture.Track("b.mp3", "8A", 129),
+            SetTrackFixture.Track("c.mp3", "8A", 134),
+            SetTrackFixture.Track("d.mp3", "8A", 135),
+            SetTrackFixture.Track("e.mp3", "8A", 136),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(5), new SetBuildOptions(MaxWarpPercent: 3.0));
+
+        Assert.DoesNotContain(plan.Project.Clips, c => c.TrackPath == "seed.mp3");
+        RejectedCandidate seed = Assert.Single(plan.Rejected, r => r.Path == "seed.mp3");
+        Assert.Equal(RejectReason.SeedOutsideTempoRange, seed.Reason);
+        Assert.Equal(4.69, seed.NeededWarpPercent!.Value, 2);
+    }
+
+    [Fact]
+    public void Build_DoesNotBlameAFifteenMinuteRecordAsTooShort()
+    {
+        // Measured: a.mp3's drums start at 280 s of a 300 s file, so its own entry is pushed to 270 s and it
+        // has no runway left to leave from. That failure has nothing to do with the incoming record, yet a
+        // fifteen-minute one was reported as too short to mix.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, durationSeconds: 300, kicks: new[] { 280.0 }),
+            SetTrackFixture.Track("b.mp3", "8A", 128, durationSeconds: 900),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        Assert.DoesNotContain(plan.Rejected, r => r.Path == "b.mp3");
+        RejectedCandidate blamed = Assert.Single(plan.Rejected);
+        Assert.Equal("a.mp3", blamed.Path);
+        Assert.Equal(RejectReason.NoMixOutRunway, blamed.Reason);
+    }
+
+    [Fact]
+    public void Build_StopsBlamingTracks_OnceTheOutgoingRunwayIsGone()
+    {
+        // The condition is independent of the incoming track, so continuing walked the rest of the chain
+        // rejecting every record in turn: one bad kick-onset array turned a twelve-track set into a
+        // one-track set with eleven innocent records blamed.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128, durationSeconds: 300, kicks: new[] { 280.0 }),
+            SetTrackFixture.Track("b.mp3", "8A", 128, durationSeconds: 900),
+            SetTrackFixture.Track("c.mp3", "8A", 128, durationSeconds: 900),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(3), Options);
+
+        Assert.Equal(RejectReason.NoMixOutRunway, Assert.Single(plan.Rejected).Reason);
+    }
+
+    [Fact]
+    public void Build_BlamesTheIncomingRecord_WhenItIsTheOneWithNoRoomLeft()
+    {
+        // The other side of the same null: b.mp3's drums start at 110 s of a two-minute record, so its entry
+        // is pushed to 90 s and the blend plus a phrase no longer fit. The outgoing record is fine here, and
+        // the reason must say so — this is not TooShort either, which is about the file's length alone.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.Track("b.mp3", "8A", 128, durationSeconds: 120, kicks: new[] { 110.0 }),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        RejectedCandidate blamed = Assert.Single(plan.Rejected);
+        Assert.Equal("b.mp3", blamed.Path);
+        Assert.Equal(RejectReason.NoTransitionPlanned, blamed.Reason);
+    }
+
+    [Fact]
+    public void Build_RejectsAGenuinelyShortRecord_AsTooShort()
+    {
+        // The baseline the false TooShort was hiding behind: at 128 BPM a record needs 75 s to hold a
+        // phrase, the shortest legal blend and a phrase after it.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.Track("a.mp3", "8A", 128),
+            SetTrackFixture.Track("stub.mp3", "8A", 128, durationSeconds: 60),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        Assert.Equal(RejectReason.TooShort, Assert.Single(plan.Rejected, r => r.Path == "stub.mp3").Reason);
+    }
+
+    [Fact]
+    public void Build_MeasuresTheRealOverlap_WhenAnUnwarpedClipIsPhraseSnapped()
+    {
+        // An unwarped clip runs on its own bar length, so the incoming clip is re-anchored to the project
+        // phrase grid — which moves the start of the blend without moving where the outgoing record leaves.
+        // Reporting the planned overlap after that is how an unwarped join read as a clean blend while the
+        // timeline actually held a cut, and it is the figure the crossfade automation is built from.
+        MusicTrack[] pool =
+        {
+            SetTrackFixture.UntrustedGrid("shaky.mp3", "8A", 132),
+            SetTrackFixture.Track("b.mp3", "8A", 128, structure: SetTrackFixture.StandardStructure()),
+        };
+
+        DjSetPlan plan = _arranger.Build(pool, pool[0], new HarmonicSetOptions(2), Options);
+
+        StudioClip outgoing = Assert.Single(plan.Project.Clips, c => c.TrackPath == "shaky.mp3");
+        Assert.False(outgoing.WarpEnabled);
+        SetTransition transition = Assert.Single(plan.Transitions);
+
+        double outgoingEnd = outgoing.TimelineStartSeconds + outgoing.SourceDuration!.Value.TotalSeconds;
+        double plannedOverlap = transition.OverlapBars * SetBuildOptions.BarSeconds(outgoing.SourceBpm);
+
+        Assert.NotEqual(plannedOverlap, transition.OverlapSeconds, 3);
+        // 2 decimals, not 3: the report rounds each position to the millisecond independently, so subtracting
+        // one rounded figure from an unrounded one carries a millisecond of slack. The lie this catches is
+        // four seconds wide.
+        Assert.Equal(outgoingEnd - transition.StartSeconds, transition.OverlapSeconds, 2);
+        Assert.Equal(outgoingEnd, transition.EndSeconds, 3);
+        Assert.True(transition.OverlapSeconds > 0.0);
+    }
 }
