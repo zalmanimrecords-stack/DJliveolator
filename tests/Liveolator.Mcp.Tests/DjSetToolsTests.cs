@@ -153,6 +153,73 @@ public sealed class DjSetToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task BuildDjSet_AdvisesExcludingLowConfidence_WhenMostJoinsAreNotPhaseLocked()
+    {
+        // Measured on the TATA Box set: excludeLowGridConfidence took it from 6-of-12 phase-locked joins to
+        // 9-of-9. The flag stays off by default, so the build has to SAY so — and the counterfactual is free,
+        // because with every low-confidence track gone each surviving join is phase-locked by construction.
+        // Two of the three grids are untrusted, so both joins are unlocked whichever order the chain picks.
+        DjSetSession session = await CreateSessionAsync(
+            Track("a.mp3", "8A", 128),
+            Track("loose-1.mp3", "8A", 128, gridCoherence: 0.2),
+            Track("loose-2.mp3", "8A", 128, gridCoherence: 0.2));
+
+        DjSetResult result = await DjSetTools.BuildDjSet(
+            session, seedPath: FullPath("a.mp3"), length: 3, name: "Loose");
+
+        Assert.Equal(0, result.PhaseLockedCount);
+        Assert.Equal(2, result.Transitions.Count);
+        string advisory = Assert.Single(result.Advisories);
+        Assert.Contains("excludeLowGridConfidence", advisory, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildDjSet_SaysNothing_WhenEveryJoinIsPhaseLocked()
+    {
+        // The other side: an advisory on a set that is already phase-locked throughout would be noise the
+        // agent learns to skip.
+        DjSetSession session = await CreateSessionAsync(
+            Track("a.mp3", "8A", 128),
+            Track("b.mp3", "8A", 128),
+            Track("c.mp3", "8A", 128));
+
+        DjSetResult result = await DjSetTools.BuildDjSet(
+            session, seedPath: FullPath("a.mp3"), length: 3, name: "Locked");
+
+        Assert.Equal(result.Transitions.Count, result.PhaseLockedCount);
+        Assert.Empty(result.Advisories);
+    }
+
+    [Fact]
+    public async Task BuildDjSet_KeepsTheLengthCapLine_WhenRejectionsOverflowTheReport()
+    {
+        // The report truncates, and a whole-catalog build overflows it easily. The two entries that explain
+        // why the set is SHORT must not be the ones that fall off the end — they are the only lines the agent
+        // can act on when everything else is one uniform "no key".
+        var tracks = new List<MusicTrack>();
+        for (int i = 0; i < 5; i++)
+            tracks.Add(Track($"pick-{i}.mp3", "8A", 128));
+        for (int i = 0; i < 20; i++)
+            tracks.Add(TrackWithoutKey($"nokey-{i}.mp3"));
+
+        DjSetResult result = await DjSetTools.BuildDjSet(
+            session: await CreateSessionAsync(tracks.ToArray()),
+            seedPath: FullPath("pick-0.mp3"), length: 3, name: "Overflowing");
+
+        Assert.True(result.RejectedCount > 15, $"expected the report to overflow; got {result.RejectedCount}");
+        Assert.Contains(result.RejectedCandidates, r => r.Reason == "LengthCapReached");
+    }
+
+    [Fact]
+    public async Task ExportSetMix_RejectsANullSession()
+    {
+        // Every sibling tool guards this; this one did not, so a missing DI registration surfaced as a
+        // NullReferenceException from inside the session instead of as a usable message.
+        await Assert.ThrowsAsync<ArgumentNullException>(() => DjSetTools.ExportSetMix(
+            session: null!, "Saved", Path.Combine(_directory, "out")));
+    }
+
+    [Fact]
     public async Task GetDjSet_ReadsBackASavedSet()
     {
         DjSetSession session = await CreateSessionAsync(
@@ -257,14 +324,17 @@ public sealed class DjSetToolsTests : IDisposable
 
     private string FullPath(string file) => Path.Combine(_directory, file);
 
-    private MusicTrack Track(string file, string camelot, double bpm, SongStructure? structure = null)
+    /// <param name="gridCoherence">How tightly the kicks sit on the grid. Below the phase-sync floor the
+    /// track is still warped but its joins are not phase-locked — the case the build advisory exists for.</param>
+    private MusicTrack Track(
+        string file, string camelot, double bpm, SongStructure? structure = null, double gridCoherence = 0.9)
         => new(
             new ScannedFile(FullPath(file), 100, DateTime.UtcNow),
             new BpmResult(bpm, 0.9)
             {
                 BeatsPerBar = 4,
                 DownbeatConfidence = 0.8,
-                GridCoherence = 0.9,
+                GridCoherence = gridCoherence,
                 TempoStabilityBpmDelta = 0.1,
             },
             new MusicalKey(0, KeyMode.Minor, camelot, 0.8),
@@ -276,6 +346,10 @@ public sealed class DjSetToolsTests : IDisposable
             MusicMediaKind.Track,
             TrackAnalyzer.CurrentVersion,
             Structure: structure);
+
+    /// <summary>Mixable in every way except the one that matters for harmonic ordering.</summary>
+    private MusicTrack TrackWithoutKey(string file)
+        => Track(file, "8A", 128) with { Key = null };
 
     private static SongStructure StandardStructure()
         => new(

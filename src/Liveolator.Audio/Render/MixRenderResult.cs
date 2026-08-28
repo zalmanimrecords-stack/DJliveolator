@@ -31,12 +31,18 @@ public sealed record MixHole(double StartSeconds, double DurationSeconds, double
 /// order. Empty is the normal outcome. <see cref="SilentFrames"/> answers "how much of the mix is silent"
 /// as one fraction; this answers "and WHERE", which is the question a 10 s hole in a 70-minute set (0.2%
 /// of it) can only be found by.</param>
+/// <param name="MonoFallbackSources">Track paths that BASS could not decode and that were therefore read
+/// through the managed decoder instead, deduplicated. That decoder is MONO by seam contract, so each of
+/// these clips has no stereo image at all inside a stereo mix. Reported rather than only logged: the path
+/// fires for any clip at warp factor 1.0 whose native decode fails, and it silently shipped eleven minutes
+/// of a measured 68-minute export in mono.</param>
 public sealed record MixRenderResult(
     int SourceCount,
     IReadOnlyList<string> SilentSources,
     long WrittenFrames,
     long SilentFrames,
-    IReadOnlyList<MixHole> Holes)
+    IReadOnlyList<MixHole> Holes,
+    IReadOnlyList<string> MonoFallbackSources)
 {
     /// <summary>How much of the written mix is silence, 0..1. Zero when nothing was written.</summary>
     public double SilentFraction => WrittenFrames == 0 ? 0.0 : SilentFrames / (double)WrittenFrames;

@@ -256,9 +256,12 @@ public sealed class DjSetSession
 
         IReadOnlyList<MusicTrack> catalog = await _library.SnapshotAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<MixTrackEntry> tracks = Tracklist(project, catalog);
-        IReadOnlyList<MixGateIssue> issues = PublishGate(project);
+        // The catalog is passed rather than the planner's warnings being remembered: re-deriving each join's
+        // quality here works on sets saved long before the audit existed, and stays correct after STUDIO moves
+        // a clip — which a stored report could not, since it would then vouch for an arrangement that is gone.
+        var issues = PublishGate(project, catalog).ToList();
 
-        if (issues.Count > 0 && !force)
+        if (issues.Any(i => i.Blocking) && !force)
         {
             _logger.LogInformation(
                 "Refused to export '{Name}': {Count} publish-gate issue(s)", name, issues.Count);
@@ -282,6 +285,21 @@ public sealed class DjSetSession
         // Before any artifact is written: a mix that does not contain the audio it claims to is not a
         // deliverable, and half a publish package is worse than none.
         RequireAudibleMix(name, audioPath, render, lufs);
+
+        // Two defects only the finished render can show: a clip that came out in mono, and a hole in the
+        // written audio. Neither is visible in the arrangement, and whole-file loudness provably misses the
+        // second (a 95%-silent mix once measured a healthy -10.30 LUFS).
+        issues.AddRange(RenderIssues(render));
+        if (issues.Any(i => i.Blocking) && !force)
+        {
+            _logger.LogInformation("Refused to publish '{Name}': the render itself is defective", name);
+            return new SetMixExport(
+                Rendered: false, audioPath, TracklistPath: null, ChaptersPath: null,
+                DurationSeconds: Math.Round(project.DurationSeconds, 1),
+                IntegratedLufs: lufs is null ? null : Math.Round(lufs.Value, 2),
+                CeilingDbTp: LimiterSettings.Default.CeilingDbTp,
+                Issues: issues, Tracks: tracks);
+        }
 
         string tracklistPath = Path.Combine(outputDirectory, $"{safeName}-tracklist.json");
         string chaptersPath = Path.Combine(outputDirectory, $"{safeName}-youtube.txt");
@@ -400,10 +418,17 @@ public sealed class DjSetSession
     /// <summary>
     /// What would embarrass the owner if this mix went public. Each issue names its remedy, because a
     /// refusal the caller cannot act on is just an obstacle.
+    /// <para>Judges the arrangement against <paramref name="catalog"/> rather than against a record of what
+    /// the planner intended, so it also answers the questions the geometry alone cannot: whether a blend
+    /// opens over beatless material, whether a drop collides with the outgoing record, and whether a clip's
+    /// gain hit its limit still short of the set level.</para>
     /// </summary>
-    private static IReadOnlyList<MixGateIssue> PublishGate(StudioProject project)
+    private static IReadOnlyList<MixGateIssue> PublishGate(
+        StudioProject project, IReadOnlyList<MusicTrack> catalog)
     {
         var issues = new List<MixGateIssue>();
+        Dictionary<string, MusicTrack> byPath = ByPath(catalog);
+        double targetLufs = new SetBuildOptions().TargetLufs;
 
         foreach (StudioClip clip in project.Clips.OrderBy(c => c.TimelineStartSeconds))
         {
@@ -420,31 +445,190 @@ public sealed class DjSetSession
                     "excludeLowGridConfidence: true to leave it out."));
             }
 
-            // Unity gain means no loudness measurement, so this clip steps in level against its neighbours.
-            if (Math.Abs(clip.Gain - 1.0) < GainEpsilon)
+            if (!byPath.TryGetValue(clip.TrackPath, out MusicTrack? track))
+            {
+                // Not knowing is not proof of a defect, so this does not block — but staying silent about a
+                // clip nothing is known about is the lie the whole audit exists to stop. Named by full path
+                // because the remedy is to go and find that file.
+                issues.Add(new MixGateIssue(
+                    clip.TrackPath,
+                    "is no longer in the catalog, so its loudness, grid and mix points cannot be verified",
+                    "Scan its folder again so the set can be judged, or rebuild the set from catalogued tracks.",
+                    Blocking: false));
+                continue;
+            }
+
+            // Unity gain used to mean BOTH "never measured" and "measured exactly at target". ffmpeg's ebur128
+            // prints one decimal place, so a track landing on -9.0 is routine — and refusing it told the owner
+            // to run a measurement that would change nothing. The catalog settles which case this is.
+            if (Math.Abs(clip.Gain - 1.0) < GainEpsilon && track.IntegratedLufs is null)
             {
                 issues.Add(new MixGateIssue(
                     where,
                     "sits at unity gain, so it is not level-matched to the rest of the mix",
                     "Run measure_catalog_loudness, then rebuild the set."));
             }
-        }
 
-        IReadOnlyList<Join> joins = Joins(project);
-        double minBlendSeconds = SetBuildOptions.MinOverlapBars * SetBuildOptions.BarSeconds(project.Bpm);
-        foreach (Join join in joins)
-        {
-            double blend = join.EndSeconds - join.StartSeconds;
-            if (blend + BlendToleranceSeconds < minBlendSeconds)
+            double residualDb = LoudnessGain.ResidualDb(track.IntegratedLufs, targetLufs);
+            if (residualDb > MaxGainResidualDb)
             {
                 issues.Add(new MixGateIssue(
-                    $"{Path.GetFileNameWithoutExtension(join.FromPath)} → {Path.GetFileNameWithoutExtension(join.ToPath)}",
-                    $"blends for only {blend:F1}s, under the {minBlendSeconds:F1}s floor, so it reads as a cut",
-                    "Rebuild with a longer overlapBars, or fix the grid confidence that forced the clamp."));
+                    where,
+                    $"measured {track.IntegratedLufs:F1} LUFS and still plays {residualDb:F1} dB under the " +
+                    $"set's {targetLufs:F1} target after the boost limit, so it steps down at its join",
+                    "Re-master the file or leave it out — no gain setting can rescue it."));
             }
         }
 
+        issues.AddRange(JoinIssues(project, byPath));
         return issues;
+    }
+
+    /// <summary>
+    /// How far short of the set target a clamped gain may leave a clip before the gate says so.
+    /// <para>Read off the arithmetic, not off the anecdote: the +6.02 dB boost limit only bites below −15.02
+    /// LUFS against the −9.0 default target, so 1.5 dB of residual means a file measured at or under −16.5
+    /// LUFS — quieter than any mastered dance record, and about the smallest level step a listener reliably
+    /// hears across a join. Under this the clamp costs less than the error already baked into gaining a
+    /// trimmed clip from a whole-file measurement (the −15.3 LUFS track everyone blamed for an 8 dB drop was
+    /// left 0.28 dB short by the clamp).</para>
+    /// </summary>
+    private const double MaxGainResidualDb = 1.5;
+
+    /// <summary>Most holes worth listing before the list stops being read.</summary>
+    private const int MaxReportedHoles = 10;
+
+    // Everything decided per join. Split out because the blend-at-the-floor verdict cannot be made one join
+    // at a time: one clamped blend is worth reporting, a set that is MOSTLY clamped is a failed arrangement.
+    private static IEnumerable<MixGateIssue> JoinIssues(
+        StudioProject project, Dictionary<string, MusicTrack> byPath)
+    {
+        var issues = new List<MixGateIssue>();
+        var atFloor = new List<MixGateIssue>();
+        IReadOnlyList<Join> joins = Joins(project);
+        double setBarSeconds = SetBuildOptions.BarSeconds(project.Bpm);
+
+        foreach (Join join in joins)
+        {
+            // Both paths, always: the audit collapses the two sides' findings into one verdict per join, so a
+            // line naming one record leaves the reader guessing which of the two to act on.
+            string where = $"{join.From.TrackPath} → {join.To.TrackPath}";
+            double blend = join.EndSeconds - join.StartSeconds;
+
+            // An unwarped clip's blend was cut in bars of ITS OWN tempo, not the set's, so measuring it at the
+            // set's bar length reported a legitimate 8-bar blend on a fast unwarped record as under the floor.
+            double barSeconds = join.From.WarpEnabled || join.From.SourceBpm <= 0.0
+                ? setBarSeconds
+                : SetBuildOptions.BarSeconds(join.From.SourceBpm);
+            double blendBars = barSeconds > 0.0 ? blend / barSeconds : 0.0;
+
+            if (blendBars < SetBuildOptions.MinOverlapBars - BlendToleranceBars)
+            {
+                issues.Add(new MixGateIssue(
+                    where,
+                    $"blends for only {blend:F1}s, under the {SetBuildOptions.MinOverlapBars}-bar floor, so it reads as a cut",
+                    "Rebuild with a longer overlapBars, or fix the grid confidence that forced the clamp."));
+            }
+            else if (blendBars < SetBuildOptions.MinOverlapBars + BlendToleranceBars)
+            {
+                atFloor.Add(new MixGateIssue(
+                    where,
+                    $"blends for exactly {SetBuildOptions.MinOverlapBars} bars, sitting on the floor — the " +
+                    "requested overlap was clamped all the way down",
+                    "Rebuild with a longer overlapBars, or with excludeLowGridConfidence: true to drop the " +
+                    "record whose grid forced the clamp (measured: that took one set from 6-of-12 " +
+                    "phase-locked joins to 9-of-9)."));
+            }
+
+            byPath.TryGetValue(join.From.TrackPath, out MusicTrack? from);
+            byPath.TryGetValue(join.To.TrackPath, out MusicTrack? to);
+            SetJoinAuditResult audit = SetJoinAudit.Audit(from, to, new SetJoinGeometry(
+                MixOutSourceSeconds: SourceSecondsAt(join.From, join.StartSeconds, join.FromWarpFactor),
+                MixInSourceSeconds: join.To.SourceIn.TotalSeconds,
+                OverlapBars: setBarSeconds > 0.0 ? Math.Max(1, (int)Math.Round(blend / setBarSeconds)) : 1,
+                SetTempoBpm: project.Bpm,
+                OutgoingWarped: join.From.WarpEnabled,
+                IncomingWarped: join.To.WarpEnabled));
+
+            foreach (SetJoinFinding finding in audit.Findings)
+            {
+                if (JoinIssue(finding, where, audit) is { } issue)
+                    issues.Add(issue);
+            }
+        }
+
+        // Owner decision (2026-08-28): a single clamped blend is reported on every export but does not stop
+        // it; only a set where MOST joins collapsed to the floor is an arrangement that failed.
+        bool mostAtFloor = atFloor.Count * 2 > joins.Count;
+        issues.AddRange(atFloor.Select(i => i with { Blocking = mostAtFloor }));
+        return issues;
+    }
+
+    // The catalog answers what the geometry cannot. Only the three findings that make a mix unlistenable are
+    // raised: the grid and structure findings fire on almost every join of a real psytrance set (one measured
+    // set had 8 of 9), so reporting them beside a refusal would train the owner to skim the list.
+    private static MixGateIssue? JoinIssue(SetJoinFinding finding, string where, SetJoinAuditResult audit)
+        => finding switch
+        {
+            SetJoinFinding.KicklessMixIn => new MixGateIssue(
+                where,
+                $"the blend opens over beatless material — only {audit.MixInKickCoverage:P0} of the incoming " +
+                "record's blend bars have a kick in them",
+                "Rebuild so this record enters where its drums are already running, re-analyze it if its kick " +
+                "onsets are wrong, or replace it."),
+
+            SetJoinFinding.JointKicklessRun => new MixGateIssue(
+                where,
+                $"{audit.JointKicklessBars} consecutive bars inside the blend have no kick on EITHER deck, so " +
+                "the mix drops out there",
+                "Move one of the two mix points off its breakdown — the hole is both records withdrawing at " +
+                "once, so changing either one closes it."),
+
+            SetJoinFinding.DropInsideOverlap => new MixGateIssue(
+                where,
+                "a drop of the incoming record lands inside the blend, with the outgoing record still playing " +
+                "over it",
+                "Shorten the overlap or move the entry past that drop, so the incoming arrangement is not " +
+                "fighting the outgoing one."),
+
+            // Reported once per clip instead: that line names the file to rescan, and saying it twice per
+            // missing track would bury everything else.
+            _ => null,
+        };
+
+    // Everything the render itself revealed. A hole is reported rather than refused — the audio already
+    // exists, and the owner needs the timestamp, not a veto — while a mono clip blocks, because it is a
+    // defect of the file about to be published rather than of the arrangement behind it.
+    private static IEnumerable<MixGateIssue> RenderIssues(MixRenderResult render)
+    {
+        foreach (string path in render.MonoFallbackSources)
+        {
+            yield return new MixGateIssue(
+                Path.GetFileNameWithoutExtension(path),
+                "rendered in MONO inside a stereo mix: BASS could not decode it, so the render fell back to " +
+                "the managed decoder, which has one channel",
+                "Check that the native BASS libraries sit next to the render host (bassflac too, for flac " +
+                "sources) and that the file itself opens, then export again. force ships it as it is.");
+        }
+
+        foreach (MixHole hole in render.Holes.Take(MaxReportedHoles))
+        {
+            yield return new MixGateIssue(
+                $"mix at {Timestamp(hole.StartSeconds)}",
+                $"the rendered mix drops to {hole.DeepestDbfs:F1} dBFS for {hole.DurationSeconds:F1}s — far " +
+                "deeper than any mastered mix withdraws",
+                "Listen at that timestamp: the join there is leaving on, or entering over, beatless material.",
+                Blocking: false);
+        }
+
+        if (render.Holes.Count > MaxReportedHoles)
+        {
+            yield return new MixGateIssue(
+                "mix",
+                $"{render.Holes.Count} holes in total, of which the first {MaxReportedHoles} are listed",
+                "Fix those first and export again — a mix with this many withdrawals is not one arrangement.",
+                Blocking: false);
+        }
     }
 
     /// <summary>A clip within this of the set tempo needs no stretch, so leaving it unwarped is correct.</summary>
@@ -453,31 +637,48 @@ public sealed class DjSetSession
     /// <summary>Gain this close to 1.0 is unity — i.e. no loudness measurement was applied.</summary>
     private const double GainEpsilon = 1e-6;
 
-    /// <summary>Rounding slack when comparing a blend against the bar-derived floor.</summary>
-    private const double BlendToleranceSeconds = 0.05;
+    /// <summary>Rounding slack on the measured bar count, so a blend cut at exactly the floor reads as being
+    /// at the floor rather than under it. Applied to the COUNT, not to the seconds: as a seconds tolerance it
+    /// widened the pass condition instead of tightening it, which is how an 8-bar blend went unreported.</summary>
+    private const double BlendToleranceBars = 0.05;
 
-    /// <summary>Where two consecutive clips overlap: the incoming clip's start until the outgoing one ends.</summary>
-    private readonly record struct Join(string FromPath, string ToPath, double StartSeconds, double EndSeconds);
+    /// <summary>Where two consecutive clips overlap: the incoming clip's start until the outgoing one ends.
+    /// Carries the clips themselves because judging the join needs their trim and warp, not just their paths.</summary>
+    private readonly record struct Join(
+        StudioClip From, StudioClip To, double StartSeconds, double EndSeconds, double FromWarpFactor)
+    {
+        internal string FromPath => From.TrackPath;
+
+        internal string ToPath => To.TrackPath;
+    }
 
     // Derived from the arrangement rather than stored, so it works for any saved project — including one
-    // the user has since edited in STUDIO.
+    // the user has since edited in STUDIO. Ordered by position rather than by list index for the same
+    // reason: a project STUDIO has reordered would otherwise be judged on joins between records that never
+    // play together.
     private static IReadOnlyList<Join> Joins(StudioProject project)
     {
+        StudioClip[] ordered = project.Clips.OrderBy(c => c.TimelineStartSeconds).ToArray();
         var joins = new List<Join>();
-        for (int i = 0; i + 1 < project.Clips.Count; i++)
+        for (int i = 0; i + 1 < ordered.Length; i++)
         {
-            StudioClip from = project.Clips[i];
-            StudioClip to = project.Clips[i + 1];
+            StudioClip from = ordered[i];
+            StudioClip to = ordered[i + 1];
             double factor = WarpMath.WarpFactorAt(from, project.EffectiveTempo, project.Bpm, from.TimelineStartSeconds);
             double fromEnd = from.SourceDuration is { } duration
                 ? from.TimelineStartSeconds + WarpMath.WarpedTimelineSeconds(duration.TotalSeconds, factor)
                 : to.TimelineStartSeconds;
 
-            joins.Add(new Join(from.TrackPath, to.TrackPath, to.TimelineStartSeconds, Math.Max(to.TimelineStartSeconds, fromEnd)));
+            joins.Add(new Join(from, to, to.TimelineStartSeconds, Math.Max(to.TimelineStartSeconds, fromEnd), factor));
         }
 
         return joins;
     }
+
+    // Where a clip's playhead sits in its OWN source seconds at a timeline moment: a warped buffer advances
+    // by the warp factor per timeline second, an unwarped one 1:1.
+    private static double SourceSecondsAt(StudioClip clip, double timelineSeconds, double warpFactor)
+        => clip.SourceIn.TotalSeconds + ((timelineSeconds - clip.TimelineStartSeconds) * warpFactor);
 
     private static DjSetResult Describe(DjSetPlan plan, Dictionary<string, MusicTrack> byPath)
     {
@@ -501,10 +702,39 @@ public sealed class DjSetSession
             Transitions: plan.Transitions.Select(t => Transition(t, byPath)).ToArray(),
             RejectedCount: plan.Rejected.Count,
             RejectedCandidates: plan.Rejected
+                // The two entries that explain why the set is SHORT must survive the truncation. A
+                // whole-catalog build now overflows the cap easily on uniform lines ("no key", "no harmonic
+                // match"), and losing the length-cap line to twenty of those is how an honoured cap reads as
+                // a rejection-free build. OrderBy is stable, so everything else keeps the arranger's order.
+                .OrderBy(r => r.Reason is RejectReason.LengthCapReached or RejectReason.NoMixOutRunway ? 0 : 1)
                 .Take(MaxReportedRejections)
                 .Select(r => new RejectedTrackInfo(r.Path, r.Title, r.Reason.ToString(), r.NeededWarpPercent))
                 .ToArray(),
-            WarningSummary: warningCounts);
+            WarningSummary: warningCounts,
+            Advisories: Advisories(plan));
+    }
+
+    /// <summary>
+    /// What to change about the REQUEST, as opposed to about a candidate.
+    /// <para>Only one advisory so far, and it is the one the measurements earned: on the set the owner kept,
+    /// <c>excludeLowGridConfidence</c> took the phase-locked joins from 6-of-12 to 9-of-9. The flag stays off
+    /// by default (flipping it would silently shrink the pool for every existing caller), so the build has to
+    /// say so — and the counterfactual costs nothing to state, because with every untrusted grid removed each
+    /// surviving join is phase-locked by construction.</para>
+    /// </summary>
+    private static IReadOnlyList<string> Advisories(DjSetPlan plan)
+    {
+        int notLocked = plan.Transitions.Count - plan.PhaseLockedCount;
+        if (notLocked * 2 <= plan.Transitions.Count)
+            return Array.Empty<string>();
+
+        return new[]
+        {
+            $"{notLocked} of {plan.Transitions.Count} joins are not phase-locked, so each is clamped to the " +
+            $"{SetBuildOptions.MinOverlapBars}-bar floor instead of the overlap you asked for. Rebuilding " +
+            "with excludeLowGridConfidence: true leaves out every track whose beat grid is untrusted, which " +
+            "makes ALL surviving joins phase-locked by construction — at the cost of a shorter set.",
+        };
     }
 
     private static SetTrackInfo Track(int position, StudioClip clip, Dictionary<string, MusicTrack> byPath, double tempoBpm)

@@ -117,6 +117,7 @@ public sealed class OfflineMixRenderer
         // and re-decoded from being counted (or reported silent) twice.
         var decoded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var silentSources = new List<string>();
+        var monoFallbackSources = new List<string>();
         long silentFrames = 0;
         var holeScan = new HoleScan(sampleRate);
 
@@ -184,10 +185,17 @@ public sealed class OfflineMixRenderer
                             continue;
                         }
 
-                        src = await DecodeSourceAsync(
+                        (StereoBuffer decodedSource, bool tookMonoFallback) = await DecodeSourceAsync(
                                 state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
                             .ConfigureAwait(false);
+                        src = decodedSource;
                         sources[key] = src;
+
+                        if (tookMonoFallback &&
+                            !monoFallbackSources.Contains(state.SourcePath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            monoFallbackSources.Add(state.SourcePath);
+                        }
 
                         // A decode that came back with nothing is a clip the mix will not contain. It is
                         // deliberately not fatal here, but it must reach the caller.
@@ -259,7 +267,8 @@ public sealed class OfflineMixRenderer
         }
 
         progress?.Report(1.0);
-        return new MixRenderResult(decoded.Count, silentSources, written, silentFrames, holeScan.Finish());
+        return new MixRenderResult(
+            decoded.Count, silentSources, written, silentFrames, holeScan.Finish(), monoFallbackSources);
     }
 
     /// <summary>
@@ -455,11 +464,13 @@ public sealed class OfflineMixRenderer
     // source (PositiveInfinity = the whole file). Unwarped: the managed mono decoder duplicated to both
     // channels (CI-safe, deterministic, no native). Warped: BASS_FX stereo. A test decode override (when
     // present) supplies the buffer directly so distinct L/R can be injected.
-    private async Task<StereoBuffer> DecodeSourceAsync(
+    // The flag says whether the MONO fallback was taken, which the caller reports: a mono clip inside a
+    // stereo mix is a defect the render must not keep to itself (see MixRenderResult.MonoFallbackSources).
+    private async Task<(StereoBuffer Buffer, bool MonoFallback)> DecodeSourceAsync(
         string path, double factor, int sampleRate, double maxSourceEndSeconds, CancellationToken cancellationToken)
     {
         if (_decodeOverride is not null)
-            return _decodeOverride(path, factor);
+            return (_decodeOverride(path, factor), false);
 
         // The decoded buffer plays 1:1 with the timeline, so source second s maps to buffer second s/factor.
         // The furthest buffer frame any clip reads is therefore maxSourceEnd/factor (+ a block of margin for
@@ -479,17 +490,22 @@ public sealed class OfflineMixRenderer
         StereoBuffer stereo = _stretchDecoder.DecodeStretchedStereo(
             path, sampleRate, unwarped ? 0.0 : (factor - 1.0) * 100.0, maxFrames);
         if (stereo.Length > 0 || !unwarped)
-            return stereo;
+            return (stereo, false);
 
         // Nothing from BASS (absent native, or a format it cannot open). For an unwarped clip the managed
         // decoder is an equivalent second attempt apart from channel count, so the mix still renders — in
         // mono. A WARPED clip must never fall back here: unstretched audio would play at the wrong tempo,
         // so its empty buffer stands and RenderAsync reports it as a silent source.
-        // Say so: an unannounced mono section inside a stereo mix is exactly the defect this path caused.
+        // Say so twice over: the log for whoever is watching the render, and the returned flag for the caller,
+        // because a warning nobody had wired up is how eleven minutes of a 68-minute export shipped in mono.
         _log?.LogWarning(
             "STUDIO render: BASS could not decode '{Path}', falling back to the managed mono decoder — this " +
             "clip renders in MONO (no stereo image) inside a stereo mix.", path);
-        return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+        StereoBuffer mono = StereoBuffer.FromMono(
+            await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+        // Only a fallback that produced audio is a mono clip. When it produced none the clip is not in the
+        // mix at all, and SilentSources is the honest report — blaming the channel count would misdirect.
+        return (mono, mono.Length > 0);
     }
 
     private static StatefulBiquad[] NewBiquads(int count)
