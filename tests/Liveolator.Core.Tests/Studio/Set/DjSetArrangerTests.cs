@@ -469,9 +469,16 @@ public class DjSetArrangerTests
             double lowA = mix.EvaluateDeck(0, middle).Eq.Low;
             double lowB = mix.EvaluateDeck(1, middle).Eq.Low;
 
-            // Both lows meet at a full cut in the middle of the blend, so the two basslines never stack.
-            Assert.Equal(0.0, Math.Min(lowA, lowB), 3);
-            Assert.Equal(0.0, Math.Max(lowA, lowB), 3);
+            // The two lows meet part-way, not at a full cut each: this assertion used to demand 0.0 on both
+            // sides, which is the hand-over passing through zero — an eight-bar hole in the mix's low end on
+            // every join. Equal-and-cut is the DJ move: neither record holds the low end alone (so the
+            // basslines still never stack), and the band never leaves.
+            // Sampled a hair off the true centre, not exactly on it: the reported StartSeconds/OverlapSeconds
+            // are rounded to milliseconds while the automation lane keeps the unrounded blend start, so the
+            // two sides land within about a thousandth of each other rather than bit-equal.
+            Assert.True(Math.Abs(lowA - lowB) < 0.01, $"the hand-over is lopsided: {lowA} vs {lowB}");
+            Assert.InRange(lowA, 0.30, 0.40);
+            Assert.InRange(lowB, 0.30, 0.40);
         }
     }
 
