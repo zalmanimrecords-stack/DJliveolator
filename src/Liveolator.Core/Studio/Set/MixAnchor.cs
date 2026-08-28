@@ -16,6 +16,9 @@ public enum AnchorSource
 /// track's phrase grid, which is what keeps two warped clips phrase-aligned for the whole crossfade.
 /// </summary>
 /// <param name="SourceSeconds">Offset from track start, in source seconds (before any warp).</param>
-/// <param name="SectionLabel">The structure label this point sits on, or null when it came from the fallback.</param>
-/// <param name="Source">Whether structure or the fallback rule chose it.</param>
+/// <param name="SectionLabel">The structure label this point sits on; null when the fallback rule chose it,
+/// and also when a kick advance moved it off the section that did.</param>
+/// <param name="Source">Whether structure or the fallback rule chose it. Stays
+/// <see cref="AnchorSource.Structure"/> across a kick advance: the section still chose the region, and
+/// reporting Fallback there inverted the trust signal on every well-executed long-blend entry.</param>
 public sealed record MixAnchor(double SourceSeconds, string? SectionLabel, AnchorSource Source);

@@ -50,6 +50,58 @@ public class SetTransitionPlannerTests
     }
 
     [Fact]
+    public void PlanMixOut_NeverLeavesOnABreakdown()
+    {
+        // The measured 2026-08-13 defect: a record with no outro label leaves on its last breakdown, and the
+        // join records that record's own hole into the mix (join 1 sat 30.1 dB below its local level).
+        SongStructure noOutro = SetTrackFixture.Structure(
+            new SongSection(0.0, SongSectionLabel.Intro),
+            new SongSection(60.0, SongSectionLabel.BuildUp),
+            new SongSection(90.0, SongSectionLabel.Drop),
+            new SongSection(150.0, SongSectionLabel.Breakdown),
+            new SongSection(180.0, SongSectionLabel.Drop),
+            new SongSection(240.0, SongSectionLabel.Breakdown));
+        MusicTrack track = SetTrackFixture.Track("a.mp3", structure: noOutro);
+
+        MixAnchor? anchor = SetTransitionPlanner.PlanMixOut(track, overlapBars: 16, earliestSeconds: 0.0, NoWarnings());
+
+        Assert.NotNull(anchor);
+        Assert.NotEqual(SongSectionLabel.Breakdown, anchor!.SectionLabel);
+    }
+
+    [Fact]
+    public void PlanMixOut_FallsBackWithAWarning_WhenTheOnlyLateSectionIsABreakdown()
+    {
+        SongStructure breakdownExit = SetTrackFixture.Structure(
+            new SongSection(0.0, SongSectionLabel.Intro),
+            new SongSection(90.0, SongSectionLabel.Drop),
+            new SongSection(240.0, SongSectionLabel.Breakdown));
+        MusicTrack track = SetTrackFixture.Track("a.mp3", structure: breakdownExit);
+        var warnings = NoWarnings();
+
+        MixAnchor? anchor = SetTransitionPlanner.PlanMixOut(track, overlapBars: 16, earliestSeconds: 0.0, warnings);
+
+        Assert.NotNull(anchor);
+        Assert.Equal(AnchorSource.Fallback, anchor!.Source);
+        Assert.Contains(SetWarning.StructureRejected, warnings);
+    }
+
+    [Fact]
+    public void PlanMixOut_DoesNotCutAShortRecordAtAQuarter_OnTheFallbackPath()
+    {
+        // EarliestMixOutFraction was enforced only on the structure branch, and the fallback is the branch
+        // that runs for every record without trusted structure. Measured: 30 s of a 120 s record.
+        MusicTrack track = SetTrackFixture.Track("a.mp3", durationSeconds: 120.0);
+
+        MixAnchor? anchor = SetTransitionPlanner.PlanMixOut(track, overlapBars: 32, earliestSeconds: 0.0, NoWarnings());
+
+        Assert.NotNull(anchor);
+        // 70% is unreachable when the blend alone is half the record, so the rule becomes "take the latest
+        // legal exit rather than leaving a tail": half the record, not a quarter of it.
+        Assert.True(anchor!.SourceSeconds >= 0.5 * 120.0, $"mix-out {anchor.SourceSeconds}s cuts a 120 s record too early");
+    }
+
+    [Fact]
     public void PlanMixOut_IgnoresStructure_WithTooFewSections()
     {
         SongStructure thin = SetTrackFixture.Structure(
@@ -151,7 +203,120 @@ public class SetTransitionPlannerTests
         MixAnchor anchor = SetTransitionPlanner.PlanMixIn(track, warnings);
 
         Assert.Equal(60.0, anchor.SourceSeconds, 3);
-        Assert.Contains(SetWarning.NoKickAtMixIn, warnings);
+        Assert.Contains(SetWarning.MixInMovedToKick, warnings);
+        Assert.DoesNotContain(SetWarning.NoKickAtMixIn, warnings);
+    }
+
+    [Fact]
+    public void PlanMixIn_IgnoresAMidTrackIntroLabel()
+    {
+        // The intro search ran over the whole ordered list, so a re-intro halfway in was taken as the entry
+        // point — a random mid-track entry into a by-definition low-energy section, reported as trusted.
+        SongStructure reIntro = SetTrackFixture.Structure(
+            new SongSection(0.0, SongSectionLabel.BuildUp),
+            new SongSection(30.0, SongSectionLabel.Drop),
+            new SongSection(150.0, SongSectionLabel.Intro),
+            new SongSection(180.0, SongSectionLabel.Drop),
+            new SongSection(240.0, SongSectionLabel.Outro));
+        MusicTrack track = SetTrackFixture.Track("b.mp3", structure: reIntro);
+
+        MixAnchor anchor = SetTransitionPlanner.PlanMixIn(track, NoWarnings());
+
+        Assert.True(anchor.SourceSeconds < PhraseSeconds, $"entered {anchor.SourceSeconds}s into the record");
+    }
+
+    [Fact]
+    public void PlanMixIn_NeverOpensOverBeatlessMaterial()
+    {
+        // The advance snapped DOWN to a phrase line, so "moved onto the kick" could land a full phrase
+        // before it — 29 s of pad, while reporting that the entry had been corrected.
+        MusicTrack track = SetTrackFixture.Track(
+            "b.mp3",
+            structure: SetTrackFixture.StandardStructure(),
+            kicks: new[] { 89.0, 89.5, 90.0 });
+
+        MixAnchor anchor = SetTransitionPlanner.PlanMixIn(track, NoWarnings());
+
+        Assert.True(
+            89.0 - anchor.SourceSeconds <= BarSeconds,
+            $"entry {anchor.SourceSeconds}s opens {89.0 - anchor.SourceSeconds}s before the first kick");
+    }
+
+    [Fact]
+    public void PlanMixIn_RejectsATrackWhoseDrumsStartTooLate()
+    {
+        // The advance had no cap, so a record whose drums start two minutes in was entered two minutes in —
+        // and the outgoing side then had no runway left, which cascaded into every later record being blamed.
+        MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
+        MusicTrack to = SetTrackFixture.Track("b.mp3", kicks: new[] { 120.0, 120.5, 121.0 });
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
+
+        Assert.Null(shape);
+    }
+
+    [Fact]
+    public void PlanMixIn_DistinguishesAMovedEntryFromAKicklessOne()
+    {
+        // One member for both cases is how a warning gets trained to be ignored: it fired on 8 of 9 TATA Box
+        // joins as the benign case, hiding the one where the drums never come back.
+        var moved = NoWarnings();
+        SetTransitionPlanner.PlanMixIn(
+            SetTrackFixture.Track("moved.mp3", structure: SetTrackFixture.StandardStructure(), kicks: new[] { 60.0, 60.5 }),
+            moved);
+
+        var kickless = NoWarnings();
+        SetTransitionPlanner.PlanMixIn(
+            SetTrackFixture.Track("kickless.mp3", kicks: new[] { 10.0, 20.0, 30.0 }, downbeatSeconds: 120.0),
+            kickless);
+
+        Assert.Contains(SetWarning.MixInMovedToKick, moved);
+        Assert.Contains(SetWarning.NoKickAtMixIn, kickless);
+        Assert.DoesNotContain(SetWarning.NoKickAtMixIn, moved);
+        Assert.DoesNotContain(SetWarning.MixInMovedToKick, kickless);
+    }
+
+    [Fact]
+    public void PlanMixIn_WarnsWhenKickOnsetsWereNeverAnalyzed()
+    {
+        // An un-analyzed record used to look identical to a perfect one: entry chosen, no warnings.
+        MusicTrack track = SetTrackFixture.Track("b.mp3", structure: SetTrackFixture.StandardStructure());
+        var warnings = NoWarnings();
+
+        SetTransitionPlanner.PlanMixIn(track, warnings);
+
+        Assert.Contains(SetWarning.KickOnsetsNotAnalyzed, warnings);
+    }
+
+    [Fact]
+    public void Plan_KeepsTheStructureAnchorSource_WhenTheKickAdvanceMovesTheEntry()
+    {
+        // The trust signal was inverted: a well-executed long-blend entry read Fallback while the breakdown
+        // mix-out above read Structure.
+        MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
+        MusicTrack to = SetTrackFixture.Track(
+            "b.mp3", structure: SetTrackFixture.StandardStructure(), kicks: new[] { 60.0, 60.5, 61.0 });
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
+
+        Assert.NotNull(shape);
+        Assert.Equal(60.0, shape!.In.SourceSeconds, 3);
+        Assert.Equal(AnchorSource.Structure, shape.In.Source);
+    }
+
+    [Fact]
+    public void Plan_DoesNotReportOverlapClamped_WhenEightBarsWasTheMostAllowed()
+    {
+        // A low-confidence grid caps the blend at 8 bars by design, so calling that a clamp reports a
+        // compromise the caller never asked to avoid.
+        MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
+        MusicTrack to = SetTrackFixture.UntrustedGrid("b.mp3");
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, fromPhaseReady: true, toPhaseReady: false);
+
+        Assert.NotNull(shape);
+        Assert.Equal(SetBuildOptions.LowConfidenceOverlapBars, shape!.OverlapBars);
+        Assert.DoesNotContain(SetWarning.OverlapClamped, shape.Warnings);
     }
 
     [Fact]
@@ -172,8 +337,12 @@ public class SetTransitionPlannerTests
     [Fact]
     public void Plan_UsesTheRequestedOverlap_WhenBothRecordsHaveTheRunway()
     {
-        MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
-        MusicTrack to = SetTrackFixture.Track("b.mp3", structure: SetTrackFixture.StandardStructure());
+        // Kicks on both records on purpose: a catalog entry with no kick onsets is itself something to
+        // report now, so "nothing was compromised" needs a pair that was actually analyzed.
+        MusicTrack from = SetTrackFixture.Track(
+            "a.mp3", structure: SetTrackFixture.StandardStructure(), kicks: KicksFrom(0.0, 300.0));
+        MusicTrack to = SetTrackFixture.Track(
+            "b.mp3", structure: SetTrackFixture.StandardStructure(), kicks: KicksFrom(0.0, 300.0));
 
         TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
 
@@ -224,6 +393,37 @@ public class SetTransitionPlannerTests
 
         Assert.NotNull(shape);
         Assert.Contains(SetWarning.IncomingDropInsideOverlap, shape!.Warnings);
+    }
+
+    [Fact]
+    public void Plan_WarnsWhenAnyDropLandsInsideTheOverlap_NotJustTheFirst()
+    {
+        // The check looked only at the FIRST drop, so it disabled itself whenever the entry had been advanced
+        // past it — which is precisely the configuration that produces a train wreck.
+        MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
+        SongStructure twoDrops = SetTrackFixture.Structure(
+            new SongSection(0.0, SongSectionLabel.Intro),
+            new SongSection(30.0, SongSectionLabel.Drop),
+            new SongSection(75.0, SongSectionLabel.Drop),
+            new SongSection(240.0, SongSectionLabel.Outro));
+        // The drums start at 60 s, so the entry is advanced past the first drop and the second one at 75 s
+        // lands halfway through the 30 s blend.
+        MusicTrack to = SetTrackFixture.Track("b.mp3", structure: twoDrops, kicks: KicksFrom(60.0, 300.0));
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
+
+        Assert.NotNull(shape);
+        Assert.Equal(60.0, shape!.In.SourceSeconds, 3);
+        Assert.Contains(SetWarning.IncomingDropInsideOverlap, shape.Warnings);
+    }
+
+    // A kick on every beat at 128 BPM, so the energy gate sees a driven floor and only the geometry is tested.
+    private static double[] KicksFrom(double startSeconds, double endSeconds)
+    {
+        var kicks = new List<double>();
+        for (double t = startSeconds; t < endSeconds; t += BarSeconds / 4.0)
+            kicks.Add(t);
+        return kicks.ToArray();
     }
 
     [Fact]
