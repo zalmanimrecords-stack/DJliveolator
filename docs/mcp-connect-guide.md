@@ -21,7 +21,7 @@ It does **not** control live playback. There is no transport/deck/mixer tool —
 | .NET 8 SDK (or runtime) | Runs the server | Nothing works |
 | **FFmpeg** on `PATH` | Decodes mp3/flac/m4a/aac/ogg/opus | Those files land in a scan's `failures`; WAV still analyzes |
 | `ffprobe` on `PATH` | Video duration in the visual catalog | Video assets get no duration; images are fine |
-| BASS natives beside the DLL | `render_set_preview` warps every clip through BASS_FX | The build copies `bass.dll`, `bass_fx.dll`, `bassmix.dll`, `bassflac.dll` automatically — do not hand-copy |
+| BASS natives beside the DLL | `render_set_preview` warps every clip through BASS_FX | The build copies `bass.dll`, `bass_fx.dll`, `bassmix.dll`, `bassflac.dll`, `bass_aac.dll` automatically — do not hand-copy |
 
 ## 2. Build it first
 
