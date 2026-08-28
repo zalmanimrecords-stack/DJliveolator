@@ -30,13 +30,23 @@ public static class SetTransitionPlanner
     /// beatless material and the floor empties.</summary>
     private const double MaxBarsToFirstKick = 1.0;
 
+    /// <summary>How far the entry may be pushed to reach the drums before the record is treated as unmixable
+    /// rather than merely late. Measured: an unbounded advance entered a record at 270 s of a 300 s file, and
+    /// the outgoing side then had no runway left — one bad kick-onset array turned a twelve-track set into a
+    /// one-track set with innocent records blamed for being short.</summary>
+    private const int MaxPhrasesToFirstKick = 2;
+
     private static readonly string[] StructureLabels =
         { SongSectionLabel.Drop, SongSectionLabel.BuildUp, SongSectionLabel.Breakdown };
 
     // A drop is the track's payload and a build-up promises one, so leaving on either is a broken promise;
-    // an intro has nothing to leave from.
+    // an intro has nothing to leave from. A breakdown is the same broken promise measured from the other side:
+    // on the 2026-08-13 set a breakdown mix-out recorded the outgoing record's own hole into the join —
+    // 30.1 dB below its local level, 10.5 s of it bottoming at -63.7 dB — and reported that join as trusted.
     private static readonly string[] InvalidMixOutLabels =
-        { SongSectionLabel.Drop, SongSectionLabel.BuildUp, SongSectionLabel.Intro };
+    {
+        SongSectionLabel.Drop, SongSectionLabel.BuildUp, SongSectionLabel.Intro, SongSectionLabel.Breakdown,
+    };
 
     /// <summary>
     /// Plans the join from <paramref name="from"/> (already entered at <paramref name="fromMixInSeconds"/>)
@@ -59,6 +69,8 @@ public static class SetTransitionPlanner
 
         var warnings = new List<SetWarning>();
         MixAnchor inAnchor = PlanMixIn(to, warnings);
+        if (DrumsStartTooLate(to, inAnchor))
+            return null;
 
         // A guessed grid cannot be held in phase for long, so a low-confidence track gets the shortest
         // legal blend regardless of what was asked for.
@@ -76,8 +88,15 @@ public static class SetTransitionPlanner
             if (outAnchor is null || !FitsIncomingRunway(to, inAnchor, bars))
                 continue;
 
+            // A shorter blend sits at a different point in each record, so a rejected anchor pair is a reason
+            // to step down rather than to give up — the next attempt may clear the hole entirely.
+            if (!KeepsTheFloorMoving(from, outAnchor, to, inAnchor, bars, attempt))
+                continue;
+
             warnings.AddRange(attempt);
-            if (bars < options.NormalizedOverlapBars)
+            // Against `requested`, not the option: when a low-confidence grid already capped the blend, eight
+            // bars WAS the most allowed, and calling it a clamp reports a compromise nobody asked to avoid.
+            if (bars < requested)
                 warnings.Add(SetWarning.OverlapClamped);
             if (DropLandsInsideOverlap(to, inAnchor, bars))
                 warnings.Add(SetWarning.IncomingDropInsideOverlap);
@@ -103,7 +122,7 @@ public static class SetTransitionPlanner
 
         double raw = grid.DownbeatSeconds;
         string? label = null;
-        if (trusted && FirstMixInSection(track.Structure!) is { } section)
+        if (trusted && FirstMixInSection(track.Structure!, grid) is { } section)
         {
             raw = section.StartSeconds;
             label = section.Label;
@@ -111,12 +130,13 @@ public static class SetTransitionPlanner
 
         double anchor = grid.Nearest(raw);
         double adjusted = AdvanceToFirstKick(track, grid, anchor, warnings);
-        if (adjusted > anchor)
-            label = null;   // no longer sitting on the section we picked
 
+        // The advance moves the point off the section that chose it, but the section still chose the region.
+        // Reporting Fallback here inverted the one trust signal the agent reads: every well-executed
+        // long-blend entry read Fallback while a breakdown mix-out read Structure.
         return new MixAnchor(
             adjusted,
-            label,
+            adjusted > anchor ? null : label,
             trusted && label is not null ? AnchorSource.Structure : AnchorSource.Fallback);
     }
 
@@ -160,6 +180,14 @@ public static class SetTransitionPlanner
         // Fallback: leave a short tail after the blend rather than running the record to its last sample,
         // which is where hard endings and fade-outs live.
         double target = grid.Floor(latest - (SetBuildOptions.MinOverlapBars * barSeconds));
+
+        // EarliestMixOutFraction used to be enforced only on the structure branch, and this is the branch that
+        // runs for every record without trusted structure — measured cutting a 120 s record at 30 s. A tail is
+        // a luxury; cutting a record at a quarter of its length is not, so give the tail up first. The
+        // fraction is still not guaranteed: when the blend alone is half the record, no legal point reaches it.
+        if (target < duration.TotalSeconds * EarliestMixOutFraction)
+            target = grid.Floor(latest);
+
         if (target < earliest)
             target = grid.Ceiling(earliest);
         if (target > latest)
@@ -168,6 +196,48 @@ public static class SetTransitionPlanner
         return target < earliest || target > latest
             ? null
             : new MixAnchor(target, null, AnchorSource.Fallback);
+    }
+
+    /// <summary>
+    /// Whether something is driving the floor at both ends of a join — the one condition the planner used to
+    /// have no way of asking. False REJECTS the anchor pair rather than warning about it, because a warning
+    /// nobody can act on is what let the 2026-08-13 set open a 10.5 s hole bottoming at -63.7 dB.
+    /// <para>The condition is measured, not label-based: banning the Breakdown label alone would not have
+    /// saved that set, because a gently-decaying breakdown gets labelled Section and the fallback mix-out path
+    /// has no labels at all. Thresholds are <see cref="KickCoverage"/>'s (owner decision, 2026-08-28).</para>
+    /// <para>A track whose kicks were never analyzed answers UNKNOWN and passes untouched: reading UNKNOWN as
+    /// "no kicks" would make every un-analyzed record in the catalog unmixable.</para>
+    /// </summary>
+    public static bool KeepsTheFloorMoving(
+        MusicTrack from,
+        MixAnchor outAnchor,
+        MusicTrack to,
+        MixAnchor inAnchor,
+        int overlapBars,
+        ICollection<SetWarning> warnings)
+    {
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(outAnchor);
+        ArgumentNullException.ThrowIfNull(to);
+        ArgumentNullException.ThrowIfNull(inAnchor);
+        ArgumentNullException.ThrowIfNull(warnings);
+
+        // Both windows are inside their own files by construction — PlanMixOut keeps the whole blend before the
+        // last sample, FitsIncomingRunway keeps a phrase after it — so neither can count bars past the end of a
+        // track, which would read a legitimate last-phrase exit as a hole.
+        if (KickCoverage.Fraction(from, outAnchor.SourceSeconds, overlapBars) is { } outCoverage &&
+            outCoverage < KickCoverage.MixOutFloor)
+            return false;
+
+        if (KickCoverage.Fraction(to, inAnchor.SourceSeconds, overlapBars) is { } inCoverage &&
+            inCoverage < KickCoverage.MixInFloor)
+            warnings.Add(SetWarning.LowKickCoverageAtMixIn);
+
+        // Strictly greater: MaxJointKicklessBars is the most that is ALLOWED, so >= would quietly move the
+        // threshold to one bar. A null run means one deck was never measured, which cannot prove a hole.
+        int? jointRun = KickCoverage.LongestJointKicklessRun(
+            from, outAnchor.SourceSeconds, to, inAnchor.SourceSeconds, overlapBars);
+        return jointRun is not > KickCoverage.MaxJointKicklessBars;
     }
 
     /// <summary>
@@ -240,11 +310,15 @@ public static class SetTransitionPlanner
 
     // The first section worth entering on: the intro, else whatever comes before the track first starts
     // building. Never a drop (an accidental double drop) and never an outro.
-    private static SongSection? FirstMixInSection(SongStructure structure)
+    private static SongSection? FirstMixInSection(SongStructure structure, PhraseGrid grid)
     {
         IReadOnlyList<SongSection> sections = structure.Ordered;
+
+        // Only an intro at the HEAD of the record. The search used to run over the whole ordered list, so a
+        // mid-track re-intro was taken as the entry point — measured at 150 s of a 300 s record, a random
+        // mid-track entry into a by-definition low-energy section, reported as a trusted structural anchor.
         SongSection? intro = sections.FirstOrDefault(s => s.Label == SongSectionLabel.Intro);
-        if (intro is not null)
+        if (intro is not null && intro.StartSeconds <= grid.DownbeatSeconds + grid.PhraseSeconds)
             return intro;
 
         int firstEnergy = sections
@@ -266,7 +340,11 @@ public static class SetTransitionPlanner
     {
         IReadOnlyList<double> kicks = track.Bpm?.KickOnsetsSeconds ?? Array.Empty<double>();
         if (kicks.Count == 0)
+        {
+            // Silence here made an unmeasured record indistinguishable from a perfect one.
+            warnings.Add(SetWarning.KickOnsetsNotAnalyzed);
             return anchor;
+        }
 
         double barSeconds = BarSeconds(track);
         double tolerance = MaxBarsToFirstKick * barSeconds;
@@ -280,8 +358,21 @@ public static class SetTransitionPlanner
         if (firstKick.Value <= anchor + tolerance)
             return anchor;
 
-        warnings.Add(SetWarning.NoKickAtMixIn);
-        return Math.Max(anchor, grid.Floor(firstKick.Value));
+        // Ceiling, not Floor: snapping DOWN to a phrase line put the "corrected" entry up to a full phrase
+        // BEFORE the kick, back inside the beatless material it was escaping — measured at 29 s — while the
+        // warning claimed the entry had been fixed. The phrase line at or after the kick is the only snap that
+        // both keeps the phrase-grid invariant and opens on the drums.
+        warnings.Add(SetWarning.MixInMovedToKick);
+        return Math.Max(anchor, grid.Ceiling(firstKick.Value));
+    }
+
+    // An entry pushed more than MaxPhrasesToFirstKick past the head is not a late entry, it is the wrong
+    // record: there is no musical reading of a blend that opens two minutes into the incoming track.
+    private static bool DrumsStartTooLate(MusicTrack to, MixAnchor inAnchor)
+    {
+        PhraseGrid grid = PhraseGrid.For(to.Bpm);
+        return grid.HasTempo &&
+            inAnchor.SourceSeconds > grid.DownbeatSeconds + (MaxPhrasesToFirstKick * grid.PhraseSeconds);
     }
 
     // The incoming track must have the blend plus a phrase of its own left after the mix-in point,
@@ -303,15 +394,15 @@ public static class SetTransitionPlanner
         if (to.Structure is null)
             return false;
 
-        double? firstDrop = to.Structure.Ordered
-            .Where(s => s.Label == SongSectionLabel.Drop)
-            .Select(s => (double?)s.StartSeconds)
-            .FirstOrDefault();
-        if (firstDrop is null)
-            return false;
-
+        // ANY drop in the window, not just the first. Testing only the first silently disabled the check
+        // whenever the entry had been advanced past it — measured: entry 150 s, first drop 90 s, so the
+        // function returned false while the drop at 165 s landed dead centre of the blend. The train-wreck
+        // detector was off in exactly the configuration that produces train wrecks.
         double overlapEnd = inAnchor.SourceSeconds + (overlapBars * BarSeconds(to));
-        return firstDrop.Value > inAnchor.SourceSeconds && firstDrop.Value < overlapEnd;
+        return to.Structure.Ordered.Any(s =>
+            s.Label == SongSectionLabel.Drop &&
+            s.StartSeconds > inAnchor.SourceSeconds &&
+            s.StartSeconds < overlapEnd);
     }
 
     /// <summary>One bar of <paramref name="track"/> in its own source seconds (0 when it has no tempo).</summary>
