@@ -65,5 +65,34 @@ public sealed class LoudnessGainTests
         Assert.True(LoudnessGain.For(40.0, TargetLufs) >= LoudnessGain.MinGain);
     }
 
+    [Fact]
+    public void ResidualDb_IsAboutThreeDb_WhenAMinusEighteenTrackHitsTheClamp()
+    {
+        // -18 LUFS against -9 asks for +9 dB and the clamp allows +6.02, so the clip plays ~2.98 dB under
+        // the rest of the mix. The measured lesson: the clamp is NOT the big gain error (a -15.3 LUFS track
+        // is left only 0.28 dB short) — it is worth a report line, not a rebuild.
+        Assert.Equal(2.98, LoudnessGain.ResidualDb(-18.0, TargetLufs), precision: 2);
+    }
+
+    [Fact]
+    public void ResidualDb_IsZero_WhenTheGainWasNotClamped()
+    {
+        Assert.Equal(0.0, LoudnessGain.ResidualDb(-13.0, TargetLufs));
+        Assert.Equal(0.0, LoudnessGain.ResidualDb(TargetLufs, TargetLufs));
+    }
+
+    [Fact]
+    public void ResidualDb_IsZero_WhenTheTrackWasNeverMeasured()
+    {
+        Assert.Equal(0.0, LoudnessGain.ResidualDb(null, TargetLufs));
+    }
+
+    [Fact]
+    public void ResidualDb_GoesNegative_WhenTheAttenuationWasClamped()
+    {
+        // The other end of the clamp: the clip still sits above the target, so the sign says which way.
+        Assert.True(LoudnessGain.ResidualDb(10.0, TargetLufs) < 0.0);
+    }
+
     private static double Db(double gain) => 20.0 * Math.Log10(gain);
 }

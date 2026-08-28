@@ -30,4 +30,22 @@ public static class LoudnessGain
         double gain = Math.Pow(10.0, (targetLufs - lufs) / 20.0);
         return Math.Clamp(gain, MinGain, MaxGain);
     }
+
+    /// <summary>
+    /// How far <see cref="For"/> fell short of <paramref name="targetLufs"/> because of the clamp: positive dB
+    /// when the clip still plays under the target, negative when it still plays over it, and exactly zero when
+    /// the gain was not clamped or the track was never measured.
+    /// <para>Measured lesson: the clamp is rarely the culprit — a -15.3 LUFS track against -9.0 is left only
+    /// 0.28 dB short — so this is a report line, not a rebuild trigger. The gain error worth chasing is that
+    /// the measurement is whole-file while the clip plays only its trimmed window.</para>
+    /// </summary>
+    public static double ResidualDb(double? integratedLufs, double targetLufs)
+    {
+        if (integratedLufs is not double lufs || double.IsNaN(lufs) || double.IsInfinity(lufs))
+            return 0.0;
+
+        // Ratio rather than a difference of two logs, so an unclamped gain returns exactly zero.
+        double wanted = Math.Pow(10.0, (targetLufs - lufs) / 20.0);
+        return 20.0 * Math.Log10(wanted / For(integratedLufs, targetLufs));
+    }
 }
