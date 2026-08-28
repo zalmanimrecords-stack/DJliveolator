@@ -102,10 +102,51 @@ public class HarmonicSetBuilderTests
     {
         MusicTrack seed = Track("seed.mp3", "8B", 124);
         var onlyOne = Track("a.mp3", "8B", 124);
+        var unrelated = Track("far.mp3", "2A", 124);
 
-        HarmonicSet set = _builder.Build(seed, new[] { onlyOne }, new HarmonicSetOptions(Length: 10));
+        HarmonicSet set = _builder.Build(seed, new[] { onlyOne, unrelated }, new HarmonicSetOptions(Length: 10));
 
         Assert.Equal(2, set.Count); // ran out of candidates before reaching length 10
+
+        // A track the chain never picked has to come back with the rule that vetoed it, or the caller
+        // reads "the set is short" and widens the pool when the answer was "that key does not fit".
+        UnpickedCandidate leftover = Assert.Single(set.Unpicked);
+        Assert.Equal("far.mp3", leftover.Track.File.Path);
+        Assert.Equal(HarmonicVeto.NoCompatibleKey, leftover.Veto);
+    }
+
+    [Fact]
+    public void Build_NamesTheTrend_AsTheVeto_WhenTheKeyWouldHaveFit()
+    {
+        MusicTrack seed = Track("seed.mp3", "8B", 124);
+        var slower = Track("slower.mp3", "8B", 120);
+
+        HarmonicSet set = _builder.Build(seed, new[] { slower },
+            new HarmonicSetOptions(Length: 4, BpmTolerance: 6, Trend: BpmTrend.Rising));
+
+        Assert.Single(set.Entries);
+        UnpickedCandidate leftover = Assert.Single(set.Unpicked);
+        Assert.Equal(HarmonicVeto.BlockedByTrend, leftover.Veto);
+    }
+
+    [Fact]
+    public void Build_MarksTheLeftovers_Untried_WhenTheLengthCapStoppedIt()
+    {
+        // The cap is not a veto: nothing was asked of these two, so claiming a reason for them would be
+        // a guess. They are reported as untried instead.
+        MusicTrack seed = Track("seed.mp3", "8B", 124);
+        var candidates = new[]
+        {
+            Track("a.mp3", "8B", 124),
+            Track("b.mp3", "8B", 124),
+            Track("c.mp3", "8B", 124),
+        };
+
+        HarmonicSet set = _builder.Build(seed, candidates, new HarmonicSetOptions(Length: 2));
+
+        Assert.Equal(2, set.Count);
+        Assert.Equal(2, set.Unpicked.Count);
+        Assert.All(set.Unpicked, u => Assert.Equal(HarmonicVeto.NotTried, u.Veto));
     }
 
     [Fact]

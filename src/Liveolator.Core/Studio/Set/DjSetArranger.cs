@@ -54,7 +54,9 @@ public sealed class DjSetArranger
         if (start is null)
             return Empty(options, rejected);
 
-        IReadOnlyList<SetEntry> ordered = _builder.Build(start, eligible, harmonic).Entries;
+        HarmonicSet chain = _builder.Build(start, eligible, harmonic);
+        ReportUnpicked(chain.Unpicked, rejected);
+        IReadOnlyList<SetEntry> ordered = chain.Entries;
         if (ordered.Count == 0)
             return Empty(options, rejected);
 
@@ -66,6 +68,38 @@ public sealed class DjSetArranger
             return Empty(options, rejected);
 
         return Lay(withinRange, tempoBpm, options, rejected);
+    }
+
+    // A track the chain never picked is as absent from the set as one that was filtered, so it is reported
+    // too — with the rule that kept it out, because that is what decides the caller's next move: a key ring
+    // that does not reach means a wider pool or another seed, a trend lockout means dropping the trend or
+    // reseeding low. Measured lesson: a build that returned one clip from a four-track pool reported an EMPTY
+    // rejection list, so the only reading left was "the library is thin" and the next call was the wrong one.
+    private static void ReportUnpicked(IReadOnlyList<UnpickedCandidate> unpicked, List<RejectedCandidate> rejected)
+    {
+        foreach (UnpickedCandidate candidate in unpicked)
+        {
+            RejectReason? reason = candidate.Veto switch
+            {
+                HarmonicVeto.NoCompatibleKey => RejectReason.NoHarmonicMatch,
+                HarmonicVeto.BlockedByTrend => RejectReason.BlockedByTrend,
+                _ => null,
+            };
+            if (reason is { } value)
+                rejected.Add(new RejectedCandidate(candidate.Track.File.Path, candidate.Track.Title, value));
+        }
+
+        // The length cap is not a rejection — it is a request that was honoured — but with 8 the default
+        // against a 1,300-track catalog, saying nothing made a cap read as a rejection-free build. One line
+        // naming the untried count, and no track blamed for a limit it never reached.
+        int untried = unpicked.Count(u => u.Veto == HarmonicVeto.NotTried);
+        if (untried > 0)
+        {
+            rejected.Add(new RejectedCandidate(
+                string.Empty,
+                $"the length cap stopped here, {untried} candidate{(untried == 1 ? string.Empty : "s")} untried",
+                RejectReason.LengthCapReached));
+        }
     }
 
     // Everything a track must have before it can be beat-matched at all. Cheap metadata checks run before
@@ -120,13 +154,20 @@ public sealed class DjSetArranger
         List<RejectedCandidate> rejected)
     {
         var kept = new List<SetEntry>();
-        foreach (SetEntry entry in ordered)
+        for (int i = 0; i < ordered.Count; i++)
         {
+            SetEntry entry = ordered[i];
             double warp = WarpPercent(tempoBpm, entry.Track.Bpm!.Bpm);
             if (Math.Abs(warp) > options.MaxWarpPercent)
             {
+                // The seed helped choose this tempo and is then filtered against it like anything else, so it
+                // can be evicted from its own set — and the caller asked for a set that starts there. Named
+                // apart because the remedy is different: reseed, rather than widen the limit.
                 rejected.Add(new RejectedCandidate(
-                    entry.Track.File.Path, entry.Track.Title, RejectReason.OutsideTempoRange, Math.Round(warp, 2)));
+                    entry.Track.File.Path,
+                    entry.Track.Title,
+                    i == 0 ? RejectReason.SeedOutsideTempoRange : RejectReason.OutsideTempoRange,
+                    Math.Round(warp, 2)));
                 continue;
             }
 
@@ -166,9 +207,20 @@ public sealed class DjSetArranger
                 current, currentSourceIn, next, options, currentPhaseReady, nextPhaseReady);
             if (shape is null)
             {
-                // Nothing left to mix out of, or the incoming record ends inside the blend. Dropping the
-                // incoming track keeps the rest of the chain intact and is reported.
-                rejected.Add(new RejectedCandidate(next.File.Path, next.Title, RejectReason.TooShort));
+                if (HasNoMixOutRunway(current, currentSourceIn))
+                {
+                    // The outgoing record cannot reach even the shortest legal blend, and that condition does
+                    // not mention the incoming track at all — it holds for every remaining candidate. Measured:
+                    // continuing here walked the rest of the chain reporting each record as TooShort in turn,
+                    // so one bad kick-onset array turned a twelve-track set into a one-track set with two
+                    // fifteen-minute records blamed for being short.
+                    rejected.Add(new RejectedCandidate(current.File.Path, current.Title, RejectReason.NoMixOutRunway));
+                    break;
+                }
+
+                // The incoming record has no room after its own entry point for the blend plus a phrase. Not
+                // TooShort: that is about the file's length alone and was already decided before any join.
+                rejected.Add(new RejectedCandidate(next.File.Path, next.Title, RejectReason.NoTransitionPlanned));
                 continue;
             }
 
@@ -177,14 +229,20 @@ public sealed class DjSetArranger
             double outSourceEnd = shape.Out.SourceSeconds + outSourceOverlap;
             double blendStart = currentStart + ((shape.Out.SourceSeconds - currentSourceIn) / currentFactor);
 
+            StudioClip outgoing = Clip(current, clips.Count, options, currentStart, currentSourceIn, outSourceEnd, currentWarped);
+            clips.Add(outgoing);
+            double outgoingEnd = currentStart + (outgoing.SourceDuration!.Value.TotalSeconds / currentFactor);
+
             // An unwarped clip runs on its own bar length, so the chain loses the project grid across it.
             // Re-anchor the next clip to the project phrase grid to pick the alignment back up.
             if (!currentWarped)
-                blendStart = SnapToProjectPhrase(blendStart, tempoBpm);
+                blendStart = SnapToProjectPhrase(blendStart, currentStart, outgoingEnd, tempoBpm);
 
-            clips.Add(Clip(current, clips.Count, options, currentStart, currentSourceIn, outSourceEnd, currentWarped));
-
-            double blendSeconds = outSourceOverlap / currentFactor;
+            // The blend is whatever is left of the outgoing clip once the incoming one starts — not the bars
+            // that were planned. The phrase snap above moves the start of the blend without moving where the
+            // outgoing record ends, so reporting the planned figure described a timeline that was not built,
+            // and handed the crossfade a window running past the clip it fades out.
+            double blendSeconds = outgoingEnd - blendStart;
             int outSlot = SlotFor(clips.Count - 1, options);
             int inSlot = SlotFor(clips.Count, options);
             windows.Add(new CrossfadeWindow(outSlot, inSlot, blendStart, blendSeconds));
@@ -306,10 +364,31 @@ public sealed class DjSetArranger
     private static int SlotFor(int index, SetBuildOptions options)
         => (options.StartDeckSlot + index) % 2;
 
-    private static double SnapToProjectPhrase(double seconds, double tempoBpm)
+    private static double SnapToProjectPhrase(double seconds, double earliest, double outgoingEndSeconds, double tempoBpm)
     {
         double phrase = SetBuildOptions.PhraseBars * SetBuildOptions.BarSeconds(tempoBpm);
-        return phrase > 0.0 ? Math.Max(0.0, Math.Round(seconds / phrase) * phrase) : seconds;
+        if (phrase <= 0.0)
+            return seconds;
+
+        double snapped = Math.Round(seconds / phrase) * phrase;
+        // The nearest phrase line can sit past the outgoing clip's end, which would turn the join into a gap;
+        // the line before it only lengthens the blend, which is the safe direction to be wrong in.
+        if (snapped >= outgoingEndSeconds)
+            snapped -= phrase;
+        return Math.Max(earliest, snapped);
+    }
+
+    /// <summary>
+    /// Whether the outgoing record still has a mix-out at the shortest legal blend — the one failure mode of
+    /// <see cref="SetTransitionPlanner.Plan"/> that belongs to the outgoing side. Asked of the planner
+    /// directly rather than plumbed out of its null return: the overlap granularity equals the floor, so the
+    /// floor is always the planner's last attempt, and this reproduces it exactly.
+    /// </summary>
+    private static bool HasNoMixOutRunway(MusicTrack track, double mixInSeconds)
+    {
+        var unusedWarnings = new List<SetWarning>();
+        return SetTransitionPlanner.PlanMixOut(
+            track, SetBuildOptions.MinOverlapBars, mixInSeconds, unusedWarnings) is null;
     }
 
     private static double MedianBpm(IEnumerable<MusicTrack> tracks)
