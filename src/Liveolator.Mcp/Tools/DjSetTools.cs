@@ -28,7 +28,13 @@ public sealed class DjSetTools
                  "phrases line up with the others — with the mix points taken from each track's analyzed " +
                  "structure (leaving on an outro after the last drop, entering where the drums start) and " +
                  "a bass swap plus equal-power crossfade at every join. Returns every transition it made " +
-                 "and every candidate it rejected, so the set can be judged and rebuilt without listening.")]
+                 "and every candidate it rejected, so the set can be judged and rebuilt without listening. " +
+                 "NOTE on rejectedCount: it counts the whole rejectedCandidates list, which now also holds " +
+                 "explicit NON-rejection lines — LengthCapReached (the length you asked for was reached and " +
+                 "the remaining candidates were never tried) and NoMixOutRunway (the record the chain " +
+                 "stopped on, which IS in the set as its closing clip). A non-zero count is therefore not " +
+                 "by itself a count of failures. Read advisories too: they name a flag to pass rather than " +
+                 "a track to replace.")]
     public static async Task<DjSetResult> BuildDjSet(
         DjSetSession session,
         [Description("Exact file path of the track to start from. Omit to start from the first usable track.")] string? seedPath = null,
@@ -45,6 +51,10 @@ public sealed class DjSetTools
                      "where stretching shows up much sooner. Tracks needing more are rejected and reported.")] double maxWarpPercent = 6.0,
         [Description("Leave out tracks whose beat grid is not trustworthy, instead of mixing them short " +
                      "and unstretched. Default false.")] bool excludeLowGridConfidence = false,
+        [Description("The tempo every track is warped to. Omit to take the median of the tracks that end " +
+                     "up selected — a default, not a rule, and one a tempo-weighted pool pins in place. Set " +
+                     "it when the set tempo is a decision rather than an average. It does not suspend " +
+                     "maxWarpPercent: a track that cannot reach it is still rejected and named.")] double? tempoBpm = null,
         [Description("Name to save the set under. Reusing a name replaces that set.")] string name = "DJ Set",
         CancellationToken cancellationToken = default)
     {
@@ -65,6 +75,8 @@ public sealed class DjSetTools
                 nameof(overlapBars));
         if (maxWarpPercent is < MinWarpPercent or > MaxWarpPercent)
             throw new ArgumentException($"The warp limit must be between {MinWarpPercent} and {MaxWarpPercent} percent.", nameof(maxWarpPercent));
+        if (tempoBpm is <= 0.0)
+            throw new ArgumentException("The set tempo must be positive.", nameof(tempoBpm));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Set name cannot be empty.", nameof(name));
 
@@ -72,7 +84,8 @@ public sealed class DjSetTools
             ProjectName: name.Trim(),
             OverlapBars: overlapBars,
             MaxWarpPercent: maxWarpPercent,
-            ExcludeLowGridConfidence: excludeLowGridConfidence);
+            ExcludeLowGridConfidence: excludeLowGridConfidence,
+            TempoBpm: tempoBpm);
 
         return await session
             .BuildAsync(
@@ -138,12 +151,19 @@ public sealed class DjSetTools
                  "machine-readable tracklist and a YouTube chapter/description text file. Unlike " +
                  "render_set_preview (which renders only the joins, for judging), this produces the whole " +
                  "mix; it streams to disk, so length is not bounded by memory. " +
-                 "REFUSES BY DEFAULT when the mix is not fit to publish — a clip running at its native " +
-                 "tempo against the set tempo, a clip left at unity gain (run measure_catalog_loudness " +
-                 "first), or a blend clamped under the 8-bar floor — and returns each problem with its " +
-                 "remedy instead of a file. Pass force to render anyway once you have listened and " +
-                 "decided. Unreachable source files always fail, force or not, so a mix never ships with " +
-                 "silent stretches. Reports the measured integrated LUFS of the file it produced.")]
+                 "REFUSES BY DEFAULT when the mix is not fit to publish and returns each problem with its " +
+                 "remedy instead of a file: a clip running at its native tempo against the set tempo, a " +
+                 "clip never measured for loudness (run measure_catalog_loudness first), a clip no gain can " +
+                 "lift to the set level, a blend under the 8-bar floor, MOST joins clamped exactly onto it, " +
+                 "a blend that opens over beatless material, an incoming drop landing inside the overlap, " +
+                 "bars inside a blend with no kick on either deck, or a clip that rendered in mono. Each " +
+                 "issue says whether it blocked (blocking) — a single floor-clamped join, or a clip whose " +
+                 "track has left the catalog, is reported without blocking. Pass force to render anyway " +
+                 "once you have listened and decided. Unreachable source files always fail, force or not, " +
+                 "so a mix never ships with silent stretches. Reports the measured integrated LUFS of the " +
+                 "file it produced, plus any window of the RENDERED audio that fell under the hole floor — " +
+                 "whole-file loudness cannot see those, so they are the only way to find a hole without " +
+                 "listening to the whole mix.")]
     public static async Task<SetMixExport> ExportSetMix(
         DjSetSession session,
         [Description("Name of the saved set to export.")] string name,
@@ -155,6 +175,7 @@ public sealed class DjSetTools
         int sampleRate = 44_100,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(session);
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Supply the name of a saved set to export.", nameof(name));
         if (string.IsNullOrWhiteSpace(outputDirectory))

@@ -41,11 +41,21 @@ public sealed record BeatGrid(double Bpm, double DownbeatSeconds, int BeatsPerBa
         return DownbeatSeconds + bars * BarSeconds;
     }
 
-    /// <summary>Projects the analysis result onto the runtime grid view.</summary>
+    /// <summary>
+    /// Projects the analysis result onto the runtime grid view, folding in any hand-applied
+    /// <see cref="BpmResult.DownbeatOffsetSeconds"/>. Every consumer reads the grid through here — phrase
+    /// quantization, transition planning, deck sync — so one correction moves all of them together, which
+    /// is the whole point: a nudge that only fixed the offline arrangement would leave the live decks
+    /// disagreeing with the rendered set.
+    /// </summary>
     public static BeatGrid FromBpmResult(BpmResult bpm)
     {
         ArgumentNullException.ThrowIfNull(bpm);
-        return new BeatGrid(bpm.Bpm, bpm.DownbeatSeconds, bpm.BeatsPerBar, bpm.DownbeatConfidence);
+        return new BeatGrid(
+            bpm.Bpm,
+            bpm.DownbeatSeconds + bpm.DownbeatOffsetSeconds,
+            bpm.BeatsPerBar,
+            bpm.DownbeatConfidence);
     }
 
     // Modulo that never returns a negative phase, so times before the anchor wrap cleanly into [0,1).

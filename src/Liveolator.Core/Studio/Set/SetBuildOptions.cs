@@ -13,6 +13,12 @@ namespace Liveolator.Core.Studio.Set;
 /// stretch artefacts and groove change show up roughly twice as early.</param>
 /// <param name="ExcludeLowGridConfidence">When true, a track whose beat grid is not trustworthy is kept
 /// out of the set entirely instead of being mixed short and unwarped.</param>
+/// <param name="TempoBpm">The tempo every clip is warped to. Null lets the arranger take the median of the
+/// tracks it chose, which is a sensible default and nothing more — the set tempo is a musical decision the
+/// DJ owns, and a median cannot express "this is a 140 room". Note the median is computed from the selected
+/// tracks, so a pool weighted toward one tempo pins it there and no amount of reordering moves it. Setting
+/// this does not suspend <see cref="MaxWarpPercent"/>: a track that cannot reach the chosen tempo within the
+/// ceiling is still rejected and named.</param>
 /// <param name="StartDeckSlot">Deck lane (0 or 1) the first clip lands on; clips then alternate.</param>
 /// <param name="TargetLufs">Integrated loudness every clip is gained toward, so unequal masters sit level
 /// through each crossfade. −9 suits dance music, whose masters already sit around −8 to −6: a target near
@@ -23,6 +29,7 @@ public sealed record SetBuildOptions(
     int OverlapBars = 16,
     double MaxWarpPercent = 6.0,
     bool ExcludeLowGridConfidence = false,
+    double? TempoBpm = null,
     int StartDeckSlot = 0,
     double TargetLufs = -9.0)
 {
@@ -72,6 +79,8 @@ public sealed record SetBuildOptions(
             throw new ArgumentOutOfRangeException(nameof(OverlapBars), OverlapBars, $"Overlap cannot exceed {MaxOverlapBars} bars.");
         if (MaxWarpPercent <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(MaxWarpPercent), MaxWarpPercent, "Warp limit must be positive.");
+        if (TempoBpm is <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(TempoBpm), TempoBpm, "Set tempo must be positive.");
         if (StartDeckSlot is not (0 or 1))
             throw new ArgumentOutOfRangeException(nameof(StartDeckSlot), StartDeckSlot, "Start deck slot must be 0 or 1 (clips alternate between the two).");
     }

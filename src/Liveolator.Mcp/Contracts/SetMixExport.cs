@@ -1,10 +1,16 @@
 namespace Liveolator.Mcp.Contracts;
 
 /// <summary>One reason a set is not ready to publish, with the remedy that clears it.</summary>
-/// <param name="Where">Which transition or clip the problem is in, in human terms.</param>
+/// <param name="Where">Which transition or clip the problem is in, in human terms. For a problem that
+/// belongs to a JOIN this names BOTH tracks' full paths: the audit collapses the two sides' findings into
+/// one verdict per join, so a line naming only one of them cannot be acted on.</param>
 /// <param name="Problem">What is wrong.</param>
 /// <param name="Remedy">The concrete next action — the whole point of refusing rather than rendering.</param>
-public sealed record MixGateIssue(string Where, string Problem, string Remedy);
+/// <param name="Blocking">Whether this issue alone stops the export (<c>force</c> still overrides). False for
+/// the findings that are worth telling the owner but are not proof of a defect: one blend clamped to the
+/// floor, or a clip whose track has left the catalog so nothing about it can be verified either way.
+/// Appended with a default so an existing caller that only reads Where/Problem/Remedy is unaffected.</param>
+public sealed record MixGateIssue(string Where, string Problem, string Remedy, bool Blocking = true);
 
 /// <summary>One track as it appears in the finished mix.</summary>
 /// <param name="Index">1-based position in the mix.</param>
@@ -25,8 +31,13 @@ public sealed record MixTrackEntry(int Index, string? Artist, string Title, doub
 /// So <see cref="Rendered"/> true means the audio is really there, and <see cref="IntegratedLufs"/> is
 /// either a finite measurement or null.</para>
 /// </summary>
-/// <param name="Rendered">False when the publish gate refused (pass force to override).</param>
-/// <param name="AudioPath">The rendered WAV, or null when nothing was rendered.</param>
+/// <param name="Rendered">False when the publish gate refused (pass force to override). "Rendered" means the
+/// publish package was produced, not merely that samples were written: one defect — a clip that came out in
+/// MONO — can only be seen after the render, so that refusal returns false with <see cref="AudioPath"/>
+/// filled and no tracklist.</param>
+/// <param name="AudioPath">The rendered WAV, or null when nothing was rendered. Set even when
+/// <see cref="Rendered"/> is false for a defect only the finished render could reveal, so the owner can
+/// listen to what was refused.</param>
 /// <param name="TracklistPath">Machine-readable tracklist JSON, or null.</param>
 /// <param name="ChaptersPath">YouTube description/chapter text, or null.</param>
 /// <param name="DurationSeconds">Length of the mix.</param>

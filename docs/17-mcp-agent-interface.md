@@ -110,10 +110,17 @@ catalog, saves the arrangement, and reports.
   seed outside that list is an error rather than a silently widened pool.
 - **One tempo per set.** The renderer samples a clip's warp factor once, at the clip's start, so a tempo
   that moves inside a clip is silently not rendered — and two overlapping clips at different rates drift
-  apart within a bar. The set tempo is the median of the chosen tracks; anything that would stretch past
+  apart within a bar. The set tempo is `tempoBpm` when given, otherwise the median of the chosen tracks —
+  and the median is a default, not a rule: it is derived from the selection, so a pool weighted toward one
+  tempo pins the set there no matter what the room wants. Either way, anything that would stretch past
   `maxWarpPercent` (default 6%) is rejected and reported with the stretch it would have needed. Stepped
   tempo across a long set (tempo changes only at clip boundaries, with the boundary clip split in two)
   is the known next step, not built.
+- **The grid can be nudged by hand.** `set_track_analysis(downbeatOffsetMs:)` shifts a track's beat grid
+  without re-running analysis, for the case where two records beat-match but their kicks flam. It is
+  deliberately separate from the detected anchor: re-analysis recomputes the anchor from scratch and can
+  land on a worse one, and it would invalidate the grid-confidence signals the Sync gate reads. Finding
+  the right amount is still the DJ's ear — nothing measures it automatically yet.
 - **Phrase alignment, by construction.** Every clip enters on one of its own 16-bar phrase lines and
   starts on a project phrase line. Warping to a common tempo maps a track's phrase onto the project's
   phrase exactly, so both hold by induction from the first clip at t=0 — no per-transition correction.

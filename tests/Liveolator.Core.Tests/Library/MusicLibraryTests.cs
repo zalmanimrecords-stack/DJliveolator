@@ -1,4 +1,5 @@
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
@@ -919,5 +920,58 @@ public class MusicLibraryTests
         Assert.Equal("a.mp3", library.TryGetByPathOrName("a.mp3")!.File.Path); // exact wins
         Assert.Null(library.TryGetByPathOrName("nowhere.mp3"));                // genuine miss → null
         Assert.Null(library.TryGetByPathOrName(""));                           // empty → null, never throws
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_AppliesAGridNudge_WithoutTouchingTheDetectedAnchorOrConfidence()
+    {
+        // The whole point of a nudge: it corrects what the grid SOUNDS like without disturbing the
+        // detection it was measured from, so the confidence signals still describe something real. Editing
+        // DownbeatSeconds (or re-analyzing) would destroy exactly that.
+        MusicLibrary library = await ScannedLibrary();
+        BpmResult detected = library.TryGet("a.mp3")!.Bpm!;
+
+        MusicTrack updated = library.SetManualAnalysis(
+            "a.mp3", bpm: null, camelot: null, downbeatOffsetSeconds: 0.020)!;
+
+        Assert.Equal(0.020, updated.Bpm!.DownbeatOffsetSeconds, 6);
+        Assert.Equal(detected.DownbeatSeconds, updated.Bpm.DownbeatSeconds, 6);
+        Assert.Equal(detected.DownbeatConfidence, updated.Bpm.DownbeatConfidence, 6);
+        Assert.Equal(detected.GridCoherence, updated.Bpm.GridCoherence);
+        Assert.True(updated.AnalysisIsManual);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_GridNudge_MovesTheGridEveryConsumerReads()
+    {
+        // The nudge is only worth anything if it reaches BeatGrid — that is the one place phrase
+        // quantization, transition planning and deck sync all resolve the anchor through.
+        MusicLibrary library = await ScannedLibrary();
+        double before = BeatGrid.FromBpmResult(library.TryGet("a.mp3")!.Bpm!).DownbeatSeconds;
+
+        MusicTrack updated = library.SetManualAnalysis(
+            "a.mp3", bpm: null, camelot: null, downbeatOffsetSeconds: -0.012)!;
+
+        Assert.Equal(before - 0.012, BeatGrid.FromBpmResult(updated.Bpm!).DownbeatSeconds, 6);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_GridNudgeOfZero_ClearsAPreviousNudge()
+    {
+        MusicLibrary library = await ScannedLibrary();
+        library.SetManualAnalysis("a.mp3", bpm: null, camelot: null, downbeatOffsetSeconds: 0.020);
+
+        MusicTrack cleared = library.SetManualAnalysis(
+            "a.mp3", bpm: null, camelot: null, downbeatOffsetSeconds: 0.0)!;
+
+        Assert.Equal(0.0, cleared.Bpm!.DownbeatOffsetSeconds, 6);
+    }
+
+    [Fact]
+    public async Task SetManualAnalysis_WithNothingToCorrect_Throws()
+    {
+        MusicLibrary library = await ScannedLibrary();
+        Assert.Throws<ArgumentException>(
+            () => library.SetManualAnalysis("a.mp3", bpm: null, camelot: null, downbeatOffsetSeconds: null));
     }
 }

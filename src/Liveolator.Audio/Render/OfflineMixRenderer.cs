@@ -117,7 +117,9 @@ public sealed class OfflineMixRenderer
         // and re-decoded from being counted (or reported silent) twice.
         var decoded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var silentSources = new List<string>();
+        var monoFallbackSources = new List<string>();
         long silentFrames = 0;
+        var holeScan = new HoleScan(sampleRate);
 
         int decks = plan.DeckCount;
         // Per-deck biquad cascade (low -> mid -> high -> filter), each a single 2-channel StatefulBiquad
@@ -183,10 +185,17 @@ public sealed class OfflineMixRenderer
                             continue;
                         }
 
-                        src = await DecodeSourceAsync(
+                        (StereoBuffer decodedSource, bool tookMonoFallback) = await DecodeSourceAsync(
                                 state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
                             .ConfigureAwait(false);
+                        src = decodedSource;
                         sources[key] = src;
+
+                        if (tookMonoFallback &&
+                            !monoFallbackSources.Contains(state.SourcePath, StringComparer.OrdinalIgnoreCase))
+                        {
+                            monoFallbackSources.Add(state.SourcePath);
+                        }
 
                         // A decode that came back with nothing is a clip the mix will not contain. It is
                         // deliberately not fatal here, but it must reach the caller.
@@ -249,6 +258,7 @@ public sealed class OfflineMixRenderer
                 writer.Write(block.AsSpan(outputStart, outputFloats));
                 written += keep;
                 silentFrames += CountSilentFrames(block, outputStart, outputFloats);
+                holeScan.Add(block, outputStart, outputFloats);
             }
             emitted += blockLen;
 
@@ -257,7 +267,119 @@ public sealed class OfflineMixRenderer
         }
 
         progress?.Report(1.0);
-        return new MixRenderResult(decoded.Count, silentSources, written, silentFrames);
+        return new MixRenderResult(
+            decoded.Count, silentSources, written, silentFrames, holeScan.Finish(), monoFallbackSources);
+    }
+
+    /// <summary>
+    /// Per-window level of the written master, accumulated on the blocks already in hand, reporting every
+    /// run of windows under the floor.
+    /// <para>Whole-file loudness cannot verify a render: a mix that was ~95% digital silence measured a
+    /// healthy -10.3 LUFS, because the few sounding clips carried the average. Neither can
+    /// <see cref="MixRenderResult.SilentFraction"/> on its own — the 2026-08-13 export shipped a 10.5 s hole
+    /// bottoming at -63.7 dB, which is 0.2% of a 70-minute set. Only windows find it, and only while the
+    /// samples are passing through: a second pass over a 700 MB WAV is not free.</para>
+    /// </summary>
+    private sealed class HoleScan
+    {
+        // The two tunables. 2 s so that normal music cannot dip a window under the floor: at 145 BPM a bar
+        // is 1.66 s, so a window always spans a full bar plus — a kick gap, a snare-less beat or a one-bar
+        // stop averages back up. Halve it and every breakbeat gap reads as a hole. -40 dBFS RMS sits ~30 dB
+        // under a mastered psy mix, so only a genuine withdrawal reaches it, while the measured holes
+        // (-63.7 dB) clear it by a wide margin.
+        private const double WindowSeconds = 2.0;
+        private const double FloorDbfs = -40.0;
+
+        // Keeps a digitally silent window's level finite (-140 dBFS) so the report carries a number rather
+        // than -infinity, which serialises badly and reads as "unmeasured".
+        private const double MinRms = 1e-7;
+
+        private readonly List<MixHole> _holes = new();
+        private readonly int _sampleRate;
+        private readonly int _windowFrames;
+
+        private double _sumSquares;
+        private int _windowFilled;
+        private long _windowStartFrame;
+
+        // The run of consecutive under-floor windows currently open, if any.
+        private long _runStartFrame = -1;
+        private long _runEndFrame;
+        private double _runDeepestDb;
+
+        internal HoleScan(int sampleRate)
+        {
+            _sampleRate = sampleRate;
+            _windowFrames = Math.Max(1, (int)Math.Round(WindowSeconds * sampleRate));
+        }
+
+        // Interleaved stereo, same layout as the render block. Takes the array rather than a span because
+        // the caller is an async method, where a ref-struct local is not allowed at this language version.
+        internal void Add(float[] interleaved, int start, int floats)
+        {
+            for (int i = start; i + Right < start + floats; i += OutputChannels)
+            {
+                double l = interleaved[i + Left];
+                double r = interleaved[i + Right];
+                _sumSquares += (l * l) + (r * r);
+                if (++_windowFilled == _windowFrames)
+                    CloseWindow();
+            }
+        }
+
+        internal IReadOnlyList<MixHole> Finish()
+        {
+            // A trailing part-window is only judged once it holds at least half a window: a mix's last
+            // fraction of a second is routinely a decayed tail, and calling that a hole would put a false
+            // positive on the end of every clean render.
+            if (_windowFilled * 2 >= _windowFrames)
+                CloseWindow();
+
+            CloseRun();
+            return _holes;
+        }
+
+        private void CloseWindow()
+        {
+            double rms = Math.Sqrt(_sumSquares / (_windowFilled * (double)OutputChannels));
+            double db = 20.0 * Math.Log10(Math.Max(rms, MinRms));
+            long end = _windowStartFrame + _windowFilled;
+
+            if (db < FloorDbfs)
+            {
+                if (_runStartFrame < 0)
+                {
+                    _runStartFrame = _windowStartFrame;
+                    _runDeepestDb = db;
+                }
+                else
+                {
+                    _runDeepestDb = Math.Min(_runDeepestDb, db);
+                }
+
+                _runEndFrame = end;
+            }
+            else
+            {
+                CloseRun();
+            }
+
+            _windowStartFrame = end;
+            _windowFilled = 0;
+            _sumSquares = 0;
+        }
+
+        private void CloseRun()
+        {
+            if (_runStartFrame < 0)
+                return;
+
+            _holes.Add(new MixHole(
+                _runStartFrame / (double)_sampleRate,
+                (_runEndFrame - _runStartFrame) / (double)_sampleRate,
+                Math.Round(_runDeepestDb, 1)));
+            _runStartFrame = -1;
+        }
     }
 
     // Frames with both channels under the silence floor, counted on the block already in hand so the
@@ -342,11 +464,13 @@ public sealed class OfflineMixRenderer
     // source (PositiveInfinity = the whole file). Unwarped: the managed mono decoder duplicated to both
     // channels (CI-safe, deterministic, no native). Warped: BASS_FX stereo. A test decode override (when
     // present) supplies the buffer directly so distinct L/R can be injected.
-    private async Task<StereoBuffer> DecodeSourceAsync(
+    // The flag says whether the MONO fallback was taken, which the caller reports: a mono clip inside a
+    // stereo mix is a defect the render must not keep to itself (see MixRenderResult.MonoFallbackSources).
+    private async Task<(StereoBuffer Buffer, bool MonoFallback)> DecodeSourceAsync(
         string path, double factor, int sampleRate, double maxSourceEndSeconds, CancellationToken cancellationToken)
     {
         if (_decodeOverride is not null)
-            return _decodeOverride(path, factor);
+            return (_decodeOverride(path, factor), false);
 
         // The decoded buffer plays 1:1 with the timeline, so source second s maps to buffer second s/factor.
         // The furthest buffer frame any clip reads is therefore maxSourceEnd/factor (+ a block of margin for
@@ -366,17 +490,22 @@ public sealed class OfflineMixRenderer
         StereoBuffer stereo = _stretchDecoder.DecodeStretchedStereo(
             path, sampleRate, unwarped ? 0.0 : (factor - 1.0) * 100.0, maxFrames);
         if (stereo.Length > 0 || !unwarped)
-            return stereo;
+            return (stereo, false);
 
         // Nothing from BASS (absent native, or a format it cannot open). For an unwarped clip the managed
         // decoder is an equivalent second attempt apart from channel count, so the mix still renders — in
         // mono. A WARPED clip must never fall back here: unstretched audio would play at the wrong tempo,
         // so its empty buffer stands and RenderAsync reports it as a silent source.
-        // Say so: an unannounced mono section inside a stereo mix is exactly the defect this path caused.
+        // Say so twice over: the log for whoever is watching the render, and the returned flag for the caller,
+        // because a warning nobody had wired up is how eleven minutes of a 68-minute export shipped in mono.
         _log?.LogWarning(
             "STUDIO render: BASS could not decode '{Path}', falling back to the managed mono decoder — this " +
             "clip renders in MONO (no stereo image) inside a stereo mix.", path);
-        return StereoBuffer.FromMono(await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+        StereoBuffer mono = StereoBuffer.FromMono(
+            await DecodeMonoAsync(path, sampleRate, maxFrames, cancellationToken).ConfigureAwait(false));
+        // Only a fallback that produced audio is a mono clip. When it produced none the clip is not in the
+        // mix at all, and SilentSources is the honest report — blaming the channel count would misdirect.
+        return (mono, mono.Length > 0);
     }
 
     private static StatefulBiquad[] NewBiquads(int count)

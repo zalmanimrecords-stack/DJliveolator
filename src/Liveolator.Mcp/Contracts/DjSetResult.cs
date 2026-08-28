@@ -52,6 +52,12 @@ public sealed record SetTrackInfo(
 /// <summary>
 /// A freshly built set: what was placed, how every join was made, and what was left out and why.
 /// </summary>
+/// <param name="RejectedCount">How many entries <see cref="RejectedCandidates"/> holds in full. NOT a count
+/// of failures: it includes the explicit non-rejection lines (the honoured length cap, the record the chain
+/// stopped on), so a build that placed everything it was asked for can still report a non-zero count.</param>
+/// <param name="Advisories">Things worth changing about the REQUEST, as opposed to about a candidate — free
+/// text, one line each, empty when there is nothing to say. Separate from <see cref="RejectedCandidates"/>
+/// because they name a flag to pass rather than a track to replace.</param>
 public sealed record DjSetResult(
     string ProjectName,
     string SavedAs,
@@ -66,7 +72,8 @@ public sealed record DjSetResult(
     IReadOnlyList<TransitionInfo> Transitions,
     int RejectedCount,
     IReadOnlyList<RejectedTrackInfo> RejectedCandidates,
-    IReadOnlyDictionary<string, int> WarningSummary);
+    IReadOnlyDictionary<string, int> WarningSummary,
+    IReadOnlyList<string> Advisories);
 
 /// <summary>
 /// A saved set as it can be read back. The joins are derived from the arrangement itself; the mix-point

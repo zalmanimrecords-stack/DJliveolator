@@ -145,22 +145,29 @@ public sealed class LibraryTools
     }
 
     [McpServerTool(Name = "set_track_analysis")]
-    [Description("Correct a catalogued track's BPM and/or musical key by hand, and lock that track " +
-                 "against automatic re-analysis so the correction survives every later scan. Use it when " +
-                 "the detector is confidently wrong — a published tempo the analysis missed, or a key you " +
-                 "verified. Whichever value you omit keeps what analysis found, so a wrong tempo can be " +
-                 "fixed without asserting a key you have not checked. Only reanalyze_track(force: true) " +
-                 "overwrites the result.")]
+    [Description("Correct a catalogued track's BPM, musical key and/or beat-grid phase by hand, and lock " +
+                 "that track against automatic re-analysis so the correction survives every later scan. Use " +
+                 "it when the detector is confidently wrong — a published tempo the analysis missed, a key " +
+                 "you verified, or a grid whose downbeat sits a few milliseconds off the kick. Whichever " +
+                 "value you omit keeps what analysis found, so a wrong tempo can be fixed without asserting " +
+                 "a key you have not checked. Only reanalyze_track(force: true) overwrites the result.")]
     public static async Task<TrackInfo> SetTrackAnalysis(
         LibrarySession session,
         [Description("Exact path of a catalogued track.")] string path,
         [Description("Corrected tempo in BPM. Omit to keep the analyzed tempo.")] double? bpm = null,
         [Description("Corrected key as a Camelot code, 1A to 12B. Omit to keep the analyzed key.")] string? key = null,
+        [Description("Beat-grid nudge in milliseconds, positive to push the grid later — the DJ move for a " +
+                     "downbeat that sits just off the kick, and the fix when two records beat-match but the " +
+                     "kicks flam. It shifts the grid every consumer reads (mix points, phrase quantization, " +
+                     "deck sync) WITHOUT re-running analysis, so grid confidence and the detected values are " +
+                     "left intact — re-analysis would recompute the anchor and can land on a worse one. Pass " +
+                     "0 to clear a previous nudge. Judge the amount by ear; a few milliseconds is audible as " +
+                     "a thickened kick, 20 ms is a clear flam.")] double? downbeatOffsetMs = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         MusicTrack? track = await session
-            .SetManualAnalysisAsync(path, bpm, key, cancellationToken)
+            .SetManualAnalysisAsync(path, bpm, key, downbeatOffsetMs / 1000.0, cancellationToken)
             .ConfigureAwait(false);
         if (track is null)
             throw MissingTrack(path);

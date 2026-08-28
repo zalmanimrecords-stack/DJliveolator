@@ -15,7 +15,8 @@ public sealed class HarmonicSetBuilder
     /// <summary>
     /// Produces an ordered set starting at <paramref name="seed"/>, drawing from
     /// <paramref name="candidates"/>. Stops early when no compatible track remains; the result
-    /// may therefore be shorter than the requested length.
+    /// may therefore be shorter than the requested length, in which case
+    /// <see cref="HarmonicSet.Unpicked"/> carries what was left and which rule kept it out.
     /// </summary>
     public HarmonicSet Build(MusicTrack seed, IEnumerable<MusicTrack> candidates, HarmonicSetOptions options)
     {
@@ -36,19 +37,48 @@ public sealed class HarmonicSetBuilder
 
         var entries = new List<SetEntry> { new(seed, null) };
         MusicTrack current = seed;
+        bool chainClosed = false;
 
         while (entries.Count < options.Length)
         {
             MusicTrack? next = PickNext(current, pool, options.BpmTolerance, options.Trend);
             if (next is null)
+            {
+                chainClosed = true;
                 break;
+            }
 
             entries.Add(new SetEntry(next, Rationalize(current, next)));
             pool.RemoveAll(t => SamePath(t, next));
             current = next;
         }
 
-        return new HarmonicSet(entries);
+        return new HarmonicSet(entries, Unpicked(current, pool, chainClosed));
+    }
+
+    // The two predicates PickNext filters on carry no reason out of it, so the leftovers are re-tested
+    // against the track the chain actually reached. Cheap (one pass over what is left) and it is the only
+    // point where "why did this stop" is still knowable.
+    private static IReadOnlyList<UnpickedCandidate> Unpicked(
+        MusicTrack current,
+        IReadOnlyList<MusicTrack> pool,
+        bool chainClosed)
+    {
+        if (pool.Count == 0)
+            return Array.Empty<UnpickedCandidate>();
+
+        // Reaching the requested length is not a veto: nothing was asked of what is left, so naming a
+        // reason for it would be a guess dressed up as a finding.
+        if (!chainClosed)
+            return pool.Select(t => new UnpickedCandidate(t, HarmonicVeto.NotTried)).ToArray();
+
+        return pool
+            .Select(t => new UnpickedCandidate(
+                t,
+                Camelot.IsCompatible(current.Key!.Camelot, t.Key!.Camelot)
+                    ? HarmonicVeto.BlockedByTrend
+                    : HarmonicVeto.NoCompatibleKey))
+            .ToArray();
     }
 
     private static MusicTrack? PickNext(MusicTrack current, IReadOnlyList<MusicTrack> pool, double tolerance, BpmTrend trend)

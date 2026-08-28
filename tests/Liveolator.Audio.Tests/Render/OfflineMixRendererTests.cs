@@ -70,6 +70,90 @@ public class OfflineMixRendererTests
         }
     }
 
+    // A decoder that yields one prepared mono buffer, so a test can shape the level over time (a loud
+    // stretch, a silent one) without any native decoder.
+    private sealed class BufferDecoder : IAudioDecoder
+    {
+        private readonly float[] _samples;
+
+        public BufferDecoder(float[] samples) => _samples = samples;
+
+        public bool CanDecode(string filePath) => true;
+
+        public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
+            string filePath, int targetSampleRate, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return _samples;
+        }
+    }
+
+    // Level profile as (seconds, amplitude) runs, rendered to a mono buffer at `rate`.
+    private static float[] Profile(int rate, params (double Seconds, float Amplitude)[] runs)
+    {
+        var samples = new List<float>();
+        foreach ((double seconds, float amplitude) in runs)
+        {
+            int n = (int)Math.Round(seconds * rate);
+            for (int i = 0; i < n; i++)
+                samples.Add(amplitude);
+        }
+
+        return samples.ToArray();
+    }
+
+    [Fact]
+    public async Task Render_ReportsAWindowThatDropsBelowTheFloor()
+    {
+        // The measured lesson: a mix that was ~95% digital silence reported a healthy -10.3 LUFS, because
+        // whole-file loudness cannot see partial silence. A ten-second hole inside an otherwise loud render
+        // must come back with where it starts, how long it lasts and how deep it goes.
+        const int rate = 8_000;
+        float[] source = Profile(rate, (10, 0.5f), (10, 0f), (10, 0.5f));
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(30)) },
+            Array.Empty<AutomationLane>());
+
+        MixRenderResult result = await RenderResult(project, new BufferDecoder(source), rate);
+
+        MixHole hole = Assert.Single(result.Holes);
+        Assert.InRange(hole.StartSeconds, 9.0, 11.0);
+        Assert.InRange(hole.DurationSeconds, 8.0, 10.5);
+        Assert.True(hole.DeepestDbfs < -80.0, $"digital silence must read far under the floor; got {hole.DeepestDbfs}");
+    }
+
+    [Fact]
+    public async Task Render_ReportsNoHoles_ForAContinuouslyLoudMix()
+    {
+        const int rate = 8_000;
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(10)) },
+            Array.Empty<AutomationLane>());
+
+        MixRenderResult result = await RenderResult(project, new ConstantDecoder(0.5f, rate * 10), rate);
+
+        Assert.Empty(result.Holes);
+    }
+
+    [Fact]
+    public async Task Render_ReportsTheDeepestWindow_NotJustTheFirst()
+    {
+        // A hole that enters as a fade and bottoms out in near-silence: reporting the first window under the
+        // floor would call a -74 dB withdrawal a -46 dB one, which reads as survivable and is not.
+        const int rate = 8_000;
+        float[] source = Profile(rate, (4, 0.5f), (2, 0.005f), (2, 0.0002f), (4, 0.5f));
+        var project = new StudioProject("p", 120,
+            new[] { new StudioClip(0, "/m/a.wav", 0, TimeSpan.Zero, TimeSpan.FromSeconds(12)) },
+            Array.Empty<AutomationLane>());
+
+        MixRenderResult result = await RenderResult(project, new BufferDecoder(source), rate);
+
+        MixHole hole = Assert.Single(result.Holes);
+        Assert.InRange(hole.StartSeconds, 3.5, 4.5);
+        Assert.InRange(hole.DurationSeconds, 3.5, 4.5);
+        Assert.InRange(hole.DeepestDbfs, -76.0, -72.0);   // the 0.0002 window, not the -46 dB one
+    }
+
     [Fact]
     public async Task Render_TrimmedClipOnLongTrack_DecodesOnlyWhatTheClipUses()
     {
@@ -162,6 +246,20 @@ public class OfflineMixRendererTests
 
     private static short ReadChannelCount(string path)
         => BinaryPrimitives.ReadInt16LittleEndian(File.ReadAllBytes(path).AsSpan(22, 2));
+
+    // Render and return what the render reported, rather than its audio.
+    private static async Task<MixRenderResult> RenderResult(StudioProject project, IAudioDecoder decoder, int sampleRate)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"liveolator-render-{Guid.NewGuid():N}.wav");
+        try
+        {
+            return await new OfflineMixRenderer(decoder).RenderAsync(project, path, sampleRate);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
 
     // Render and return the left channel (mono sources duplicate to both, so L == R for those projects).
     private static async Task<float[]> Render(StudioProject project, IAudioDecoder decoder, int sampleRate)

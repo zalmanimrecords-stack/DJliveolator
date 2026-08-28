@@ -7,7 +7,12 @@ namespace Liveolator.Core.Studio.Set;
 /// <param name="Project">The arrangement, ready to save or render.</param>
 /// <param name="TempoBpm">The single tempo every clip is warped to.</param>
 /// <param name="Transitions">One entry per join, in play order.</param>
-/// <param name="Rejected">Candidates that never reached the timeline, with the reason for each.</param>
+/// <param name="Rejected">Why the set is not longer than it is, one line per reason — mostly candidates that
+/// never reached the timeline, but NOT only those. Two <see cref="RejectReason"/> members are explicit
+/// non-rejections: <see cref="RejectReason.LengthCapReached"/> names no track at all (the requested length was
+/// reached and the rest were never tried), and <see cref="RejectReason.NoMixOutRunway"/> names a record that
+/// IS on the timeline, as its closing clip. A caller counting this list is counting explanations, not
+/// failures.</param>
 public sealed record DjSetPlan(
     StudioProject Project,
     double TempoBpm,
