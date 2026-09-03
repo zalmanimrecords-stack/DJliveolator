@@ -4,6 +4,7 @@ using Liveolator.Core.Analysis.Key;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Playlist;
+using System.Linq;
 using Xunit;
 
 namespace Liveolator.Core.Tests.Playlist;
@@ -169,4 +170,25 @@ public class HarmonicSetBuilderTests
         Assert.Throws<ArgumentException>(() =>
             _builder.Build(seed, Array.Empty<MusicTrack>(), new HarmonicSetOptions(Length: 2)));
     }
+
+    // Measured on a real 63-track psytrance pool (2026-09-02): the greedy "smallest tempo jump" pick
+    // stranded the chain at 3 tracks where 19 were reachable. The first step is the trap — the nearest
+    // candidate in tempo can be a harmonic cul-de-sac, and a set builder that cannot see one step past
+    // its own nose reports "no compatible track remains" while the material was there all along.
+    [Fact]
+    public void Build_TakesTheLongerChain_OverTheSmallerFirstJump()
+    {
+        MusicTrack seed = Track("seed.mp3", "9B", 138);
+        var culDeSac = Track("cul-de-sac.mp3", "10B", 138);   // jump 0 from the seed, but nothing follows it
+        var bridge = Track("bridge.mp3", "8B", 140);          // jump 2, and it opens the rest of the chain
+        var tail = Track("tail.mp3", "7B", 140);              // reachable only via the 8B bridge
+
+        HarmonicSet set = _builder.Build(seed, new[] { culDeSac, bridge, tail },
+            new HarmonicSetOptions(Length: 4, BpmTolerance: 3, Trend: BpmTrend.Rising));
+
+        Assert.Equal(3, set.Count);
+        Assert.Equal(new[] { "seed.mp3", "bridge.mp3", "tail.mp3" },
+            set.Entries.Select(e => e.Track.File.Path).ToArray());
+    }
+
 }
