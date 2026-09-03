@@ -116,6 +116,13 @@ fetch_lib() {
 }
 
 while IFS='|' read -r base requirement url_path || [ -n "$base" ]; do
+  # The manifest is edited on Windows too, so it can arrive with CRLF. Without stripping the CR the
+  # requirement reads as "required\r", every entry is rejected as invalid, and the only symptom is a
+  # Linux build with no natives — a silent loss of rendering rather than a parse error anyone reads.
+  base="${base%$'\r'}"
+  requirement="${requirement%$'\r'}"
+  url_path="${url_path%$'\r'}"
+
   case "$base" in
     ""|\#*) continue ;;
   esac
