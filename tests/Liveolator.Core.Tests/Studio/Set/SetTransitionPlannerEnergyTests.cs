@@ -87,15 +87,38 @@ public class SetTransitionPlannerEnergyTests
     }
 
     [Fact]
-    public void Plan_RefusesAJoin_WhoseOnlyMixOutSitsInAKicklessTail()
+    public void Plan_StillJoins_WhenEveryMixOutSitsInAKicklessTail()
     {
-        // End to end: every blend length the planner can step down to lands in the same withdrawn tail, so
-        // there is no legal join into this record and the arranger drops it rather than mixing badly.
+        // Every blend length the planner can step down to lands in the same withdrawn tail. Refusing the join
+        // was the old answer and it did not cost one record, it cost every record after it — the arranger has
+        // no other way to advance the chain, so a 14-track set collapsed to 4. Owner decision (2026-08-28):
+        // take the mix and say so. The driven record still joins with no such warning.
         MusicTrack withdrawn = EnergyTrackFixture.Track("withdrawn.mp3", EnergyTrackFixture.Beats(0.0, 200.0));
         MusicTrack driven = EnergyTrackFixture.Track("driven.mp3", EnergyTrackFixture.Beats(0.0, 300.0));
         MusicTrack to = EnergyTrackFixture.Track("to.mp3", EnergyTrackFixture.Beats(0.0, 300.0));
 
-        Assert.Null(SetTransitionPlanner.Plan(withdrawn, 0.0, to, Options, true, true));
-        Assert.NotNull(SetTransitionPlanner.Plan(driven, 0.0, to, Options, true, true));
+        TransitionShape? overTheTail = SetTransitionPlanner.Plan(withdrawn, 0.0, to, Options, true, true);
+        TransitionShape? overTheDrums = SetTransitionPlanner.Plan(driven, 0.0, to, Options, true, true);
+
+        Assert.NotNull(overTheTail);
+        Assert.Contains(SetWarning.BeatlessBlend, overTheTail!.Warnings);
+        Assert.NotNull(overTheDrums);
+        Assert.DoesNotContain(SetWarning.BeatlessBlend, overTheDrums!.Warnings);
+    }
+
+    [Fact]
+    public void Plan_KeepsTheRequestedLength_WhenTheFloorCannotBeKeptMoving()
+    {
+        // An empty floor is not a reason to shorten the mix (owner decision, 2026-08-28): a blend is as long
+        // as it has ROOM to be, and the runway here is the same whether or not a kick is playing over it.
+        // Stepping down is for clearing a fault, not a penalty applied to one.
+        MusicTrack withdrawn = EnergyTrackFixture.Track("withdrawn.mp3", EnergyTrackFixture.Beats(0.0, 200.0));
+        MusicTrack to = EnergyTrackFixture.Track("to.mp3", EnergyTrackFixture.Beats(0.0, 300.0));
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(withdrawn, 0.0, to, Options, true, true);
+
+        Assert.NotNull(shape);
+        Assert.Equal(Options.NormalizedOverlapBars, shape!.OverlapBars);
+        Assert.DoesNotContain(SetWarning.OverlapClamped, shape.Warnings);
     }
 }

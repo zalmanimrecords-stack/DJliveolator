@@ -48,4 +48,12 @@ public enum SetWarning
     /// <summary>Fewer than <see cref="KickCoverage.MixInFloor"/> of the bars the blend opens over carry a kick
     /// on the incoming side. Reported rather than refused: entering on a rising intro is normal practice.</summary>
     LowKickCoverageAtMixIn,
+
+    /// <summary>Nothing is driving the floor across this blend — the outgoing exit window is not covered, or
+    /// both decks fall silent for more than <see cref="KickCoverage.MaxJointKicklessBars"/> bars. Reported
+    /// rather than refused (owner decision, 2026-08-28): a blend over dead air is still a mix and a dropped
+    /// record is not, and refusing cost the entire rest of the chain — every Mime Time record after one whose
+    /// outro ends 34 s before its last sample was reported unmixable, collapsing a 14-track set to 4. The
+    /// shortest legal overlap is chosen for these, so the hole is as short as the join allows.</summary>
+    BeatlessBlend,
 }

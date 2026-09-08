@@ -256,6 +256,32 @@ public class SetTransitionPlannerTests
     }
 
     [Fact]
+    public void Plan_ShortensTheBlend_ToKeepTheIncomingDropOutOfIt()
+    {
+        // The export gate's own remedy for a drop landing inside the blend is "shorten the overlap", and the
+        // loop was already stepping down for runway — it just took the first length that fit and reported the
+        // collision instead of avoiding it. Measured: that cost a TATA Box set its closing record, because the
+        // gate then refused to render the mix at all.
+        SongStructure dropsEarly = SetTrackFixture.Structure(
+            new SongSection(0.0, SongSectionLabel.Intro),
+            new SongSection(11.25, SongSectionLabel.BuildUp),
+            new SongSection(22.5, SongSectionLabel.Drop),
+            new SongSection(150.0, SongSectionLabel.Breakdown),
+            new SongSection(240.0, SongSectionLabel.Outro));
+        MusicTrack from = SetTrackFixture.Track(
+            "a.mp3", structure: SetTrackFixture.StandardStructure(), kicks: KicksFrom(0.0, 300.0));
+        MusicTrack to = SetTrackFixture.Track(
+            "b.mp3", structure: dropsEarly, kicks: KicksFrom(0.0, 300.0));
+
+        TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
+
+        Assert.NotNull(shape);
+        // 16 bars is 30 s at the fixture tempo and would swallow the 22.5 s drop; 8 bars stops at 15 s.
+        Assert.Equal(SetBuildOptions.MinOverlapBars, shape!.OverlapBars);
+        Assert.DoesNotContain(SetWarning.IncomingDropInsideOverlap, shape.Warnings);
+    }
+
+    [Fact]
     public void PlanMixIn_DistinguishesAMovedEntryFromAKicklessOne()
     {
         // One member for both cases is how a warning gets trained to be ignored: it fired on 8 of 9 TATA Box
@@ -381,10 +407,11 @@ public class SetTransitionPlannerTests
     public void Plan_ReportsAnIncomingDrop_ThatLandsInsideTheBlend()
     {
         MusicTrack from = SetTrackFixture.Track("a.mp3", structure: SetTrackFixture.StandardStructure());
-        // A drop 15 s in lands halfway through a 30 s crossfade — the outgoing record is still over it.
+        // A drop 7.5 s in is inside even the 8-bar floor blend, so no length the planner can step down to
+        // clears it — which is what leaves the warning as the only thing left to do about it.
         SongStructure early = SetTrackFixture.Structure(
             new SongSection(0.0, SongSectionLabel.Intro),
-            new SongSection(15.0, SongSectionLabel.Drop),
+            new SongSection(7.5, SongSectionLabel.Drop),
             new SongSection(150.0, SongSectionLabel.Breakdown),
             new SongSection(240.0, SongSectionLabel.Outro));
         MusicTrack to = SetTrackFixture.Track("b.mp3", structure: early);
@@ -404,10 +431,10 @@ public class SetTransitionPlannerTests
         SongStructure twoDrops = SetTrackFixture.Structure(
             new SongSection(0.0, SongSectionLabel.Intro),
             new SongSection(30.0, SongSectionLabel.Drop),
-            new SongSection(75.0, SongSectionLabel.Drop),
+            new SongSection(67.5, SongSectionLabel.Drop),
             new SongSection(240.0, SongSectionLabel.Outro));
-        // The drums start at 60 s, so the entry is advanced past the first drop and the second one at 75 s
-        // lands halfway through the 30 s blend.
+        // The drums start at 60 s, so the entry is advanced past the first drop and the second one at 67.5 s
+        // lands inside the blend at every length the planner can step down to.
         MusicTrack to = SetTrackFixture.Track("b.mp3", structure: twoDrops, kicks: KicksFrom(60.0, 300.0));
 
         TransitionShape? shape = SetTransitionPlanner.Plan(from, 0.0, to, Options, true, true);
