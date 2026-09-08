@@ -38,6 +38,9 @@ public sealed class FfprobeVideoProbe : IVisualMediaProbe
         var psi = new ProcessStartInfo
         {
             FileName = _executablePath,
+            // Never let the child inherit our stdin — under the --stdio MCP server that handle is the
+            // JSON-RPC transport, and a child reading it wedges the whole server.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -69,6 +72,8 @@ public sealed class FfprobeVideoProbe : IVisualMediaProbe
 
         using (process)
         {
+            process.StandardInput.Close();   // EOF, not an idle pipe
+
             Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
             string json = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

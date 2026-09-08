@@ -34,16 +34,20 @@ public sealed class FfmpegAudioDecoder : IAudioDecoder
     public bool CanDecode(string filePath) =>
         SupportedExtensions.Contains(Path.GetExtension(filePath));
 
-    public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
-        string filePath, int targetSampleRate,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Builds the FFmpeg invocation. Redirecting stdin is not cosmetic: an un-redirected child
+    /// inherits OUR stdin, and in the <c>--stdio</c> MCP server that handle is the JSON-RPC
+    /// transport — FFmpeg polls stdin for interactive keys, so it consumed the protocol stream and
+    /// froze library scans indefinitely at 0% CPU. Redirecting (rather than passing FFmpeg's
+    /// <c>-nostdin</c>) keeps the guard tool-agnostic.
+    /// </summary>
+    internal static ProcessStartInfo BuildStartInfo(
+        string executablePath, string filePath, int targetSampleRate)
     {
-        if (targetSampleRate <= 0)
-            throw new ArgumentOutOfRangeException(nameof(targetSampleRate));
-
         var psi = new ProcessStartInfo
         {
-            FileName = _executablePath,
+            FileName = executablePath,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -55,6 +59,17 @@ public sealed class FfmpegAudioDecoder : IAudioDecoder
         psi.ArgumentList.Add("-ac"); psi.ArgumentList.Add("1");      // mono downmix
         psi.ArgumentList.Add("-ar"); psi.ArgumentList.Add(targetSampleRate.ToString());
         psi.ArgumentList.Add("pipe:1");
+        return psi;
+    }
+
+    public async IAsyncEnumerable<ReadOnlyMemory<float>> DecodeMonoAsync(
+        string filePath, int targetSampleRate,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (targetSampleRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(targetSampleRate));
+
+        ProcessStartInfo psi = BuildStartInfo(_executablePath, filePath, targetSampleRate);
 
         Process process;
         try
@@ -71,6 +86,10 @@ public sealed class FfmpegAudioDecoder : IAudioDecoder
 
         using (process)
         {
+            // Close the redirected stdin at once so FFmpeg sees EOF instead of waiting on a pipe we
+            // never write to.
+            process.StandardInput.Close();
+
             // Drain stderr concurrently so a chatty FFmpeg can't deadlock the stdout pipe.
             Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
