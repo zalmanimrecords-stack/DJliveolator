@@ -13,11 +13,14 @@ namespace Liveolator.Core.Studio.Render;
 public sealed record DeckMixState(
     bool HasAudio, string? SourcePath, double SourceSeconds,
     double WarpFactor, double ClipStartSeconds, double SourceInSeconds,
-    double Gain, EqBands Eq, double Filter)
+    double Gain, EqBands Eq, double Filter,
+    // The clip's own tempo. Under a travelling project tempo the stretch is not one number the plan can
+    // hand over once, so the renderer needs the record's tempo to work out the rate at each instant.
+    double SourceBpm = 0.0)
 {
     /// <summary>No clip sounding on this deck: silent, controls neutral, unwarped.</summary>
     public static DeckMixState Silent { get; } = new(
         HasAudio: false, SourcePath: null, SourceSeconds: 0,
         WarpFactor: 1.0, ClipStartSeconds: 0, SourceInSeconds: 0,
-        Gain: 0, Eq: EqBands.Flat, Filter: DeckChannelState.FilterCenter);
+        Gain: 0, Eq: EqBands.Flat, Filter: DeckChannelState.FilterCenter, SourceBpm: 0.0);
 }

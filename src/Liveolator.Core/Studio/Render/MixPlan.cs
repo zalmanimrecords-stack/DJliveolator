@@ -65,7 +65,8 @@ public sealed class MixPlan
         return new DeckMixState(
             HasAudio: true, SourcePath: clip.TrackPath, SourceSeconds: source,
             WarpFactor: WarpFactorFor(clip), ClipStartSeconds: clip.TimelineStartSeconds,
-            SourceInSeconds: clip.SourceIn.TotalSeconds, Gain: gain, Eq: eq, Filter: filter);
+            SourceInSeconds: clip.SourceIn.TotalSeconds, Gain: gain, Eq: eq, Filter: filter,
+            SourceBpm: clip.CanWarp ? clip.SourceBpm : 0.0);
     }
 
     /// <summary>The constant warp factor for a clip (sampled at its start — the MVP constant-per-clip model).</summary>
@@ -91,11 +92,28 @@ public sealed class MixPlan
         return best;
     }
 
-    // Timeline end of a clip after warp: start + sourceDuration/factor (null when the source length is open).
+    /// <summary>The project tempo at a timeline instant, following the curve when there is one.</summary>
+    public double TempoAt(double timelineSeconds) => _project.EffectiveTempo.TempoAt(timelineSeconds, _project.Bpm);
+
+    /// <summary>True when the project tempo travels, so a clip's rate is not one number over its life.</summary>
+    public bool HasTempoRamp => _project.EffectiveTempo.Keyframes.Count > 0;
+
+    /// <summary>Timeline end of a clip after warp, or null when its source length is open-ended.</summary>
+    public double? ClipTimelineEnd(StudioClip clip) => WarpedEndSeconds(clip);
+
+    // Timeline end of a clip after warp. Under a flat tempo that is start + sourceDuration/factor; under a
+    // travelling one the source a clip consumes is the integral of the tempo across it, so the end is that
+    // integral inverted — the same geometry the arranger placed the clip with.
     private double? WarpedEndSeconds(StudioClip clip)
-        => clip.SourceDuration is { } d
-            ? clip.TimelineStartSeconds + WarpMath.WarpedTimelineSeconds(d.TotalSeconds, WarpFactorFor(clip))
-            : null;
+    {
+        if (clip.SourceDuration is not { } d)
+            return null;
+        if (!HasTempoRamp || !clip.CanWarp || clip.SourceBpm <= 0.0)
+            return clip.TimelineStartSeconds + WarpMath.WarpedTimelineSeconds(d.TotalSeconds, WarpFactorFor(clip));
+
+        return TempoIntegral.TimelineSecondsForSource(
+            _project.EffectiveTempo, _project.Bpm, clip.SourceBpm, clip.TimelineStartSeconds, d.TotalSeconds);
+    }
 
     private double LaneValue(int slot, AutomationTarget target, double timeSeconds, double fallback)
         => _lanes.TryGetValue((slot, target), out AutomationLane? lane) ? lane.ValueAt(timeSeconds) : fallback;

@@ -30,6 +30,7 @@ public sealed record SetBuildOptions(
     double MaxWarpPercent = 6.0,
     bool ExcludeLowGridConfidence = false,
     double? TempoBpm = null,
+    bool RampTempo = false,
     int StartDeckSlot = 0,
     double TargetLufs = -9.0)
 {
@@ -81,6 +82,13 @@ public sealed record SetBuildOptions(
             throw new ArgumentOutOfRangeException(nameof(MaxWarpPercent), MaxWarpPercent, "Warp limit must be positive.");
         if (TempoBpm is <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(TempoBpm), TempoBpm, "Set tempo must be positive.");
+        // The two are answers to the same question. Silently letting one win would make the DJ's stated
+        // tempo a suggestion, which is exactly what naming it was meant to stop.
+        if (RampTempo && TempoBpm is not null)
+            throw new ArgumentException(
+                "A set has one tempo or a travelling one, not both: drop TempoBpm to let the tempo meet each " +
+                "pair of records, or drop RampTempo to hold the tempo you named.",
+                nameof(RampTempo));
         if (StartDeckSlot is not (0 or 1))
             throw new ArgumentOutOfRangeException(nameof(StartDeckSlot), StartDeckSlot, "Start deck slot must be 0 or 1 (clips alternate between the two).");
     }

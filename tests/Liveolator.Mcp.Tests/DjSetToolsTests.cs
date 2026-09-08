@@ -44,6 +44,54 @@ public sealed class DjSetToolsTests : IDisposable
     }
 
     [Fact]
+    public async Task BuildDjSet_LetsTheTempoTravel_AndSavesTheCurveWithTheSet()
+    {
+        // The ramp has to survive the round trip through the store, not just the arranger: the saved
+        // arrangement is what the renderer and the STUDIO tab read back.
+        DjSetSession session = await CreateSessionAsync(
+            Track("a.mp3", "8A", 128, structure: StandardStructure()),
+            Track("b.mp3", "8A", 132, structure: StandardStructure()),
+            Track("c.mp3", "9A", 136, structure: StandardStructure()));
+
+        DjSetResult result = await DjSetTools.BuildDjSet(
+            session, seedPath: FullPath("a.mp3"), length: 3, rampTempo: true, name: "Ramped");
+
+        Assert.True(result.TrackCount >= 2, "the ramped build placed nothing");
+        Assert.Contains("Ramped", await DjSetTools.ListDjSets(session));
+        Assert.NotNull(await DjSetTools.GetDjSet(session, "Ramped"));
+    }
+
+    [Fact]
+    public async Task BuildDjSet_UnderARamp_ReportsTheWarpAgainstTheTravellingTempo()
+    {
+        // The reported warp is what an agent reads to decide whether a record is being pulled too hard.
+        // Measured against ONE set tempo it is wrong for every clip in a ramped set -- 136 against a
+        // nominal 130 reads -4.4% when the record actually meets its neighbour at 134 and is pulled 1.5%.
+        // The mix itself was correct all along; only the number an agent judges it by was not.
+        DjSetSession session = await CreateSessionAsync(
+            Track("a.mp3", "8A", 128, structure: StandardStructure()),
+            Track("b.mp3", "8A", 132, structure: StandardStructure()),
+            Track("c.mp3", "9A", 136, structure: StandardStructure()));
+
+        DjSetResult result = await DjSetTools.BuildDjSet(
+            session, seedPath: FullPath("a.mp3"), length: 3, rampTempo: true, name: "Ramped warp");
+
+        Assert.True(result.TrackCount >= 2, "the ramped build placed nothing");
+        foreach (SetTrackInfo track in result.Tracks)
+            Assert.True(
+                Math.Abs(track.WarpPercent) <= 2.5,
+                $"'{track.Title}' at {track.NativeBpm} BPM reports {track.WarpPercent:F2}% — under a ramp no " +
+                "record is pulled further than half the gap to its neighbour, so this is the flat-tempo " +
+                "number rather than the travelling one");
+    }
+
+    [Fact]
+    public async Task BuildDjSet_RefusesATravellingTempo_AndAFixedOne_Together()
+        => await Assert.ThrowsAsync<ArgumentException>(async () => await DjSetTools.BuildDjSet(
+            await CreateSessionAsync(Track("a.mp3", "8A", 128)),
+            seedPath: FullPath("a.mp3"), length: 2, tempoBpm: 140, rampTempo: true, name: "Both"));
+
+    [Fact]
     public async Task BuildDjSet_ReportsEveryJoin_WithEnoughToJudgeIt()
     {
         DjSetSession session = await CreateSessionAsync(

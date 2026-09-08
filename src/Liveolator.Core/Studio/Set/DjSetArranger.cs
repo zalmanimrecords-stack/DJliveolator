@@ -65,7 +65,9 @@ public sealed class DjSetArranger
         // tempo most of them reach cheaply. The median is only ever a default — it is derived from the
         // selection, so a pool weighted toward one tempo pins the set there whatever the room wants.
         double tempoBpm = options.TempoBpm ?? MedianBpm(ordered.Select(e => e.Track));
-        List<SetEntry> withinRange = WithinWarpLimit(ordered, tempoBpm, options, rejected);
+        List<SetEntry> withinRange = options.RampTempo
+            ? WithinRampWarpLimit(ordered, options, rejected)
+            : WithinWarpLimit(ordered, tempoBpm, options, rejected);
         if (withinRange.Count == 0)
             return Empty(options, rejected);
 
@@ -179,6 +181,35 @@ public sealed class DjSetArranger
         return kept;
     }
 
+    // The warp limit under a travelling tempo. Each record answers for the harder of its two joins rather
+    // than for its distance from one set-wide tempo, which is the whole point: the same chain that needed
+    // 8.5% of its slowest record to reach a fixed 140 needs about 2% of anyone once the tempo travels.
+    private static List<SetEntry> WithinRampWarpLimit(
+        IReadOnlyList<SetEntry> ordered, SetBuildOptions options, List<RejectedCandidate> rejected)
+    {
+        double[] bpms = ordered.Select(e => e.Track.Bpm!.Bpm).ToArray();
+        double[] joins = SetTempoRamp.JoinTempos(bpms);
+
+        var kept = new List<SetEntry>();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            double warp = SetTempoRamp.WorstWarpPercent(bpms, joins, i);
+            if (Math.Abs(warp) > options.MaxWarpPercent)
+            {
+                rejected.Add(new RejectedCandidate(
+                    ordered[i].Track.File.Path,
+                    ordered[i].Track.Title,
+                    i == 0 ? RejectReason.SeedOutsideTempoRange : RejectReason.OutsideTempoRange,
+                    Math.Round(warp, 2)));
+                continue;
+            }
+
+            kept.Add(ordered[i]);
+        }
+
+        return kept;
+    }
+
     // Places the chosen tracks. The invariant that makes the whole arrangement phase-correct: every clip's
     // SourceIn is one of its own phrase lines, and every clip starts on a project phrase line. Warping to a
     // common tempo maps a track's phrase onto the project's phrase exactly, so both hold by induction from
@@ -193,10 +224,33 @@ public sealed class DjSetArranger
         var transitions = new List<SetTransition>();
         var windows = new List<CrossfadeWindow>();
 
+        // One tempo for the whole set is the empty curve; a travelling one is flat over every blend and
+        // ramps between. Built as the clips are placed, because a ramp starts where the blend before it
+        // ended — and read back by TempoIntegral to place what comes after, so the two stay consistent.
+        double[] joinTempos = options.RampTempo
+            ? SetTempoRamp.JoinTempos(entries.Select(e => e.Track.Bpm!.Bpm).ToArray())
+            : Array.Empty<double>();
+        double nominalBpm = joinTempos.Length > 0 ? joinTempos[0] : tempoBpm;
+        var keyframes = new List<TempoKeyframe>();
+        if (joinTempos.Length > 0)
+            keyframes.Add(new TempoKeyframe(0.0, joinTempos[0]));
+        TempoCurve Curve() => keyframes.Count == 0 ? TempoCurve.Empty : new TempoCurve(keyframes);
+
+        // The flat case reduces to the old division exactly (an empty curve is a constant tempo), so both
+        // set shapes go through one path rather than two that can drift apart.
+        double TimelineAfter(MusicTrack track, bool warped, double fromSeconds, double sourceSpan)
+            => warped
+                ? TempoIntegral.TimelineSecondsForSource(
+                    Curve(), nominalBpm, track.Bpm!.Bpm, fromSeconds, sourceSpan)
+                : fromSeconds + sourceSpan;
+
         MusicTrack current = entries[0].Track;
         var openingWarnings = new List<SetWarning>();
         double currentSourceIn = SetTransitionPlanner.PlanMixIn(current, openingWarnings).SourceSeconds;
         double currentStart = 0.0;
+        // Where the current clip's entry blend finished — the first instant the tempo is free to move,
+        // because from here until its own exit blend it is the only record playing.
+        double currentSoloStart = 0.0;
         bool currentWarped = IsTempoTrusted(current);
         bool currentPhaseReady = IsPhaseReady(current);
 
@@ -226,14 +280,38 @@ public sealed class DjSetArranger
                 continue;
             }
 
-            double currentFactor = currentWarped ? tempoBpm / current.Bpm!.Bpm : 1.0;
             double outSourceOverlap = shape.OverlapBars * SetTransitionPlanner.BarSeconds(current);
             double outSourceEnd = shape.Out.SourceSeconds + outSourceOverlap;
-            double blendStart = currentStart + ((shape.Out.SourceSeconds - currentSourceIn) / currentFactor);
+            double sourceToMixOut = shape.Out.SourceSeconds - currentSourceIn;
+
+            // Spread the tempo change across the WHOLE solo stretch rather than hurrying it into a fixed
+            // window (owner decision, 2026-08-28): over five minutes instead of one, the same two BPM move
+            // at a fifth of the rate, so at no instant is the record being pulled hard. The ramp must ARRIVE
+            // exactly when the next blend opens — and that instant is the one being computed here, so solve
+            // for it directly. Placing the blend AT the solved instant rather than integrating to it again
+            // is what makes "flat across every blend" exact instead of true to a few decimals.
+            double blendStart;
+            if (joinTempos.Length > 0 && i >= 2 && currentWarped)
+            {
+                double tempoIn = joinTempos[i - 2];
+                double tempoOut = joinTempos[i - 1];
+                double bpm = current.Bpm!.Bpm;
+                // Source used while the entry blend was still running, at the flat tempo that blend held.
+                double duringBlend = (currentSoloStart - currentStart) * tempoIn / bpm;
+                double soloSeconds = 2.0 * (sourceToMixOut - duringBlend) * bpm / (tempoIn + tempoOut);
+                blendStart = currentSoloStart + Math.Max(0.0, soloSeconds);
+                keyframes.Add(new TempoKeyframe(currentSoloStart, tempoIn));
+                keyframes.Add(new TempoKeyframe(blendStart, tempoOut));
+            }
+            else
+            {
+                blendStart = TimelineAfter(current, currentWarped, currentStart, sourceToMixOut);
+            }
 
             StudioClip outgoing = Clip(current, clips.Count, options, currentStart, currentSourceIn, outSourceEnd, currentWarped);
             clips.Add(outgoing);
-            double outgoingEnd = currentStart + (outgoing.SourceDuration!.Value.TotalSeconds / currentFactor);
+            double outgoingEnd = TimelineAfter(
+                current, currentWarped, currentStart, outgoing.SourceDuration!.Value.TotalSeconds);
 
             // An unwarped clip runs on its own bar length, so the chain loses the project grid across it.
             // Re-anchor the next clip to the project phrase grid to pick the alignment back up.
@@ -248,12 +326,16 @@ public sealed class DjSetArranger
             int outSlot = SlotFor(clips.Count - 1, options);
             int inSlot = SlotFor(clips.Count, options);
             windows.Add(new CrossfadeWindow(outSlot, inSlot, blendStart, blendSeconds));
+            double joinTempo = joinTempos.Length > 0 ? joinTempos[i - 1] : tempoBpm;
             transitions.Add(Report(
                 transitions.Count, current, next, entries[i].Rationale, shape,
-                blendStart, blendSeconds, tempoBpm,
+                blendStart, blendSeconds, joinTempo,
                 currentWarped, nextWarped, currentPhaseReady, nextPhaseReady));
 
             current = next;
+            // The incoming record is alone from here, and its ramp is laid the next time round — when its
+            // own mix-out is known and the arrival instant can be solved for.
+            currentSoloStart = blendStart + blendSeconds;
             currentSourceIn = shape.In.SourceSeconds;
             currentStart = blendStart;
             currentWarped = nextWarped;
@@ -264,8 +346,8 @@ public sealed class DjSetArranger
         clips.Add(Clip(current, clips.Count, options, currentStart, currentSourceIn, current.Duration!.Value.TotalSeconds, currentWarped));
 
         var project = new StudioProject(
-            options.ProjectName, tempoBpm, clips, TransitionAutomation.Build(windows, tempoBpm));
-        return new DjSetPlan(project, tempoBpm, transitions, rejected);
+            options.ProjectName, nominalBpm, clips, TransitionAutomation.Build(windows, nominalBpm), Curve());
+        return new DjSetPlan(project, nominalBpm, transitions, rejected);
     }
 
     private static StudioClip Clip(

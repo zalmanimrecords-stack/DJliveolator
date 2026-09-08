@@ -141,13 +141,16 @@ public sealed class DjSetSession
 
         IReadOnlyList<MusicTrack> pool = await _library.SnapshotAsync(cancellationToken).ConfigureAwait(false);
         Dictionary<string, MusicTrack> byPath = ByPath(pool);
+        (double[] clipBpms, double[] joinTempos) = TempoShape(project);
 
         return new SavedSetInfo(
             project.Name,
             project.Clips.Count,
             Math.Round(project.DurationSeconds, 1),
             project.Bpm,
-            project.Clips.Select((clip, i) => Track(i, clip, byPath, project.Bpm)).ToArray(),
+            project.Clips
+                .Select((clip, i) => Track(i, clip, byPath, project.Bpm, clipBpms, joinTempos))
+                .ToArray(),
             Joins(project).Select((join, i) => new SetJoinInfo(
                 i, join.FromPath, join.ToPath,
                 Math.Round(join.StartSeconds, 3),
@@ -506,7 +509,6 @@ public sealed class DjSetSession
         var issues = new List<MixGateIssue>();
         var atFloor = new List<MixGateIssue>();
         IReadOnlyList<Join> joins = Joins(project);
-        double setBarSeconds = SetBuildOptions.BarSeconds(project.Bpm);
 
         foreach (Join join in joins)
         {
@@ -517,8 +519,12 @@ public sealed class DjSetSession
 
             // An unwarped clip's blend was cut in bars of ITS OWN tempo, not the set's, so measuring it at the
             // set's bar length reported a legitimate 8-bar blend on a fast unwarped record as under the floor.
+            // A warped one is measured at the tempo of THIS join rather than the set's nominal figure — with a
+            // travelling tempo those differ, and the nominal one called three exact 8-bar blends short.
+            double joinBarSeconds = SetBuildOptions.BarSeconds(
+                project.EffectiveTempo.TempoAt(join.StartSeconds, project.Bpm));
             double barSeconds = join.From.WarpEnabled || join.From.SourceBpm <= 0.0
-                ? setBarSeconds
+                ? joinBarSeconds
                 : SetBuildOptions.BarSeconds(join.From.SourceBpm);
             double blendBars = barSeconds > 0.0 ? blend / barSeconds : 0.0;
 
@@ -543,10 +549,10 @@ public sealed class DjSetSession
             byPath.TryGetValue(join.From.TrackPath, out MusicTrack? from);
             byPath.TryGetValue(join.To.TrackPath, out MusicTrack? to);
             SetJoinAuditResult audit = SetJoinAudit.Audit(from, to, new SetJoinGeometry(
-                MixOutSourceSeconds: SourceSecondsAt(join.From, join.StartSeconds, join.FromWarpFactor),
+                MixOutSourceSeconds: SourceSecondsAt(project, join.From, join.StartSeconds, join.FromWarpFactor),
                 MixInSourceSeconds: join.To.SourceIn.TotalSeconds,
-                OverlapBars: setBarSeconds > 0.0 ? Math.Max(1, (int)Math.Round(blend / setBarSeconds)) : 1,
-                SetTempoBpm: project.Bpm,
+                OverlapBars: joinBarSeconds > 0.0 ? Math.Max(1, (int)Math.Round(blend / joinBarSeconds)) : 1,
+                SetTempoBpm: project.EffectiveTempo.TempoAt(join.StartSeconds, project.Bpm),
                 OutgoingWarped: join.From.WarpEnabled,
                 IncomingWarped: join.To.WarpEnabled));
 
@@ -664,9 +670,14 @@ public sealed class DjSetSession
         {
             StudioClip from = ordered[i];
             StudioClip to = ordered[i + 1];
+            // Through the shared helper, not a second copy of the same arithmetic: this one still sampled the
+            // factor once at the clip's start, which under a travelling tempo is the tempo the clip has
+            // already left. Measured: it shortened one record by 4.2 s and reported its 14 s blend as a 9.8 s
+            // cut, which is the gate refusing to publish a mix over a defect that was only in the reading.
             double factor = WarpMath.WarpFactorAt(from, project.EffectiveTempo, project.Bpm, from.TimelineStartSeconds);
-            double fromEnd = from.SourceDuration is { } duration
-                ? from.TimelineStartSeconds + WarpMath.WarpedTimelineSeconds(duration.TotalSeconds, factor)
+            double fromEnd = from.SourceDuration is not null
+                ? from.TimelineStartSeconds
+                    + WarpMath.WarpedTimelineWidth(from, project.EffectiveTempo, project.Bpm)
                 : to.TimelineStartSeconds;
 
             joins.Add(new Join(from, to, to.TimelineStartSeconds, Math.Max(to.TimelineStartSeconds, fromEnd), factor));
@@ -675,14 +686,26 @@ public sealed class DjSetSession
         return joins;
     }
 
-    // Where a clip's playhead sits in its OWN source seconds at a timeline moment: a warped buffer advances
-    // by the warp factor per timeline second, an unwarped one 1:1.
-    private static double SourceSecondsAt(StudioClip clip, double timelineSeconds, double warpFactor)
-        => clip.SourceIn.TotalSeconds + ((timelineSeconds - clip.TimelineStartSeconds) * warpFactor);
+    // Where a clip's playhead sits in its OWN source seconds at a timeline moment. A flat tempo advances the
+    // source by one factor per timeline second; a travelling one advances it by the integral, so the same
+    // multiplication would put the gate's mix-out probe at the wrong point in the record.
+    private static double SourceSecondsAt(
+        StudioProject project, StudioClip clip, double timelineSeconds, double warpFactor)
+    {
+        if (project.EffectiveTempo.Keyframes.Count > 0 && clip.CanWarp)
+        {
+            return clip.SourceIn.TotalSeconds + TempoIntegral.SourceSeconds(
+                project.EffectiveTempo, project.Bpm, clip.SourceBpm, clip.TimelineStartSeconds, timelineSeconds);
+        }
+
+        return clip.SourceIn.TotalSeconds + ((timelineSeconds - clip.TimelineStartSeconds) * warpFactor);
+    }
 
     private static DjSetResult Describe(DjSetPlan plan, Dictionary<string, MusicTrack> byPath)
     {
         double[] nativeBpm = plan.Project.Clips.Select(c => c.SourceBpm).Where(b => b > 0).ToArray();
+
+        (double[] clipBpms, double[] joinTempos) = TempoShape(plan.Project);
         var warningCounts = plan.Transitions
             .SelectMany(t => t.Warnings)
             .GroupBy(w => w.ToString())
@@ -698,7 +721,9 @@ public sealed class DjSetSession
             NativeBpmMin: nativeBpm.Length == 0 ? 0 : nativeBpm.Min(),
             NativeBpmMax: nativeBpm.Length == 0 ? 0 : nativeBpm.Max(),
             PhaseLockedCount: plan.PhaseLockedCount,
-            Tracks: plan.Project.Clips.Select((clip, i) => Track(i, clip, byPath, plan.TempoBpm)).ToArray(),
+            Tracks: plan.Project.Clips
+                .Select((clip, i) => Track(i, clip, byPath, plan.TempoBpm, clipBpms, joinTempos))
+                .ToArray(),
             Transitions: plan.Transitions.Select(t => Transition(t, byPath)).ToArray(),
             RejectedCount: plan.Rejected.Count,
             RejectedCandidates: plan.Rejected
@@ -737,10 +762,39 @@ public sealed class DjSetSession
         };
     }
 
-    private static SetTrackInfo Track(int position, StudioClip clip, Dictionary<string, MusicTrack> byPath, double tempoBpm)
+    /// <summary>
+    /// What a project's clips are stretched TOWARD. Under a travelling tempo a record is not pulled to one
+    /// set tempo — it meets each neighbour at their own midpoint — so measuring every clip against the
+    /// nominal figure reported a 136 in a 128-136 set as -4.4% when it is actually pulled 1.5%. Empty joins
+    /// mean one held tempo. Read by both the freshly-built and the saved-set paths so they cannot disagree.
+    /// </summary>
+    private static (double[] ClipBpms, double[] JoinTempos) TempoShape(StudioProject project)
+    {
+        double[] clipBpms = project.Clips.Select(c => c.SourceBpm).ToArray();
+        return (clipBpms, project.EffectiveTempo.Keyframes.Count > 0
+            ? SetTempoRamp.JoinTempos(clipBpms)
+            : Array.Empty<double>());
+    }
+
+    // joinTempos is empty for a set held at one tempo and carries one tempo per join under a travelling
+    // one, via the same helper the arranger's warp gate uses — so the number an agent judges the set by is
+    // the number the track was accepted on. clipBpms is indexed by clip position, matching `position`.
+    private static SetTrackInfo Track(
+        int position,
+        StudioClip clip,
+        Dictionary<string, MusicTrack> byPath,
+        double tempoBpm,
+        IReadOnlyList<double> clipBpms,
+        IReadOnlyList<double> joinTempos)
     {
         byPath.TryGetValue(clip.TrackPath, out MusicTrack? track);
-        double warp = clip.WarpEnabled && clip.SourceBpm > 0 ? ((tempoBpm / clip.SourceBpm) - 1.0) * 100.0 : 0.0;
+        double warp = 0.0;
+        if (clip.WarpEnabled && clip.SourceBpm > 0)
+        {
+            warp = joinTempos.Count > 0
+                ? SetTempoRamp.WorstWarpPercent(clipBpms, joinTempos, position)
+                : ((tempoBpm / clip.SourceBpm) - 1.0) * 100.0;
+        }
 
         return new SetTrackInfo(
             position,

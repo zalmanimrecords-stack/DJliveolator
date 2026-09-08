@@ -31,14 +31,26 @@ public static class WarpMath
         => factor > 0.0 ? sourceSeconds / factor : sourceSeconds;
 
     /// <summary>
-    /// The clip's on-timeline width with the warp factor sampled at its start (the constant-per-clip
-    /// model — exact when the tempo is flat across the clip). 0 when the source length is unknown.
+    /// The clip's on-timeline width. 0 when the source length is unknown.
+    /// <para>Under a flat tempo the factor sampled at the clip's start is the factor for its whole life.
+    /// Under a moving one it is the tempo the clip has already left, so the width comes from the integral
+    /// instead — measured: sampling the start cost a record 4.2 s of its own length, which ate a third of
+    /// the blend after it and had the export gate report a 14 s mix as a 9.8 s cut.</para>
     /// </summary>
     public static double WarpedTimelineWidth(StudioClip clip, TempoCurve tempo, double defaultBpm)
     {
         ArgumentNullException.ThrowIfNull(clip);
+        ArgumentNullException.ThrowIfNull(tempo);
         if (clip.SourceDuration is not { } duration)
             return 0.0;
+
+        if (tempo.Keyframes.Count > 0 && clip.CanWarp)
+        {
+            return TempoIntegral.TimelineSecondsForSource(
+                tempo, defaultBpm, clip.SourceBpm, clip.TimelineStartSeconds, duration.TotalSeconds)
+                - clip.TimelineStartSeconds;
+        }
+
         double factor = WarpFactorAt(clip, tempo, defaultBpm, clip.TimelineStartSeconds);
         return WarpedTimelineSeconds(duration.TotalSeconds, factor);
     }

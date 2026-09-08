@@ -38,6 +38,67 @@ public class DjSetArrangerTests
     // ---- tempo and warp -------------------------------------------------------------------------
 
     [Fact]
+    public void Build_LetsTheTempoTravel_WhenAskedTo()
+    {
+        // The ramp end to end: records keep their own places, but each pair meets at its own tempo instead
+        // of every record being dragged to one.
+        MusicTrack[] pool = StandardPool();
+
+        DjSetPlan plan = _arranger.Build(
+            pool, pool[0], new HarmonicSetOptions(pool.Length), Options with { RampTempo = true });
+
+        Assert.True(plan.Transitions.Count > 0, "the ramped build produced no transitions");
+        Assert.NotEmpty(plan.Project.EffectiveTempo.Keyframes);
+        // Clips still land in play order and never overlap themselves.
+        for (int i = 1; i < plan.Project.Clips.Count; i++)
+        {
+            Assert.True(
+                plan.Project.Clips[i].TimelineStartSeconds > plan.Project.Clips[i - 1].TimelineStartSeconds,
+                $"clip {i} starts at {plan.Project.Clips[i].TimelineStartSeconds}s, not after its predecessor");
+        }
+    }
+
+    [Fact]
+    public void Build_SpreadsEachTempoMove_AcrossTheWholeSoloStretch()
+    {
+        // A fixed ramp window hurries the move into a minute and leaves the record coasting; filling the
+        // solo stretch makes the same move at a fraction of the rate (owner decision, 2026-08-28). Asserted
+        // as the property that matters: the tempo is FLAT across every blend — two decks at different
+        // speeds is the one thing a beat-matched join cannot survive — and MOVING in between.
+        MusicTrack[] pool = StandardPool();
+
+        DjSetPlan plan = _arranger.Build(
+            pool, pool[0], new HarmonicSetOptions(pool.Length), Options with { RampTempo = true });
+
+        Assert.True(plan.Transitions.Count >= 2, "need at least two joins to see a ramp between them");
+        TempoCurve curve = plan.Project.EffectiveTempo;
+        double nominal = plan.TempoBpm;
+
+        foreach (SetTransition join in plan.Transitions)
+        {
+            // A thousandth of a BPM, not exact equality: the reported join times are rounded to the
+            // millisecond, so sampling at them lands a hair inside the ramp on either side. Flat to a
+            // thousandth is flat — it is four orders of magnitude below the smallest tempo move a set makes.
+            double drift = Math.Abs(
+                curve.TempoAt(join.EndSeconds, nominal) - curve.TempoAt(join.StartSeconds, nominal));
+            Assert.True(
+                drift < 0.001,
+                $"the tempo moved {drift:F6} BPM across the join at {join.StartSeconds:F2}s — during a blend " +
+                "the two decks would be running at different speeds");
+        }
+
+        // And between the first two joins the tempo actually travelled, rather than stepping at one point.
+        SetTransition first = plan.Transitions[0];
+        SetTransition second = plan.Transitions[1];
+        double quarter = first.EndSeconds + ((second.StartSeconds - first.EndSeconds) * 0.25);
+        double threeQuarters = first.EndSeconds + ((second.StartSeconds - first.EndSeconds) * 0.75);
+        if (Math.Abs(curve.TempoAt(second.StartSeconds, nominal) - curve.TempoAt(first.EndSeconds, nominal)) > 1e-6)
+        {
+            Assert.NotEqual(curve.TempoAt(quarter, nominal), curve.TempoAt(threeQuarters, nominal), 6);
+        }
+    }
+
+    [Fact]
     public void Build_RunsEveryClip_AtOneSetTempo()
     {
         DjSetPlan plan = BuildStandard();

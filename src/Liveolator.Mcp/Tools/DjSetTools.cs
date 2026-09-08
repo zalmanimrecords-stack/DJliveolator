@@ -55,6 +55,12 @@ public sealed class DjSetTools
                      "up selected — a default, not a rule, and one a tempo-weighted pool pins in place. Set " +
                      "it when the set tempo is a decision rather than an average. It does not suspend " +
                      "maxWarpPercent: a track that cannot reach it is still rejected and named.")] double? tempoBpm = null,
+        [Description("Let the set tempo TRAVEL instead of holding one number: each pair of records meets at " +
+                     "their own midpoint, and between joins — where nothing is being beat-matched — the tempo " +
+                     "walks slowly to the next one. Every record then plays nearer its own tempo, which is " +
+                     "both less stretch to hear and fewer rejections (a 129 BPM record needing 8.5% to reach " +
+                     "a fixed 140 needs about 2% of anyone once the tempo travels). Cannot be combined with " +
+                     "tempoBpm: that names one tempo, this says there is not one.")] bool rampTempo = false,
         [Description("Name to save the set under. Reusing a name replaces that set.")] string name = "DJ Set",
         CancellationToken cancellationToken = default)
     {
@@ -77,6 +83,10 @@ public sealed class DjSetTools
             throw new ArgumentException($"The warp limit must be between {MinWarpPercent} and {MaxWarpPercent} percent.", nameof(maxWarpPercent));
         if (tempoBpm is <= 0.0)
             throw new ArgumentException("The set tempo must be positive.", nameof(tempoBpm));
+        if (rampTempo && tempoBpm is not null)
+            throw new ArgumentException(
+                "Pass tempoBpm to hold one tempo, or rampTempo to let it meet each pair of records — not both.",
+                nameof(rampTempo));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Set name cannot be empty.", nameof(name));
 
@@ -85,7 +95,8 @@ public sealed class DjSetTools
             OverlapBars: overlapBars,
             MaxWarpPercent: maxWarpPercent,
             ExcludeLowGridConfidence: excludeLowGridConfidence,
-            TempoBpm: tempoBpm);
+            TempoBpm: tempoBpm,
+            RampTempo: rampTempo);
 
         return await session
             .BuildAsync(
