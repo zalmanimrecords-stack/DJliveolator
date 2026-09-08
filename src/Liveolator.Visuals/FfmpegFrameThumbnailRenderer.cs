@@ -42,6 +42,9 @@ public sealed class FfmpegFrameThumbnailRenderer : IVisualThumbnailRenderer
         var psi = new ProcessStartInfo
         {
             FileName = _executablePath,
+            // Never let the child inherit our stdin — under the --stdio MCP server that handle is the
+            // JSON-RPC transport, and a child reading it wedges the whole server.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -77,6 +80,8 @@ public sealed class FfmpegFrameThumbnailRenderer : IVisualThumbnailRenderer
         {
             using (process)
             {
+                process.StandardInput.Close();   // EOF, not an idle pipe
+
                 using var frameData = new MemoryStream();
                 // Drain stdout (the PNG) and stderr concurrently before waiting, so a large frame can
                 // never deadlock by filling a pipe buffer the process is blocked writing to.

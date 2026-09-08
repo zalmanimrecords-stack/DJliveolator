@@ -174,7 +174,10 @@ public sealed class OfflineMixRenderer
                         continue;
                     }
 
-                    string key = SourceKey(state.SourcePath, state.WarpFactor);
+                    // A ramped clip's buffer is cut for THAT clip — seeked to its entry and stretched on
+                    // its own schedule — so it cannot be shared by (path, factor) the way a flat one is.
+                    bool ramped = plan.HasTempoRamp && state.SourceBpm > 0.0;
+                    string key = ramped ? ActiveSourceKey(state) : SourceKey(state.SourcePath, state.WarpFactor);
                     if (!sources.TryGetValue(key, out StereoBuffer? src))
                     {
                         // Only decode material the plan actually accounted for; an unplanned key would have
@@ -185,9 +188,11 @@ public sealed class OfflineMixRenderer
                             continue;
                         }
 
-                        (StereoBuffer decodedSource, bool tookMonoFallback) = await DecodeSourceAsync(
-                                state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
-                            .ConfigureAwait(false);
+                        (StereoBuffer decodedSource, bool tookMonoFallback) = ramped
+                            ? (DecodeRamped(plan, state, sampleRate, endSeconds), false)
+                            : await DecodeSourceAsync(
+                                    state.SourcePath, state.WarpFactor, sampleRate, endSeconds, cancellationToken)
+                                .ConfigureAwait(false);
                         src = decodedSource;
                         sources[key] = src;
 
@@ -223,9 +228,12 @@ public sealed class OfflineMixRenderer
                     high[slot].SetCoefficients(MixerMath.EqBandCoefficients(EqBand.High, state.Eq, sampleRate));
                     filt[slot].SetCoefficients(MixerMath.FilterCoefficients(state.Filter, sampleRate));
 
-                    // The decoded buffer is already time-stretched to the project tempo, so it advances 1:1
-                    // with the timeline; the source-in trim maps into it scaled by the warp factor.
-                    double bufferSeconds = (state.SourceInSeconds / state.WarpFactor) + (tBlock - state.ClipStartSeconds);
+                    // Both buffers advance 1:1 with the timeline. A ramped one was seeked to the clip's entry
+                    // before it was stretched, so its frame 0 IS the clip's first timeline instant and no
+                    // offset is needed; a flat one holds the whole file, so the entry maps in scaled.
+                    double bufferSeconds = ramped
+                        ? tBlock - state.ClipStartSeconds
+                        : (state.SourceInSeconds / state.WarpFactor) + (tBlock - state.ClipStartSeconds);
                     long srcStart = (long)Math.Round(bufferSeconds * sampleRate);
                     for (int i = 0; i < blockLen; i++)
                     {
@@ -406,10 +414,12 @@ public sealed class OfflineMixRenderer
         foreach (StudioClip clip in project.Clips)
         {
             double factor = plan.WarpFactorFor(clip);
-            string key = SourceKey(clip.TrackPath, factor);
+            string key = KeyFor(plan, clip, factor);
 
             double end = double.PositiveInfinity;
-            if (clip.SourceOut is { } sourceOut && factor > 0)
+            if (Ramped(plan, clip))
+                end = plan.ClipTimelineEnd(clip) ?? double.PositiveInfinity;
+            else if (clip.SourceOut is { } sourceOut && factor > 0)
             {
                 double sourceSpan = sourceOut.TotalSeconds - clip.SourceIn.TotalSeconds;
                 if (sourceSpan >= 0)
@@ -452,13 +462,28 @@ public sealed class OfflineMixRenderer
         var needed = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         foreach (StudioClip clip in project.Clips)
         {
-            string key = SourceKey(clip.TrackPath, plan.WarpFactorFor(clip));
-            double end = clip.SourceOut?.TotalSeconds ?? double.PositiveInfinity;
+            double factor = plan.WarpFactorFor(clip);
+            string key = KeyFor(plan, clip, factor);
+            // A ramped clip's buffer is measured in TIMELINE seconds (it starts at the clip, not the file),
+            // so what it needs is its own on-timeline length rather than a source position.
+            double end = Ramped(plan, clip)
+                ? (plan.ClipTimelineEnd(clip) ?? double.PositiveInfinity) - clip.TimelineStartSeconds
+                : clip.SourceOut?.TotalSeconds ?? double.PositiveInfinity;
             needed[key] = needed.TryGetValue(key, out double existing) ? Math.Max(existing, end) : end;
         }
 
         return needed;
     }
+
+    private static bool Ramped(MixPlan plan, StudioClip clip)
+        => plan.HasTempoRamp && clip.CanWarp && clip.SourceBpm > 0.0;
+
+    // The decode-cache key for a clip, matching ActiveSourceKey's shape so the block loop and the
+    // lifetime bookkeeping agree on what a buffer is.
+    private static string KeyFor(MixPlan plan, StudioClip clip, double factor)
+        => Ramped(plan, clip)
+            ? $"{SourceKey(clip.TrackPath, factor)}|{clip.TimelineStartSeconds:F6}|{clip.SourceIn.TotalSeconds:F6}"
+            : SourceKey(clip.TrackPath, factor);
 
     // Decode one (path, warp factor) to a stereo buffer at the render rate, up to maxSourceEndSeconds of
     // source (PositiveInfinity = the whole file). Unwarped: the managed mono decoder duplicated to both
@@ -506,6 +531,25 @@ public sealed class OfflineMixRenderer
         // Only a fallback that produced audio is a mono clip. When it produced none the clip is not in the
         // mix at all, and SilentSources is the honest report — blaming the channel count would misdirect.
         return (mono, mono.Length > 0);
+    }
+
+    // One clip decoded from its own entry point at the tempo the curve asks for at each output instant.
+    // maxTimelineSeconds is the clip's timeline length, which is what the buffer measures now — not a
+    // source span, because a ramped clip has no single factor to convert one into the other.
+    private StereoBuffer DecodeRamped(MixPlan plan, DeckMixState state, int sampleRate, double maxTimelineSeconds)
+    {
+        double clipStart = state.ClipStartSeconds;
+        double sourceBpm = state.SourceBpm;
+        int maxFrames = double.IsPositiveInfinity(maxTimelineSeconds)
+            ? int.MaxValue
+            : (int)Math.Min(int.MaxValue, Math.Ceiling((maxTimelineSeconds * sampleRate) + (2 * BlockSize)));
+
+        return _stretchDecoder.DecodeRampedStereo(
+            state.SourcePath!,
+            sampleRate,
+            state.SourceInSeconds,
+            outputSeconds => ((plan.TempoAt(clipStart + outputSeconds) / sourceBpm) - 1.0) * 100.0,
+            maxFrames);
     }
 
     private static StatefulBiquad[] NewBiquads(int count)

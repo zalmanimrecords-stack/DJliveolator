@@ -38,6 +38,9 @@ public sealed class FpcalcFingerprinter : IAudioFingerprinter
         var psi = new ProcessStartInfo
         {
             FileName = _executablePath,
+            // Never let the child inherit our stdin — under the --stdio MCP server that handle is the
+            // JSON-RPC transport, and a child reading it wedges the whole server.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -54,6 +57,8 @@ public sealed class FpcalcFingerprinter : IAudioFingerprinter
                 _logger.LogWarning("fpcalc process failed to start ('{Exe}').", _executablePath);
                 return null;
             }
+
+            process.StandardInput.Close();   // EOF, not an idle pipe
 
             Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
             Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);

@@ -81,6 +81,8 @@ public static class SetTransitionPlanner
         // Overlap and mix-out are mutually constrained (a longer blend needs more runway, which can push
         // the mix-out earlier than the record allows), so try the longest first and step down by a half
         // phrase until both ends fit.
+        TransitionShape? best = null;
+        int bestScore = int.MaxValue;
         for (int bars = requested; bars >= SetBuildOptions.MinOverlapBars; bars -= SetBuildOptions.OverlapStepBars)
         {
             var attempt = new List<SetWarning>();
@@ -88,23 +90,41 @@ public static class SetTransitionPlanner
             if (outAnchor is null || !FitsIncomingRunway(to, inAnchor, bars))
                 continue;
 
-            // A shorter blend sits at a different point in each record, so a rejected anchor pair is a reason
-            // to step down rather than to give up — the next attempt may clear the hole entirely.
-            if (!KeepsTheFloorMoving(from, outAnchor, to, inAnchor, bars, attempt))
-                continue;
+            // A shorter blend sits at a different point in each record, so an empty floor is a reason to step
+            // down rather than to give up — the next attempt may clear the hole entirely.
+            bool floorMoves = KeepsTheFloorMoving(from, outAnchor, to, inAnchor, bars, attempt);
+            if (!floorMoves)
+                attempt.Add(SetWarning.BeatlessBlend);
 
-            warnings.AddRange(attempt);
+            var planned = new List<SetWarning>(warnings);
+            planned.AddRange(attempt);
             // Against `requested`, not the option: when a low-confidence grid already capped the blend, eight
             // bars WAS the most allowed, and calling it a clamp reports a compromise nobody asked to avoid.
             if (bars < requested)
-                warnings.Add(SetWarning.OverlapClamped);
-            if (DropLandsInsideOverlap(to, inAnchor, bars))
-                warnings.Add(SetWarning.IncomingDropInsideOverlap);
+                planned.Add(SetWarning.OverlapClamped);
+            bool dropInside = DropLandsInsideOverlap(to, inAnchor, bars);
+            if (dropInside)
+                planned.Add(SetWarning.IncomingDropInsideOverlap);
 
-            return new TransitionShape(outAnchor, inAnchor, bars, Distinct(warnings));
+            var shape = new TransitionShape(outAnchor, inAnchor, bars, Distinct(planned));
+            if (floorMoves && !dropInside)
+                return shape;
+
+            // Held, not returned: the loop has shorter blends left and one of them may CLEAR the fault, which
+            // is worth stepping down for. Length itself is not — a blend is as long as it has room to be, so
+            // `<` keeps the first shape at each score and the loop, running longest to shortest, ends holding
+            // the LONGEST of the best-scoring shapes rather than shrinking the mix on principle.
+            int score = (floorMoves ? 0 : 1) + (dropInside ? 2 : 0);
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = shape;
+            }
         }
 
-        return null;
+        // Owner decision (2026-08-28): a mix over dead air beats no mix. Refusing here did not cost one join,
+        // it cost every record after it — the arranger has no other candidate to advance the chain with.
+        return best;
     }
 
     /// <summary>
