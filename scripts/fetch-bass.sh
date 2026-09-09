@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 #
-# fetch-bass.sh — fetch the un4seen BASS + BASSmix + BASS_FX native libraries for the current (or a
-# specified) platform into runtimes/<rid>/native/, where the App build step picks them up.
+# fetch-bass.sh — fetch the un4seen BASS + BASSmix + BASS_FX native libraries, plus the BASSFLAC and
+# BASS_AAC decode add-ons, for the current (or a specified) platform into runtimes/<rid>/native/,
+# where the App build step picks them up.
 # BASS_FX is required: the realtime two-deck engine wraps every deck in a BASS_FX tempo stream for
-# key-lock, so a missing bass_fx aborts every track load.
+# key-lock, so a missing bass_fx aborts every track load. The decode add-ons are optional, but without
+# them FLAC / AAC-M4A-MP4 tracks neither play nor draw a waveform, and the offline renderer degrades
+# an unwarped clip of those formats to the mono managed decoder.
+#
+# BASS_AAC is NOT un4seen's own code and NOT under the BASS licence: it is a third-party FAAD2-based
+# add-on distributed under the GPL, and AAC carries separate patent licensing. See
+# THIRD-PARTY-NOTICES.txt before shipping a build that bundles it.
 #
 # BASS ships as per-platform zips from un4seen.com. This script downloads the right archives,
 # extracts only the native libraries we need, and places them under runtimes/<rid>/native/
 # using the canonical names ManagedBass probes for:
-#   win-x64    -> bass.dll      + bassmix.dll      + bassflac.dll
-#   osx-x64    -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
-#   osx-arm64  -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
-#   linux-x64  -> libbass.so    + libbassmix.so    + libbassflac.so
+#   win-x64    -> bass.dll      + bassmix.dll      + bass_fx.dll      + bassflac.dll      + bass_aac.dll
+#   osx-x64    -> libbass.dylib + libbassmix.dylib + libbass_fx.dylib + libbassflac.dylib + libbass_aac.dylib
+#   osx-arm64  -> libbass.dylib + libbassmix.dylib + libbass_fx.dylib + libbassflac.dylib + libbass_aac.dylib
+#   linux-x64  -> libbass.so    + libbassmix.so    + libbass_fx.so    + libbassflac.so    + libbass_aac.so
 #
 # BASSmix is required by the two-deck engine (TwoDeckBassEngine): the two decks feed one BASSmix
 # master channel. Without it, realtime audio (and "Add to Deck") is disabled.

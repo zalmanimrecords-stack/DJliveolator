@@ -5,3 +5,4 @@ bass|required
 bassmix|required
 bass_fx|required|z/0/
 bassflac|optional
+bass_aac|optional|z/2/

@@ -1,19 +1,20 @@
 <#
 .SYNOPSIS
-    Fetches the un4seen BASS native libraries — core BASS, the BASSmix add-on, the BASS_FX add-on, and
-    the BASSFLAC add-on — for the current (or a specified) platform into runtimes/<rid>/native/, where
-    the App build step picks them up. BASSFLAC is optional (FLAC decode for playback + waveform); core,
-    BASSmix, and BASS_FX are required (the realtime two-deck engine wraps every deck in a BASS_FX tempo
-    stream for key-lock, so a missing bass_fx aborts every track load).
+    Fetches the un4seen BASS native libraries - core BASS, the BASSmix add-on, the BASS_FX add-on, and
+    the BASSFLAC + BASS_AAC decode add-ons - for the current (or a specified) platform into
+    runtimes/<rid>/native/, where the App build step picks them up. The two decode add-ons are optional
+    (FLAC and AAC/M4A/MP4 for playback, waveform and the offline render); core, BASSmix, and BASS_FX are
+    required (the realtime two-deck engine wraps every deck in a BASS_FX tempo stream for key-lock, so a
+    missing bass_fx aborts every track load).
 
 .DESCRIPTION
     BASS ships as per-platform zips from un4seen.com. This script downloads the right
     archives, extracts only the native libraries we need, and places them under
     runtimes/<rid>/native/ using the canonical names ManagedBass probes for:
-      win-x64    -> bass.dll      + bassmix.dll      + bassflac.dll
-      osx-x64    -> libbass.dylib + libbassmix.dylib + libbassflac.dylib  (universal: arm64 + x64)
-      osx-arm64  -> libbass.dylib + libbassmix.dylib + libbassflac.dylib
-      linux-x64  -> libbass.so    + libbassmix.so    + libbassflac.so
+      win-x64    -> bass.dll      + bassmix.dll      + bass_fx.dll      + bassflac.dll      + bass_aac.dll
+      osx-x64    -> libbass.dylib + libbassmix.dylib + libbass_fx.dylib + libbassflac.dylib + libbass_aac.dylib  (universal: arm64 + x64)
+      osx-arm64  -> libbass.dylib + libbassmix.dylib + libbass_fx.dylib + libbassflac.dylib + libbass_aac.dylib
+      linux-x64  -> libbass.so    + libbassmix.so    + libbass_fx.so    + libbassflac.so    + libbass_aac.so
 
     BASSmix is required by the two-deck engine (TwoDeckBassEngine): the two decks feed one
     BASSmix master channel. Without it, realtime audio (and "Add to Deck") is disabled.
@@ -64,10 +65,15 @@ $ridPlan = switch ($Rid) {
     'linux-x64' { @{ Suffix = '-linux'; Ext = 'so';    Prefix = 'lib'; PreferDir = 'x86_64' } }
 }
 
-# The libraries to fetch: core BASS + the BASSmix add-on (the two-deck master mixer) + the BASSFLAC
-# add-on (FLAC decode for both realtime playback and the offline waveform/analysis; without it FLAC
-# tracks neither play nor draw a waveform). Add-ons are optional — a fetch failure for one is logged
-# and does not abort the others.
+# The libraries to fetch: core BASS + the BASSmix add-on (the two-deck master mixer) + the BASSFLAC and
+# BASS_AAC decode add-ons (FLAC and AAC/M4A/MP4 for realtime playback, the offline waveform/analysis
+# and the STUDIO render; without them those tracks neither play nor draw a waveform, and the offline
+# renderer degrades an unwarped clip to the mono managed decoder). Optional add-ons are tolerated - a
+# fetch failure for one is logged and does not abort the others.
+#
+# BASS_AAC is NOT un4seen's own code and NOT under the BASS licence: it is a third-party FAAD2-based
+# add-on distributed under the GPL, and AAC carries separate patent licensing. See
+# THIRD-PARTY-NOTICES.txt before shipping a build that bundles it.
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $destDir = Join-Path $repoRoot "runtimes/$Rid/native"
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null

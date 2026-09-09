@@ -24,6 +24,12 @@
     <ProjectReference Include="..\..\src\Liveolator.Audio\Liveolator.Audio.csproj" />
   </ItemGroup>
 
+  <!-- A real stereo AAC file (left = 440 Hz, right = silence) for BassAacNativeSmokeTests: proving the
+       m4a path decodes in stereo needs an actual AAC bitstream, which cannot be synthesised in-test. -->
+  <ItemGroup>
+    <None Include="Assets\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Without the natives in bin, BassFxNativeSmokeTests can only take its skip path — a permanent
        green that never checks bass_fx ships. No-op on a checkout that has not run scripts/fetch-bass. -->
   <Import Project="..\..\src\Bass.Native.targets" />
