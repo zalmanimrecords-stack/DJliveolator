@@ -2,7 +2,7 @@
 
 - **Purpose:** proposed structural treatments for the hotspots. References [10](./10-business-logic-hotspots.md) rather than re-analysing it.
 - **Scope:** code structure and testability. Product, security and delivery items are in [14](./14-final-improvement-report.md).
-- **Last validated:** 2026-08-02 (against commit `6a32b80` plus the changes recorded below)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for the items marked verified against the code; Medium for the remaining proposals.
 - **Related:** [hotspots](./10-business-logic-hotspots.md) · [domains](./02-core-domains.md)
 
@@ -90,7 +90,7 @@ finding below.
 
 ### 6. Continue splitting `LibrariesViewModel` — revised
 
-*Problem:* still 1921 lines after the extraction above.
+*Problem:* still 1928 lines at `b809ec7`.
 *What the first attempt learned:* the obvious cut — lifting the Library Doctor UI concern into its own
 view model — is a bad trade. That concern shares `IsScanning`/`IsAutoCueing` busy state, the
 `ScanStatus` line, the `Folders` collection and `RefreshRows()` with the scan concern. A sub-view-model
@@ -121,6 +121,49 @@ issues; nothing applies a repair plan.
 *Treatment:* either wire the repair flow up or delete the scaffolding — dead code that looks like a
 safety mechanism is worse than absent code, because it reads as though repairs are guarded.
 *Decide first:* whether library repair is a feature ([14](./14-final-improvement-report.md)).
+
+### 9. Switch the remaining `System.IO.Path` calls in Core to `PortablePath`
+
+*Evidence:* eleven call sites in `Liveolator.Core` still use `System.IO.Path` on paths that came out
+of the catalog, where the project rule is `PortablePath` — a catalog scanned on Windows has to open
+on macOS, and `Path.GetFileName("C:\\a\\b.mp3")` returns the whole string there. Two of the eleven
+need a `PortablePath.GetExtension` that does not exist yet.
+*Treatment:* add the helper with tests, then swap the call sites. `Path.Combine` and anything
+building a path for the local filesystem stays as it is.
+*Risk:* low — mechanical, and the macOS CI leg exercises it.
+*Tracked as:* GitHub issue #8.
+
+### 10. Add a CI guard for that rule
+
+*Evidence:* nothing prevents a new `Path.GetFileName` from being added back into Core. The rule lives
+in `CLAUDE.md` and in reviewers' heads; `.github/workflows/ci.yml` only restores, builds and tests.
+*Treatment:* a text check on `ubuntu-latest` that fails on the `System.IO.Path` filename helpers
+inside `src/Liveolator.Core`, excluding `PortablePath.cs` itself. A few lines of `grep`, not a
+linting framework.
+*Depends on:* item 9 landing first, or the guard fails on the existing call sites.
+*Tracked as:* GitHub issue #9.
+
+### 11. Clear the High-severity transitive dependency advisories
+
+*Evidence:* `dotnet list Liveolator.sln package --vulnerable --include-transitive` reports five:
+`System.Net.Http` 4.3.0, `System.Text.RegularExpressions` 4.3.0, `System.Text.Json` 8.0.0,
+`SQLitePCLRaw.lib.e_sqlite3` 2.1.6 and `Tmds.DBus.Protocol` 0.20.0. None arrived with a feature; they
+have simply never been swept.
+*Treatment:* bump the direct package that pulls each one where a parent bump exists, pin directly
+where none does. Stay on `net8.0` and keep an Avalonia minor-version bump out of a security sweep.
+*Risk:* medium — it touches every project file, so the whole suite on both CI legs is the gate.
+*Tracked as:* GitHub issue #11.
+
+### 12. Watch `MusicLibrary` for a split
+
+*Evidence:* it grew 37% in this period, 486 to 664 lines ([10](./10-business-logic-hotspots.md)),
+while remaining the owner of scan orchestration, filesystem identity, manual-analysis protection and
+persistence.
+*Treatment:* none yet — the growth is cohesive and the rules it gained are correct and tested. Recorded
+so the next refresh checks whether the seams inside it have become obvious rather than discovering the
+file at 900 lines.
+*Do not act on this without a concrete seam;* splitting a hotspot for its line count alone is how the
+scan invariants get spread across files that each look reasonable.
 
 ## Deliberately not recommended
 

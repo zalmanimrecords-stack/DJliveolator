@@ -2,7 +2,7 @@
 
 - **Purpose:** opportunities and gaps, classified by how much evidence stands behind each. Nothing here describes current behaviour; nothing here has been implemented.
 - **Scope:** product, security, operations and delivery. Code-structure work is in [15](./15-refactor-recommendations.md).
-- **Last validated:** 2026-08-02 (against commit `6a32b80`; items 5 and 10 revised after code verification)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** the classification of each item states its own evidence base.
 - **Related:** [UI coverage](./06-ui-feature-coverage.md) · [open questions](./11-open-questions-and-assumptions.md) · [hotspots](./10-business-logic-hotspots.md)
 
@@ -91,6 +91,23 @@ rolling log. *Priority:* medium.
 changes observable behaviour, so [06](./06-ui-feature-coverage.md) and
 [03](./03-business-entities-and-rules.md) do not drift into the state the archived reviews reached.
 *Priority:* low, but cheap.
+
+## Improvements identified on 2026-09-11
+
+- **Give the DJ set builder a surface.** 1,813 lines of set arrangement, tempo policy, join planning
+  and join auditing are reachable only through MCP. The people who would judge the result — DJs —
+  cannot invoke it, and the caller who can invoke it cannot hear the output. Even a minimal STUDIO
+  panel that builds from the current library selection and plays the previews would close the loop.
+  Question 19 in [11](./11-open-questions-and-assumptions.md).
+- **Report the loudness decision back.** Every clip is gained toward `TargetLufs`, but nothing tells
+  the caller what gain was applied or how much headroom is left, so a set of quieter material can be
+  pushed toward a dance-music target with no signal that it happened. Question 20 in
+  [11](./11-open-questions-and-assumptions.md).
+- **State the catalog schema floor.** Behaviour now depends on which analyzer version last touched a
+  track: the phase-sync gate treats a pre-v12 row as unknown, and structure detection arrived later
+  still. A stated floor, plus a visible "re-analysis needed" count, would turn a silent capability
+  difference into a task the user can act on. Question 21 in
+  [11](./11-open-questions-and-assumptions.md).
 
 ## Speculative feature ideas
 

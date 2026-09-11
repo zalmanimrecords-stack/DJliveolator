@@ -3,7 +3,7 @@
 - **Purpose:** the audit trail of the consolidation — every documentation file, what happened to it, and where its content went.
 - **Scope:** every markdown file in the repository outside this canonical directory.
 - **Source of truth:** the files themselves; this document records decisions about them, never their content.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for status and destination; the design documents were classified from their own status banners and purpose sections rather than a line-by-line re-verification, and are labelled accordingly.
 - **Related:** [context](./00-project-context.md) · [open questions](./11-open-questions-and-assumptions.md)
 
@@ -117,7 +117,7 @@ Their archived paths, all under `docs/archive/` and covered by
 | `.claude/skills/**/SKILL.md`, `.agents/skills/**/SKILL.md` | Workflow skills | `Maintained adapter` | Six seam skills plus `code-alignment`, `dj-software-auditor`, `system-gap-review`; workflow only, no project narrative |
 | `.claude/agents/qa-engineer.md` | Sub-agent definition | `Maintained adapter` | Tooling, not documentation |
 | `.claude/skills/dj-software-auditor/agents/claude.md` and its `references/*.md` (`competitor-comparison-guide.md`, `dj-software-feature-map.md`, `dj-workflow-principles.md`, `launch-readiness-checklist.md`, `qa-test-scenarios.md`) | That skill | `Maintained adapter` | Skill-internal reference material |
-| `.claude/worktrees/**` | Throwaway agent worktrees | `Duplicate` | Copies of tracked files; not maintained and not inventoried individually |
+| `.claude/worktrees/**` | Throwaway agent worktrees | `Duplicate` | Untracked and git-ignored (`.gitignore:58`): whole-tree copies made per agent run, deleted with the worktree. Not repository documentation, so they are not inventoried individually — the hygiene script walks the filesystem rather than the git index and reports them as `not-inventoried`, which is expected here |
 
 ## Other repository markdown
 
@@ -129,9 +129,44 @@ Their archived paths, all under `docs/archive/` and covered by
 | `tests/corpus/README.md` | Test-audio corpus notes | `Canonical` | Unchanged |
 | `website/README.md`, `website/DEPLOY.md`, `website/RELEASE_NOTES_NEXT.md` | Marketing site and its deployment | `Canonical` | Separate deliverable, outside the product runtime |
 | `marketing/brand-brief.md`, `content-plan-week1.md`, `launch-email.md`, `launch-post.md`, `marketing-manager.agent.md` | Marketing collateral | `Canonical` | Not product documentation |
+| `marketing/post-0.9.0-open-source.md`, `marketing/gh-discussion-0.9.0.md` | Release announcement copy for the 0.9.0 open-source push (2026-09-11) | `Canonical` | Not product documentation; every claim traces to `website/src/data/changelog.json` |
+| `docs/mcp-connect-guide.md` | How an external agent connects to the MCP server | `Canonical` | Kept in place, linked from [05](./05-integrations-and-side-effects.md); a third-party how-to, not a business-logic fact |
 | `orchestration/README.md`, `OWNERSHIP.md`, `TASKS.md` | Multi-agent worktree coordination (git-ignored) | `Maintained adapter` | Working state, not documentation |
 | `artifacts/codex-brief-hardware-controls.md` | One-off agent brief (git-ignored) | `Historical` | Left in a git-ignored directory |
 | `THIRD-PARTY-NOTICES.txt`, `LICENSE`, `LICENSE-EXCEPTION.txt` | Legal | `Canonical` | Required; never archived |
+
+## Refresh log
+
+### 2026-09-11 — refresh against `b809ec7`
+
+Seventy-two commits and 139 changed source files since the previous validation at `6a32b80`, covering
+releases 0.7.0, 0.7.1, 0.8.0 and 0.9.0. No document was created or retired; fourteen were
+re-validated and updated (plus `08`, listed below).
+
+| Document | What changed |
+| --- | --- |
+| `00` | Stale crossfader invariant corrected; set building added to the flow list; open-question count restated (14 -> 21) |
+| `01` | Deck count rewritten — the in-flight C/D removal landed in `9734782`; MCP tool count 22 -> 30; Core file count 389 -> 416 |
+| `02` | New `DJ set building` domain row; analysis row extended with in-process structure detection; agent-only observation added |
+| `03` | Mixer rule corrected to two slots; set-building entities and rules added; beat-grid confidence and sync rules added; manual-analysis protection upgraded from `Needs validation` to `Verified` |
+| `04` | New flow: build a DJ set and export a continuous mix; sync flow gains the confidence gate |
+| `05` | Agent surface 22 -> 30 tools as a grouped table; the ffmpeg-stdin deadlock recorded; continuous-mix export added to material side effects |
+| `06` | Hidden-deck coverage gap closed; replaced by the agent-only set-builder gap |
+| `07` | This log; `docs/mcp-connect-guide.md` and the 0.9.0 marketing copy inventoried |
+| `10` | Remeasured at `b809ec7`; `Core/Studio/Set` added as a hotspot; `MusicLibrary` growth noted |
+| `11` | Item 9 closed; item 13 narrowed; items 19–22 added |
+| `12` | Deck definition corrected; phrase, warp, travelling tempo, join and grid confidence defined |
+| `13` | Restated against the current set |
+| `14`, `15` | New items from this pass, cross-referenced to their tracking issues |
+
+`09-permissions-and-roles.md` was reviewed and left unchanged: nothing in the delta touches roles,
+trust or enforcement points. Its `Last validated` stamp is therefore still `2026-08-01`, which is
+accurate rather than stale.
+
+`08-state-machines-and-lifecycles.md` needed two changes and was restamped: the sync machine's
+phase-following transitions are now gated on both decks' grid confidence, and two transitions out of
+a good track analysis (failure, and an unreachable file) were closed. A DJ set plan is a produced
+artefact rather than a lifecycle, so it gains no entry there.
 
 ## Cleanup log
 

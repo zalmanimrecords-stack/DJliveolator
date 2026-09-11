@@ -3,7 +3,7 @@
 - **Purpose:** which implemented capabilities a user can actually reach, and which exist only in code.
 - **Scope:** the Avalonia shell (`src/Liveolator.App`), the built-in controller profiles, and the MCP tool surface.
 - **Source of truth:** `src/Liveolator.App/Shell/MainWindowViewModel.cs`, `src/Liveolator.App/Features/**`, `src/Liveolator.Core/Mapping/Profiles/**`, `src/Liveolator.Core/Actions/PerformanceActionKind.cs`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for the shell surfaces and the action-kind reachability analysis; Medium for anything requiring a device to become visible.
 - **Related:** [flows](./04-critical-flows.md) · [domains](./02-core-domains.md) · [improvements](./14-final-improvement-report.md)
 
@@ -32,6 +32,10 @@ SETTINGS tab (`SettingsView.axaml` hosts `MappingsView`), not a tab of its own. 
 terms of use, track editor, playlist builder, folder status, update available, confirmation.
 
 ## Coverage matrix
+
+`Full` is reachable and complete; `Internal only` means the implementation exists but no supported
+user path reaches it; `Agent only` means the sole caller is an external AI client over MCP, so the
+capability ships but no person can invoke it from the product.
 
 | Feature | Domain | Implementation | Entry point | UI surface | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -74,7 +78,7 @@ terms of use, track editor, playlist builder, folder status, update available, c
 | Quantize toggle | Decks | `DeckActionHandler` | `DeckQuantizeToggle` | none | `Internal only` | as above |
 | Library Doctor health scan | Library | `LibraryHealthScanner`, `LibraryDoctor` | health-scan command | LIBRARIES → folders/status window | `Full` | `ScanHealthCommand`, `FoldersStatusWindow.axaml` |
 | Library repair (apply a repair plan) | Library | `LibraryDoctor.Preview`, `LibraryRepairPlan`, `LibraryReferenceRewriter` | none | none | `Internal only` | no call site in `src`; the rewriter is registered in `ServiceConfig` but never resolved |
-| Hidden STUDIO deck slots C and D | Decks, Studio | `MixerState.DeckCount` = 4, addressed by `TwoDeckBassEngine` and `MixPlan` | slots 2 and 3 | none | `Internal only` | `StudioViewModel` builds two lanes; nothing creates a clip on C or D — and an in-flight change removes the slots entirely ([01](./01-system-overview.md)) |
+| DJ set builder and continuous-mix export | Studio, Library | `Core/Studio/Set` (15 files) and `DjSetTools` | `build_dj_set`, `render_set_preview`, `export_set_mix` | none | `Agent only` | The largest capability added since the previous pass is reachable from MCP alone; no STUDIO surface builds, auditions or exports a set ([04](./04-critical-flows.md)) |
 | MCP agent tools | Agent interface | `Liveolator.Mcp` | stdio | no in-app UI by design | `API only` | 22 attributed tools |
 
 ## Called out explicitly

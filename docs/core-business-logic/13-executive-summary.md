@@ -2,7 +2,7 @@
 
 - **Purpose:** what a decision-maker with five minutes and no code access needs to know.
 - **Scope:** the whole product.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for what is built; Medium for readiness, which depends on hardware and distribution work that cannot be verified from source.
 - **Related:** [context](./00-project-context.md) · [UI coverage](./06-ui-feature-coverage.md) · [improvements](./14-final-improvement-report.md)
 
@@ -47,11 +47,13 @@ authoritative.
 
 ## UI coverage health
 
-Most of what is built is reachable. Three gaps stand out. An entire subsystem — the autopilot rule
+Most of what is built is reachable. Four gaps stand out. An entire subsystem — the autopilot rule
 engine, complete with its own saved format — has no way to run. Visual scenes, one of the product's
-headline concepts, can be played but not authored inside the product. And fourteen performance
-commands have working implementations that no button, no shipped controller mapping and no mapping
-target can reach, including the effects rack's load, remove and bypass controls.
+headline concepts, can be played but not authored inside the product. The DJ set builder, the largest
+capability added in the last quarter, can be driven only by an external AI agent and has no screen at
+all. And fourteen performance commands have working implementations that no button, no shipped
+controller mapping and no mapping target can reach, including the effects rack's load, remove and
+bypass controls.
 
 ## Main risks
 

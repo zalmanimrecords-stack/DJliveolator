@@ -3,7 +3,7 @@
 - **Purpose:** everything the product reaches outside its own process, and everything it writes.
 - **Scope:** native bindings, external processes and services, on-disk stores, and the agent-facing interface.
 - **Source of truth:** `src/Liveolator.Audio/**`, `.Midi`, `.Visuals`, `.Online`, `.Media`, `src/Liveolator.Mcp/**`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for the adapters present in code; runtime availability is configuration-dependent throughout.
 - **Related:** [flows](./04-critical-flows.md) · [permissions and trust](./09-permissions-and-roles.md) · [hotspots](./10-business-logic-hotspots.md)
 
@@ -72,7 +72,8 @@ confirmation at every entry point:
 
 - **Recording** (`MasterRecordToggle` → `IMasterRecorder`) writes a WAV capture of the post-limiter
   master.
-- **Offline render** writes a mixed-down file from a `MixPlan`.
+- **Offline render** writes a mixed-down file from a `MixPlan`, and the streaming continuous-mix
+  export writes a whole set to one file.
 - **Library repair and relocation** (`LibraryDoctor`, `LibraryReferenceRewriter`) can rewrite catalog
   references and, where explicitly requested, remove files.
 - **Extension installation** writes package content plus registry and trust state.
@@ -84,10 +85,25 @@ before a destructive step. Item in [11](./11-open-questions-and-assumptions.md),
 
 ## Agent surface
 
-`Liveolator.Mcp` exposes 22 attributed tools over stdio, grouped as library (`scan_music_folders`,
-`list_tracks`, `get_track`, `get_catalog_stats`, `reanalyze_track`, `reanalyze_pending_tracks`,
-`import_library`), search (`find_tracks`), analysis (`analyze_track`), harmonic (`harmonic_matches`,
-`compatible_keys`), playlist (`build_harmonic_playlist`, `export_playlist`), enrichment
-(`lookup_track_online`), visuals (`scan_visual_folders`, `list_visuals`, `get_visual`,
-`get_visual_preset_spec`, `create_visual_preset`, `list_visual_presets`) and control skins
-(`get_control_skin_spec`, `create_control_skin`, `list_control_skins`).
+`Liveolator.Mcp` exposes **30** attributed tools over stdio (`src/Liveolator.Mcp/Tools/*.cs`),
+grouped as:
+
+| Group | Tools |
+| --- | --- |
+| Library | `scan_music_folders`, `list_tracks`, `get_track`, `get_catalog_stats`, `reanalyze_track`, `reanalyze_pending_tracks`, `set_track_analysis`, `import_library` |
+| Search | `find_tracks` |
+| Analysis | `analyze_track`, `measure_catalog_loudness` |
+| Harmonic | `harmonic_matches`, `compatible_keys` |
+| Playlist | `build_harmonic_playlist`, `export_playlist` |
+| DJ sets | `build_dj_set`, `get_dj_set`, `list_dj_sets`, `render_set_preview`, `export_set_mix` |
+| Enrichment | `lookup_track_online` |
+| Visuals | `scan_visual_folders`, `list_visuals`, `get_visual`, `get_visual_preset_spec`, `create_visual_preset`, `list_visual_presets` |
+| Control skins | `get_control_skin_spec`, `create_control_skin`, `list_control_skins` |
+
+The DJ-set group is the only one that writes a `StudioProject` and renders audio; the flow and its
+gates are in [04](./04-critical-flows.md). A connection guide for agent authors lives at
+[`docs/mcp-connect-guide.md`](../mcp-connect-guide.md).
+
+**A child process must never inherit the server's stdin.** `FfmpegAudioDecoder` handed the spawned
+ffmpeg the stdio server's JSON-RPC stdin, which deadlocked `scan_music_folders` at 0% CPU. Fixed in
+`3611ad6`; the App's own library scan was never affected.

@@ -3,7 +3,7 @@
 - **Purpose:** the one definition of each recurring term. Terminology in every other document in this set matches this file.
 - **Scope:** business and technical terms that appear across the documentation or the code.
 - **Source of truth:** the types named in each row.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High.
 - **Related:** [entities](./03-business-entities-and-rules.md) · [domains](./02-core-domains.md)
 
@@ -17,7 +17,12 @@
 | Beat clock | The source of BPM, beat and bar phase, confidence and lock state | `BeatClockState` |
 | Timeline | The shared, Ableton-Link-style musical time every domain reads | `IBeatTimeline` |
 | Quantisation | Deferring an operation to a musical beat or bar boundary | `Quantize`, `IBeatScheduler` |
-| Deck | An independent playback slot. A = 0 and B = 1 are the live decks; C = 2 and D = 3 are hidden STUDIO slots the UI never populates | `MixerState`, `TwoDeckBassEngine` |
+| Deck | An independent playback slot. There are exactly two: A = 0 and B = 1, both blended by the crossfader | `MixerState`, `TwoDeckBassEngine` |
+| Phrase | 16 bars — the unit dance music is written in, and the grid every set mix point is quantized to | `SetBuildOptions.PhraseBars` |
+| Warp | Time-stretching a clip to reach the set tempo, expressed as a percentage and capped per build | `SetBuildOptions.MaxWarpPercent` |
+| Travelling tempo | A set tempo that walks between records instead of holding one value, moving only while a record plays alone | `SetTempoRamp` |
+| Join | One planned crossfade between two consecutive records in a set, with its anchors and automation | `SetTransition`, `SetJoinAudit` |
+| Grid confidence | The analyzer's separate verdicts on whether a track's tempo and its beat phase can be trusted | `GridConfidence` |
 | Cue | A saved or computed position in a track. Distinct from the headphone cue bus | `HotCue`, `CueBusState` |
 | Headphone cue (PFL) | Pre-fader listening: the deck sent to the headphones regardless of the crossfader | `CueMixMath` |
 | Sync lock | Tempo, and optionally phase, alignment between a deck and the reference | `SyncLockState`, `SyncMode` |

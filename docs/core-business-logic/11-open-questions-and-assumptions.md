@@ -3,7 +3,7 @@
 - **Purpose:** the work queue of everything this documentation could not resolve from code, ordered by impact. An item leaves this document when it is answered and the answer moves into its owner.
 - **Scope:** contradictions, unenforced rules, runtime-sensitive behaviour and product decisions.
 - **Source of truth:** the code that was read, and the places where it was silent.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** every item here is deliberately uncertain and labelled.
 - **Related:** [rules](./03-business-entities-and-rules.md) · [UI coverage](./06-ui-feature-coverage.md) · [permissions](./09-permissions-and-roles.md)
 
@@ -42,9 +42,11 @@
 8. **What happens when the app and the MCP process touch the same catalog concurrently?**
    `Needs validation`. Both open the same stores. No transaction or cross-process locking policy was
    found. *Evidence needed:* a concurrency test, or an explicit single-writer rule.
-9. **Is the manual-beat-grid protection rule actually enforced?** `Needs validation`. The rule is
-   stated in `docs/13-data-and-persistence.md` and a manual flag exists on the grid, but the
-   enforcement point in the reanalysis path was not re-proved in this pass.
+9. ~~**Is the manual-beat-grid protection rule actually enforced?**~~ **Closed 2026-09-11.**
+   It is. `MusicTrack.AnalysisIsManual` gates the reanalysis path in `MusicLibrary` and
+   `CatalogReanalysisService`, a failed analysis never replaces a good one, and
+   `CatalogReanalysisServiceTests` covers both. The rule moved to
+   [03](./03-business-entities-and-rules.md).
 10. **Do the HTTP integrations have retry, timeout and idempotency policies?** `Needs validation`.
     None were confirmed for AcoustID, the BPM provider or the update manifest fetch.
 11. **Are API keys and provider responses kept out of the log file?** `Needs validation`.
@@ -57,9 +59,11 @@
 
 ## Runtime behaviour that only hardware can settle
 
-13. **Sync timing.** `Needs validation`. The phase-lock loop is implemented and the state machine is
-    explicit, but "does it beat-match like professional software" is a listening test.
-    `docs/SYNC-BEHAVIOR-SPEC.md` proposes the contract and acceptance tests; it is not implemented.
+13. **Sync timing.** `Needs validation`. The grid-confidence gate that
+    `docs/SYNC-BEHAVIOR-SPEC.md` called for now exists and is two-sided
+    ([03](./03-business-entities-and-rules.md)), so the spec's largest gap is closed. What remains is
+    unchanged: "does it beat-match like professional software" is a listening test, and the spec's
+    acceptance tests are still not implemented.
 14. **Native device latency, LED feedback and GL behaviour.** `Needs validation` — pure Core rules
     cannot guarantee any of it.
 15. **Is `DjView.axaml` genuinely dead?** `Needs validation`. No view references it and it is not a
@@ -75,6 +79,24 @@
     projects as third-party ecosystems grow.
 18. **Will MCP remain local stdio only?** `Unclear from code`. The answer changes the security
     requirements in [09](./09-permissions-and-roles.md) completely.
+
+## Opened by the 2026-09-11 refresh
+
+19. **Should the DJ set builder have a UI?** `Unclear from code`. `Core/Studio/Set` is 1,813 lines
+    reachable only from MCP — the largest capability in the product with no surface at all. A DJ
+    without an agent cannot use any of it, and the agent that can cannot hear what it produced.
+    *Who can answer:* product. Coverage row in [06](./06-ui-feature-coverage.md).
+20. **Is `TargetLufs = -9` right for every set, or only for dance music?** `Assumption`. The default
+    is justified in `SetBuildOptions` for masters sitting around −8 to −6. Nothing stops a set of
+    quieter material being gained toward a target that does not suit it, and no tool reports the
+    resulting headroom. *Evidence needed:* a measured pass over a mixed-genre catalog.
+21. **What is the supported catalog schema floor?** `Needs validation`. The phase-sync gate treats a
+    pre-v12 row as unknown and the structure detector was added at a later analyzer version, so
+    behaviour now depends on which analyzer version last touched a track. No document states which
+    catalog versions are supported or when a forced re-analysis becomes mandatory.
+22. **Five High-severity transitive dependency advisories are unaddressed.** `Verified` as present
+    via `dotnet list package --vulnerable --include-transitive`; the decision to bump is open.
+    Tracked as GitHub issue #11; treatment in [15](./15-refactor-recommendations.md).
 
 ## Assumptions this documentation makes
 

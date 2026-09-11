@@ -3,7 +3,7 @@
 - **Purpose:** the entry point for a developer or AI agent joining this repository. Summaries and links only.
 - **Scope:** the whole repository.
 - **Source of truth:** `src/**`, `tests/**`, `.github/workflows/ci.yml`, `scripts/**`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for structure, commands and entry points; Medium for anything requiring native devices at runtime.
 - **Related:** [overview](./01-system-overview.md) · [domains](./02-core-domains.md) · [UI coverage](./06-ui-feature-coverage.md) · [open questions](./11-open-questions-and-assumptions.md)
 
@@ -39,7 +39,8 @@ account or role model — see [09 — permissions and roles](./09-permissions-an
 
 - Desktop: `src/Liveolator.App/Program.cs` → `App.axaml.cs` → `Composition/ServiceConfig.cs` (the
   single DI root) → `Shell/MainWindow.axaml`.
-- Agent: `src/Liveolator.Mcp/Program.cs` (stdio).
+- Agent: `src/Liveolator.Mcp/Program.cs` (stdio), 30 tools; connection guide in
+  [`docs/mcp-connect-guide.md`](../mcp-connect-guide.md).
 - Shell tabs: LIVE · DJ PRO · STUDIO · VJ · LIBRARIES · ADDONS · SETTINGS
   (`Shell/MainWindowViewModel.cs`). MIDI mapping lives inside the SETTINGS tab, not its own tab.
 
@@ -68,13 +69,13 @@ Each is defined once, in [03 — business entities and rules](./03-business-enti
 - Reanalysis never overwrites a manual beat grid or manual metadata unless overwrite is requested.
 - An extension package activates only after path, hash, signature, dependency and trust checks pass.
 - An update is offered only for a strictly newer, non-skipped, parseable version.
-- Only deck slots A and B are blended by the crossfader; higher slots bypass it.
+- There are exactly two deck slots, A and B, and the crossfader blends both.
 
 ## Critical flows
 
 Controller input to engine · library scan and analyse · load or queue a track · deck synchronisation ·
-studio playback and offline render · first-launch terms acceptance · startup update check. Steps and
-failure behaviour: [04 — critical flows](./04-critical-flows.md).
+studio playback and offline render · DJ set building and continuous-mix export · first-launch terms
+acceptance · startup update check. Steps and failure behaviour: [04 — critical flows](./04-critical-flows.md).
 
 ## State models
 
@@ -127,15 +128,16 @@ business rules testable without hardware, and it is enforced by convention and b
 
 ## Known limitations
 
-Windows is the only packaged platform. Autopilot and visual scene authoring have no UI. The
-mapping-learn target list is a fixed subset of the action vocabulary. Full list with evidence:
+Windows is the only packaged platform. Autopilot and visual scene authoring have no UI, and the DJ
+set builder is reachable from MCP only. The mapping-learn target list is a fixed subset of the
+action vocabulary. Full list with evidence:
 [06 — UI feature coverage](./06-ui-feature-coverage.md).
 
 ## Open questions
 
-Fourteen items currently need a human answer, led by macOS support scope, concurrent catalog access
-between the app and the MCP process, and the retention policy for paths, fingerprints and
-recordings: [11](./11-open-questions-and-assumptions.md).
+Twenty-one items currently need a human answer, led by whether the DJ set builder should have a UI,
+macOS support scope, concurrent catalog access between the app and the MCP process, and the
+retention policy for paths, fingerprints and recordings: [11](./11-open-questions-and-assumptions.md).
 
 ## The rest of the set
 

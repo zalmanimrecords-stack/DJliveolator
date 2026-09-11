@@ -3,7 +3,7 @@
 - **Purpose:** the domain boundaries, what each owns, and how they depend on one another.
 - **Scope:** `Liveolator.Core` domain folders and their principal application, persistence, native and MCP consumers.
 - **Source of truth:** `src/Liveolator.Core/**`, `src/Liveolator.App/Composition/ServiceConfig.cs`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High — boundaries are explicit in namespaces, seam interfaces, handler ownership and tests.
 - **Related:** [overview](./01-system-overview.md) · [entities and rules](./03-business-entities-and-rules.md) · [hotspots](./10-business-logic-hotspots.md)
 
@@ -15,11 +15,12 @@
 | Beat and synchronisation | Tempo, beat and bar phase, tap, lock, quantised scheduling, the shared timeline | `Core/Beat`, `Core/Audio/Sync` | Audio frames, deck state | Decks, visuals, playlist |
 | Decks | Playback intent, cue and hot cues, loops, jog and bend, key lock, sync | `Core/Audio` | Actions | `IDeckEngine` in `Liveolator.Audio` |
 | Mixer | Crossfade, per-channel gain, three-band EQ, filter, cue bus, master limiter | `Core/Mixer` | Actions | `IMixer` in `Liveolator.Audio` |
-| Library and analysis | Scan, classify, query, analyse, repair, relocate and import media | `Core/Library`, `Core/Analysis` | UI, MCP | Decoders, metadata readers, catalog store |
+| Library and analysis | Scan, classify, query, analyse, repair, relocate and import media; tempo, beat grid, key, cues, loudness and song structure | `Core/Library`, `Core/Analysis` (including in-process structure detection in `Analysis/Structure`) | UI, MCP | Decoders, metadata readers, catalog store |
 | Playlist and harmonic planning | Per-deck Now/Next/Later queues and compatible ordered sets | `Core/Playlist` | Actions, UI, MCP | Beat scheduler, deck loader |
 | Visual performance | Banks, scenes, layers, macros, effects, generators, track-linked cues | `Core/Visuals` | Actions, beat clock | GL and media adapters |
 | Autopilot | Evaluates triggers, conditions, cooldowns and override policy, then emits actions | `Core/Autopilot` | A tick context supplied by a host | Dispatcher |
 | Studio | Timeline clips, automation lanes, tempo curves, render planning | `Core/Studio` | UI timeline, host clock | Dispatcher, offline renderer |
+| DJ set building | Arrange a catalog pool into a beat-matched, level-matched set: tempo policy, phrase-quantized joins, join auditing and truthful rejection | `Core/Studio/Set` (15 files, 1,813 lines) | MCP `build_dj_set` | Harmonic planner, analysis, studio project store, offline renderer |
 | Extensions and skins | Validate, trust, install, enable and load packaged capabilities | `Core/Extensions`, `Core/Skins` | Settings, UI | File and signature infrastructure |
 | Persistence, settings, update | Store authored and live state; decide whether to offer an update | `Core/Persistence`, `Core/Settings`, `Core/Update` | Every domain | `Liveolator.Media`, `Liveolator.Online` |
 | Agent interface | Expose selected library, analysis, harmonic, playlist and visual use cases | `src/Liveolator.Mcp` | External AI client | Core services and shared stores |
@@ -40,6 +41,9 @@ Native audio, MIDI, OpenGL, FFmpeg, filesystem and HTTP concerns are adapters, n
   the repository are persistence: `ILiveProfileStore.SaveAutopilotRuleSetAsync` /
   `LoadAutopilotRuleSetAsync` and their `LiveProfileStore` implementation. The domain is therefore
   present, persistable and unreachable at runtime. Coverage row in [06](./06-ui-feature-coverage.md).
+- **Set building is agent-only.** `Core/Studio/Set` is the largest capability added since the
+  previous pass and has no UI surface at all: `DjSetTools` over MCP is its only caller. Coverage
+  row in [06](./06-ui-feature-coverage.md).
 - **Visual scene authoring has no writer.** `ServiceConfig.LoadBanksOrStarter` reads visual banks from
   `ILiveProfileStore` and falls back to a code-built starter bank; no application code saves a
   `VisualBank`. Banks and scenes are consumed, not authored, by the product.

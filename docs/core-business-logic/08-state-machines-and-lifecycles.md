@@ -3,7 +3,7 @@
 - **Purpose:** the state a stateful entity or process can be in, and the only ways it moves between them. Every state list and transition table in this documentation set lives here.
 - **Scope:** explicit enums, transition guards, immutable state replacement and event-driven lifecycles in Core and Media.
 - **Source of truth:** `src/Liveolator.Core/**`, `src/Liveolator.Media/Extensions/**`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High where the states are an explicit enum; Medium where the lifecycle is coordinated in application composition.
 - **Related:** [entities](./03-business-entities-and-rules.md) · [flows](./04-critical-flows.md)
 
@@ -21,8 +21,16 @@ the waveform through the action-feedback value, so the ordinal is part of the co
 | `Active` or `Locked` | `OutOfRange` (4) | Tempo difference exceeds the stretch ceiling | No rate is applied; the deck holds its own tempo |
 | any | `Off` | Sync disengaged | — |
 
-`SyncMode` distinguishes tempo-only from phase-following behaviour. Exact timing is
-adapter-sensitive: `Needs validation` on real hardware.
+`SyncMode` distinguishes tempo-only from phase-following behaviour, and which of the two a
+`DeckSyncToggle` can reach is gated, not chosen: phase following requires **both** decks to report a
+trustworthy beat grid. `DeckSlot.PhaseSyncReady` defaults to false and resets to false on every load,
+so a track with no verdict yields tempo-only and the downgrade is logged with the side that closed
+it. The transitions to `Locked` and `Drifting` are therefore unreachable while either deck is not
+phase-sync ready — the machine stays at `Active` in tempo-only mode. Rule and enforcement points in
+[03](./03-business-entities-and-rules.md).
+
+Exact timing remains adapter-sensitive: `Needs validation` on real hardware
+([11](./11-open-questions-and-assumptions.md)).
 
 ## Live queue entry
 
@@ -92,6 +100,12 @@ Automation values are interpolated between keyframes rather than being states; t
 is what keeps a per-file failure from aborting a scan ([04](./04-critical-flows.md)). BPM provenance
 is a separate axis (`BpmProvenance`, [03](./03-business-entities-and-rules.md)): `LocalConfirmed` is
 terminal — once the user confirms a value it is never re-flagged as conflicted.
+
+Two transitions out of a good analysis were closed since the previous pass, so the status is now
+monotonic in the ways that matter: a **failed** run leaves the previous analysis in place instead of
+replacing it, and an **unreachable** file (a disconnected drive, an un-downloaded cloud placeholder)
+is skipped rather than marked failed and stripped of its BPM, key, cues and structure. A hand-set
+analysis (`AnalysisIsManual`) leaves the automatic path entirely until overwrite is requested.
 
 ## Lifecycle inconsistencies found
 

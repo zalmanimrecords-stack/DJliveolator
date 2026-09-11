@@ -3,7 +3,7 @@
 - **Purpose:** the end-to-end paths whose failure would be visible to a performing user or would damage user data.
 - **Scope:** paths traceable through Core, application orchestration and adapters.
 - **Source of truth:** `src/Liveolator.Core/**`, `src/Liveolator.App/**`, `src/Liveolator.Audio/**`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for sequencing; Medium for native side effects that need a device or GL context present.
 - **Related:** [rules](./03-business-entities-and-rules.md) · [side effects](./05-integrations-and-side-effects.md) · [lifecycles](./08-state-machines-and-lifecycles.md) · [UI coverage](./06-ui-feature-coverage.md)
 
@@ -89,6 +89,9 @@ silently.
 3. `DeckPitchBend` from a jog or nudge slides phase temporarily without moving the pitch fader, and is
    ignored while sync owns the rate.
 
+**Gating:** phase lock is offered only when *both* decks report a trustworthy grid; an unknown
+verdict means tempo-only, and the downgrade is logged and shown rather than applied silently
+([03](./03-business-entities-and-rules.md)).
 **State:** `SyncLockState` and `SyncMode`, defined in [08](./08-state-machines-and-lifecycles.md).
 **Confidence:** `Needs validation` — exact timing behaviour is adapter-sensitive and is only provable
 on real hardware. A proposed contract with acceptance tests exists in `docs/SYNC-BEHAVIOR-SPEC.md`;
@@ -107,6 +110,35 @@ it describes intended, not current, behaviour.
 4. Rendering instead builds a `MixPlan`, which `OfflineMixRenderer` consumes to write a file.
 
 **Side effects:** the render writes a user file under the application-data `renders` folder by default.
+
+## Build a DJ set and export a continuous mix
+
+**Objective:** turn a pool of catalogued tracks into a beat-matched arrangement an agent can audition
+and render, without the caller having to guess why anything was left out.
+**Trigger:** the MCP `build_dj_set` tool. There is no UI entry point — see
+[06](./06-ui-feature-coverage.md).
+
+1. `DjSetArranger` gates every candidate on analysis, tempo reachability, duration and grid
+   confidence, then orders the survivors harmonically ([03](./03-business-entities-and-rules.md)).
+2. The set tempo is resolved — the caller's `TempoBpm`, a travelling ramp via `SetTempoRamp`, or the
+   median of the chosen tracks — and each clip's warp is measured against `MaxWarpPercent`.
+3. `SetTransitionPlanner` places each join on the phrase grid, choosing mix-in and mix-out anchors
+   that leave both records a legal runway, and emits the fader and EQ moves as `TransitionAutomation`.
+4. `SetJoinAudit` judges each join from catalog analysis alone — phrase alignment, kick coverage, how
+   the low band behaves through the swap — so a bad join is known before anything is decoded.
+5. The result is saved as a `StudioProject` and returned with its transitions, warnings and the full
+   rejection list.
+6. `render_set_preview` renders the audio around a chosen join; `export_set_mix` streams the whole set
+   to one continuous file.
+
+**Decisions:** fixed tempo versus travelling tempo; exclude low-confidence grids or blend them short;
+how much warp to allow.
+**Failure behaviour:** the export gate judges the plan *before* rendering and refuses it with the fix
+— a clip at the wrong tempo, a clip left at unity gain, a blend clamped too short. Offline renders
+report per-window holes, so a silent stretch cannot be reported as a finished mix, and a render that
+failed never leaves its partial file presented as output.
+**Side effects:** writes a `StudioProject` to the project store and audio files to the render folder
+([05](./05-integrations-and-side-effects.md)).
 
 ## Startup update check
 

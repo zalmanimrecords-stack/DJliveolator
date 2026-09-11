@@ -3,7 +3,7 @@
 - **Purpose:** the entities the product depends on, and the invariants, validations and decision rules applied to them — with the point where each is enforced.
 - **Scope:** `Liveolator.Core` and the policy that `Liveolator.Media` enforces on installation and persistence.
 - **Source of truth:** `src/Liveolator.Core/**`, `src/Liveolator.Media/Extensions/**`, `tests/Liveolator.Core.Tests/**`.
-- **Last validated:** 2026-08-01 (against commit `6a32b80`)
+- **Last validated:** 2026-09-11 (against commit `b809ec7`)
 - **Confidence:** High for the rules cited with an enforcement point; anything else is labelled inline.
 - **Related:** [domains](./02-core-domains.md) · [flows](./04-critical-flows.md) · [lifecycles](./08-state-machines-and-lifecycles.md) · [glossary](./12-glossary.md)
 
@@ -22,6 +22,11 @@
 | `TrackVisualProgram` / `TrackVisualCue` | A timed visual programme bound to one track | Track path and fingerprint, timed cues, fallback | Resolves music time to visual source time |
 | `AutopilotRuleSet` / `AutopilotRule` | Unattended-show policy | Trigger, condition, cooldown, action, optional scene pool | Persistable; no runtime host at this commit ([02](./02-core-domains.md)) |
 | `StudioProject` / `StudioClip` / `AutomationLane` | A timeline arrangement | Name, Bpm, Clips, Automation, optional `TempoCurve` | Clips occupy deck lanes A/B; lanes produce parameter actions over project time |
+| `DjSetPlan` / `SetBuildOptions` | A whole set arranged from the catalog, and how it was asked for | Tracks, transitions, tempo, warp ceiling, target loudness, rejections | Produced by `DjSetArranger`; realised as a `StudioProject` |
+| `SetTransition` / `TransitionShape` / `TransitionAutomation` | One planned crossfade between two records | Mix-in and mix-out anchors, overlap bars, fader and EQ moves | Planned by `SetTransitionPlanner`; becomes automation on the timeline |
+| `SetJoinAudit` / `KickCoverage` | Whether a join will actually work, judged before rendering | Phrase alignment, kick coverage, low-band behaviour | Computed from catalog analysis alone, without decoding audio |
+| `RejectedCandidate` / `RejectReason` | Why a track never reached the timeline | Track, reason, needed warp | Reported per track so the caller can act rather than guess |
+| `SongStructure` / `SongSection` | Where a track's intro, builds, drops and outro sit | Bar-snapped boundaries, section labels | Detected in-process by `NoveltyStructureDetector`; feeds cues and mix points |
 | `ControllerMappingProfile` / `ControllerBinding` | The hardware-to-action contract | Name, DeviceHint, bindings (message, slot, mode, curve) | Captured by learn or imported; persisted per device |
 | `ExtensionPackage` | An installable capability | Publisher, dependencies, content, hashes, enablement | Validated then installed then enabled or removed |
 
@@ -64,17 +69,34 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
 ### Mixer and decks
 
 - **Deck output gain is channel gain times crossfader gain.** The channel gain is clamped to 0..1.
-  Only slots A (0) and B (1) take a crossfader factor; slots ≥ 2 — the hidden STUDIO decks — take
-  unity, so their level is governed purely by channel gain driven from timeline automation.
-  `MixerState.Channel` throws `ArgumentOutOfRangeException` outside `0..DeckCount-1`, which is `4` at
-  this commit. *Enforced in* `MixerMath.DeckOutputGain`, `MixerState.Channel`. `Verified` — but see
-  the in-flight reduction to two slots noted in [01](./01-system-overview.md).
+  There are exactly two slots — A (0) and B (1) — and both take a crossfader factor.
+  `MixerState.Channel` throws `ArgumentOutOfRangeException` outside `0..DeckCount-1`, where
+  `MixerState.DeckCount` is `2`. *Enforced in* `MixerMath.DeckOutputGain`, `MixerState.Channel`.
+  `Verified`. The hidden STUDIO slots C/D and their unity-crossfade branch were removed in `9734782`;
+  see [01](./01-system-overview.md).
 - **The headphone cue is pre-fader.** `CueMixMath` deliberately ignores deck output gain so the cued
   track stays at a steady level wherever the crossfader sits, and blends cue against master with an
   equal-power curve.
 - **EQ cut depth is a mixer-wide mode.** `EqCutMode` (EQ / DEEP / KILL) only changes how deep the cut
   half of each band goes; the boost half and band Q are fixed. Default is full kill.
 - *Enforced in* `MixerState`, `MixerMath`, `CueMixMath`. `Verified`.
+
+### Beat-grid confidence and sync
+
+- **Phase sync is offered only against a grid both decks can vouch for.** `GridConfidence` carries
+  `PhaseSyncReady`, `TempoTrusted` and `Analyzed` as three separate answers.
+  `DeckSlot.PhaseSyncReady` defaults to **false** and resets to false on every load, so a track with
+  no verdict — a pre-v12 catalog row, or a load through a path that supplies none — gets tempo match
+  without a phase snap. Unknown means tempo-only.
+- **The gate is two-sided.** The follower aligns onto an anchor built from the leader, so both the
+  correction loop and phase alignment require *both* decks to be phase-sync ready; a downgrade logs
+  which side closed it.
+- **Tempo trust is separate from phase trust.** A smeared kick can leave the grid unusable for phase
+  while the tempo remains sound, so a tempo downgrade is decided on `TempoTrusted`, never on
+  `PhaseSyncReady`.
+- *Enforced in* `Core/Analysis/Bpm/GridConfidence.cs`, `DeckActionHandler`
+  (`PerformanceActionKind.DeckSetPhaseSyncReady`) and the deck slot state. `Verified` as logic;
+  the audible result is a listening test ([11](./11-open-questions-and-assumptions.md)).
 
 ### Controller mapping
 
@@ -91,9 +113,18 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
   `Conflicted` when they disagree — keeping the local value and flagging it for review — and
   `LocalConfirmed` once the user confirms, which is never re-flagged. `OnlineFetched` is used only
   when local detection produced nothing. `Verified`.
-- **A manual beat grid survives reanalysis** unless overwrite is explicitly requested.
-  `Needs validation` — the rule is stated in `docs/13-data-and-persistence.md` and the grid carries a
-  manual flag, but the enforcement point was not re-proved in this pass. Item in [11](./11-open-questions-and-assumptions.md).
+- **A hand-corrected analysis survives reanalysis** unless overwrite is explicitly requested.
+  `MusicTrack.AnalysisIsManual` is the flag; a re-tag or rescan of a manual track replaces only its
+  `File` record and leaves BPM, grid, key and cues alone, and `CatalogReanalysisService` skips manual
+  tracks unless forced. *Enforced in* `MusicLibrary` (the manual-track branch) and
+  `CatalogReanalysisService`; covered by `CatalogReanalysisServiceTests`. `Verified` — this closes
+  what was open question 9.
+- **A failed analysis never replaces a good one.** Only a successful run overwrites stored analysis;
+  a failure records status and leaves the previous values intact, and a hand edit no longer discards
+  the kick positions measured from the audio. *Enforced in* `CatalogReanalysisService`. `Verified`.
+- **An unreachable file is skipped, not failed.** A disconnected drive or an un-downloaded cloud
+  placeholder is passed over by background analysis rather than marked failed and stripped of its
+  BPM, key, cues and structure. `Verified`.
 - **A per-file failure degrades to status, not an aborted scan.** *Enforced in* the library scan path;
   see [04](./04-critical-flows.md).
 
@@ -103,6 +134,44 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
 the seed, `BpmTolerance` (default 6.0 BPM) caps the per-step tempo change, and `Trend`
 (`Any` / `Steady` / `Up` / `Down`) constrains direction. `Validate()` throws on nonsensical requests.
 Ordering is deterministic so the same request yields the same set. `Verified`.
+
+### DJ set building
+
+The arranger turns a pool of catalogued tracks into a beat-matched `StudioProject`. Harmonic ordering
+is delegated to `HarmonicSetBuilder` above; these rules cover tempo, transitions and gating.
+*Enforced in* `Core/Studio/Set` (`SetBuildOptions`, `DjSetArranger`, `SetTransitionPlanner`,
+`SetTempoRamp`). `Verified`.
+
+- **Every mix point is phrase-quantized.** The meter is 4/4 and a phrase is 16 bars
+  (`SetBuildOptions.BeatsPerBar`, `PhraseBars`). A requested overlap is rounded *down* to half a
+  phrase and clamped to 8–32 bars: below 8 a blend reads as a mistake, above 32 two arrangements
+  fight each other and residual grid error has a minute to become audible flam.
+- **The warp ceiling is never suspended.** `MaxWarpPercent` (default 6, suited to 4/4 electronic
+  material) caps time-stretch. Naming a `TempoBpm` does not exempt a track: one that cannot reach the
+  chosen tempo inside the ceiling is rejected *and named*.
+- **The set tempo is the DJ's decision, not a statistic.** With no `TempoBpm` the arranger takes the
+  median of the tracks it chose — a default and nothing more, since a pool weighted toward one tempo
+  pins it there.
+- **A travelling tempo is exclusive with a fixed one.** `RampTempo` and `TempoBpm` are answers to the
+  same question, so setting both throws rather than letting one silently win. When ramping, each
+  consecutive pair meets at its **midpoint** — the tempo that minimises the larger, audible warp of
+  the two.
+- **Tempo only moves while a record is alone.** A ramp is confined to a record's solo stretch, because
+  a tempo that moved mid-blend would run the two decks at different speeds, and it *fills* that
+  stretch rather than hurrying, so no instant pulls a record hard.
+- **A low-confidence grid is mixed short, or excluded.** A track failing the grid-confidence gate is
+  never blended longer than the 8-bar floor; `ExcludeLowGridConfidence` keeps it out entirely instead.
+- **Every track that misses the timeline is reported with the reason.** `RejectReason` distinguishes
+  causes that imply different next moves — `NoHarmonicMatch` (widen the pool) versus `BlockedByTrend`
+  (drop the trend or reseed low) versus `OutsideTempoRange` (widen the warp limit) versus
+  `SeedOutsideTempoRange` (reseed). Members are appended, never reordered, because the names are the
+  wire format the MCP contract reports.
+- **A cap that was honoured is not a rejection.** Reaching the requested length reports
+  `LengthCapReached` as an explicit non-rejection, so a capped build of a large catalog does not read
+  as rejection-free.
+- **Clips are level-matched before they are blended.** Every clip is gained toward `TargetLufs`
+  (default −9, near the natural level of dance masters) so unequal masters sit level through each
+  crossfade and the master limiter is barely working.
 
 ### Autopilot
 
