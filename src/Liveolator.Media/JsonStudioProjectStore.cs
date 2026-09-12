@@ -101,14 +101,26 @@ public sealed class JsonStudioProjectStore : IStudioProjectStore
         // or duplicate an existing file; otherwise use the collision-proof name-keyed path.
         string path = await ResolvePathAsync(project.Name, cancellationToken).ConfigureAwait(false)
             ?? PathFor(project.Name);
-        string tempPath = path + ".tmp";
+        // A UNIQUE temp name: the app and the liveolator-mcp server both write studio projects, so a fixed
+        // "<path>.tmp" is a cross-process collision, and a temp abandoned by a killed writer blocks the
+        // next save. Mirrors JsonCatalogStore.
+        string? tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
         var snapshot = new StudioProjectSnapshot(
             StudioProjectSnapshot.CurrentVersion, project.Name, project.Bpm,
             project.Clips.ToList(), project.Automation.ToList(), project.EffectiveTempo);
 
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, path, overwrite: true);
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
+                await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+            tempPath = null;
+        }
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+        }
     }
 
     public async Task DeleteAsync(string name, CancellationToken cancellationToken = default)

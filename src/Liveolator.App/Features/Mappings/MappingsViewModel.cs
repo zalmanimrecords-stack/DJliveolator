@@ -41,12 +41,34 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         RemoveCommand = ReactiveCommand.CreateFromTask(RemoveSelectedAsync);
         ExportMappingCommand = ReactiveCommand.CreateFromTask(ExportAsync);
         ImportMappingCommand = ReactiveCommand.CreateFromTask(ImportAsync);
+        Profiles = session.AvailableProfiles;
+        ApplyProfileCommand = ReactiveCommand.CreateFromTask(ApplyProfileAsync);
         _session.MappingChanged += OnMappingChanged;
         Refresh(_session.ActiveProfile);
     }
 
     public ObservableCollection<MappingTargetViewModel> Targets { get; }
     public ObservableCollection<MappingBindingViewModel> Bindings { get; } = new();
+
+    /// <summary>
+    /// The known controller profiles, offered for manual choice. Auto-selection matches a profile's
+    /// hint against the device's reported name, so a supported controller reporting an unexpected name
+    /// — through a hub, a firmware revision, a driver that decorates it — would otherwise be stuck on
+    /// the empty generic template with no way to reach its map.
+    /// </summary>
+    public IReadOnlyList<ControllerMappingProfile> Profiles { get; }
+
+    private ControllerMappingProfile? _selectedProfile;
+
+    /// <summary>The profile the picker is pointing at; null until the user chooses one.</summary>
+    public ControllerMappingProfile? SelectedProfile
+    {
+        get => _selectedProfile;
+        set => this.RaiseAndSetIfChanged(ref _selectedProfile, value);
+    }
+
+    /// <summary>True when there is anything to pick, so the View can hide the whole row otherwise.</summary>
+    public bool HasProfiles => Profiles.Count > 0;
 
     public MappingTargetViewModel? SelectedTarget
     {
@@ -122,6 +144,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
     public ReactiveCommand<Unit, Unit> ExportMappingCommand { get; }
     public ReactiveCommand<Unit, Unit> ImportMappingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ApplyProfileCommand { get; }
 
     private void BeginLearn()
     {
@@ -229,6 +252,31 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         Status = $"Imported '{imported.Name}' for {device}. Press Save to apply.";
     }
 
+    // Applies the picked profile to the connected controller. Replaces the active mapping wholesale —
+    // that is the point of picking one — and the session persists it under the device name so it
+    // survives a restart.
+    private async Task ApplyProfileAsync()
+    {
+        if (SelectedProfile is not { } chosen)
+        {
+            Status = "Pick a controller profile first.";
+            return;
+        }
+
+        bool applied = await _session.ApplyProfileAsync(chosen).ConfigureAwait(false);
+        if (!applied)
+        {
+            Status = "Connect a MIDI controller in Settings before applying a profile.";
+            return;
+        }
+
+        // Applying raises MappingChanged, whose handler SCHEDULES a refresh that also sets Status.
+        // Queueing this behind it on the same scheduler is what keeps the specific message from being
+        // overwritten by the generic "Mapping captured" one a moment later.
+        string message = $"Applied the {chosen.Name} profile to {DeviceName}.";
+        RxApp.MainThreadScheduler.Schedule(() => Status = message);
+    }
+
     // A filesystem-safe suggested name based on the device model, e.g. "CMD-Studio-2A-midi-map.json".
     private static string SuggestedFileName(ControllerMappingProfile profile)
     {
@@ -316,6 +364,20 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Visuals: Strobe", PerformanceActionKind.VisualToggleStrobe, 0),
         ]);
 
+        // Everything else the action vocabulary declares, so a kind added to PerformanceActionKind is
+        // bindable without editing this list (doc 06 recorded 14 kinds that had a handler but no route).
+        // The hand-written entries above stay authoritative: they carry hardware knowledge a generated
+        // entry cannot know — the jog's offset-binary encoding and 128 ticks/revolution, the per-band EQ
+        // arguments — so any kind they already cover is skipped here.
+        HashSet<PerformanceActionKind> handWritten = targets.Select(target => target.Action).ToHashSet();
+        foreach ((PerformanceActionKind kind, ActionTarget target) in ActionTargetVocabulary.Targets
+                     .Where(entry => !handWritten.Contains(entry.Key))
+                     .OrderBy(entry => entry.Value.Label, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (MappingTargetViewModel generated in Expand(kind, target))
+                targets.Add(generated);
+        }
+
         // One learn target per controllable parameter of every registered generator preset (doc 28), so a
         // hardware knob can be bound to e.g. GLOW. The binding carries the namespaced macro name as its
         // Argument; the learn session and ControllerBinding already thread Argument through to VisualSetMacro.
@@ -334,6 +396,31 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         }
 
         return targets;
+    }
+
+    // Deck identity for a per-deck target; the deck itself rides in the action's Slot (A = 0, B = 1).
+    private static readonly string[] DeckLabels = ["A", "B"];
+
+    // One vocabulary entry becomes one target per deck (when the kind addresses a deck) and per required
+    // argument value (EQ band, stem, hot-cue pad), mirroring how the hand-written entries are laid out.
+    private static IEnumerable<MappingTargetViewModel> Expand(PerformanceActionKind kind, ActionTarget target)
+    {
+        IReadOnlyList<string?> arguments = target.Arguments is { Count: > 0 } declared
+            ? declared.Cast<string?>().ToList()
+            : [null];
+        int slots = target.PerDeck ? DeckLabels.Length : 1;
+
+        for (int slot = 0; slot < slots; slot++)
+        {
+            string label = target.PerDeck ? $"Deck {DeckLabels[slot]}: {target.Label}" : target.Label;
+            foreach (string? argument in arguments)
+                yield return new MappingTargetViewModel(
+                    argument is null ? label : $"{label} {argument}",
+                    kind,
+                    slot,
+                    target.InputMode,
+                    Argument: argument);
+        }
     }
 
     public void Dispose() => _session.MappingChanged -= OnMappingChanged;

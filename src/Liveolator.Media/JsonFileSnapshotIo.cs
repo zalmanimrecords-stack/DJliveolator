@@ -71,6 +71,29 @@ internal sealed class JsonFileSnapshotIo
         }
     }
 
+    /// <summary>
+    /// Synchronous twin of <see cref="LoadAsync{T}"/>, for the composition root — which builds its
+    /// profile catalog before there is a UI thread to await on, and where a sync-over-async wait has
+    /// already deadlocked this app once (doc 27). Same tolerance: missing file is null, unreadable
+    /// file is null plus a warning.
+    /// </summary>
+    public T? Load<T>(string path) where T : class
+    {
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read);
+            return JsonSerializer.Deserialize<T>(stream, SerializerOptions);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            _onWarning?.Invoke($"Live profile at '{path}' is unreadable ({ex.Message}); ignoring it.");
+            return null;
+        }
+    }
+
     /// <summary>Reports an incompatible-version warning for <paramref name="path"/>.</summary>
     public void WarnVersionMismatch(string path, int found, int expected)
         => _onWarning?.Invoke(

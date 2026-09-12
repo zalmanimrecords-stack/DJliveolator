@@ -57,19 +57,25 @@ public sealed class JsonAudioEffectRackStateStore : IAudioEffectRackStateStore
     {
         ArgumentNullException.ThrowIfNull(racks);
         await _saveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        string? temp = null;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            string temp = _path + ".tmp";
+            // A UNIQUE temp name, so concurrent writers never collide on one "<path>.tmp" and a temp
+            // abandoned by a killed writer cannot block the next save. Mirrors JsonCatalogStore.
+            temp = $"{_path}.{Guid.NewGuid():N}.tmp";
             var snapshot = new AudioEffectRacksSnapshot(
                 AudioEffectRacksSnapshot.CurrentVersion,
                 racks.OrderBy(r => r.Slot).ToArray());
-            await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, cancellationToken).ConfigureAwait(false);
             File.Move(temp, _path, overwrite: true);
+            temp = null;
         }
         finally
         {
+            if (temp is not null)
+                File.Delete(temp);
             _saveGate.Release();
         }
     }

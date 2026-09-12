@@ -2,7 +2,7 @@
 
 > **Purpose:** name the **one** canonical visual line so the app stops "feeling far from the
 > reference," and give the rule for every tab and control. Every surface targets this.
-> Last updated: **2026-06-06**.
+> Last updated: **2026-09-12** (performance displays; historical baseline retained below).
 
 ## Canonical: single-accent **blue** performance line
 
@@ -58,6 +58,25 @@ standard controls (ComboBox, ProgressBar, selection, scrollbar) follow the line 
 - **Type:** Inter (sans) + a mono (Consolas/JetBrains/SF Mono) for numbers/IDs/values. Section labels
   are 10–11px, uppercase, letter-spaced. Tab labels uppercase.
 
+## Performance displays (2026-09-12)
+
+The shared `Jog` now uses a layered metal bezel, fine radial ticks, vinyl grooves, a slim progress
+ring and a bright position index. The jellyfish artwork still rotates during playback and takes
+its subtle red tint from the analyzed kick band. Rim lighting follows each deck's accent; the
+surface and marker brushes follow the active theme via `Theme/PerformanceDisplays.axaml`.
+Paused scrubbing, playing pitch bend and keyboard control keep the existing command seam.
+
+The shared `WaveformStrip` draws translucent spectral envelopes with crisp contours, prominent
+red kick transients, restrained beat/bar guides, bar labels when space permits and a clear
+playhead. `DeckWaveform` supplies the common inset gradient frame. Folded A/B views retain their
+opposing beat combs and the same time/zoom mapping. These are presentation changes only.
+
+The blue palette below is the Spartan default. Built-in alternative themes remain supported;
+red kick markers and teal deck B identity are deliberate exceptions to the historical single
+accent rule. For current behavior, consult `docs/core-business-logic/00-project-context.md`.
+
+Visual verification uses `UiShots`, `ResponsiveShots`, `JogMedusaShot`, `WaveformShot` and
+`WaveformGridShot` in `tests/Liveolator.App.Tests`; output goes to `artifacts/ui-shots/`.
 ## Verification loop (use it before claiming UI parity)
 `tests/Liveolator.App.Tests/Ui/UiShots.cs` renders every shell tab headlessly to
 `artifacts/ui-shots/*.png` (gitignored). Render, **compare to the blue DJ reference**, then iterate —
@@ -73,5 +92,5 @@ dotnet test tests/Liveolator.App.Tests --filter UiShots
   channel faders + dB scale, crossfader, blue badge, waveform strip, blue play triangle.
 - ✅ Decks/mixer shared into the Live tab; Push encoders + Master/Swing are knobs; phase bars themed.
 - ✅ Settings on the line (padded panels, accent Save).
-- ⬜ Real waveform render from decoded peaks (placeholder strip in place).
+- ✅ Real waveform render from decoded peaks, including low/mid/high bands (implemented since this baseline).
 - ⬜ Footer status bar across Live/Libraries.

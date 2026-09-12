@@ -80,12 +80,23 @@ public sealed class JsonSmartCollectionStore : ISmartCollectionStore
         System.IO.Directory.CreateDirectory(_directory);
         string path = await ResolvePathAsync(definition.Name, cancellationToken).ConfigureAwait(false)
             ?? PathFor(definition.Name);
-        string tempPath = path + ".tmp";
+        // A UNIQUE temp name, so concurrent writers never collide on one "<path>.tmp" and a temp
+        // abandoned by a killed writer cannot block the next save. Mirrors JsonCatalogStore.
+        string? tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
         var snapshot = new SmartCollectionSnapshot(SmartCollectionSnapshot.CurrentVersion, definition);
 
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, path, overwrite: true);
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
+                await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+            tempPath = null;
+        }
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+        }
     }
 
     public async Task DeleteAsync(string name, CancellationToken cancellationToken = default)

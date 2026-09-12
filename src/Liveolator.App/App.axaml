@@ -146,6 +146,7 @@
   <Application.Styles>
     <FluentTheme />
     <StyleInclude Source="avares://Liveolator.App/Theme/Spartan.axaml" />
+    <StyleInclude Source="avares://Liveolator.App/Theme/PerformanceDisplays.axaml" />
     <!-- Responsive width caps keyed on the shell Window size-class (compact/standard/wide/ultra). Must come
          after Spartan so its tier selectors win over any baseline setters. -->
     <StyleInclude Source="avares://Liveolator.App/Theme/ResponsiveLayout.axaml" />

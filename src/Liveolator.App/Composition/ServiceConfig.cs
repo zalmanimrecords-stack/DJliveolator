@@ -1408,20 +1408,31 @@ public static class ServiceConfig
         }
     }
 
-    // The default mapping-profile catalog the pipeline auto-selects from by device name. CMD STUDIO 2A
-    // (DJ), Pioneer DDJ-FLX4 (DJ), and Ableton Push 1 (visuals) today; persisted/custom profiles (doc 13)
-    // extend this set later. The generic template is appended LAST and intentionally has an empty
-    // DeviceHint, so MidiProfileSelector always prefers an exact device match and the generic never wins
-    // auto-selection — it is a learn-from-scratch label any unrecognized controller falls back to.
-    // Internal so the catalog's membership (e.g. that Push 1 is wired in, not orphaned) is unit-testable.
+    // The default mapping-profile catalog the pipeline auto-selects from by device name: the JSON
+    // profiles shipped in mappings/ next to the executable, then the three built-in ones — CMD STUDIO 2A
+    // (DJ), Pioneer DDJ-FLX4 (DJ), Ableton Push 1 (visuals). A user's own saved profile is not here; it
+    // wins earlier, in MidiControlSession, which loads it by device name before consulting this catalog.
+    // The generic template is appended LAST and intentionally has an empty DeviceHint, so
+    // MidiProfileSelector always prefers an exact device match and the generic never wins auto-selection
+    // — it is a learn-from-scratch label any unrecognized controller falls back to.
     internal static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles()
-        => new[]
-        {
+        => AvailableMidiProfiles(ShippedMappingProfiles.LoadFrom(
+            Path.Combine(AppContext.BaseDirectory, ShippedMappingProfiles.FolderName),
+            warning => System.Diagnostics.Trace.TraceWarning(warning)));
+
+    // Pure overload: the ordering rule alone, so it is unit-testable without a filesystem. Shipped JSON
+    // comes FIRST so a corrected map for a device can be dropped in without rebuilding the built-in
+    // class it supersedes; the generic template stays last.
+    internal static IReadOnlyList<ControllerMappingProfile> AvailableMidiProfiles(
+        IReadOnlyList<ControllerMappingProfile> shipped)
+        =>
+        [
+            .. shipped,
             CmdStudio2AProfile.Default,
             DdjFlx4Profile.Default,
             Push1Profile.Default,
             GenericControllerProfile.Default,
-        };
+        ];
 
     internal static MidiSettings ResolveMidiSettings(
         MidiSettings configured,

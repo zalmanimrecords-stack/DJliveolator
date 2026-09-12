@@ -22,7 +22,7 @@ namespace Liveolator.App.Controls;
 /// <see cref="SeekCommand"/> with it (the deck VM turns that into a DeckSeek action). Purely
 /// presentational — the peak/grid data and the seek behaviour come from the view-model.
 /// </summary>
-public sealed class WaveformStrip : Control
+public sealed partial class WaveformStrip : Control
 {
     public static readonly StyledProperty<IBrush> BarBrushProperty =
         AvaloniaProperty.Register<WaveformStrip, IBrush>(
@@ -278,6 +278,7 @@ public sealed class WaveformStrip : Control
         // The mid/high "body" is scaled down so the kick band (full height) SPIKES ABOVE it — the VirtualDJ
         // "kick pops" look. BodyScale defaults to 1.0 (body == kick height), so DJ / LIVE are unchanged.
         WaveGeometry bodyGeometry = geometry.Scaled(BodyScale);
+        RenderWaveGuides(context, b, waveTop, waveRect.Height, combY, combH, geometry);
 
         using (context.PushTransform(Matrix.CreateTranslation(0, waveTop)))
         {
@@ -290,12 +291,12 @@ public sealed class WaveformStrip : Control
             IReadOnlyList<float>? high = HighPeaks;
             if (mid is { Count: > 0 } && high is { Count: > 0 })
             {
-                RenderBand(context, waveRect, high, HighBrush, bodyGeometry, start, span);
-                RenderBand(context, waveRect, mid, MidBrush, bodyGeometry, start, span);
+                RenderEnvelope(context, waveRect, high, HighBrush, bodyGeometry, start, span, 0.38);
+                RenderEnvelope(context, waveRect, mid, MidBrush, bodyGeometry, start, span, 0.62);
             }
             else
             {
-                RenderWaveform(context, waveRect, peaks, bodyGeometry, start, span);
+                RenderEnvelope(context, waveRect, peaks, PlayedBrush, bodyGeometry, start, span, 0.65, 0.5);
             }
 
             IReadOnlyList<float>? kick = KickPeaks;
@@ -376,82 +377,6 @@ public sealed class WaveformStrip : Control
     /// fixed index 0 — so the red bars sit on the musical one rather than on whatever beat the grid starts on.</summary>
     private const int BeatsPerBar = 4;
 
-    // The beat grid + CBG comb. Bar downbeats (cyan) and phrase starts (red, haloed) are drawn as
-    // FULL-HEIGHT lines OVER the waveform — a clear beat-grid overlay so the DJ can see the grid land on the
-    // kicks; the fine beats stay as short faint grey teeth in the comb strip so they subdivide without
-    // cluttering the wave. Adaptive — lines too dense to read are skipped, so the whole-track overview is
-    // clean and resolves into phrases, then bars, then beats as the strip zooms in. Lining the bar/phrase
-    // lines up across decks A/B is the "on the grid" read used to beat-match.
-    private void RenderBeatComb(
-        DrawingContext context, Rect b, double combTop, double combH, bool combAtTop, double start, double span)
-    {
-        IReadOnlyList<double>? grid = BeatGrid;
-        if (grid is not { Count: >= 2 } || span <= 0 || combH <= 0)
-            return;
-
-        double stepFraction = grid[1] - grid[0]; // even spacing → one beat
-        if (stepFraction <= 0)
-            return;
-        double beatPx = stepFraction / span * b.Width;
-        bool drawBeats = beatPx >= 7.0;
-        bool drawBars = beatPx * BeatsPerBar >= 7.0;
-        if (!drawBars)
-            return; // too zoomed-out to read even downbeats → draw no comb (keeps the overview clean)
-
-        Color beat = (BeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x8E, 0x9A, 0xA8);
-        Color barLine = (BarLineBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x5E, 0xE2, 0xFF);
-        Color phrase = (DownbeatBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x40, 0x3A);
-        double combBottom = combTop + combH;
-        // Bar and phrase lines are drawn as FULL-HEIGHT vertical lines OVER the waveform (a clear beat-grid
-        // overlay, like the cue markers) so the DJ can read the grid sitting on the kicks at a glance. The
-        // fine beat teeth stay SHORT in the comb strip so they subdivide the bars without cluttering the wave.
-        double gridTop = 0;
-        double gridBottom = b.Height;
-        // Short beat teeth hug the strip's OUTER edge (the side away from the wave): the comb bottom when it
-        // sits below the wave, the comb top when it is flipped above it. So a stacked pair's teeth mirror and
-        // meet in the middle.
-        double beatNear = combAtTop ? combTop : combTop + combH * 0.55;
-        double beatFar = combAtTop ? combTop + combH * 0.45 : combBottom;
-        // Bar/phrase lines are drawn OPAQUE + a dark backing so they read clearly over any wave colour (a
-        // cyan bar over the blue high band would otherwise blend). Beats stay faint in the comb.
-        var beatPen = new Pen(new ImmutableSolidColorBrush(beat, 0.55), 1.5);
-        var gridBackPen = new Pen(new ImmutableSolidColorBrush(Color.FromArgb(0x99, 0, 0, 0)), 3.5); // dark backing
-        var barPen = new Pen(new ImmutableSolidColorBrush(barLine), 2.0);                 // bright cyan bar over the wave
-        var phraseHaloPen = new Pen(new ImmutableSolidColorBrush(phrase, 0.30), 6.0);
-        var phrasePen = new Pen(new ImmutableSolidColorBrush(phrase), 2.5);               // bright red phrase over the wave
-
-        int downbeatOffset = DownbeatOffset;
-        double end = start + span;
-        for (int i = 0; i < grid.Count; i++)
-        {
-            double fraction = grid[i];
-            if (fraction < start || fraction > end)
-                continue;
-            bool isDownbeat = IsBarDownbeat(i, downbeatOffset, BeatsPerBar);
-            if (!isDownbeat && !drawBeats)
-                continue;
-            double x = (fraction - start) / span * b.Width;
-            if (isDownbeat && IsPhraseDownbeat(i, downbeatOffset, BeatsPerBar, BarsPerPhrase))
-            {
-                // Phrase start (the "1" of a 4-bar group): a full-height red line — glow halo + dark backing
-                // + bright red core — so it reads clearly over the wave.
-                context.DrawLine(phraseHaloPen, new Point(x, gridTop), new Point(x, gridBottom));
-                context.DrawLine(gridBackPen, new Point(x, gridTop), new Point(x, gridBottom));
-                context.DrawLine(phrasePen, new Point(x, gridTop), new Point(x, gridBottom));
-            }
-            else if (isDownbeat)
-            {
-                // Full-height cyan bar over the wave, on a dark backing so it never blends into the blue band.
-                context.DrawLine(gridBackPen, new Point(x, gridTop), new Point(x, gridBottom));
-                context.DrawLine(barPen, new Point(x, gridTop), new Point(x, gridBottom));
-            }
-            else
-            {
-                context.DrawLine(beatPen, new Point(x, beatNear), new Point(x, beatFar));
-            }
-        }
-    }
-
     /// <summary>
     /// Whether comb line <paramref name="index"/> is a bar downbeat, given the bar-start
     /// <paramref name="offset"/> (which beat of the bar the grid begins on) and the meter
@@ -531,50 +456,6 @@ public sealed class WaveformStrip : Control
         public WaveGeometry Scaled(double factor) => this with { MaxAmp = MaxAmp * Math.Clamp(factor, 0.05, 1.0) };
     }
 
-    // Broadband fallback (no band data): one bar per column, peak-held within the visible window.
-    private void RenderWaveform(
-        DrawingContext context, Rect b, IReadOnlyList<float> peaks, WaveGeometry geometry, double start, double span)
-    {
-        const double step = 2.0;
-
-        // Uniform full opacity (no played/ahead split) so the strip reads the same regardless of play
-        // position — matches the band render; the playhead alone marks position.
-        var pen = new Pen(PlayedBrush, 1.5) { LineCap = PenLineCap.Round };
-
-        for (double x = 1; x < b.Width - 1; x += step)
-        {
-            if (!ColumnInTrack(x, b.Width, start, span)) continue; // empty past the track ends (centred window)
-            double amp = geometry.MaxAmp * Math.Clamp(ColumnPeak(peaks, x, step, b.Width, start, span), 0f, 1f);
-            if (amp < 0.5) amp = 0.5; // keep a hairline so silent regions still read as a strip
-            (Point top, Point bottom) = geometry.Bar(x, amp);
-            context.DrawLine(pen, top, bottom);
-        }
-    }
-
-    // One band layer (high caps / mid body): a bar per pixel column, peak-held, at full opacity so the deck
-    // reads the same regardless of play position (the playhead line alone marks position).
-    private void RenderBand(
-        DrawingContext context, Rect b, IReadOnlyList<float> band, IBrush brush, WaveGeometry geometry,
-        double start, double span)
-    {
-        const double step = 1.0;
-
-        Color color = (brush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x3D, 0x5C, 0x8F);
-        double opacity = (brush as ISolidColorBrush)?.Opacity ?? 1.0;
-        var pen = new Pen(new ImmutableSolidColorBrush(color, opacity), 1.0);
-
-        for (double x = 1; x < b.Width - 1; x += step)
-        {
-            if (!ColumnInTrack(x, b.Width, start, span)) continue; // empty past the track ends (centred window)
-            float v = ColumnPeak(band, x, step, b.Width, start, span);
-            if (v <= 0.004f) // skip true silence — the broadband hairline already keeps the strip readable
-                continue;
-            double amp = geometry.MaxAmp * Math.Clamp(v, 0f, 1f);
-            (Point top, Point bottom) = geometry.Bar(x, amp);
-            context.DrawLine(pen, top, bottom);
-        }
-    }
-
     /// <summary>Kick columns at or above this level get a white-hot core — the hardest transients
     /// read hotter than the rest, like a meter clipping into white.</summary>
     public const float KickHotThreshold = 0.85f;
@@ -593,12 +474,12 @@ public sealed class WaveformStrip : Control
         const float floor = 0.08f;   // suppress the low-band noise floor → only real kicks light up
 
         Color amber = (KickBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0xF2, 0xA8, 0x3B);
-        var haloPen = new Pen(new ImmutableSolidColorBrush(amber, 0.30), 3.0) { LineCap = PenLineCap.Round };
+        var haloPen = new Pen(new ImmutableSolidColorBrush(amber, KickBrush.Opacity * 0.16), 2.5) { LineCap = PenLineCap.Round };
         // Quantized hot-core pens: index 0 = the plain band colour, 3 = hottest (whitest) core.
         var corePens = new Pen[4];
         for (int level = 0; level < corePens.Length; level++)
             corePens[level] = new Pen(
-                new ImmutableSolidColorBrush(Lighten(amber, level * 0.25)), 1.0) { LineCap = PenLineCap.Round };
+                new ImmutableSolidColorBrush(Lighten(amber, level * 0.25), KickBrush.Opacity), 1.0) { LineCap = PenLineCap.Round };
 
         for (double x = 1; x < b.Width - 1; x += step)
         {
@@ -619,18 +500,6 @@ public sealed class WaveformStrip : Control
     public static int HotLevel(float k)
         => k >= 0.97f ? 3 : k >= 0.91f ? 2 : k >= KickHotThreshold ? 1 : 0;
 
-    // Playhead: at the window edges (start/end of track) it sits at the strip edge; while zoomed-and-
-    // following it rides near the centre. Drawn whenever it is inside the visible window, above all
-    // waveform layers.
-    private void RenderPlayhead(DrawingContext context, Rect b, double start, double span)
-    {
-        double playheadX = (Math.Clamp(Progress, 0.0, 1.0) - start) / span * b.Width;
-        if (playheadX <= 0 || playheadX >= b.Width)
-            return;
-        var headPen = new Pen(PlayheadBrush, 1.5);
-        context.DrawLine(headPen, new Point(playheadX, 0), new Point(playheadX, b.Height));
-    }
-
     // Blend a colour toward white by t (0..1) for the hot glow core.
     private static Color Lighten(Color c, double t)
     {
@@ -648,7 +517,7 @@ public sealed class WaveformStrip : Control
 
         var label = new FormattedText(
             "NO TRACK", CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-            Typeface.Default, 11, new ImmutableSolidColorBrush(Color.FromRgb(0x5A, 0x65, 0x73)));
+            Typeface.Default, 10, BeatBrush);
         context.DrawText(label, new Point((b.Width - label.Width) / 2, cy - (label.Height / 2)));
     }
 

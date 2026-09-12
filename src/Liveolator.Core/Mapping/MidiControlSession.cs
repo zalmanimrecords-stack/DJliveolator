@@ -73,6 +73,25 @@ public sealed class MidiControlSession : IMidiControlSession, IDisposable
 
     public bool IsLearnArmed => _learn.IsArmed;
 
+    /// <inheritdoc />
+    public IReadOnlyList<ControllerMappingProfile> AvailableProfiles => _defaultProfiles;
+
+    /// <inheritdoc />
+    public async Task<bool> ApplyProfileAsync(
+        ControllerMappingProfile profile, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (_mapper is null || _input is null)
+            return false;
+
+        // Re-key to the connected device, exactly as StartAsync does with an auto-selected profile:
+        // the store is keyed by device name, so without this the choice would not survive a restart.
+        await ApplyAndSaveProfileAsync(
+            profile with { Name = _input.DeviceName, DeviceHint = _input.DeviceName },
+            cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public event EventHandler<ControllerMappingProfile>? MappingChanged;
 
     /// <summary>

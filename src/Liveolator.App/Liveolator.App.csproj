@@ -63,6 +63,13 @@
     <Content Include="..\..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Shipped controller mappings (doc 05): ShippedMappingProfiles reads mappings/*.json next to the
+       exe at startup, so a new controller is a data file rather than a profile class. The README ships
+       too — it is the drop-in contract for anyone contributing a map. -->
+  <ItemGroup>
+    <Content Include="mappings\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Liveolator.Core\Liveolator.Core.csproj" />
     <ProjectReference Include="..\Liveolator.Audio\Liveolator.Audio.csproj" />

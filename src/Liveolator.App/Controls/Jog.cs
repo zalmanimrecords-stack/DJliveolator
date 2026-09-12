@@ -15,7 +15,7 @@ namespace Liveolator.App.Controls;
 /// <see cref="Knob"/> and <see cref="Fader"/>, the wheel is pure presentation and every change flows out
 /// through the action layer (doc 04). Disabled wheels render neutral and ignore input.
 /// </summary>
-public class Jog : Control
+public partial class Jog : Control
 {
     /// <summary>Track fraction covered by one full 360° drag — coarse enough to scan a track, fine enough
     /// to line a cue up by hand. (A continuously varying step would need the decoded duration, which the
@@ -237,71 +237,6 @@ public class Jog : Control
         return advanced % turn;
     }
 
-    public override void Render(DrawingContext context)
-    {
-        Rect bounds = Bounds;
-        double size = Math.Min(bounds.Width, bounds.Height);
-        if (size <= 0)
-            return;
-
-        bool on = IsEnabled;
-        double progress = Math.Clamp(_dragging ? _scrubFraction : Progress, 0, 1);
-        var centre = new Point(bounds.Width / 2, bounds.Height / 2);
-        // Reserve an outer band for the beat (kick) rim glow so it never clips the bounds.
-        double glowBand = size * 0.05;
-        double outer = (size / 2) - 1 - glowBand;
-        double ringStroke = Math.Max(3.0, size * 0.04);
-        double ringRadius = outer - (ringStroke / 2);
-        double platterRadius = ringRadius - ringStroke - (size * 0.02);
-        IBrush arc = on ? ArcBrush : TrackBrush;
-
-        // The kick/bass pulse at the playhead (0..1) drives BOTH the centre medusa's red wash and the rim
-        // glow, so they breathe together on the same beat. Zero unless the deck is actually playing.
-        double pulse = (on && IsKickActive) ? KickEnergyAt(Math.Clamp(Progress, 0, 1), KickPeaks) : 0.0;
-
-        DrawPlatter(context, centre, platterRadius, size);
-
-        // The medusa sits on the platter, beneath the transport indicators (spindle/marker/hub) so seeking
-        // and the playhead stay readable — it is the hero artwork, not a replacement for the readout.
-        DrawMedusa(context, centre, platterRadius * 0.72, pulse);
-
-        // Neutral full-circle track behind the progress arc.
-        context.DrawEllipse(null, new Pen(TrackBrush, ringStroke), centre, ringRadius, ringRadius);
-
-        if (on && progress > 0.0008)
-        {
-            double end = StartAngle + (360.0 * progress);
-            context.DrawGeometry(null, new Pen(ControlBrush.Halo(arc, 0.22), ringStroke * 2.2)
-                { LineCap = PenLineCap.Round }, Arc(centre, ringRadius, StartAngle, end));
-            context.DrawGeometry(null, new Pen(arc, ringStroke)
-                { LineCap = PenLineCap.Round }, Arc(centre, ringRadius, StartAngle, end));
-        }
-
-        double markerAngle = StartAngle + (360.0 * progress);
-        IBrush marker = on ? MarkerBrush : TrackBrush;
-
-        // Spindle line from the hub to the rim marks the play position like a record's start groove.
-        context.DrawLine(new Pen(ControlBrush.Halo(marker, on ? 0.85 : 0.5), Math.Max(2.0, size * 0.018))
-            { LineCap = PenLineCap.Round },
-            PointOnCircle(centre, platterRadius * 0.20, markerAngle),
-            PointOnCircle(centre, platterRadius * 0.92, markerAngle));
-
-        if (on)
-        {
-            Point dot = PointOnCircle(centre, ringRadius, markerAngle);
-            context.DrawEllipse(ControlBrush.Halo(arc, 0.35), null, dot, ringStroke * 1.5, ringStroke * 1.5);
-            context.DrawEllipse(arc, null, dot, ringStroke * 0.7, ringStroke * 0.7);
-        }
-
-        DrawHub(context, centre, platterRadius * 0.20, size);
-
-        // Phosphorescent rim glow that tracks the actual kick in the SOUND: the low-band (kick/bass)
-        // magnitude of the analyzed audio, sampled at the playhead. Drawn last so it reads as a frame
-        // around the platter; brightest where the track's kick hits, dim between.
-        if (pulse > 0.001)
-            DrawKickGlow(context, centre, (size / 2) - 1 - (glowBand * 0.5), glowBand, pulse);
-    }
-
     /// <summary>
     /// The 0..1 rim-glow intensity at the playhead, sampled from the track's low-frequency (kick) band
     /// (<see cref="KickPeaks"/>) — so the glow comes from the actual sound, not a metronomic grid. A gamma
@@ -331,135 +266,6 @@ public class Jog : Control
         if (double.IsNaN(pulse))
             return 0.0;
         return Math.Clamp(pulse, 0.0, 1.0) * MaxBassTint;
-    }
-
-    /// <summary>
-    /// Draws the platter centrepiece inside a disc of the given radius: the user's <see cref="CenterImage"/>
-    /// (e.g. a photoreal jellyfish) if set, otherwise a built-in translucent vector medusa. Either way the
-    /// bass <paramref name="pulse"/> washes it toward <see cref="BassTintBrush"/> — a subtle red bloom on the
-    /// kick — so the artwork pulses with the low end. Everything is clipped to the disc so it never spills
-    /// onto the vinyl grooves or rim.
-    /// </summary>
-    private void DrawMedusa(DrawingContext context, Point centre, double radius, double pulse)
-    {
-        if (radius <= 0)
-            return;
-
-        double tint = BassTintStrength(pulse);
-        var disc = new Rect(centre.X - radius, centre.Y - radius, radius * 2, radius * 2);
-        using (context.PushGeometryClip(new EllipseGeometry(disc)))
-        {
-            // While the deck plays the artwork turns about the disc centre like a record; the circular clip
-            // and bass wash are rotation-invariant, so only the medusa itself spins.
-            Matrix rotation = Matrix.CreateTranslation(-centre.X, -centre.Y)
-                * Matrix.CreateRotation(_spinRadians)
-                * Matrix.CreateTranslation(centre.X, centre.Y);
-            using (context.PushTransform(rotation))
-            {
-                if (CenterImage is { } image)
-                    context.DrawImage(image, disc);
-                else
-                    DrawVectorMedusa(context, centre, radius, tint);
-            }
-
-            // Red wash on the bass — drawn over the artwork, clamped to the disc by the clip.
-            if (tint > 0.001 && BassTintBrush is SolidColorBrush red)
-            {
-                var wash = new SolidColorBrush(Color.FromArgb((byte)(tint * 255), red.Color.R, red.Color.G, red.Color.B));
-                context.DrawEllipse(wash, null, centre, radius, radius);
-            }
-        }
-    }
-
-    /// <summary>The fallback hand-drawn jellyfish: a layered translucent bell over flowing oral arms. Cool
-    /// aqua at rest, lerped toward the bass-tint colour as <paramref name="tint"/> rises so the whole medusa
-    /// reddens on the kick (independent of the flat red wash, which also stacks on top).</summary>
-    private void DrawVectorMedusa(DrawingContext context, Point centre, double radius, double tint)
-    {
-        // Cool base palette, warmed toward the tint colour. Using the tint colour keeps the vector and the
-        // overlaid wash visually consistent.
-        Color tintTarget = (BassTintBrush as SolidColorBrush)?.Color ?? Color.FromRgb(0xE5, 0x54, 0x4A);
-        Color bell = Lerp(Color.FromArgb(0xB0, 0x8C, 0xDC, 0xF0), tintTarget, tint * 0.7);
-        Color bellCore = Lerp(Color.FromArgb(0xE0, 0xCF, 0xF2, 0xFB), tintTarget, tint * 0.5);
-        Color tentacle = Lerp(Color.FromArgb(0x96, 0x7F, 0xCF, 0xE6), tintTarget, tint * 0.7);
-
-        var bellCentre = new Point(centre.X, centre.Y - radius * 0.22);
-        double bellW = radius * 1.5;
-        double bellH = radius * 1.18;
-
-        // Oral arms first (behind the bell): a few curved, tapering translucent strands hanging below.
-        double[] sway = { -0.62, -0.3, 0.0, 0.3, 0.62 };
-        var tentaclePen = new Pen(new SolidColorBrush(tentacle), Math.Max(1.5, radius * 0.07))
-        {
-            LineCap = PenLineCap.Round,
-        };
-        double top = bellCentre.Y + bellH * 0.28;
-        for (int i = 0; i < sway.Length; i++)
-        {
-            double x = bellCentre.X + sway[i] * (bellW * 0.42);
-            double len = radius * (1.02 - Math.Abs(sway[i]) * 0.45);
-            context.DrawGeometry(null, tentaclePen, Tentacle(x, top, len, sway[i] * radius * 0.5));
-        }
-
-        // Soft outer halo, then the main bell dome, then a brighter inner cap — three stacked ellipses give
-        // the translucent, lit-from-within look of a real jellyfish bell.
-        var halo = Color.FromArgb(0x40, bell.R, bell.G, bell.B);
-        context.DrawEllipse(new SolidColorBrush(halo), null, bellCentre, bellW * 0.62, bellH * 0.62);
-        context.DrawEllipse(new SolidColorBrush(bell), null, bellCentre, bellW * 0.5, bellH * 0.5);
-        context.DrawEllipse(new SolidColorBrush(bellCore), null,
-            new Point(bellCentre.X, bellCentre.Y - bellH * 0.08), bellW * 0.30, bellH * 0.32);
-    }
-
-    /// <summary>One tapering oral arm as a wavy vertical curve from (x, top) hanging down by <paramref name="length"/>,
-    /// with a horizontal <paramref name="drift"/> so the strands fan out and curl.</summary>
-    private static StreamGeometry Tentacle(double x, double top, double length, double drift)
-    {
-        var geometry = new StreamGeometry();
-        using (StreamGeometryContext ctx = geometry.Open())
-        {
-            ctx.BeginFigure(new Point(x, top), isFilled: false);
-            var c1 = new Point(x + drift * 0.6, top + length * 0.4);
-            var c2 = new Point(x - drift * 0.4, top + length * 0.7);
-            var end = new Point(x + drift, top + length);
-            ctx.CubicBezierTo(c1, c2, end);
-            ctx.EndFigure(false);
-        }
-        return geometry;
-    }
-
-    private static Color Lerp(Color a, Color b, double t)
-    {
-        t = Math.Clamp(t, 0.0, 1.0);
-        return Color.FromArgb(
-            (byte)(a.A + (b.A - a.A) * t),
-            (byte)(a.R + (b.R - a.R) * t),
-            (byte)(a.G + (b.G - a.G) * t),
-            (byte)(a.B + (b.B - a.B) * t));
-    }
-
-    private void DrawKickGlow(DrawingContext context, Point centre, double radius, double band, double pulse)
-    {
-        // A soft wide halo + a brighter core ring, both in the glow colour and scaled by the pulse.
-        context.DrawEllipse(null, new Pen(ControlBrush.Halo(GlowBrush, 0.30 * pulse), band * 1.8), centre, radius, radius);
-        context.DrawEllipse(null, new Pen(ControlBrush.Halo(GlowBrush, 0.12 + (0.88 * pulse)), band * 0.7), centre, radius, radius);
-    }
-
-    private void DrawPlatter(DrawingContext context, Point centre, double radius, double size)
-    {
-        context.DrawEllipse(PlatterBrush, null, centre, radius, radius);
-        // A few faint concentric grooves for the vinyl read; cheap and flat (no blur).
-        var groove = new Pen(new SolidColorBrush(Color.FromArgb(0x34, 0x6A, 0x78, 0x8C)), Math.Max(0.6, size * 0.004));
-        for (int i = 1; i <= 4; i++)
-            context.DrawEllipse(null, groove, centre, radius * (i / 5.0), radius * (i / 5.0));
-        context.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromArgb(0x88, 0x00, 0x02, 0x06)),
-            Math.Max(1, size * 0.012)), centre, radius, radius);
-    }
-
-    private void DrawHub(DrawingContext context, Point centre, double radius, double size)
-    {
-        context.DrawEllipse(new SolidColorBrush(Color.FromRgb(0x16, 0x20, 0x30)),
-            new Pen(new SolidColorBrush(Color.FromArgb(0x90, 0x00, 0x02, 0x06)), Math.Max(1, size * 0.01)),
-            centre, radius, radius);
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

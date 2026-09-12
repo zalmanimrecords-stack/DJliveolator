@@ -164,6 +164,21 @@ public sealed class MidiInputWiringTests
     }
 
     [Fact]
+    public void AvailableMidiProfiles_PutsShippedJsonFirst_AndKeepsTheGenericTemplateLast()
+    {
+        // A shipped mappings/*.json must be able to supersede a built-in class for the same device
+        // (MidiProfileSelector takes the FIRST hint match), without ever displacing the generic fallback.
+        var shipped = ControllerMappingProfile.Empty("DDJ-FLX4 (corrected)", "DDJ-FLX4");
+
+        IReadOnlyList<ControllerMappingProfile> catalog =
+            ServiceConfig.AvailableMidiProfiles(new[] { shipped });
+
+        Assert.Same(shipped, catalog[0]);
+        Assert.Same(GenericControllerProfile.Default, catalog[^1]);
+        Assert.Same(shipped, MidiProfileSelector.Select("Pioneer DDJ-FLX4", catalog));
+    }
+
+    [Fact]
     public void FeedbackOutputSelected_IsOpened_AndUsed()
     {
         var input = new FakeMidiInput("CMD Studio 2A");
