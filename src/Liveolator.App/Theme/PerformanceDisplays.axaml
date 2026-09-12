@@ -1,0 +1,14 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Liveolator.App.Controls">
+
+  <!-- Theme the platter's metal, grooves and illumination at every display size. -->
+  <Style Selector="controls|Jog">
+    <Setter Property="ArcBrush" Value="{DynamicResource Accent}" />
+    <Setter Property="TrackBrush" Value="{DynamicResource S4}" />
+    <Setter Property="PlatterBrush" Value="{DynamicResource S2}" />
+    <Setter Property="MarkerBrush" Value="{DynamicResource Text}" />
+    <Setter Property="BassTintBrush" Value="{DynamicResource Red}" />
+    <Setter Property="GlowBrush" Value="{ReflectionBinding ArcBrush, RelativeSource={RelativeSource Self}}" />
+  </Style>
+</Styles>
