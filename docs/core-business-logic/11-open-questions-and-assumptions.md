@@ -3,7 +3,7 @@
 - **Purpose:** the work queue of everything this documentation could not resolve from code, ordered by impact. An item leaves this document when it is answered and the answer moves into its owner.
 - **Scope:** contradictions, unenforced rules, runtime-sensitive behaviour and product decisions.
 - **Source of truth:** the code that was read, and the places where it was silent.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-12 (against the merge of `feat/shipped-controller-profiles`)
 - **Confidence:** every item here is deliberately uncertain and labelled.
 - **Related:** [rules](./03-business-entities-and-rules.md) · [UI coverage](./06-ui-feature-coverage.md) · [permissions](./09-permissions-and-roles.md)
 
@@ -20,9 +20,14 @@
    forbids amber as a primary accent; `BuiltInUiThemes` ships Spartan as the default alongside an
    amber Brasswork theme and a lime Retro Sci-Fi theme. Both statements are true — the question is
    which one the product presents as its identity. *Who can answer:* product.
-4. **Should the fixed MIDI-learn target list become the full action vocabulary?** Fourteen action
-   kinds are unreachable by supported means ([06](./06-ui-feature-coverage.md)). *Who can answer:*
-   product plus engineering.
+4. ~~**Should the fixed MIDI-learn target list become the full action vocabulary?**~~
+   **Closed 2026-09-12.** It did. `ActionTargetVocabulary` classifies every declared kind as bindable
+   (60) or explicitly not bindable (16), a test fails if a new kind is neither, and the 28 hand-written
+   entries are preserved verbatim for the hardware knowledge they carry. Six previously unreachable
+   kinds are now routed; the eight that remain cannot be reached by any learn target, because
+   `ControllerBinding` carries neither `PerformanceAction.Target` nor a free-form id — that is a picker
+   seam, and it is now the open question, not the list. Four kinds whose value is a physical quantity
+   were deliberately withdrawn. Details in [06](./06-ui-feature-coverage.md).
 5. **Which features are production-supported on macOS?** `Needs validation`. CI builds and tests on
    macOS, but no packaging, notarisation or signing workflow exists, and BASS/CoreAudio routing, MIDI
    device behaviour and camera capture have not been verified there. *Who can answer:* the owner.
@@ -40,8 +45,18 @@
    opposite one: wire repair up, or remove the scaffolding. *Who can answer:* product.
    See [15](./15-refactor-recommendations.md) items 5 and 8.
 8. **What happens when the app and the MCP process touch the same catalog concurrently?**
-   `Needs validation`. Both open the same stores. No transaction or cross-process locking policy was
-   found. *Evidence needed:* a concurrency test, or an explicit single-writer rule.
+   **Partly answered 2026-09-12, and worse than "unclear".** The catalog itself is protected —
+   `SqliteCatalogStore` sets `journal_mode=WAL` and `busy_timeout=5000`, and every JSON store writes to
+   a temp file then moves it, so corruption was never the exposure. Two real defects were measured
+   instead. (a) Six JSON stores used a FIXED `<path>.tmp`, so two writers collided on the temp path and
+   a temp abandoned by a killed process broke every later save — fixed, each now uses a unique name.
+   (b) **Still open:** concurrent saves lose a race on the final `File.Move(..., overwrite: true)`,
+   throwing `UnauthorizedAccessException`. The `ConcurrentSaves` tests fail 1-2 of 4 on nearly every
+   run, and this reproduces on clean `master`, so it predates the fix above. `_saveGate` serializes one
+   store instance and nothing else, while the app and the MCP server both write `JsonPlaylistStore` and
+   `JsonStudioProjectStore`. *Treatment:* a bounded retry around the move, or a cross-process mutex.
+   What remains genuinely unanswered is the lost-update question: both processes read-modify-write whole
+   files, so the last writer silently wins.
 9. ~~**Is the manual-beat-grid protection rule actually enforced?**~~ **Closed 2026-09-11.**
    It is. `MusicTrack.AnalysisIsManual` gates the reanalysis path in `MusicLibrary` and
    `CatalogReanalysisService`, a failed analysis never replaces a good one, and
