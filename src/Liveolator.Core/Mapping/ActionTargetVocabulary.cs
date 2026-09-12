@@ -100,13 +100,6 @@ public static class ActionTargetVocabulary
             // Playlist — the live queue per deck.
             [PerformanceActionKind.PlaylistSkipOnNextBar] = new("Skip on next bar", ActionInputMode.Momentary, PerDeck: true),
 
-            // Grid edits: the value is in seconds / BPM rather than 0..1, so learn them on an encoder and
-            // expect a coarse result — they exist as targets because a controller with a grid-edit
-            // encoder is a real setup, not because a fader is the right control.
-            [PerformanceActionKind.DeckSetFirstBeat] = new("Set first beat", ActionInputMode.Relative, PerDeck: true),
-            [PerformanceActionKind.DeckSetDownbeat] = new("Set downbeat", ActionInputMode.Relative, PerDeck: true),
-            [PerformanceActionKind.DeckSetGridBpm] = new("Grid BPM (grid edit)", ActionInputMode.Relative, PerDeck: true),
-            [PerformanceActionKind.DeckBpm] = new("BPM", ActionInputMode.Absolute, PerDeck: true),
         };
 
     /// <summary>
@@ -133,6 +126,14 @@ public static class ActionTargetVocabulary
     /// handler. Binding rack effects needs a per-instance mapping seam, not a generated list.</description></item>
     /// <item><description><c>DeckSetPhaseSyncReady</c> — a grid-confidence gate computed in Core from the
     /// track's analysis and fed on load; it is not a performer control.</description></item>
+    /// <item><description><c>DeckBpm</c>, <c>DeckSetGridBpm</c>, <c>DeckSetFirstBeat</c>,
+    /// <c>DeckSetDownbeat</c> — their Value is a physical quantity (a BPM, a position in seconds) that
+    /// the handler passes straight to the engine, while a binding can only produce a 0..1 fraction or a
+    /// small signed step. A learned control would set a deck to half a BPM or anchor its downbeat three
+    /// milliseconds in. <c>DeckSetGridBpm</c> is the dangerous one: it persists a MANUAL beat grid, and a
+    /// manual grid is protected from re-analysis, so one stray fader move would permanently pin a track
+    /// to a nonsense tempo. Tempo by ear has a kind that IS shaped for a control —
+    /// <c>DeckBpmNudge</c>, whose Value is a signed BPM delta — and that one is offered.</description></item>
     /// </list>
     /// </summary>
     public static IReadOnlySet<PerformanceActionKind> NotBindable { get; } =
@@ -154,5 +155,9 @@ public static class ActionTargetVocabulary
             PerformanceActionKind.AudioFxSetParameter,
             PerformanceActionKind.AudioFxLoadPreset,
             PerformanceActionKind.DeckSetPhaseSyncReady,
+            PerformanceActionKind.DeckBpm,
+            PerformanceActionKind.DeckSetGridBpm,
+            PerformanceActionKind.DeckSetFirstBeat,
+            PerformanceActionKind.DeckSetDownbeat,
         };
 }
