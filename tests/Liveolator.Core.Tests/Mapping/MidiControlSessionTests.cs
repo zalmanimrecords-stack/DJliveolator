@@ -285,6 +285,63 @@ public sealed class MidiControlSessionTests
     }
 
     /// <summary>Returns a single configured mapping profile (or null); other Live data is unused here.</summary>
+    [Fact]
+    public async Task ApplyProfileAsync_RekeysTheChoiceToTheConnectedDevice_AndPersistsIt()
+    {
+        // Manual profile choice from SETTINGS. The store is keyed by device name, so a profile applied
+        // under its own catalogue name ("DDJ-400 (Pioneer DJ)") would apply now and vanish on restart.
+        using var session = NewSession();
+        await session.StartAsync(new MidiSettings { ControllerInputName = "Push" });
+        var chosen = new ControllerMappingProfile("DDJ-400 (Pioneer DJ)", "DDJ-400", new[] { PadBinding });
+
+        bool applied = await session.ApplyProfileAsync(chosen);
+
+        Assert.True(applied);
+        Assert.Equal("Ableton Push", session.ActiveProfile!.Name);
+        Assert.Equal("Ableton Push", session.ActiveProfile.DeviceHint);
+        Assert.Equal(chosen.Bindings, session.ActiveProfile.Bindings);
+        Assert.Equal("Ableton Push", _store.SavedProfile!.Name);
+        Assert.Equal(chosen.Bindings, _store.SavedProfile.Bindings);
+    }
+
+    [Fact]
+    public async Task ApplyProfileAsync_WithNoControllerConnected_ChangesNothing()
+    {
+        using var session = NewSession();
+
+        bool applied = await session.ApplyProfileAsync(
+            new ControllerMappingProfile("DDJ-400", "DDJ-400", new[] { PadBinding }));
+
+        Assert.False(applied);
+        Assert.Null(session.ActiveProfile);
+        Assert.Null(_store.SavedProfile);
+    }
+
+    [Fact]
+    public async Task ApplyProfileAsync_TellsTheUiTheMappingChanged()
+    {
+        using var session = NewSession();
+        await session.StartAsync(new MidiSettings { ControllerInputName = "Push" });
+        ControllerMappingProfile? announced = null;
+        session.MappingChanged += (_, profile) => announced = profile;
+
+        await session.ApplyProfileAsync(
+            new ControllerMappingProfile("DDJ-400", "DDJ-400", new[] { PadBinding }));
+
+        Assert.NotNull(announced);
+        Assert.Equal(new[] { PadBinding }, announced!.Bindings);
+    }
+
+    [Fact]
+    public void AvailableProfiles_ExposesTheCatalogTheSessionSelectsFrom()
+    {
+        var catalog = new[] { new ControllerMappingProfile("DDJ-400", "DDJ-400", Array.Empty<ControllerBinding>()) };
+
+        using var session = NewSession(catalog);
+
+        Assert.Equal(catalog, session.AvailableProfiles);
+    }
+
     private sealed class FakeLiveProfileStore : ILiveProfileStore
     {
         public ControllerMappingProfile? Profile { get; set; }

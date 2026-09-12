@@ -41,12 +41,34 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         RemoveCommand = ReactiveCommand.CreateFromTask(RemoveSelectedAsync);
         ExportMappingCommand = ReactiveCommand.CreateFromTask(ExportAsync);
         ImportMappingCommand = ReactiveCommand.CreateFromTask(ImportAsync);
+        Profiles = session.AvailableProfiles;
+        ApplyProfileCommand = ReactiveCommand.CreateFromTask(ApplyProfileAsync);
         _session.MappingChanged += OnMappingChanged;
         Refresh(_session.ActiveProfile);
     }
 
     public ObservableCollection<MappingTargetViewModel> Targets { get; }
     public ObservableCollection<MappingBindingViewModel> Bindings { get; } = new();
+
+    /// <summary>
+    /// The known controller profiles, offered for manual choice. Auto-selection matches a profile's
+    /// hint against the device's reported name, so a supported controller reporting an unexpected name
+    /// — through a hub, a firmware revision, a driver that decorates it — would otherwise be stuck on
+    /// the empty generic template with no way to reach its map.
+    /// </summary>
+    public IReadOnlyList<ControllerMappingProfile> Profiles { get; }
+
+    private ControllerMappingProfile? _selectedProfile;
+
+    /// <summary>The profile the picker is pointing at; null until the user chooses one.</summary>
+    public ControllerMappingProfile? SelectedProfile
+    {
+        get => _selectedProfile;
+        set => this.RaiseAndSetIfChanged(ref _selectedProfile, value);
+    }
+
+    /// <summary>True when there is anything to pick, so the View can hide the whole row otherwise.</summary>
+    public bool HasProfiles => Profiles.Count > 0;
 
     public MappingTargetViewModel? SelectedTarget
     {
@@ -122,6 +144,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> RemoveCommand { get; }
     public ReactiveCommand<Unit, Unit> ExportMappingCommand { get; }
     public ReactiveCommand<Unit, Unit> ImportMappingCommand { get; }
+    public ReactiveCommand<Unit, Unit> ApplyProfileCommand { get; }
 
     private void BeginLearn()
     {
@@ -227,6 +250,31 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         ControllerMappingProfile installed = imported with { Name = device, DeviceHint = device };
         await _profileStore.SaveMappingProfileAsync(installed).ConfigureAwait(false);
         Status = $"Imported '{imported.Name}' for {device}. Press Save to apply.";
+    }
+
+    // Applies the picked profile to the connected controller. Replaces the active mapping wholesale —
+    // that is the point of picking one — and the session persists it under the device name so it
+    // survives a restart.
+    private async Task ApplyProfileAsync()
+    {
+        if (SelectedProfile is not { } chosen)
+        {
+            Status = "Pick a controller profile first.";
+            return;
+        }
+
+        bool applied = await _session.ApplyProfileAsync(chosen).ConfigureAwait(false);
+        if (!applied)
+        {
+            Status = "Connect a MIDI controller in Settings before applying a profile.";
+            return;
+        }
+
+        // Applying raises MappingChanged, whose handler SCHEDULES a refresh that also sets Status.
+        // Queueing this behind it on the same scheduler is what keeps the specific message from being
+        // overwritten by the generic "Mapping captured" one a moment later.
+        string message = $"Applied the {chosen.Name} profile to {DeviceName}.";
+        RxApp.MainThreadScheduler.Schedule(() => Status = message);
     }
 
     // A filesystem-safe suggested name based on the device model, e.g. "CMD-Studio-2A-midi-map.json".

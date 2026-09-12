@@ -1,12 +1,31 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mappings="clr-namespace:Liveolator.App.Features.Mappings"
+             xmlns:core="clr-namespace:Liveolator.Core.Mapping;assembly=Liveolator.Core"
              x:Class="Liveolator.App.Features.Mappings.MappingsView"
              x:DataType="mappings:MappingsViewModel">
   <Grid Margin="24" RowDefinitions="Auto,Auto,*,Auto">
     <StackPanel>
       <TextBlock Classes="section" Text="MIDI MAPPINGS" />
       <TextBlock Classes="faint" Text="{Binding DeviceName}" />
+
+      <!-- Manual profile choice. Auto-selection matches on the device's reported name, so a supported
+           controller reporting an unexpected one has no other way to reach its shipped map. -->
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,10,0,0" IsVisible="{Binding HasProfiles}">
+        <TextBlock Classes="faint" VerticalAlignment="Center" Text="Profile" />
+        <ComboBox Grid.Column="1" Margin="10,0,0,0" HorizontalAlignment="Stretch"
+                  PlaceholderText="Choose a controller profile"
+                  ItemsSource="{Binding Profiles}"
+                  SelectedItem="{Binding SelectedProfile}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="core:ControllerMappingProfile">
+              <TextBlock Text="{Binding Name}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <Button Grid.Column="2" Classes="spartan" Content="Apply" Margin="10,0,0,0"
+                Command="{Binding ApplyProfileCommand}" />
+      </Grid>
       <!-- Getting-started prompt shown only for an unmapped (e.g. generic) controller. -->
       <TextBlock Classes="faint" Margin="0,8,0,0" TextWrapping="Wrap"
                  Text="{Binding LearnHint}"
