@@ -161,7 +161,9 @@ public sealed class JsonSettingsStore : ISettingsStore
 
         AppSettings normalized = settings.Normalized();
         System.IO.Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        string tempPath = _path + ".tmp";
+        // A UNIQUE temp name, so concurrent writers never collide on one "<path>.tmp" and a temp
+        // abandoned by a killed writer cannot block the next save. Mirrors JsonCatalogStore.
+        string? tempPath = $"{_path}.{Guid.NewGuid():N}.tmp";
         var snapshot = new SettingsSnapshot(
             SettingsSnapshot.CurrentVersion,
             normalized.Audio.OutputDeviceId,
@@ -194,12 +196,21 @@ public sealed class JsonSettingsStore : ISettingsStore
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to
         // resume on the captured SynchronizationContext — so SaveWindowLayout's GetResult() on the UI
         // thread at window close DEADLOCKS the app ("X freezes, only killing the process stops it").
-        var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write);
-        await using (stream.ConfigureAwait(false))
+        try
         {
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
+            var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write);
+            await using (stream.ConfigureAwait(false))
+            {
+                await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            File.Move(tempPath, _path, overwrite: true);
+            tempPath = null;
         }
-        File.Move(tempPath, _path, overwrite: true);
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+        }
     }
 }
