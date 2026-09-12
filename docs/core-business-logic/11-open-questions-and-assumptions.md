@@ -50,13 +50,13 @@
    a temp file then moves it, so corruption was never the exposure. Two real defects were measured
    instead. (a) Six JSON stores used a FIXED `<path>.tmp`, so two writers collided on the temp path and
    a temp abandoned by a killed process broke every later save — fixed, each now uses a unique name.
-   (b) **Still open:** concurrent saves lose a race on the final `File.Move(..., overwrite: true)`,
-   throwing `UnauthorizedAccessException`. The `ConcurrentSaves` tests fail 1-2 of 4 on nearly every
-   run, and this reproduces on clean `master`, so it predates the fix above. `_saveGate` serializes one
-   store instance and nothing else, while the app and the MCP server both write `JsonPlaylistStore` and
-   `JsonStudioProjectStore`. *Treatment:* a bounded retry around the move, or a cross-process mutex.
-   What remains genuinely unanswered is the lost-update question: both processes read-modify-write whole
-   files, so the last writer silently wins.
+   (b) Concurrent saves lost a race on the final `File.Move(..., overwrite: true)` and threw
+   `UnauthorizedAccessException` — a save that silently did not happen. It predated both fixes
+   (reproduced on clean `master`) and is now **fixed**: `AtomicFileReplace.ReplaceAsync` retries over
+   ~310 ms and then rethrows, and all 11 replace sites in `Liveolator.Media` route through it. The
+   `ConcurrentSaves` tests went from failing on nearly every run to 6/6 clean.
+   What remains genuinely unanswered is the **lost-update** question: both processes read-modify-write
+   whole files, so the last writer still silently wins.
 9. ~~**Is the manual-beat-grid protection rule actually enforced?**~~ **Closed 2026-09-11.**
    It is. `MusicTrack.AnalysisIsManual` gates the reanalysis path in `MusicLibrary` and
    `CatalogReanalysisService`, a failed analysis never replaces a good one, and

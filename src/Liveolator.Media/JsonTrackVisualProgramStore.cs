@@ -107,7 +107,7 @@ public sealed class JsonTrackVisualProgramStore : ITrackVisualProgramStore
                         stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
                 }
 
-                File.Move(tempPath, path, overwrite: true);
+                await AtomicFileReplace.ReplaceAsync(tempPath, path, cancellationToken).ConfigureAwait(false);
             }
             finally
             {

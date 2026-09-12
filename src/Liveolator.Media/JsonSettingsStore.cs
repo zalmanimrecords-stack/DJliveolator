@@ -204,7 +204,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken)
                     .ConfigureAwait(false);
             }
-            File.Move(tempPath, _path, overwrite: true);
+            await AtomicFileReplace.ReplaceAsync(tempPath, _path, cancellationToken).ConfigureAwait(false);
             tempPath = null;
         }
         finally

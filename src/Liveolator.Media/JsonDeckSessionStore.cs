@@ -83,7 +83,7 @@ public sealed class JsonDeckSessionStore : IDeckSessionStore
             await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
                 await JsonSerializer.SerializeAsync(
                     stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-            File.Move(tempPath, _path, overwrite: true);
+            await AtomicFileReplace.ReplaceAsync(tempPath, _path, cancellationToken).ConfigureAwait(false);
             tempPath = null;
         }
         finally

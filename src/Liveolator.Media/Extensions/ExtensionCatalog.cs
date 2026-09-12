@@ -93,6 +93,6 @@ public sealed class ExtensionCatalog : IExtensionCatalog
         string temp = _registryPath + ".tmp";
         await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             await JsonSerializer.SerializeAsync(stream, registry, JsonOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(temp, _registryPath, overwrite: true);
+        await AtomicFileReplace.ReplaceAsync(temp, _registryPath, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -69,7 +69,7 @@ public sealed class JsonAudioEffectRackStateStore : IAudioEffectRackStateStore
                 racks.OrderBy(r => r.Slot).ToArray());
             await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, _path, overwrite: true);
+            await AtomicFileReplace.ReplaceAsync(temp, _path, cancellationToken).ConfigureAwait(false);
             temp = null;
         }
         finally

@@ -39,7 +39,7 @@ internal sealed class JsonFileSnapshotIo
             tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
             await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
                 await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-            File.Move(tempPath, path, overwrite: true);
+            await AtomicFileReplace.ReplaceAsync(tempPath, path, cancellationToken).ConfigureAwait(false);
             tempPath = null;
         }
         finally
