@@ -364,6 +364,20 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
             new("Visuals: Strobe", PerformanceActionKind.VisualToggleStrobe, 0),
         ]);
 
+        // Everything else the action vocabulary declares, so a kind added to PerformanceActionKind is
+        // bindable without editing this list (doc 06 recorded 14 kinds that had a handler but no route).
+        // The hand-written entries above stay authoritative: they carry hardware knowledge a generated
+        // entry cannot know — the jog's offset-binary encoding and 128 ticks/revolution, the per-band EQ
+        // arguments — so any kind they already cover is skipped here.
+        HashSet<PerformanceActionKind> handWritten = targets.Select(target => target.Action).ToHashSet();
+        foreach ((PerformanceActionKind kind, ActionTarget target) in ActionTargetVocabulary.Targets
+                     .Where(entry => !handWritten.Contains(entry.Key))
+                     .OrderBy(entry => entry.Value.Label, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (MappingTargetViewModel generated in Expand(kind, target))
+                targets.Add(generated);
+        }
+
         // One learn target per controllable parameter of every registered generator preset (doc 28), so a
         // hardware knob can be bound to e.g. GLOW. The binding carries the namespaced macro name as its
         // Argument; the learn session and ControllerBinding already thread Argument through to VisualSetMacro.
@@ -382,6 +396,31 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         }
 
         return targets;
+    }
+
+    // Deck identity for a per-deck target; the deck itself rides in the action's Slot (A = 0, B = 1).
+    private static readonly string[] DeckLabels = ["A", "B"];
+
+    // One vocabulary entry becomes one target per deck (when the kind addresses a deck) and per required
+    // argument value (EQ band, stem, hot-cue pad), mirroring how the hand-written entries are laid out.
+    private static IEnumerable<MappingTargetViewModel> Expand(PerformanceActionKind kind, ActionTarget target)
+    {
+        IReadOnlyList<string?> arguments = target.Arguments is { Count: > 0 } declared
+            ? declared.Cast<string?>().ToList()
+            : [null];
+        int slots = target.PerDeck ? DeckLabels.Length : 1;
+
+        for (int slot = 0; slot < slots; slot++)
+        {
+            string label = target.PerDeck ? $"Deck {DeckLabels[slot]}: {target.Label}" : target.Label;
+            foreach (string? argument in arguments)
+                yield return new MappingTargetViewModel(
+                    argument is null ? label : $"{label} {argument}",
+                    kind,
+                    slot,
+                    target.InputMode,
+                    Argument: argument);
+        }
     }
 
     public void Dispose() => _session.MappingChanged -= OnMappingChanged;
