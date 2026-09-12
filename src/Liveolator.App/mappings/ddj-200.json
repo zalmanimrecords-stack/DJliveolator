@@ -1,0 +1,231 @@
+{
+  "Version": 1,
+  "Profile": {
+    "Name": "DDJ-200 (Pioneer DJ)",
+    "DeviceHint": "DDJ-200",
+    "Bindings": [
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 6,
+        "Data1": 31,
+        "Action": "MixerCrossfade",
+        "InputMode": "Absolute",
+        "Slot": 0
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 0,
+        "Data1": 11,
+        "Action": "DeckPlayPause",
+        "InputMode": "Momentary",
+        "Slot": 0
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 0,
+        "Data1": 12,
+        "Action": "DeckCuePlay",
+        "InputMode": "Momentary",
+        "Slot": 0,
+        "ReportRelease": true
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 0,
+        "Data1": 88,
+        "Action": "DeckSyncToggle",
+        "InputMode": "Toggle",
+        "Slot": 0
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 0,
+        "Data1": 84,
+        "Action": "MixerCueToggle",
+        "InputMode": "Toggle",
+        "Slot": 0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 0,
+        "Action": "DeckPitch",
+        "InputMode": "Absolute",
+        "Slot": 0,
+        "SoftTakeover": true
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 19,
+        "Action": "MixerChannelGain",
+        "InputMode": "Absolute",
+        "Slot": 0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 7,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 0,
+        "Argument": "High"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 11,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 0,
+        "Argument": "Mid"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 15,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 0,
+        "Argument": "Low"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 33,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 0,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 34,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 0,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 0,
+        "Data1": 35,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 0,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 1,
+        "Data1": 11,
+        "Action": "DeckPlayPause",
+        "InputMode": "Momentary",
+        "Slot": 1
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 1,
+        "Data1": 12,
+        "Action": "DeckCuePlay",
+        "InputMode": "Momentary",
+        "Slot": 1,
+        "ReportRelease": true
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 1,
+        "Data1": 88,
+        "Action": "DeckSyncToggle",
+        "InputMode": "Toggle",
+        "Slot": 1
+      },
+      {
+        "TriggerType": "NoteOn",
+        "Channel": 1,
+        "Data1": 84,
+        "Action": "MixerCueToggle",
+        "InputMode": "Toggle",
+        "Slot": 1
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 0,
+        "Action": "DeckPitch",
+        "InputMode": "Absolute",
+        "Slot": 1,
+        "SoftTakeover": true
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 19,
+        "Action": "MixerChannelGain",
+        "InputMode": "Absolute",
+        "Slot": 1
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 7,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 1,
+        "Argument": "High"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 11,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 1,
+        "Argument": "Mid"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 15,
+        "Action": "MixerEqBand",
+        "InputMode": "Absolute",
+        "Slot": 1,
+        "Argument": "Low"
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 33,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 1,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 34,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 1,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      },
+      {
+        "TriggerType": "ControlChange",
+        "Channel": 1,
+        "Data1": 35,
+        "Action": "DeckJog",
+        "InputMode": "Relative",
+        "Slot": 1,
+        "Relative": "OffsetBinary",
+        "RelativeTicksPerRevolution": 128.0
+      }
+    ]
+  }
+}
