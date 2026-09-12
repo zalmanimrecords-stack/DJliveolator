@@ -76,12 +76,24 @@ public sealed class JsonPlaylistStore : IPlaylistStore
 
         System.IO.Directory.CreateDirectory(_directory);
         string path = PathFor(playlist.Name);
-        string tempPath = path + ".tmp";
+        // A UNIQUE temp name: the app and the liveolator-mcp server both write playlists, so a fixed
+        // "<path>.tmp" is a cross-process collision, and a temp abandoned by a killed writer blocks the
+        // next save. Mirrors JsonCatalogStore.
+        string? tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
         var snapshot = new PlaylistSnapshot(PlaylistSnapshot.CurrentVersion, playlist.Name, playlist.TrackPaths.ToList());
 
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, path, overwrite: true);
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
+                await JsonSerializer.SerializeAsync(stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, path, overwrite: true);
+            tempPath = null;
+        }
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+        }
     }
 
     public Task DeleteAsync(string name, CancellationToken cancellationToken = default)

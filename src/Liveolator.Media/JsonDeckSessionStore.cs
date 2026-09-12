@@ -73,12 +73,23 @@ public sealed class JsonDeckSessionStore : IDeckSessionStore
 
         string directory = System.IO.Path.GetDirectoryName(_path)!;
         System.IO.Directory.CreateDirectory(directory);
-        string tempPath = _path + ".tmp";
+        // A UNIQUE temp name, so concurrent writers never collide on one "<path>.tmp" and a temp
+        // abandoned by a killed writer cannot block the next save. Mirrors JsonCatalogStore.
+        string? tempPath = $"{_path}.{Guid.NewGuid():N}.tmp";
         var snapshot = new DeckSessionSnapshot(DeckSessionSnapshot.CurrentVersion, decks.ToList());
 
-        await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
-            await JsonSerializer.SerializeAsync(
-                stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        File.Move(tempPath, _path, overwrite: true);
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write))
+                await JsonSerializer.SerializeAsync(
+                    stream, snapshot, SerializerOptions, cancellationToken).ConfigureAwait(false);
+            File.Move(tempPath, _path, overwrite: true);
+            tempPath = null;
+        }
+        finally
+        {
+            if (tempPath is not null)
+                File.Delete(tempPath);
+        }
     }
 }
