@@ -9,7 +9,7 @@ namespace Liveolator.App.Tests.Composition;
 public sealed class DeckSessionPersistenceTests
 {
     [Fact]
-    public void Constructor_RestoresExistingTracksThroughDeckActions()
+    public void Restore_LoadsExistingTracksThroughDeckActions()
     {
         string track = System.IO.Path.GetTempFileName();
         try
@@ -18,7 +18,14 @@ public sealed class DeckSessionPersistenceTests
             var store = new FakeDeckSessionStore(
                 [new DeckSessionState(1, track, 128, 0.2)]);
 
-            using var persistence = new DeckSessionPersistence(dispatcher, store, deckCount: 2);
+            using var persistence = new DeckSessionPersistence(
+                dispatcher, store, deckCount: 2, enableRetryTimer: false);
+
+            // The constructor deliberately dispatches NOTHING: opening a track can take seconds on a
+            // network share and this runs before the window exists. The load happens on the restore tick,
+            // which the test drives directly.
+            Assert.Empty(dispatcher.Dispatched);
+            persistence.RetryPending();
 
             Assert.Collection(
                 dispatcher.Dispatched,
@@ -60,7 +67,32 @@ public sealed class DeckSessionPersistenceTests
     }
 
     [Fact]
-    public void Constructor_ReAppliesAManuallySetDownbeat_WhenSaved()
+    public void Constructor_TouchesNeitherTheEngineNorTheFilesystem()
+    {
+        // The whole point of the deferral: this type is built inside the composition root, before the
+        // window exists. A reachability probe is as blocking as the load — File.Exists on a share that
+        // has gone away waits for the SMB timeout — so neither may happen here.
+        var dispatcher = new FakeDispatcher();
+        var store = new FakeDeckSessionStore([new DeckSessionState(0, @"\\server\share\track.mp3", 128, 0.2)]);
+        int probes = 0;
+
+        using var persistence = new DeckSessionPersistence(
+            dispatcher, store, deckCount: 2,
+            fileExists: _ => { probes++; return true; },
+            enableRetryTimer: false);
+
+        Assert.Empty(dispatcher.Dispatched);
+        Assert.Equal(0, probes);
+
+        // ...and it all still happens, one tick later.
+        persistence.RetryPending();
+
+        Assert.Equal(1, probes);
+        Assert.Contains(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckLoadTrack);
+    }
+
+    [Fact]
+    public void Restore_ReAppliesAManuallySetDownbeat_WhenSaved()
     {
         string track = System.IO.Path.GetTempFileName();
         try
@@ -69,7 +101,9 @@ public sealed class DeckSessionPersistenceTests
             var store = new FakeDeckSessionStore(
                 [new DeckSessionState(1, track, 128, 0.2, DownbeatSeconds: 0.55)]);
 
-            using var persistence = new DeckSessionPersistence(dispatcher, store, deckCount: 2);
+            using var persistence = new DeckSessionPersistence(
+                dispatcher, store, deckCount: 2, enableRetryTimer: false);
+            persistence.RetryPending();
 
             // The saved "one" rides back through its own action so the deck re-anchors its bars on restart.
             Assert.Contains(dispatcher.Dispatched, a =>

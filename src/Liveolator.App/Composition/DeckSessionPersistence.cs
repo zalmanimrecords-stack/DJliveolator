@@ -25,6 +25,11 @@ internal sealed class DeckSessionPersistence : IDisposable
     // below any human "restart and start mixing" window, and a missed mount just waits one more tick.
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(5);
 
+    // The first tick fires almost at once: restoring a deck is not "wait for a drive to mount", it only
+    // has to happen off the startup path. Measured cost of doing it inline: 7.3 s for one track on a
+    // network share, all of it before the window existed.
+    private static readonly TimeSpan FirstLoadDelay = TimeSpan.FromMilliseconds(150);
+
     private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly IDeckSessionStore _store;
     private readonly Func<string, bool> _fileExists;
@@ -59,20 +64,22 @@ internal sealed class DeckSessionPersistence : IDisposable
         _logger = logger ?? (ILogger)NullLogger<DeckSessionPersistence>.Instance;
 
         Restore(deckCount);
-        // Subscribe AFTER restoring so the restore's own load dispatches don't echo back and re-save.
+        // Restore only reads the saved state; the loads themselves run on the timer below, so nothing
+        // dispatched here can echo back before the subscription is in place.
         _dispatcher.FeedbackChanged += OnFeedbackChanged;
         // Watch the raw actions too: PerformanceAction.Origin (not carried by feedback) is what tells an
         // analyzer-derived downbeat from a manual SET ONE. ActionDispatched fires before routing, so the
         // marker is always in place by the time the handler's feedback echo reaches OnFeedbackChanged.
         _dispatcher.ActionDispatched += OnActionDispatched;
 
-        // Only run the reachability poll when something was actually deferred — an all-local session
-        // never starts a timer.
+        // Only arm the timer when a session was actually restored — a first run starts nothing. The first
+        // tick lands almost immediately (that is the restore itself); the slow interval afterwards is for
+        // tracks still waiting on a drive to mount, and RetryPending stops the timer once none are left.
         bool hasPending;
         lock (_gate)
             hasPending = _pending.Count > 0;
         if (enableRetryTimer && hasPending)
-            _retryTimer = new Timer(_ => RetryPending(), null, RetryInterval, RetryInterval);
+            _retryTimer = new Timer(_ => RetryPending(), null, FirstLoadDelay, RetryInterval);
     }
 
     private void Restore(int deckCount)
@@ -92,20 +99,16 @@ internal sealed class DeckSessionPersistence : IDisposable
                 // saved session — it stays in _decks and is re-saved on the next change.
                 _decks[deck.Slot] = deck;
 
-                if (_fileExists(deck.TrackPath))
-                {
-                    DispatchLoad(deck);
-                }
-                else
-                {
-                    // Drive/share offline at launch. Do NOT dispatch a doomed load — the engine cannot
-                    // distinguish a failed BASS open from a real one (DeckTrackLoader's invariant), and the
-                    // load would throw before any feedback reached the deck UI. Defer and auto-load on mount.
-                    _pending[deck.Slot] = deck;
-                    _logger.LogInformation(
-                        "Deck {Slot} track is offline at launch; deferring load until reachable: {Path}",
-                        deck.Slot, deck.TrackPath);
-                }
+                // EVERY deck is deferred, reachable or not. Two reasons, and the second is why this is not
+                // just the offline case any more:
+                //   * a doomed BASS open cannot be told apart from a real one (DeckTrackLoader's
+                //     invariant), so an offline track must never be fed to the engine; and
+                //   * a track that IS reachable can still be slow — a single file on a network share
+                //     measured 7.3 s to open, and this runs inside the composition root, so every second
+                //     of it was a second before the window appeared. Even File.Exists blocks on a dead
+                //     share, so the reachability probe is deferred with the load.
+                // RetryPending does both, off the startup thread, using the path that already existed.
+                _pending[deck.Slot] = deck;
             }
         }
         catch (Exception ex)

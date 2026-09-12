@@ -272,10 +272,15 @@ public sealed partial class TwoDeckBassEngine
         Array.Clear(s.StemMuted); // fresh decoders open at unity — stem mute is per-track, reset to audible
     }
 
-    // End-of-track (A4): fired from the backend's end-of-stream sync (the BASS sync thread). Marks the
-    // slot stopped under the gate, then raises DeckEnded OUTSIDE the lock so a subscriber that drives the
-    // engine back (e.g. the live-queue binding loading the next track) does not run nested under _gate.
-    // Guarded by handle so a stale callback from an already-replaced deck is ignored.
+    // End-of-track (A4): the end sync is armed Mixtime, so this runs ON THE MIXER'S PULL THREAD — the
+    // thread that is generating the audio both decks are playing through. Marking the slot stopped is
+    // cheap and happens here; raising DeckEnded is NOT, because the live-queue binding answers it by
+    // loading the next track, which opens a file (seconds, on a network share) and reads the hot-cue
+    // JSON. Doing that inline starves the mixer and the deck still playing goes silent mid-mix.
+    //
+    // So the raise hops to the thread pool. End-of-track advance is not sample-critical — the deck has
+    // already run out — and the subscriber was never allowed to run under _gate anyway. Guarded by
+    // handle so a stale callback from an already-replaced deck is ignored.
     private void OnDeckEnded(int slot, int handle)
     {
         lock (_gate)
@@ -285,14 +290,18 @@ public sealed partial class TwoDeckBassEngine
             _slots[slot].Deck = deck with { Playing = false };
         }
 
-        try
+        ThreadPool.UnsafeQueueUserWorkItem(static state =>
         {
-            DeckEnded?.Invoke(this, slot);
-        }
-        catch (Exception ex)
-        {
-            // A misbehaving subscriber must not bubble onto the BASS sync thread (global #16/#26).
-            _logger.LogError(ex, "A DeckEnded handler threw for deck slot {Slot}.", slot);
-        }
+            (TwoDeckBassEngine engine, int endedSlot) = state;
+            try
+            {
+                engine.DeckEnded?.Invoke(engine, endedSlot);
+            }
+            catch (Exception ex)
+            {
+                // A misbehaving subscriber must not take down a pool thread (global #16/#26).
+                engine._logger.LogError(ex, "A DeckEnded handler threw for deck slot {Slot}.", endedSlot);
+            }
+        }, (this, slot), preferLocal: false);
     }
 }

@@ -389,13 +389,43 @@ public class TwoDeckBassEngineTests
         engine.PlayPause(0);
         Assert.True(engine.IsPlaying(0));
 
+        // DeckEnded is raised on the thread pool, not on the mixer thread that emitted the end, so the
+        // test waits for it instead of assuming it already ran. Marking the slot stopped IS synchronous.
         int? endedSlot = null;
-        engine.DeckEnded += (_, slot) => endedSlot = slot;
+        using var raised = new ManualResetEventSlim(false);
+        engine.DeckEnded += (_, slot) => { endedSlot = slot; raised.Set(); };
 
         backend.EmitDeckEnd(100); // the stream ran out
 
+        Assert.True(raised.Wait(TimeSpan.FromSeconds(5)), "DeckEnded was never raised");
         Assert.Equal(0, endedSlot);
         Assert.False(engine.IsPlaying(0));
+    }
+
+    [Fact]
+    public void DeckEnd_DoesNotRaiseOnTheThreadThatEmittedIt()
+    {
+        // The end sync is armed Mixtime, so the emitting thread is the mixer's pull thread — the one
+        // generating the audio both decks play through. The live-queue binding answers DeckEnded by
+        // loading the next track, which opens a file; inline, that starves the mixer and the deck still
+        // playing goes silent. This test is the guard: the raise must leave the emitting thread.
+        using var engine = NewEngine(out FakeBassMixerBackend backend, out _);
+        engine.Load(0, @"C:\a.wav"); // handle 100
+        engine.PlayPause(0);
+
+        int emittingThread = Environment.CurrentManagedThreadId;
+        int raisedOnThread = emittingThread;
+        using var raised = new ManualResetEventSlim(false);
+        engine.DeckEnded += (_, _) =>
+        {
+            raisedOnThread = Environment.CurrentManagedThreadId;
+            raised.Set();
+        };
+
+        backend.EmitDeckEnd(100);
+
+        Assert.True(raised.Wait(TimeSpan.FromSeconds(5)), "DeckEnded was never raised");
+        Assert.NotEqual(emittingThread, raisedOnThread);
     }
 
     [Fact]
@@ -421,11 +451,14 @@ public class TwoDeckBassEngineTests
         engine.Load(1, @"C:\b.wav"); // handle 101
 
         var endedSlots = new System.Collections.Generic.List<int>();
-        engine.DeckEnded += (_, slot) => endedSlots.Add(slot);
+        using var raised = new ManualResetEventSlim(false);
+        engine.DeckEnded += (_, slot) => { lock (endedSlots) endedSlots.Add(slot); raised.Set(); };
 
         backend.EmitDeckEnd(101);
 
-        Assert.Equal(new[] { 1 }, endedSlots);
+        Assert.True(raised.Wait(TimeSpan.FromSeconds(5)), "DeckEnded was never raised");
+        lock (endedSlots)
+            Assert.Equal(new[] { 1 }, endedSlots);
     }
 
     [Fact]
