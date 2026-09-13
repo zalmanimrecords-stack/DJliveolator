@@ -83,6 +83,13 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
 
 ### Beat-grid confidence and sync
 
+- **Sync phase calculations use playback-time coordinates.** The engine divides source playhead
+  positions and grid anchors by each deck's nominal playback rate and supplies effective BPM to
+  `PhaseAlignmentCalculator`. Output latency is subtracted in playback seconds; returned snap
+  offsets are multiplied by the follower rate before seeking in source seconds. This prevents
+  false phase corrections when differently pitched tracks are already beatmatched. Regression
+  coverage includes five-minute simulated mixes, master pitch, half-time followers, latency,
+  one-shot alignment, bar alignment and continuous re-snaps (`BeatSyncMediaTimeTests`).
 - **Phase sync is offered only against a grid both decks can vouch for.** `GridConfidence` carries
   `PhaseSyncReady`, `TempoTrusted` and `Analyzed` as three separate answers.
   `DeckSlot.PhaseSyncReady` defaults to **false** and resets to false on every load, so a track with

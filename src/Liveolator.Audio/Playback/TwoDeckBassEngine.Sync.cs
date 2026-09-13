@@ -115,7 +115,7 @@ public sealed partial class TwoDeckBassEngine
                 return;
             }
 
-            double leaderRate = leader.PlaybackRate;
+            double leaderRate = leader.SyncLocked ? SyncedRateFor(slot == 0 ? 1 : 0) : leader.PlaybackRate;
             SyncRate sync = TempoSyncCalculator.RateWithin(
                 leader.BaseBpm * leaderRate, s.BaseBpm, SyncRangePercent);
             if (!sync.WithinRange)
@@ -332,20 +332,6 @@ Flush:
             return;
         }
 
-        // Latency-compensated positions. The same output latency is subtracted from both decks, so for
-        // deck-to-deck phase it cancels (they share one output path) — kept explicit for correctness and
-        // for any future split routing; it primarily aligns the shared clock / visuals to audible output.
-        double lat = _phaseLock.OutputLatencySeconds;
-        // Position and first-beat are source-media coordinates. Their grid spacing is therefore the
-        // analyzed base BPM; playback rate changes how quickly the playhead crosses that grid, not the
-        // distance between kick markers in the source.
-        double slavePosition = _backend.GetDeckPositionSeconds(deck.Handle) - lat;
-        double masterPosition = _backend.GetDeckPositionSeconds(leaderDeck.Handle) - lat;
-        var slavePhase = new DeckPhase(
-            slavePosition, LocalKickAnchor(s, slavePosition), s.BaseBpm);
-        var masterPhase = new DeckPhase(
-            masterPosition, LocalKickAnchor(leader, masterPosition), leader.BaseBpm);
-
         // Too wide a tempo gap to beatmatch: don't run the phase loop (it would chase an unreachable grid);
         // hold the deck's own rate and report OutOfRange so the UI shows "can't sync".
         SyncRate sr = SyncRateFor(slot);
@@ -380,7 +366,14 @@ Flush:
             return;
         }
 
-        double beatmatchedRate = sr.Rate; // the tempo-matched base rate, before phase correction
+        // The calculator compares effective beat durations. Normalize BOTH source positions and
+        // anchors by the nominal rate, then supply effective BPM. Using base BPM here incorrectly
+        // treats an ordinary pitch adjustment as a difference in beat duration.
+        double beatmatchedRate = sr.Rate;
+        DeckPhase slavePhase = PlaybackPhase(s, _backend.GetDeckPositionSeconds(deck.Handle),
+            beatmatchedRate, _phaseLock.OutputLatencySeconds);
+        DeckPhase masterPhase = PlaybackPhase(leader, _backend.GetDeckPositionSeconds(leaderDeck.Handle),
+            leader.PlaybackRate, _phaseLock.OutputLatencySeconds);
         // Pass the deck's prior lock state so the controller's lock-zone hysteresis can hold a settled deck
         // Locked across the boundary instead of chattering Locked↔Active each tick.
         PhaseLockCorrection correction =
@@ -396,10 +389,10 @@ Flush:
                 // Seek from the RAW playhead, not the latency-compensated phase base. The -lat term is
                 // valid only for the deck-to-deck error MEASUREMENT (where it cancels); used as an
                 // absolute seek target it would land the deck OutputLatencySeconds behind the beat.
-                // ReSnapSeconds already encodes the correct signed move. Mirrors PhaseAlignToLeader.
+                // ReSnapSeconds is playback time; scale it back to source time before seeking.
                 // (doc 27 medium — now live because production OutputLatencySeconds is non-zero.)
                 double rawPosition = _backend.GetDeckPositionSeconds(deck.Handle);
-                double target = Math.Clamp((rawPosition + correction.ReSnapSeconds) / length, 0.0, 1.0);
+                double target = Math.Clamp((rawPosition + correction.ReSnapSeconds * beatmatchedRate) / length, 0.0, 1.0);
                 _backend.SetDeckPositionFraction(deck.Handle, target);
             }
         }
@@ -593,15 +586,12 @@ Flush:
             return;
         }
 
-        // Deck positions and anchors are measured in source-media seconds, so phase must use each
-        // track's analyzed base BPM. Effective BPM describes wall-clock playback speed and would skew
-        // the kick grid whenever Sync changes the deck rate.
         double followerPosition = _backend.GetDeckPositionSeconds(deck.Handle);
         double leaderPosition = _backend.GetDeckPositionSeconds(leaderDeck.Handle);
-        var followerPhase = new DeckPhase(
-            followerPosition, LocalKickAnchor(s, followerPosition), s.BaseBpm);
-        var leaderPhase = new DeckPhase(
-            leaderPosition, LocalKickAnchor(leader, leaderPosition), leader.BaseBpm);
+        double followerRate = s.SyncLocked ? SyncedRateFor(slot) : s.PlaybackRate;
+        double leaderRate = leader.SyncLocked ? SyncedRateFor(slot == 0 ? 1 : 0) : leader.PlaybackRate;
+        DeckPhase followerPhase = PlaybackPhase(s, followerPosition, followerRate);
+        DeckPhase leaderPhase = PlaybackPhase(leader, leaderPosition, leaderRate);
 
         // Snap onto the leader's DOWNBEAT when BOTH bar anchors are known: a beat-level snap can land
         // beat 3 on the leader's one — audibly locked but musically a bar off. With either downbeat
@@ -615,19 +605,30 @@ Flush:
         bool barSnap = s.Downbeat > 0.0 && leader.Downbeat > 0.0 && !deck.Playing;
         double nudgeSeconds = barSnap
             ? PhaseAlignmentCalculator.BarPhaseNudgeSeconds(
-                followerPhase with { FirstBeatSeconds = s.Downbeat },
-                leaderPhase with { FirstBeatSeconds = leader.Downbeat },
+                followerPhase with { FirstBeatSeconds = s.Downbeat / followerRate },
+                leaderPhase with { FirstBeatSeconds = leader.Downbeat / leaderRate },
                 BeatsPerBar)
             : PhaseAlignmentCalculator.PhaseNudgeSeconds(followerPhase, leaderPhase);
         double length = _backend.GetDeckLengthSeconds(deck.Handle);
         if (length <= 0.0)
             return;
 
-        double targetFraction = Math.Clamp((followerPhase.PositionSeconds + nudgeSeconds) / length, 0.0, 1.0);
+        double targetFraction = Math.Clamp((followerPosition + nudgeSeconds * followerRate) / length, 0.0, 1.0);
         _backend.SetDeckPositionFraction(deck.Handle, targetFraction);
         _logger.LogInformation(
             "Deck slot {Slot} quantize: {Grid}-aligned by {Nudge:F4}s to the leader grid.",
             slot, barSnap ? "bar" : "beat", nudgeSeconds);
+    }
+
+    // This is a coordinate conversion at the current nominal speed, not elapsed playback time.
+    // Preserve source-grid phase, express durations in playback seconds, and only then subtract
+    // output latency. A returned nudge must be multiplied by the follower rate before seeking.
+    private static DeckPhase PlaybackPhase(DeckSlot slot, double sourcePosition, double rate,
+        double latencySeconds = 0.0)
+    {
+        double audibleSourcePosition = sourcePosition - latencySeconds * rate;
+        return new DeckPhase(audibleSourcePosition / rate,
+            LocalKickAnchor(slot, audibleSourcePosition) / rate, slot.BaseBpm * rate);
     }
 
     private static double LocalKickAnchor(DeckSlot slot, double positionSeconds)

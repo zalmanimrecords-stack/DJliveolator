@@ -92,7 +92,9 @@ public class TwoDeckBassEngineSyncTests
         // now sounds at 132 BPM, its kick grid remains spaced at its source 120 BPM in those coordinates.
         var follower = new DeckPhase(backend.GetDeckPositionSeconds(101), 0.30, 120.0);
         var leader = new DeckPhase(backend.GetDeckPositionSeconds(100), 0.10, 132.0);
-        Assert.Equal(0.0, PhaseAlignmentCalculator.BeatPhaseError(follower, leader), 6);
+        Assert.Equal(
+            PhaseAlignmentCalculator.BeatDistance(leader.PositionSeconds, leader.FirstBeatSeconds, leader.Bpm),
+            PhaseAlignmentCalculator.BeatDistance(follower.PositionSeconds, follower.FirstBeatSeconds, follower.Bpm), 6);
     }
 
     [Fact]
