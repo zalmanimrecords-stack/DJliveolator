@@ -54,7 +54,9 @@ public sealed class BassAudioDecoder : IAudioDecoder
 
         // Source decode stream (native rate/channels, float) → a 1-channel target-rate BASSmix decode
         // mixer that resamples + downmixes. MixerEnd ends the mixer when the source runs out.
-        int source = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float);
+        // Read ahead while decoding, especially for NAS files: synchronous small native reads otherwise
+        // serialize network round trips. This is per-stream and does not change the live audio mixer.
+        int source = Bass.CreateStream(filePath, 0, 0, BassFlags.Decode | BassFlags.Float | BassFlags.AsyncFile);
         if (source == 0)
             throw new BassDecodeException($"CreateStream('{filePath}') failed: {Bass.LastError}.");
 

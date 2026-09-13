@@ -163,6 +163,12 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private string? _trackKey;
     private readonly ObservableAsPropertyHelper<string> _pitchPercentText;
     private CancellationTokenSource? _loadCts;
+    private bool _isWaveformLoading;
+    public bool IsWaveformLoading
+    {
+        get => _isWaveformLoading;
+        private set => this.RaiseAndSetIfChanged(ref _isWaveformLoading, value);
+    }
     private bool _disposed;
 
     /// <param name="trackInfo">Resolves a loaded track's catalog facts (title/BPM/key/duration) by path,
@@ -1872,6 +1878,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _loadCts?.Dispose();
         var cts = new CancellationTokenSource();
         _loadCts = cts;
+        IsWaveformLoading = true;
 
         try
         {
@@ -1905,6 +1912,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             MidPeaks = null;
             HighPeaks = null;
             BeatGrid = Array.Empty<double>();
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadCts, cts))
+                IsWaveformLoading = false;
         }
     }
 }

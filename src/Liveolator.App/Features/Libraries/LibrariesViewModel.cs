@@ -56,6 +56,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     // Same stale-load guard for the (separate, slower) waveform decode. Kept apart from the cue sequence so a
     // cue edit (which re-reads cues, not the wave) never drops an in-flight waveform load.
     private int _waveformLoadSequence;
+    private CancellationTokenSource? _waveformLoadCts;
     // Library overview waveform detail — fewer buckets than the deck (6k) since this strip is display-only.
     private const int WaveformBuckets = 2_000;
     // The selected track's decoded overview + stored cue record, held so the hot-cue markers can be
@@ -657,6 +658,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _lifetime.Cancel();
+        ++_waveformLoadSequence;
+        _waveformLoadCts?.Dispose();
+        _waveformLoadCts = null;
         try
         {
             // The pass checks cancellation between tracks, so it winds down promptly; bound the wait so a
@@ -1685,6 +1689,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private void RebuildWaveform()
     {
         int sequence = ++_waveformLoadSequence;
+        _waveformLoadCts?.Cancel();
+        _waveformLoadCts?.Dispose();
+        _waveformLoadCts = null;
         _selectedOverview = null;
         Waveform = null;
         KickPeaks = null;
@@ -1708,16 +1715,17 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
 
         WaveformStatus = "Loading waveform…";
-        _ = LoadWaveformAsync(path, sequence);
+        _waveformLoadCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _ = LoadWaveformAsync(path, sequence, _waveformLoadCts.Token);
     }
 
-    private async Task LoadWaveformAsync(string trackPath, int sequence)
+    private async Task LoadWaveformAsync(string trackPath, int sequence, CancellationToken cancellationToken)
     {
         try
         {
             WaveformOverview overview = await Task.Run(
-                () => _waveformProvider!.GetOverviewAsync(trackPath, WaveformBuckets, _lifetime.Token),
-                _lifetime.Token).ConfigureAwait(false);
+                () => _waveformProvider!.GetOverviewAsync(trackPath, WaveformBuckets, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             RxApp.MainThreadScheduler.Schedule(() =>
             {
                 // The selection changed (or another load started) while we were decoding — drop this result.

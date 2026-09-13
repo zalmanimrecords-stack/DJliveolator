@@ -39,6 +39,7 @@ Rooted at the per-user application-data folder resolved by `JsonCatalogStore.Def
   catalog.music.json          music catalog cache (regenerable)
   catalog.visual.json         visual-media catalog cache (regenerable)
   scan-folders.json           the scan roots the user added
+  cache/waveforms/*.wave      regenerable binary spectral overviews (128 files / 256 MiB maximum)
   live/
     mappings/<name>.json      ControllerMappingProfile
     scenes/<name>.json        VisualBank and its VisualScenes
@@ -56,7 +57,7 @@ alternative to the JSON catalog.
 
 ### Storage rules
 
-- Every file is a versioned snapshot (`{ "Version": N, ... }`) written atomically, temp-then-move.
+- Authored JSON stores use a versioned snapshot (`{ "Version": N, ... }`) written atomically, temp-then-move.
 - Loads are tolerant: a missing file yields null or empty silently; a corrupt or version-mismatched
   file yields null or empty **and** warns, never throws.
 - Profile names are sanitised to a flat `<safe-name>.json`, so a name cannot escape its folder.
@@ -64,6 +65,21 @@ alternative to the JSON catalog.
   analysis caches are regenerable and safe to delete.
 - App-shipped defaults under `defaults/live/` are never written to. `Needs validation` — the rule is
   stated in `docs/13-data-and-persistence.md`; the directory was not observed in this pass.
+
+### Waveform loading (2026-09-12)
+
+`CachedWaveformProvider` wraps `DecodedWaveformProvider` in the App composition root. Library,
+deck and studio requests share a minimum 6,000-bucket resolution and a versioned disk cache.
+Keys include normalized path, file size, modification time and requested resolution. Duplicate
+requests for the same key serialize and reuse the completed result; cancelled or failed decodes
+are not cached. Cache corruption or write failure falls back to decoding; the audio file is never
+copied or changed. Old cache entries are evicted by creation time to enforce both limits.
+
+Offline BASS decoding uses asynchronous file read-ahead for network storage. Selecting a different
+library track cancels the previous preview decode; disposing the library cancels pending work.
+Decks show a loading message while an uncached overview is prepared. First-time loading still
+requires reading the source audio in full, so slow NAS throughput remains a limit; subsequent
+loads, including after restarting the application, use the local overview.
 
 ## Material side effects on user data
 

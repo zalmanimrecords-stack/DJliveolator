@@ -37,6 +37,11 @@
                               SeekCommand="{Binding SeekCommand}" />
       <Border BorderBrush="{DynamicResource Text}" BorderThickness="0,1,0,0"
               CornerRadius="6" Opacity="0.07" IsHitTestVisible="False" />
+      <Border Background="{DynamicResource S2}" IsVisible="{Binding IsWaveformLoading}"
+              IsHitTestVisible="False" CornerRadius="6">
+        <TextBlock Text="LOADING WAVEFORM…" Classes="mono" FontSize="10"
+                   Foreground="{DynamicResource Dim}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Border>
     </Grid>
   </Border>
 </UserControl>

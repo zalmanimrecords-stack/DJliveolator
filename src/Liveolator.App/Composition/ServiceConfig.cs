@@ -298,9 +298,11 @@ public static class ServiceConfig
         services.AddSingleton<ITrackMetadataReader, AtlMetadataReader>();        // Liveolator.Audio (ATL.NET tags)
         // Deck waveform overview (doc 11): decodes the loaded track to peaks for the deck strip. Uses the
         // offline decoder, so it works headless (no realtime BASS needed); failures degrade to no waveform.
-        services.AddSingleton<IWaveformProvider>(sp => new DecodedWaveformProvider(
-            sp.GetRequiredService<IAudioDecoder>(),
-            logger: loggerFactory.CreateLogger<DecodedWaveformProvider>()));
+        services.AddSingleton<IWaveformProvider>(sp => new CachedWaveformProvider(
+            new DecodedWaveformProvider(sp.GetRequiredService<IAudioDecoder>(),
+                logger: loggerFactory.CreateLogger<DecodedWaveformProvider>()),
+            Path.Combine(persistenceRoot, "cache", "waveforms"),
+            loggerFactory.CreateLogger<CachedWaveformProvider>()));
         // Advanced offline analysis (doc 32): Python+librosa song-structure segmentation, behind a
         // download-on-demand runtime. Everything is graceful-null when the runtime is absent, so a
         // library scan behaves exactly as before until the user enables advanced analysis in Settings.
