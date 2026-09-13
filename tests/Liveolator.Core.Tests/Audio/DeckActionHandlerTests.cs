@@ -12,22 +12,10 @@ namespace Liveolator.Core.Tests.Audio;
 
 public class DeckActionHandlerTests
 {
-    private sealed class FakePlaybackEngine : IAudioPlaybackEngine
-    {
-        public List<string> Loaded { get; } = new();
-        public int PlayPauseCalls { get; private set; }
-        public int StopCalls { get; private set; }
-        public bool IsPlaying { get; set; }
-
-        public void Load(string trackPath) => Loaded.Add(trackPath);
-        public void PlayPause() => PlayPauseCalls++;
-        public void Stop() => StopCalls++;
-    }
-
     [Fact]
     public void HandledKinds_AreLoadPlayPauseAndStop()
     {
-        var handler = new DeckActionHandler(new FakePlaybackEngine());
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
 
         Assert.Contains(PerformanceActionKind.DeckLoadTrack, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.DeckPlayPause, handler.HandledKinds);
@@ -37,18 +25,18 @@ public class DeckActionHandlerTests
     [Fact]
     public void LoadTrack_PassesArgumentPathToEngine()
     {
-        var engine = new FakePlaybackEngine();
+        var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);
 
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckLoadTrack, Argument: @"C:\song.flac"));
 
-        Assert.Equal(@"C:\song.flac", Assert.Single(engine.Loaded));
+        Assert.Equal((0, @"C:\song.flac"), Assert.Single(engine.Loaded));
     }
 
     [Fact]
     public void LoadTrack_WithoutArgument_Throws()
     {
-        var handler = new DeckActionHandler(new FakePlaybackEngine());
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine());
 
         Assert.Throws<ArgumentException>(
             () => handler.Handle(new PerformanceAction(PerformanceActionKind.DeckLoadTrack)));
@@ -57,20 +45,21 @@ public class DeckActionHandlerTests
     [Fact]
     public void PlayPauseAndStop_RouteToEngine()
     {
-        var engine = new FakePlaybackEngine();
+        var engine = new FakeMultiDeckEngine();
         var handler = new DeckActionHandler(engine);
 
         handler.Handle(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
         handler.Handle(new PerformanceAction(PerformanceActionKind.TransportStop));
 
-        Assert.Equal(1, engine.PlayPauseCalls);
-        Assert.Equal(1, engine.StopCalls);
+        Assert.Equal(0, Assert.Single(engine.PlayPaused));
+        Assert.Equal(0, Assert.Single(engine.Stopped));
     }
 
     [Fact]
     public void Feedback_ReflectsPlayState()
     {
-        var engine = new FakePlaybackEngine { IsPlaying = true };
+        var engine = new FakeMultiDeckEngine();
+        engine.SetPlaying(0, true);
         var handler = new DeckActionHandler(engine);
 
         ActionFeedbackState fb = handler.GetFeedback(PerformanceActionKind.DeckPlayPause, slot: 0);
@@ -82,7 +71,7 @@ public class DeckActionHandlerTests
     [Fact]
     public void RoutesThroughDispatcher_EndToEnd()
     {
-        var engine = new FakePlaybackEngine();
+        var engine = new FakeMultiDeckEngine();
         var dispatcher = new PerformanceActionDispatcher(
             new[] { new DeckActionHandler(engine) },
             NullLogger<PerformanceActionDispatcher>.Instance);
@@ -91,7 +80,7 @@ public class DeckActionHandlerTests
         dispatcher.Dispatch(new PerformanceAction(PerformanceActionKind.DeckPlayPause));
 
         Assert.Single(engine.Loaded);
-        Assert.Equal(1, engine.PlayPauseCalls);
+        Assert.Equal(0, Assert.Single(engine.PlayPaused));
     }
 
     // --- Two-deck path (slot-addressed) ---
@@ -489,9 +478,11 @@ public class DeckActionHandlerTests
     }
 
     [Fact]
-    public void SingleDeck_RejectsNonZeroSlot()
+    public void OneDeckEngine_RejectsNonZeroSlot()
     {
-        var handler = new DeckActionHandler(new FakePlaybackEngine());
+        // Was "SingleDeck_RejectsNonZeroSlot", covering the retired single-deck adapter. The invariant it
+        // protected is the engine's deck count, so it is stated directly now.
+        var handler = new DeckActionHandler(new FakeMultiDeckEngine(deckCount: 1));
 
         Assert.Throws<ArgumentOutOfRangeException>(() => handler.Handle(
             new PerformanceAction(PerformanceActionKind.DeckPlayPause, Slot: 1)));

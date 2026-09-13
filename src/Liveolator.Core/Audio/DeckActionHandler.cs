@@ -65,12 +65,6 @@ public sealed class DeckActionHandler : PerformanceActionHandlerBase
     // manually-set "one". The anchor itself is forwarded to the engine for bar-level phase alignment.
     private readonly double[] _downbeats;
 
-    /// <summary>Wraps a single-deck engine (slot 0 only) — the existing composition.</summary>
-    public DeckActionHandler(IAudioPlaybackEngine engine)
-        : this(new SingleDeckEngineAdapter(engine ?? throw new ArgumentNullException(nameof(engine))), null)
-    {
-    }
-
     /// <summary>Drives a two-deck engine directly, addressing decks by action slot.</summary>
     /// <param name="nowSeconds">Monotonic seconds source for jog timing; defaults to a process Stopwatch.
     /// Injected in tests so bend/release timing is deterministic.</param>
