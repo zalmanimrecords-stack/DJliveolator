@@ -1874,8 +1874,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         if (_waveformProvider is null)
             return;
 
+        // Cancel the previous load but do NOT dispose it here. Its own invocation is still running and
+        // evaluates cts.Token INSIDE the Task.Run lambda; disposing the source out from under it throws
+        // ObjectDisposedException, which lands in the catch below and blanks the waveform — clobbering
+        // the very load this call is starting. Each invocation disposes its own source once superseded.
         _loadCts?.Cancel();
-        _loadCts?.Dispose();
         var cts = new CancellationTokenSource();
         _loadCts = cts;
         IsWaveformLoading = true;
@@ -1907,16 +1910,23 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         }
         catch (Exception)
         {
-            Waveform = null; // belt-and-braces around the await boundary
-            KickPeaks = null;
-            MidPeaks = null;
-            HighPeaks = null;
-            BeatGrid = Array.Empty<double>();
+            // Only the CURRENT load may blank the deck. A superseded one failing (or being torn down)
+            // must not erase what the newer load already painted.
+            if (ReferenceEquals(_loadCts, cts))
+            {
+                Waveform = null; // belt-and-braces around the await boundary
+                KickPeaks = null;
+                MidPeaks = null;
+                HighPeaks = null;
+                BeatGrid = Array.Empty<double>();
+            }
         }
         finally
         {
             if (ReferenceEquals(_loadCts, cts))
                 IsWaveformLoading = false;
+            else
+                cts.Dispose(); // superseded: already cancelled, and nothing else refers to it
         }
     }
 }
