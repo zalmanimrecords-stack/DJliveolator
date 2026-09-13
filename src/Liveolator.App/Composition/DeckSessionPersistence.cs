@@ -43,6 +43,8 @@ internal sealed class DeckSessionPersistence : IDisposable
     private readonly object _gate = new();
     private readonly Timer? _retryTimer;
     private Task _pendingSave = Task.CompletedTask;
+    // 1 while a retry pass is running, so overlapping timer ticks skip instead of double-loading a deck.
+    private int _retrying;
     private bool _disposed;
 
     /// <param name="fileExists">File-reachability probe (the composition root passes <c>File.Exists</c>;
@@ -124,37 +126,52 @@ internal sealed class DeckSessionPersistence : IDisposable
         if (_disposed)
             return;
 
-        DeckSessionState[] snapshot;
-        lock (_gate)
-        {
-            if (_pending.Count == 0)
-                return;
-            snapshot = _pending.Values.ToArray();
-        }
-
-        // Probe reachability and dispatch OUTSIDE the lock — File.Exists on a network path can block,
-        // and the dispatch synchronously echoes feedback into OnFeedbackChanged (which takes _gate).
-        var loaded = new List<int>();
-        foreach (DeckSessionState deck in snapshot)
-        {
-            if (!_fileExists(deck.TrackPath))
-                continue;
-            DispatchLoad(deck);
-            _logger.LogInformation(
-                "Deferred deck {Slot} track became reachable; loaded {Path}.", deck.Slot, deck.TrackPath);
-            loaded.Add(deck.Slot);
-        }
-
-        if (loaded.Count == 0)
+        // One pass at a time. A pass can take SECONDS — opening a track on a network share does — and the
+        // timer keeps ticking underneath it. Without this, a second tick walks the same still-pending
+        // entries and dispatches the same load again; the restore was observed loading each deck six
+        // times. Harmless when every deferred file was offline (the probe returns instantly), which is
+        // all this path used to handle.
+        if (Interlocked.CompareExchange(ref _retrying, 1, 0) != 0)
             return;
 
-        lock (_gate)
+        try
         {
-            foreach (int slot in loaded)
-                _pending.Remove(slot);
-            // Stop polling once every deferred track has loaded.
-            if (_pending.Count == 0)
-                _retryTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            DeckSessionState[] snapshot;
+            lock (_gate)
+            {
+                if (_pending.Count == 0)
+                    return;
+                snapshot = _pending.Values.ToArray();
+            }
+
+            // Probe reachability and dispatch OUTSIDE the lock — File.Exists on a network path can block,
+            // and the dispatch synchronously echoes feedback into OnFeedbackChanged (which takes _gate).
+            var loaded = new List<int>();
+            foreach (DeckSessionState deck in snapshot)
+            {
+                if (!_fileExists(deck.TrackPath))
+                    continue;
+                DispatchLoad(deck);
+                _logger.LogInformation(
+                    "Deferred deck {Slot} track became reachable; loaded {Path}.", deck.Slot, deck.TrackPath);
+                loaded.Add(deck.Slot);
+            }
+
+            if (loaded.Count == 0)
+                return;
+
+            lock (_gate)
+            {
+                foreach (int slot in loaded)
+                    _pending.Remove(slot);
+                // Stop polling once every deferred track has loaded.
+                if (_pending.Count == 0)
+                    _retryTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref _retrying, 0);
         }
     }
 

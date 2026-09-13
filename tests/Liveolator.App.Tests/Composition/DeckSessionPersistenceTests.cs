@@ -67,6 +67,43 @@ public sealed class DeckSessionPersistenceTests
     }
 
     [Fact]
+    public void A_slow_restore_pass_is_not_re_entered_by_the_next_tick()
+    {
+        // Opening a track on a network share takes seconds, and the retry timer keeps ticking underneath.
+        // A second pass must not walk the same still-pending entry and load the deck again — which is
+        // exactly what happened in the field, six times per deck.
+        string track = System.IO.Path.GetTempFileName();
+        try
+        {
+            var dispatcher = new FakeDispatcher();
+            var store = new FakeDeckSessionStore([new DeckSessionState(0, track, 128, 0.2)]);
+            DeckSessionPersistence? persistence = null;
+            int probes = 0;
+
+            // Re-enter from inside the probe — the same entry is still pending there, because it is only
+            // removed after the whole pass. That is precisely the window the timer used to fire into.
+            persistence = new DeckSessionPersistence(
+                dispatcher, store, deckCount: 2,
+                fileExists: _ =>
+                {
+                    if (++probes == 1)
+                        persistence!.RetryPending();
+                    return true;
+                },
+                enableRetryTimer: false);
+
+            using (persistence)
+                persistence.RetryPending();
+
+            Assert.Single(dispatcher.Dispatched.Where(a => a.Kind == PerformanceActionKind.DeckLoadTrack));
+        }
+        finally
+        {
+            File.Delete(track);
+        }
+    }
+
+    [Fact]
     public void Constructor_TouchesNeitherTheEngineNorTheFilesystem()
     {
         // The whole point of the deferral: this type is built inside the composition root, before the
