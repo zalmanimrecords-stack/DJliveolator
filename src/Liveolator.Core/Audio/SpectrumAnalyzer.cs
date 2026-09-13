@@ -12,6 +12,10 @@ public sealed class SpectrumAnalyzer
 {
     private readonly double[] _window;
     private readonly double[] _frameBuffer;
+    // FFT scratch, owned here so the realtime path allocates nothing per frame. Never escapes Analyze.
+    private readonly double[] _re;
+    private readonly double[] _im;
+    private readonly double[] _magnitude;
 
     public SpectrumAnalyzer(int frameSize = 2048, int waveformPoints = 256)
     {
@@ -25,6 +29,9 @@ public sealed class SpectrumAnalyzer
         SpectrumBins = frameSize / 2 + 1;
         _window = Window.Hann(frameSize);
         _frameBuffer = new double[frameSize];
+        _re = new double[frameSize];
+        _im = new double[frameSize];
+        _magnitude = new double[SpectrumBins];
     }
 
     /// <summary>The exact mono frame length <see cref="Analyze"/> expects.</summary>
@@ -48,10 +55,10 @@ public sealed class SpectrumAnalyzer
         for (int i = 0; i < FrameSize; i++)
             _frameBuffer[i] = monoFrame[i] * _window[i];
 
-        double[] mag = Fft.MagnitudeSpectrum(_frameBuffer);
-        var spectrum = new float[mag.Length];
-        for (int i = 0; i < mag.Length; i++)
-            spectrum[i] = (float)mag[i];
+        Fft.MagnitudeSpectrum(_frameBuffer, _re, _im, _magnitude);
+        var spectrum = new float[_magnitude.Length];
+        for (int i = 0; i < _magnitude.Length; i++)
+            spectrum[i] = (float)_magnitude[i];
 
         return (spectrum, Downsample(monoFrame));
     }

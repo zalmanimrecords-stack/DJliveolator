@@ -70,16 +70,39 @@ public static class Fft
     /// </summary>
     public static double[] MagnitudeSpectrum(ReadOnlySpan<double> frame)
     {
+        var magnitude = new double[(frame.Length / 2) + 1];
+        MagnitudeSpectrum(frame, new double[frame.Length], new double[frame.Length], magnitude);
+        return magnitude;
+    }
+
+    /// <summary>
+    /// Magnitude spectrum into caller-owned buffers, allocating nothing.
+    /// </summary>
+    /// <remarks>
+    /// The realtime path runs this ~86 times a second on the audio thread, where the allocating
+    /// overload's three arrays (~40 KB a frame at 2048) are pure GC pressure — and a collection there
+    /// is a dropout. A caller that reuses its scratch across frames pays nothing.
+    /// <paramref name="re"/> and <paramref name="im"/> must be <paramref name="frame"/>'s length and are
+    /// overwritten; <paramref name="magnitude"/> must be length n/2 + 1.
+    /// </remarks>
+    public static void MagnitudeSpectrum(
+        ReadOnlySpan<double> frame, double[] re, double[] im, Span<double> magnitude)
+    {
+        ArgumentNullException.ThrowIfNull(re);
+        ArgumentNullException.ThrowIfNull(im);
+
         int n = frame.Length;
-        var re = new double[n];
-        var im = new double[n];
+        int bins = (n / 2) + 1;
+        if (re.Length != n || im.Length != n)
+            throw new ArgumentException($"re and im must both be exactly {n} long.", nameof(re));
+        if (magnitude.Length != bins)
+            throw new ArgumentException($"magnitude must be exactly {bins} long.", nameof(magnitude));
+
         frame.CopyTo(re);
+        Array.Clear(im, 0, n); // Forward reads the imaginary part, and a reused buffer still holds the last frame's
         Forward(re, im);
 
-        int bins = n / 2 + 1;
-        var mag = new double[bins];
         for (int i = 0; i < bins; i++)
-            mag[i] = Math.Sqrt(re[i] * re[i] + im[i] * im[i]);
-        return mag;
+            magnitude[i] = Math.Sqrt((re[i] * re[i]) + (im[i] * im[i]));
     }
 }
