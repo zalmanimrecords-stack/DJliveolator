@@ -17,7 +17,7 @@
   The agent branch to merge, e.g. feat/keylock-native.
 
 .PARAMETER Base
-  The integration branch. Default: feat/studio-tab.
+  The integration branch. Default: master (the dev trunk).
 
 .PARAMETER SkipTests
   Build only (faster gate); use only when the branch is docs/scripts-only.
@@ -28,7 +28,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Branch,
-    [string]$Base = "feat/studio-tab",
+    [string]$Base = "master",
     [switch]$SkipTests
 )
 

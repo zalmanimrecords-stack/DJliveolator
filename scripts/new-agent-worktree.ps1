@@ -13,7 +13,8 @@
   (../Liveolator-wt/<slug>).
 
 .PARAMETER Base
-  Branch to fork from. Default: feat/studio-tab (the current integration line).
+  Branch to fork from. Default: master (the dev trunk). The old default, feat/studio-tab, was
+  deleted once its work merged, which made this script fail outright until the base was passed.
 
 .EXAMPLE
   scripts/new-agent-worktree.ps1 -Task keylock-native
@@ -21,7 +22,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Task,
-    [string]$Base = "feat/studio-tab"
+    [string]$Base = "master"
 )
 
 $ErrorActionPreference = "Stop"
