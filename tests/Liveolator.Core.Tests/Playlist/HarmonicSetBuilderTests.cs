@@ -14,7 +14,7 @@ public class HarmonicSetBuilderTests
     private static readonly DateTime T = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     /// <summary>Builds a keyed track; Tonic/Mode are irrelevant to the builder, which keys off Camelot.</summary>
-    private static MusicTrack Track(string path, string camelot, double? bpm)
+    private static MusicTrack Track(string path, string camelot, double? bpm, string? genre = null)
         => new(
             new ScannedFile(path, 1000, T),
             bpm is null ? null : new BpmResult(bpm.Value, 0.9),
@@ -22,7 +22,8 @@ public class HarmonicSetBuilderTests
             TimeSpan.FromMinutes(4),
             TrackCues.None,
             MediaAnalysisStatus.Ok,
-            null);
+            null,
+            genre is null ? null : new TrackMetadata(null, null, null, null, genre, null, null, null, null, null, null, null));
 
     private readonly HarmonicSetBuilder _builder = new();
 
@@ -191,4 +192,105 @@ public class HarmonicSetBuilderTests
             set.Entries.Select(e => e.Track.File.Path).ToArray());
     }
 
+    /// <summary>
+    /// The same cul-de-sac, under the trends the APP actually asks for. <see cref="BpmTrend.Any"/> is
+    /// the default and is what both in-app callers pass (playlist auto-fill and STUDIO), so until this
+    /// passed, every auto-fill in the product ran the very greedy path the lookahead was written to
+    /// avoid — the fix above only ever applied to a caller that named Rising or Falling.
+    /// </summary>
+    [Theory]
+    [InlineData(BpmTrend.Any)]
+    [InlineData(BpmTrend.Steady)]
+    public void Build_TakesTheLongerChain_UnderACyclicTrendToo(BpmTrend trend)
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140);
+        // Nearest in tempo, and compatible with the seed — but 9A's neighbours (9B, 10A) are not in the
+        // pool and its only other partner is the seed itself, which is already spent.
+        var culDeSac = Track("cul-de-sac.mp3", "9A", 140.5);
+        var bridge = Track("bridge.mp3", "8B", 143);
+        var middle = Track("middle.mp3", "7B", 145);
+        var tail = Track("tail.mp3", "6B", 147);
+
+        HarmonicSet set = _builder.Build(seed, new[] { culDeSac, bridge, middle, tail },
+            new HarmonicSetOptions(Length: 4, BpmTolerance: 6, Trend: trend));
+
+        Assert.Equal(new[] { "seed.mp3", "bridge.mp3", "middle.mp3", "tail.mp3" },
+            set.Entries.Select(e => e.Track.File.Path).ToArray());
+    }
+
+    /// <summary>
+    /// The probe must not cost the chain its own ordering rule: where nothing strands, the smallest
+    /// tempo jump still wins. Guards against a lookahead that quietly becomes the primary sort.
+    /// </summary>
+    [Fact]
+    public void Build_UnderACyclicTrend_StillPrefersTheSmallestJumpWhenNothingStrands()
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140);
+        var near = Track("near.mp3", "8A", 140.5);
+        var far = Track("far.mp3", "8A", 148);
+
+        HarmonicSet set = _builder.Build(seed, new[] { near, far },
+            new HarmonicSetOptions(Length: 3, Trend: BpmTrend.Any));
+
+        Assert.Equal(new[] { "seed.mp3", "near.mp3", "far.mp3" },
+            set.Entries.Select(e => e.Track.File.Path).ToArray());
+    }
+
+    // ---------- genre: a set pool gated only on key and tempo silently mixes styles ----------
+
+    /// <summary>
+    /// The measured failure: a "psytrance" set built from a BPM range and a folder name quietly took in
+    /// techno, because key and tempo were the only gates and 140 BPM techno passes both.
+    /// </summary>
+    [Fact]
+    public void Build_RefusesACandidateWeCanPlaceInAnotherGenre()
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140, genre: "Psytrance");
+        var techno = Track("techno.mp3", "8A", 140.5, genre: "Techno");
+        var psy = Track("psy.mp3", "8A", 143, genre: "Goa Trance/Psytrance");
+
+        HarmonicSet set = _builder.Build(seed, new[] { techno, psy }, new HarmonicSetOptions(Length: 3));
+
+        Assert.Equal(new[] { "seed.mp3", "psy.mp3" }, set.Entries.Select(e => e.Track.File.Path).ToArray());
+    }
+
+    /// <summary>
+    /// 73% of the measured catalog carries no genre at all, so a gate that dropped untagged tracks would
+    /// starve every real set. Unknown is not wrong.
+    /// </summary>
+    [Fact]
+    public void Build_KeepsAnUntaggedCandidate()
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140, genre: "Psytrance");
+        var untagged = Track("untagged.mp3", "8A", 141);
+
+        HarmonicSet set = _builder.Build(seed, new[] { untagged }, new HarmonicSetOptions(Length: 2));
+
+        Assert.Equal(new[] { "seed.mp3", "untagged.mp3" }, set.Entries.Select(e => e.Track.File.Path).ToArray());
+    }
+
+    /// <summary>An untagged seed cannot judge anyone, so the gate opens rather than emptying the pool.</summary>
+    [Fact]
+    public void Build_WithAnUntaggedSeed_GatesNothingOnGenre()
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140);
+        var techno = Track("techno.mp3", "8A", 141, genre: "Techno");
+
+        HarmonicSet set = _builder.Build(seed, new[] { techno }, new HarmonicSetOptions(Length: 2));
+
+        Assert.Equal(2, set.Count);
+    }
+
+    /// <summary>The escape hatch: a deliberately cross-genre set still builds.</summary>
+    [Fact]
+    public void Build_WithGenreOff_AdmitsAnotherGenre()
+    {
+        MusicTrack seed = Track("seed.mp3", "8A", 140, genre: "Psytrance");
+        var techno = Track("techno.mp3", "8A", 141, genre: "Techno");
+
+        HarmonicSet set = _builder.Build(seed, new[] { techno },
+            new HarmonicSetOptions(Length: 2, Genre: GenreMatch.Off));
+
+        Assert.Equal(2, set.Count);
+    }
 }

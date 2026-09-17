@@ -31,11 +31,17 @@ public sealed class HarmonicSetBuilder
         if (seed.Key is null)
             throw new ArgumentException("Seed track has no detected key; cannot build a harmonic set.", nameof(seed));
 
-        // Eligible pool: analyzed, keyed, and not the seed itself (compare by path, the entry identity).
+        // Genre can only judge a candidate when the SEED is tagged; an untagged seed opens the gate.
+        IReadOnlySet<string> seedGenre = GenreTag.Normalize(
+            options.Genre == GenreMatch.Strict ? seed.Metadata?.Genre : null);
+
+        // Eligible pool: analyzed, keyed, in the seed's genre, and not the seed itself (compare by path,
+        // the entry identity).
         var pool = candidates
             .Where(t => t.Status != MediaAnalysisStatus.Failed
                         && t.Key is not null
-                        && !SamePath(t, seed))
+                        && !SamePath(t, seed)
+                        && FitsGenre(seedGenre, t))
             .ToList();
 
         var entries = new List<SetEntry> { new(seed, null) };
@@ -95,11 +101,19 @@ public sealed class HarmonicSetBuilder
         MusicTrack? best = null;
         (int reach, double jump, int affinity, string title) bestScore = default;
 
-        // Looking one pick ahead is what stops the chain stranding, but only a tempo-directional set is
-        // cheap to look ahead in: Rising/Falling make the candidate graph acyclic, so the reachable depth
-        // is exact and memoisable. Any/Steady can revisit a tempo, so they keep the pure greedy pick.
+        // Looking ahead is what stops the chain stranding. Rising/Falling make the candidate graph
+        // acyclic, so the reachable depth is exact and memoisable — that path is unchanged.
         MusicTrack[]? ordered = Monotone(trend) ? pool.ToArray() : null;
         Dictionary<(int, int), int>? memo = ordered is null ? null : new();
+
+        // Any/Steady can revisit a tempo, so that exact depth is unsound for them and they used to fall
+        // back to a pure greedy pick — which is what every in-app caller got, since Any is the default.
+        // They get a bounded probe instead: deep enough to tell a dead end from a live branch, and run
+        // only for the leading candidates, because probing a whole catalog on every pick is what makes
+        // an unbounded cyclic search too slow to sit behind a button.
+        IReadOnlyDictionary<string, int>? probed = ordered is null
+            ? ProbeLeaders(current, pool, tolerance, trend, budget)
+            : null;
 
         foreach (MusicTrack candidate in pool)
         {
@@ -110,9 +124,9 @@ public sealed class HarmonicSetBuilder
 
             // Rank: how far the chain can still run from here, then the historical tie-breakers —
             // smallest tempo jump, closest harmonic affinity, title for determinism.
-            int reach = ordered is null
-                ? 0
-                : ReachableDepth(Array.IndexOf(ordered, candidate), ordered, tolerance, trend, budget - 1, memo!);
+            int reach = ordered is not null
+                ? ReachableDepth(Array.IndexOf(ordered, candidate), ordered, tolerance, trend, budget - 1, memo!)
+                : probed!.TryGetValue(candidate.File.Path, out int depth) ? depth : 0;
             double jump = TempoJump(current, candidate);
             int affinity = HarmonicAffinity(current.Key!.Camelot, candidate.Key!.Camelot);
             var score = (reach, jump, affinity, candidate.Title);
@@ -127,8 +141,120 @@ public sealed class HarmonicSetBuilder
         return best;
     }
 
+    /// <summary>
+    /// Whether a candidate may join a set seeded in <paramref name="seedGenre"/>. Key and tempo alone
+    /// let a 140 BPM techno track into a psytrance set, which is exactly how a measured "psytrance" pool
+    /// came back mixed. Only a candidate we can positively place in ANOTHER genre is refused: an
+    /// untagged track is unknown rather than wrong, and 73% of the measured catalog is untagged, so
+    /// excluding those would starve every real set. An empty <paramref name="seedGenre"/> means the gate
+    /// is off — either the seed carries no tag, or the caller asked for no gating.
+    /// </summary>
+    private static bool FitsGenre(IReadOnlySet<string> seedGenre, MusicTrack candidate)
+    {
+        if (seedGenre.Count == 0)
+            return true;
+
+        IReadOnlySet<string> tags = GenreTag.Normalize(candidate.Metadata?.Genre);
+        return tags.Count == 0 || GenreTag.Intersects(seedGenre, tags);
+    }
+
     private static bool Monotone(BpmTrend trend)
         => trend is BpmTrend.Rising or BpmTrend.Falling;
+
+    /// <summary>How many picks past the candidate the cyclic probe looks.</summary>
+    private const int ProbeDepth = 3;
+
+    /// <summary>How many branches the probe follows at each step past the first.</summary>
+    private const int ProbeBreadth = 4;
+
+    /// <summary>How many of the leading candidates are probed at all; the rest score 0 and fall back
+    /// to the greedy tie-breakers, which is exactly the behaviour they had before.</summary>
+    private const int ProbedLeaders = 6;
+
+    /// <summary>
+    /// Bounded reachable depth for the leading candidates under a cyclic trend, keyed by track path.
+    /// A candidate the probe never reached is simply absent — it scores 0, so the probe can only ever
+    /// rescue the chain from a cul-de-sac, never demote a branch it did not look at.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ProbeLeaders(
+        MusicTrack current,
+        IReadOnlyList<MusicTrack> pool,
+        double tolerance,
+        BpmTrend trend,
+        int budget)
+    {
+        var probed = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // On the last pick there is nothing left to strand into, so the probe has nothing to say.
+        int depth = Math.Min(ProbeDepth, budget - 1);
+        if (depth <= 0)
+            return probed;
+
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (MusicTrack leader in Leaders(current, pool, tolerance, trend, taken, ProbedLeaders))
+        {
+            taken.Add(leader.File.Path);
+            probed[leader.File.Path] = BoundedReach(leader, pool, taken, tolerance, trend, depth);
+            taken.Remove(leader.File.Path);
+        }
+
+        return probed;
+    }
+
+    /// <summary>
+    /// How many further tracks the chain can take from <paramref name="from"/> within
+    /// <paramref name="budget"/> steps, following at most <see cref="ProbeBreadth"/> branches per step.
+    /// <paramref name="taken"/> carries the tracks already spent on this path, which is what keeps a
+    /// cyclic graph from walking in circles — the depth is a chain the set really can run, not a count
+    /// of edges.
+    /// </summary>
+    private static int BoundedReach(
+        MusicTrack from,
+        IReadOnlyList<MusicTrack> pool,
+        HashSet<string> taken,
+        double tolerance,
+        BpmTrend trend,
+        int budget)
+    {
+        if (budget <= 0)
+            return 0;
+
+        int best = 0;
+        foreach (MusicTrack next in Leaders(from, pool, tolerance, trend, taken, ProbeBreadth))
+        {
+            taken.Add(next.File.Path);
+            int depth = 1 + BoundedReach(next, pool, taken, tolerance, trend, budget - 1);
+            taken.Remove(next.File.Path);
+
+            if (depth > best)
+                best = depth;
+            if (best == budget)
+                break; // a branch that runs the whole budget cannot be beaten within it.
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// The best next steps from <paramref name="from"/>, in the chain's own order — smallest tempo
+    /// jump, closest harmonic affinity, then title. Ordering by the rule the chain itself picks by
+    /// keeps the probe on the branches the set would really take, and keeps it deterministic.
+    /// </summary>
+    private static IEnumerable<MusicTrack> Leaders(
+        MusicTrack from,
+        IReadOnlyList<MusicTrack> pool,
+        double tolerance,
+        BpmTrend trend,
+        HashSet<string> taken,
+        int count)
+        => pool
+            .Where(t => !taken.Contains(t.File.Path)
+                        && Camelot.IsCompatible(from.Key!.Camelot, t.Key!.Camelot)
+                        && FitsTrend(from, t, tolerance, trend))
+            .OrderBy(t => TempoJump(from, t))
+            .ThenBy(t => HarmonicAffinity(from.Key!.Camelot, t.Key!.Camelot))
+            .ThenBy(t => t.Title, StringComparer.Ordinal)
+            .Take(count);
 
     /// <summary>
     /// How many further tracks the chain can take from <paramref name="from"/>, within
