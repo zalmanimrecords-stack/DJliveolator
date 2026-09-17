@@ -1,0 +1,46 @@
+<Project>
+
+  <!--
+    Security pins for TRANSITIVE dependencies with published High advisories.
+
+    None of these are referenced by our own code: each arrives underneath something we do use, and a
+    transitive version cannot be raised from the package that pulls it. An explicit PackageReference
+    here wins the version resolution and is the documented remediation.
+
+    Pinning rather than bumping the parent is deliberate for Tmds.DBus.Protocol in particular: the
+    parent is Avalonia, and moving the whole UI stack a version immediately before a release trades a
+    known, contained fix for unknown UI regressions.
+
+    Every entry states the advisory it closes, so a future reader can drop the pin once the parent
+    ships a fixed version instead of inheriting it forever. Re-check with
+    "dotnet list package" using its vulnerable + include-transitive switches.
+  -->
+  <ItemGroup>
+    <!-- GHSA-7jgj-8wvc-jh57 - via NETStandard.Library 1.6.1, itself pulled by older packages. -->
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+
+    <!-- GHSA-cmhx-cq75-c4mj - same NETStandard.Library 1.6.1 shim chain. -->
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+
+    <!-- GHSA-hh2w-p6rv-4g7w (fixed 8.0.4) and GHSA-8g4q-xg66-9fp4 (fixed 8.0.5), reached through the
+         Microsoft.Extensions.* 8.0.x packages. Skipped for the MCP projects: ModelContextProtocol
+         already resolves 10.0.6 there, and pinning 8.0.5 would be a DOWNGRADE, not a fix. -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5"
+                      Condition="!$(MSBuildProjectName.StartsWith('Liveolator.Mcp'))" />
+
+    <!-- GHSA-2m69-gcr7-jv3q - the native SQLite asset under Microsoft.Data.Sqlite. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+
+  </ItemGroup>
+
+  <!--
+    NOT pinned: Tmds.DBus.Protocol 0.20.0 (GHSA-xrw6-gwf8-vvr9). It is Avalonia's X11/D-Bus
+    transport, so it is only ever loaded when the UI runs on Linux - and the only desktop artifact
+    this repo builds is the Windows installer. The MCP container, which IS Linux, does not reference
+    Avalonia at all and its own scan is clean. Every version through 0.23.0 still carries the
+    advisory, and the fixed line (0.9x) is a different API that Avalonia 11.2.1 was not built
+    against, so forcing it would risk a Linux runtime break to close a path nothing we ship takes.
+    Revisit when Avalonia itself moves; tracked with the dependency-bump pass in issue #11.
+  -->
+
+</Project>
