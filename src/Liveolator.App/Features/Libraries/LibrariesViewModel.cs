@@ -68,7 +68,6 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private string? _bpmMinText;
     private string? _bpmMaxText;
     private string? _selectedArtist;
-    private string? _selectedGenre;
     private int? _selectedYear;
     private string? _selectedFileType;
     private MediaAnalysisStatus? _selectedStatus;
@@ -226,7 +225,6 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 this.WhenAnyValue(x => x.BpmMinText).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.BpmMaxText).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedArtist).Select(_ => Unit.Default),
-                this.WhenAnyValue(x => x.SelectedGenre).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedYear).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedFileType).Select(_ => Unit.Default),
                 this.WhenAnyValue(x => x.SelectedStatus).Select(_ => Unit.Default),
@@ -293,7 +291,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
     /// <summary>Distinct facet values from the catalog (B1). A null selection on each = "all".</summary>
     public ObservableCollection<string> Artists { get; } = new();
-    public ObservableCollection<string> Genres { get; } = new();
+
+    /// <summary>
+    /// Genre is the one multi-select facet: a track's tag routinely names several genres
+    /// ("Goa Trance/Psytrance"), so asking for exactly one of them is rarely what a DJ means. Checking
+    /// none = all.
+    /// </summary>
+    public ObservableCollection<GenreFilterOption> Genres { get; } = new();
     public ObservableCollection<int> Years { get; } = new();
     public ObservableCollection<string> FileTypes { get; } = new();
 
@@ -424,11 +428,34 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         set => this.RaiseAndSetIfChanged(ref _selectedArtist, value);
     }
 
-    /// <summary>Selected genre facet (null = all genres).</summary>
-    public string? SelectedGenre
+    /// <summary>
+    /// The checked genres as one <see cref="TrackFilter.Genre"/> value; null when none is checked, which
+    /// means "all". They are joined with '|' because that is one of the separators a real genre tag
+    /// already uses, so the Core filter reads several selected genres as an OR with no second field.
+    /// </summary>
+    public string? SelectedGenreFilter
     {
-        get => _selectedGenre;
-        set => this.RaiseAndSetIfChanged(ref _selectedGenre, value);
+        get
+        {
+            string[] chosen = Genres.Where(g => g.IsSelected).Select(g => g.Name).ToArray();
+            return chosen.Length == 0 ? null : string.Join('|', chosen);
+        }
+    }
+
+    /// <summary>What the genre picker shows when closed: the tag itself while one is checked, a count
+    /// beyond that, so the bar stays narrow however many are selected.</summary>
+    public string GenreFilterLabel
+    {
+        get
+        {
+            int count = Genres.Count(g => g.IsSelected);
+            return count switch
+            {
+                0 => "Genre",
+                1 => Genres.First(g => g.IsSelected).Name,
+                _ => $"{count} genres"
+            };
+        }
     }
 
     /// <summary>Selected year facet (null = all years).</summary>
@@ -1564,7 +1591,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         var filter = new TrackFilter(
             Text: SearchText,
             Artist: SelectedArtist,
-            Genre: SelectedGenre,
+            Genre: SelectedGenreFilter,
             MinBpm: ParseBpm(BpmMinText),
             MaxBpm: ParseBpm(BpmMaxText),
             Year: SelectedYear,
@@ -1606,14 +1633,42 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
         TrackFacets facets = TrackFacets.Of(_all.Select(r => r.Track));
         Replace(Artists, facets.Artists);
-        Replace(Genres, facets.Genres);
+        RebuildGenreOptions(facets.Genres);
         Replace(Years, facets.Years);
         Replace(FileTypes, facets.FileTypes);
 
         if (SelectedArtist is not null && !facets.Artists.Contains(SelectedArtist)) SelectedArtist = null;
-        if (SelectedGenre is not null && !facets.Genres.Contains(SelectedGenre)) SelectedGenre = null;
         if (SelectedYear is { } y && !facets.Years.Contains(y)) SelectedYear = null;
         if (SelectedFileType is not null && !facets.FileTypes.Contains(SelectedFileType)) SelectedFileType = null;
+    }
+
+    // Rebuilds the genre picker after a scan, carrying any still-present selection across. A genre that
+    // left the catalog drops off the picker instead of silently going on filtering from a control the
+    // user can no longer see.
+    private void RebuildGenreOptions(IReadOnlyList<string> names)
+    {
+        var chosen = Genres.Where(g => g.IsSelected)
+            .Select(g => g.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        Genres.Clear();
+        foreach (string name in names)
+            Genres.Add(new GenreFilterOption(name, chosen.Contains(name), OnGenreToggled));
+
+        RaiseGenreFilterChanged();
+    }
+
+    // One checkbox in the genre picker moved: the closed label and the query both follow from that toggle.
+    private void OnGenreToggled()
+    {
+        RaiseGenreFilterChanged();
+        ApplyFilter();
+    }
+
+    private void RaiseGenreFilterChanged()
+    {
+        this.RaisePropertyChanged(nameof(SelectedGenreFilter));
+        this.RaisePropertyChanged(nameof(GenreFilterLabel));
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> values)
@@ -1633,7 +1688,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             BpmMinText = null;
             BpmMaxText = null;
             SelectedArtist = null;
-            SelectedGenre = null;
+            foreach (GenreFilterOption genre in Genres)
+                genre.IsSelected = false;
             SelectedYear = null;
             SelectedFileType = null;
             SelectedStatus = null;

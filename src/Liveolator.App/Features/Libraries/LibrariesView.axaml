@@ -63,9 +63,36 @@
         <ComboBox ItemsSource="{Binding Artists}" SelectedItem="{Binding SelectedArtist}"
                   PlaceholderText="Artist" MinWidth="120"
                   ToolTip.Tip="Filter by artist" />
-        <ComboBox ItemsSource="{Binding Genres}" SelectedItem="{Binding SelectedGenre}"
-                  PlaceholderText="Genre" MinWidth="110"
-                  ToolTip.Tip="Filter by genre" />
+        <!-- Genre is the one multi-select facet: a single tag routinely names several genres, so a
+             one-at-a-time picker asks a question the data cannot answer. Same flyout-button idiom as
+             the LIBRARY menu above; the closed label carries the state the sibling ComboBoxes show. -->
+        <!-- Chrome is set explicitly rather than by a class: the sibling facets are stock Fluent
+             ComboBoxes with no theme style of their own, while Button.spartan is the raised
+             hardware-button template. Matching the neighbours matters more than reusing the class. -->
+        <Button MinWidth="110" Padding="10,5" Background="{DynamicResource S2}"
+                BorderBrush="{DynamicResource Hair}" BorderThickness="1"
+                CornerRadius="{DynamicResource ControlRadius}" Foreground="{DynamicResource Text}"
+                HorizontalContentAlignment="Stretch" Cursor="Hand"
+                ToolTip.Tip="Filter by genre — check any number; a track matches if it carries any one of them">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="{Binding GenreFilterLabel}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="⌄" Margin="8,0,0,0" Classes="faint" VerticalAlignment="Center" />
+          </Grid>
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedLeft">
+              <ScrollViewer MaxHeight="320">
+                <ItemsControl ItemsSource="{Binding Genres}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="lib:GenreFilterOption">
+                      <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,1" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
         <ComboBox ItemsSource="{Binding Years}" SelectedItem="{Binding SelectedYear}"
                   PlaceholderText="Year" MinWidth="80"
                   ToolTip.Tip="Filter by year" />

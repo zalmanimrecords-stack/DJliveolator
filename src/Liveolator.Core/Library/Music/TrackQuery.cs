@@ -87,8 +87,13 @@ public static class TrackQuery
 
         if (!string.IsNullOrWhiteSpace(filter.Artist))
             query = query.Where(t => string.Equals(t.Artist, filter.Artist, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(filter.Genre))
-            query = query.Where(t => string.Equals(t.Metadata?.Genre, filter.Genre, StringComparison.OrdinalIgnoreCase));
+        // Genre tags are multi-valued in practice ("Melodic House & Techno | Melodic Techno"), so whole-
+        // string equality hid every track whose tag carried a second value — a measured 46% miss on the
+        // owner's library. Compare token sets instead, which also lets the facet carry SEVERAL selected
+        // genres joined by a separator the tag grammar already splits on, without a second filter field.
+        IReadOnlySet<string> wantedGenres = GenreTag.Normalize(filter.Genre);
+        if (wantedGenres.Count > 0)
+            query = query.Where(t => GenreTag.Intersects(wantedGenres, GenreTag.Normalize(t.Metadata?.Genre)));
 
         if (filter.MinBpm is { } lo)
             query = query.Where(t => t.Bpm is not null && t.Bpm.Bpm >= lo);

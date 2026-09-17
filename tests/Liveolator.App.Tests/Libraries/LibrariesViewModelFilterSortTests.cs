@@ -131,7 +131,7 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
 
         Assert.Contains("M83", vm.Artists);
         Assert.Contains("Deadmau5", vm.Artists);
-        Assert.Contains("Electronic", vm.Genres);
+        Assert.Contains(vm.Genres, g => g.Name == "Electronic");
         Assert.Contains(2011, vm.Years);
         Assert.Contains("mp3", vm.FileTypes);
         // The "(All)" sentinels lead each list so a fresh tab shows everything.
@@ -174,17 +174,51 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
         Assert.All(vm.Tracks, t => Assert.Equal("M83", t.Artist));
     }
 
+    // Checks one genre in the multi-select facet, which is how the picker's checkboxes drive the filter.
+    private static void Check(LibrariesViewModel vm, string genre)
+        => vm.Genres.Single(g => g.Name == genre).IsSelected = true;
+
     [Fact]
     public async Task Genre_and_status_facets_compose()
     {
         LibrariesViewModel vm = await SeededViewModelAsync();
 
-        vm.SelectedGenre = "Electronic";
+        Check(vm, "Electronic");
         vm.SelectedStatus = MediaAnalysisStatus.Ok;
 
         // Electronic ∧ Ok excludes the partial (c) and the non-Electronic House track (b).
         TrackRowViewModel row = Assert.Single(vm.Tracks);
         Assert.EndsWith("a.mp3", row.Track.File.Path);
+    }
+
+    /// <summary>
+    /// The point of making genre multi-select: two checked genres are an OR, so a DJ can pull a pool
+    /// from neighbouring styles in one pass instead of filtering twice.
+    /// </summary>
+    [Fact]
+    public async Task Two_checked_genres_return_both()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+
+        Check(vm, "Electronic");
+        Check(vm, "House");
+
+        Assert.Contains(vm.Tracks, t => t.Track.Metadata?.Genre == "Electronic");
+        Assert.Contains(vm.Tracks, t => t.Track.Metadata?.Genre == "House");
+    }
+
+    [Fact]
+    public async Task Clearing_filters_unchecks_every_genre()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+        Check(vm, "Electronic");
+        int all = (await SeededViewModelAsync()).Tracks.Count;
+
+        vm.ClearFiltersCommand.Execute().Subscribe();
+
+        Assert.All(vm.Genres, g => Assert.False(g.IsSelected));
+        Assert.Null(vm.SelectedGenreFilter);
+        Assert.Equal(all, vm.Tracks.Count);
     }
 
     [Fact]
@@ -203,7 +237,7 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
     {
         LibrariesViewModel vm = await SeededViewModelAsync();
 
-        vm.SelectedGenre = "Electronic";
+        Check(vm, "Electronic");
         vm.SearchText = "deadmau"; // Deadmau5 is House, so the combination is empty
 
         Assert.Empty(vm.Tracks);
