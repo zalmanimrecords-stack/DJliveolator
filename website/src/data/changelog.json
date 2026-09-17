@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.10.0",
+    "date": "2026-09-17",
+    "notes": [
+      "Genre filtering in LIBRARIES now finds every track in a genre. A track tagged \"Melodic House & Techno | Melodic Techno\" was hidden when you picked \"Melodic House & Techno\" - on a real library that hid almost half the matches.",
+      "The genre filter is now multi-select: tick as many as you like, and a track matches if it carries any one of them.",
+      "Auto-filled sets stay in the seed track's genre, so a psytrance set no longer picks up techno that happens to share its tempo.",
+      "Auto-fill no longer gives up after a few tracks when a longer set was there - it now looks past a harmonic dead end whichever tempo trend you asked for, not only rising or falling.",
+      "New: pull analysis from a scanning server, so a large library can be analysed once on the machine that holds the files instead of over the network.",
+      "Security: closed four known vulnerabilities in bundled components."
+    ]
+  },
+  {
     "version": "0.9.0",
     "date": "2026-09-09",
     "notes": [
