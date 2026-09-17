@@ -6,6 +6,10 @@
         "src/Liveolator.Mcp/bin/Debug/net8.0/liveolator-mcp.dll",
         "--stdio"
       ]
+    },
+    "liveolator-srv": {
+      "type": "http",
+      "url": "http://127.0.0.1:5174/"
     }
   }
 }

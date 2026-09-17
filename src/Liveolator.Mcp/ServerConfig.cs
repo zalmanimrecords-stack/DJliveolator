@@ -22,6 +22,18 @@ public sealed class ServerConfig
     public ServerMode Mode { get; init; } = ServerMode.Stdio;
     public int Port { get; init; } = 5174;
 
+    /// <summary>
+    /// Address the HTTP transport binds. Defaults to loopback, because this transport has no
+    /// authentication of its own and must never be reachable from the network by accident.
+    /// </summary>
+    /// <remarks>
+    /// A container is the case that needs to override it: binding the CONTAINER's loopback makes the
+    /// server unreachable through a published port, since Docker forwards to the container's network
+    /// interface. Bind 0.0.0.0 there and let Docker publish to 127.0.0.1 on the host - the isolation
+    /// then comes from the port mapping instead of from this value, and is just as strict.
+    /// </remarks>
+    public string BindAddress { get; init; } = "127.0.0.1";
+
     /// <summary>Path to (or bare name of) the FFmpeg executable, or null to use
     /// <c>LIVEOLATOR_FFMPEG_PATH</c>/PATH.</summary>
     public string? FfmpegPath { get; init; }
@@ -44,6 +56,7 @@ public sealed class ServerConfig
 
         var mode = ServerMode.Stdio;
         int port = 5174;
+        string bind = Environment.GetEnvironmentVariable("LIVEOLATOR_BIND") ?? "127.0.0.1";
         string? ffmpegPath = Environment.GetEnvironmentVariable(FfmpegOptions.EnvironmentVariable);
         string? dataDir = Environment.GetEnvironmentVariable("LIVEOLATOR_DATA");
         string? getSongBpmKey = Environment.GetEnvironmentVariable("LIVEOLATOR_GETSONGBPM_KEY");
@@ -63,6 +76,9 @@ public sealed class ServerConfig
                 case "--port":
                     port = RequireInt(args, ref i, "--port");
                     break;
+                case "--bind":
+                    bind = RequireValue(args, ref i, "--bind");
+                    break;
                 case "--ffmpeg":
                     ffmpegPath = RequireValue(args, ref i, "--ffmpeg");
                     break;
@@ -80,7 +96,7 @@ public sealed class ServerConfig
                     break;
                 default:
                     throw new ArgumentException(
-                        $"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--ffmpeg PATH] "
+                        $"Unknown argument '{args[i]}'. Valid: --stdio | --http [--port N] [--bind ADDR] [--ffmpeg PATH] "
                         + "[--data DIR] [--getsongbpm-key KEY] [--acoustid-key KEY] [--fpcalc PATH].");
             }
         }
@@ -89,6 +105,7 @@ public sealed class ServerConfig
         {
             Mode = mode,
             Port = port,
+            BindAddress = string.IsNullOrWhiteSpace(bind) ? "127.0.0.1" : bind.Trim(),
             FfmpegPath = string.IsNullOrWhiteSpace(ffmpegPath) ? null : ffmpegPath,
             DataDirectory = string.IsNullOrWhiteSpace(dataDir) ? null : dataDir,
             GetSongBpmKey = string.IsNullOrWhiteSpace(getSongBpmKey) ? null : getSongBpmKey,

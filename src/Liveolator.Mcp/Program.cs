@@ -43,7 +43,9 @@ static async Task RunStdioAsync(ServerConfig config)
 static async Task RunHttpAsync(ServerConfig config)
 {
     WebApplicationBuilder builder = WebApplication.CreateBuilder();
-    builder.WebHost.UseUrls($"http://127.0.0.1:{config.Port}");
+    // Loopback by default (this transport is unauthenticated). A container must override it with
+    // --bind 0.0.0.0, because binding the container's own loopback makes a published port dead.
+    builder.WebHost.UseUrls($"http://{config.BindAddress}:{config.Port}");
 
     builder.Services.AddLiveolatorMusicServices(config);
     builder.Services

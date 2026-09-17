@@ -1,0 +1,54 @@
+# Liveolator MCP server on the music host.
+#
+# Deliberately runs ALONGSIDE any existing server rather than replacing it: a different port and a
+# different data directory, so the catalog that is already in service is never at risk while the new
+# build is being judged. Promote by swapping the ports once it has proven itself.
+services:
+  liveolator-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: liveolator-mcp:local
+    container_name: liveolator-mcp-next
+    restart: unless-stopped
+
+    ports:
+      # 127.0.0.1 ONLY. The MCP HTTP transport has no authentication of its own, so exposing it on
+      # the LAN would hand anyone on the network the whole library API. Reach it over SSH:
+      #   ssh -N -L 5175:127.0.0.1:5175 simonsrv
+      - "127.0.0.1:${LIVEOLATOR_MCP_PORT:-5175}:5175"
+
+    volumes:
+      # The music, mounted at the SAME absolute path the catalog already stores. The catalog keys
+      # tracks by absolute path, so mounting this anywhere else would orphan every existing row.
+      # Read-only: the scanner only ever reads audio, and this makes that structural.
+      - "${LIVEOLATOR_MUSIC_DIR:?set LIVEOLATOR_MUSIC_DIR}:${LIVEOLATOR_MUSIC_DIR:?}:ro"
+      # Catalog + analysis artefacts. Its own directory, not the live one.
+      - "${LIVEOLATOR_DATA_DIR:?set LIVEOLATOR_DATA_DIR}:/data"
+
+    environment:
+      - DOTNET_EnableDiagnostics=0
+      # The scan is CPU-bound and this box has 8 threads shared with everything else it runs.
+      - DOTNET_GCHeapHardLimitPercent=50
+
+    # A runaway scan must not starve the rest of the host.
+    deploy:
+      resources:
+        limits:
+          cpus: "6"
+          memory: 8g
+
+    healthcheck:
+      # A non-initialize request is refused with a JSON-RPC error, which is itself proof the server
+      # is up and speaking MCP. Any HTTP answer at all means healthy; no answer means dead.
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/127.0.0.1/5175' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
