@@ -30,4 +30,68 @@ public class PortablePathTests
     [InlineData(@"C:\music\track.", "track")]                  // trailing dot
     public void GetFileNameWithoutExtension_StripsFinalExtension_OnAnyOs(string path, string expected)
         => Assert.Equal(expected, PortablePath.GetFileNameWithoutExtension(path));
+
+    // The server catalogs POSIX mount paths; this machine reaches the same files over a UNC share.
+    // Without the rebase every pulled row points at a path that does not exist here.
+    [Fact]
+    public void Rebase_maps_a_posix_mount_to_a_unc_share()
+    {
+        Assert.Equal(
+            @"\192.168.68.131\Storage\Navidrome\music\a\b.mp3",
+            PortablePath.Rebase(
+                "/media/simon/external_4tb/Navidrome/music/a/b.mp3",
+                "/media/simon/external_4tb",
+                @"\192.168.68.131\Storage"));
+    }
+
+    [Fact]
+    public void Rebase_tolerates_trailing_separators_on_either_prefix()
+    {
+        Assert.Equal(
+            @"\host\Storage\x.mp3",
+            PortablePath.Rebase("/mnt/music/x.mp3", "/mnt/music/", @"\host\Storage\"));
+    }
+
+    [Fact]
+    public void Rebase_matches_the_prefix_case_insensitively()
+    {
+        Assert.Equal(
+            @"\host\S\x.mp3",
+            PortablePath.Rebase(@"D:\Music\x.mp3", @"d:\music", @"\host\S"));
+    }
+
+    [Fact]
+    public void Rebase_returns_null_for_a_path_under_a_different_root()
+    {
+        Assert.Null(PortablePath.Rebase("/other/root/x.mp3", "/mnt/music", @"\host\S"));
+    }
+
+    // The trap this guards: a plain StartsWith would rebase /mnt/musicvideos under the /mnt/music prefix.
+    [Fact]
+    public void Rebase_does_not_match_a_sibling_sharing_a_name_prefix()
+    {
+        Assert.Null(PortablePath.Rebase("/mnt/musicvideos/x.mp4", "/mnt/music", @"\host\S"));
+    }
+
+    [Fact]
+    public void Rebase_maps_the_root_itself()
+    {
+        Assert.Equal(@"\host\S", PortablePath.Rebase("/mnt/music", "/mnt/music", @"\host\S"));
+    }
+
+    [Fact]
+    public void Rebase_can_map_back_to_a_posix_root()
+    {
+        Assert.Equal(
+            "/mnt/music/a/b.mp3",
+            PortablePath.Rebase(@"\host\Storage\a\b.mp3", @"\host\Storage", "/mnt/music"));
+    }
+
+    [Theory]
+    [InlineData(null, "/a", "/b")]
+    [InlineData("/a/x.mp3", null, "/b")]
+    [InlineData("/a/x.mp3", "   ", "/b")]
+    [InlineData("/a/x.mp3", "/a", null)]
+    public void Rebase_returns_null_when_an_input_is_missing(string? path, string? from, string? to)
+        => Assert.Null(PortablePath.Rebase(path, from, to));
 }

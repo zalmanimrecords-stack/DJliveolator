@@ -1,6 +1,8 @@
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Key;
+using Liveolator.Core.Analysis.Structure;
+using Liveolator.Core.Enrichment;
 using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Library.Visual;
@@ -176,4 +178,55 @@ public sealed class SqliteCatalogStoreTests
 
         Assert.Equal(new[] { "/new1", "/new2" }, await store.LoadScanFoldersAsync());
     }
+
+    // The catalog stores each track as ONE JSON blob, so every field rides in the same column and a
+    // missing serializer option loses ALL of them at once, silently. These are the fields a server
+    // pull (or any merge) must never destroy, so they are pinned here rather than assumed.
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsUserAndLibraryFields()
+    {
+        using var dir = new TempDirectory();
+        using var store = new SqliteCatalogStore(dir.Path);
+        var added = new DateTime(2023, 5, 4, 9, 30, 0, DateTimeKind.Utc);
+        var played = new DateTime(2024, 2, 2, 21, 15, 0, DateTimeKind.Utc);
+        var lookedUp = new DateTime(2024, 3, 3, 8, 0, 0, DateTimeKind.Utc);
+        var analyzed = new DateTime(2024, 4, 4, 7, 0, 0, DateTimeKind.Utc);
+
+        MusicTrack track = TestTracks.Analyzed("user.wav", 145.0, tonic: 2, mode: KeyMode.Minor) with
+        {
+            Rating = 4,
+            PlayCount = 7,
+            DateAdded = added,
+            LastPlayed = played,
+            AnalysisIsManual = true,
+            IntegratedLufs = -9.3,
+            Structure = new SongStructure(
+                new[] { new SongSection(0, "intro"), new SongSection(64.5, "drop") }, "test"),
+            OnlineBpm = 72.5,
+            OnlineBpmSource = "getsongbpm",
+            BpmProvenance = BpmProvenance.LocalConfirmed,
+            OnlineLookupUtc = lookedUp,
+            LastAnalyzedUtc = analyzed,
+            Kind = MusicMediaKind.Sample,
+        };
+
+        await store.SaveMusicAsync(new[] { track });
+        MusicTrack loaded = (await store.LoadMusicAsync()).Single();
+
+        Assert.Equal(4, loaded.Rating);
+        Assert.Equal(7, loaded.PlayCount);
+        Assert.Equal(added, loaded.DateAdded);
+        Assert.Equal(played, loaded.LastPlayed);
+        Assert.True(loaded.AnalysisIsManual);
+        Assert.Equal(-9.3, loaded.IntegratedLufs!.Value, 6);
+        Assert.Equal(new[] { "intro", "drop" }, loaded.Structure!.Ordered.Select(s => s.Label));
+        Assert.Equal(64.5, loaded.Structure.Ordered[1].StartSeconds, 6);
+        Assert.Equal(72.5, loaded.OnlineBpm!.Value, 6);
+        Assert.Equal("getsongbpm", loaded.OnlineBpmSource);
+        Assert.Equal(BpmProvenance.LocalConfirmed, loaded.BpmProvenance);
+        Assert.Equal(lookedUp, loaded.OnlineLookupUtc);
+        Assert.Equal(analyzed, loaded.LastAnalyzedUtc);
+        Assert.Equal(MusicMediaKind.Sample, loaded.Kind);
+    }
+
 }

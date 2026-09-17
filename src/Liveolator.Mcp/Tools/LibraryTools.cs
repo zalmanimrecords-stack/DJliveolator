@@ -212,6 +212,27 @@ public sealed class LibraryTools
             overwrite ? ImportMergePolicy.Overwrite : ImportMergePolicy.FillGaps,
             cancellationToken);
 
+    [McpServerTool(Name = "pull_server_catalog")]
+    [Description("Merge analysis (beat grid, downbeat, key, cues, structure, loudness) produced by a " +
+                 "scanning server into this catalog. One way, server to local, and it fills gaps only: " +
+                 "a local tempo always wins and a disagreement is reported rather than resolved, a " +
+                 "hand-corrected track is never touched, and every library field (rating, play count, " +
+                 "date added) is preserved. Enriches tracks this catalog already holds and never adds " +
+                 "new ones. PREVIEWS BY DEFAULT - call again with apply=true to write. Pass the path " +
+                 "prefixes only when the two machines mount the library at different roots; leave them " +
+                 "empty when both see the same paths.")]
+    public static Task<ServerPullSummaryDto> PullServerCatalog(
+        LibrarySession session,
+        [Description("Folder holding the server's catalog.db (not the file itself).")] string catalogDirectory,
+        [Description("Root the server's paths start with, e.g. '/srv/music'. Empty when paths already match.")]
+        string? serverPathPrefix = null,
+        [Description("The same library's root as this machine spells it — the UNC share or drive path.")]
+        string? localPathPrefix = null,
+        [Description("Write the merge. Leave false to preview what it would do.")] bool apply = false,
+        CancellationToken cancellationToken = default)
+        => session.PullFromServerAsync(
+            catalogDirectory, serverPathPrefix, localPathPrefix, apply, cancellationToken);
+
     private static TEnum? ParseOptionalEnum<TEnum>(string? value, string name, string valid)
         where TEnum : struct, Enum
     {

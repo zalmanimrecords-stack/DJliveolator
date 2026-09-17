@@ -5,6 +5,7 @@ using Liveolator.Core.Library.Import;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Mcp.Contracts;
+using Liveolator.Media;
 using Microsoft.Extensions.Logging;
 
 namespace Liveolator.Mcp.Session;
@@ -131,6 +132,52 @@ public sealed class LibrarySession
             _library.Restore(_library.All.Concat(result.TracksToUpsert).ToList());
             await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
             return ImportSummaryDto.From(format, result.Summary);
+        }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// Merges analysis produced by a scanning server into this catalog: reads the server's catalog
+    /// database, works out what a pull would do, and writes it only when <paramref name="apply"/> says
+    /// so. Preview and write compute the SAME plan from the same read, so the numbers an agent shows a
+    /// DJ are the rows that later get written.
+    /// </summary>
+    public async Task<ServerPullSummaryDto> PullFromServerAsync(
+        string catalogDirectory,
+        string? serverPathPrefix,
+        string? localPathPrefix,
+        bool apply,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(catalogDirectory);
+        if (!Directory.Exists(catalogDirectory))
+            throw new ArgumentException(
+                $"No such directory '{catalogDirectory}'. Pass the folder holding the server's catalog.db.",
+                nameof(catalogDirectory));
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+            var serverStore = new SqliteCatalogStore(
+                catalogDirectory, onWarning: w => _logger.LogWarning("Server catalog: {Warning}", w));
+            IReadOnlyList<MusicTrack> serverTracks =
+                await serverStore.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+
+            ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
+                serverTracks, _library.All, serverPathPrefix, localPathPrefix);
+
+            if (!apply || plan.TracksToUpsert.Count == 0)
+                return ServerPullSummaryDto.From(plan, applied: false);
+
+            _library.Restore(ServerCatalogPull.Apply(_library.All, plan));
+            await _store.SaveMusicAsync(_library.All, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation(
+                "Pulled server analysis into {Count} track(s) from {Directory}.",
+                plan.TracksToUpsert.Count, catalogDirectory);
+
+            return ServerPullSummaryDto.From(plan, applied: true);
         }
         finally { _gate.Release(); }
     }

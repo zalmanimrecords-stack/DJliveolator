@@ -1,3 +1,6 @@
+using System;
+using System.Text;
+
 namespace Liveolator.Core;
 
 /// <summary>
@@ -36,5 +39,49 @@ public static class PortablePath
         string name = GetFileName(path);
         int dot = name.LastIndexOf('.');
         return dot < 0 ? name : name[..dot];
+    }
+
+    /// <summary>
+    /// Re-roots <paramref name="path"/> from one share prefix to another, e.g. the Linux mount point a
+    /// server catalogued a track under (<c>/media/simon/external_4tb/x.mp3</c>) to the UNC share the same
+    /// file is reached by here (<c>\host\Storage\x.mp3</c>). Returns <c>null</c> when the path does not
+    /// start with <paramref name="fromPrefix"/> — that row belongs to some other root and is not ours to
+    /// translate, which is a normal outcome, not an error.
+    /// </summary>
+    /// <remarks>
+    /// Prefix matching is case-insensitive because the two sides are authored on different platforms and a
+    /// user typing the share root will not match a Linux mount's casing by luck. The separators of the
+    /// REMAINDER are rewritten to whichever separator the target root uses, so the result is a path the
+    /// target platform actually accepts rather than a mixed-separator hybrid.
+    /// </remarks>
+    public static string? Rebase(string? path, string? fromPrefix, string? toPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(fromPrefix) || toPrefix is null)
+            return null;
+
+        string from = TrimTrailingSeparators(fromPrefix!);
+        string to = TrimTrailingSeparators(toPrefix);
+        if (from.Length == 0 || !path!.StartsWith(from, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string rest = path[from.Length..];
+        // "/media/x" must not match the prefix "/media/xylophone": only a separator (or the end of the
+        // path) may follow, or a sibling directory sharing a name prefix is silently rebased.
+        if (rest.Length > 0 && Array.IndexOf(Separators, rest[0]) < 0)
+            return null;
+
+        char target = to.StartsWith(Separators[0]) ? Separators[0] : Separators[1];
+        var rebased = new StringBuilder(to, to.Length + rest.Length);
+        foreach (char c in rest)
+            rebased.Append(Array.IndexOf(Separators, c) >= 0 ? target : c);
+        return rebased.ToString();
+    }
+
+    private static string TrimTrailingSeparators(string value)
+    {
+        int end = value.Length;
+        while (end > 0 && Array.IndexOf(Separators, value[end - 1]) >= 0)
+            end--;
+        return value[..end];
     }
 }
