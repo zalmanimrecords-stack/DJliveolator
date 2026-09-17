@@ -102,8 +102,8 @@ public sealed class StructuralCueDetector
         if (outroEndSeconds <= introStartSeconds)
             outroEndSeconds = durationSeconds > introStartSeconds ? durationSeconds : totalFrames / frameRate;
 
-        int introStartFrame = Clamp((int)Math.Round(introStartSeconds * frameRate), 0, totalFrames - 1);
-        int outroEndFrame = Clamp((int)Math.Round(outroEndSeconds * frameRate), introStartFrame + 1, totalFrames);
+        int introStartFrame = Math.Clamp((int)Math.Round(introStartSeconds * frameRate), 0, totalFrames - 1);
+        int outroEndFrame = Math.Clamp((int)Math.Round(outroEndSeconds * frameRate), introStartFrame + 1, totalFrames);
 
         // Anchor the bar/phrase grid to the musical downbeat (bar 1) when the detector trusts it, so phrase
         // boundaries land on real bar lines rather than the RMS-detected intro edge (which sits on an
@@ -116,7 +116,7 @@ public sealed class StructuralCueDetector
             double downbeatFrame = bpm.DownbeatSeconds * frameRate;
             double phase = downbeatFrame % framesPerBar;                       // within-bar phase of the grid
             double k = Math.Ceiling((introStartFrame - phase) / framesPerBar); // first bar line >= intro edge
-            gridAnchorFrame = Clamp((int)Math.Round(phase + k * framesPerBar), 0, totalFrames - 1);
+            gridAnchorFrame = Math.Clamp((int)Math.Round(phase + k * framesPerBar), 0, totalFrames - 1);
         }
 
         BarEnergies bars = AggregateBars(bands, gridAnchorFrame, outroEndFrame, framesPerBar);
@@ -371,8 +371,6 @@ public sealed class StructuralCueDetector
         if (snapped > totalFrames) snapped = totalFrames;
         return snapped / frameRate;
     }
-
-    private static int Clamp(int value, int min, int max) => value < min ? min : value > max ? max : value;
 
     private static double Clamp01(double value) => value < 0.0 ? 0.0 : value > 1.0 ? 1.0 : value;
 }

@@ -41,7 +41,6 @@ public sealed class StudioEditHistory
     public int UndoDepth => _undo.Count;
 
     /// <summary>The number of retained redo steps (for tests / diagnostics).</summary>
-    public int RedoDepth => _redo.Count;
 
     /// <summary>
     /// Record <paramref name="current"/> as the state to return to. Call this with the project's

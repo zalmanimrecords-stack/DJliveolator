@@ -42,7 +42,6 @@ public sealed class AddonsViewModel : ViewModelBase
             store, vuMeterSpecFor, vuMeterDefaultFaceFor,
             currentVuMeterCustomFacePath, vuMeterOrigin, applyVuMeterBackground, imageProbe);
 
-        OpenSettingsCommand = ReactiveCommand.Create<AddonItemViewModel>(item => SelectedAddon = item);
 
         BuildAddonList(registry, extensions);
         SelectedAddon = Addons.Count > 0 ? Addons[0] : null;
@@ -73,8 +72,6 @@ public sealed class AddonsViewModel : ViewModelBase
     public bool ShowNoSettingsMessage => SelectedAddon is { HasSettings: false };
 
     /// <summary>Selects an add-on (the per-row "Settings" button binds here).</summary>
-    public ReactiveCommand<AddonItemViewModel, Unit> OpenSettingsCommand { get; }
-
     private void BuildAddonList(IVisualEffectRegistry? registry, IExtensionCatalog? extensions)
     {
         Addons.Clear();
@@ -85,7 +82,6 @@ public sealed class AddonsViewModel : ViewModelBase
             title: "VU Meter",
             description: "Analog VU meter — swap the dial-face background image; the needle stays standard.",
             hasSettings: true,
-            isBuiltIn: true,
             state: BuiltInState(registry, VuMeterAddon.EffectId)));
 
         Addons.Add(new AddonItemViewModel(
@@ -93,7 +89,6 @@ public sealed class AddonsViewModel : ViewModelBase
             title: "Psy Fractal Visualizer",
             description: "Audio-reactive fractal mandala generator. No configurable settings yet.",
             hasSettings: false,
-            isBuiltIn: true,
             state: BuiltInState(registry, PsyFractalVisualizerAddon.EffectId)));
 
         // Installed extension packages (the same packages managed under Settings → EXTENSIONS).
@@ -106,7 +101,6 @@ public sealed class AddonsViewModel : ViewModelBase
                     title: extension.Manifest.PackageId,
                     description: $"{extension.Manifest.Publisher} · {extension.Manifest.Content}",
                     hasSettings: false,
-                    isBuiltIn: false,
                     state: extension.IsEnabled ? "Enabled" : "Disabled"));
             }
         }

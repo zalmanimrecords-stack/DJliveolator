@@ -118,13 +118,6 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
 
     private bool NeedleFromTop => _origin == VuMeterNeedleOrigin.Top;
 
-    public string SizeRequirement =>
-        string.Format(
-            CultureInfo.CurrentCulture,
-            "Recommended image size: {0} x {1} px ({2} aspect). Other sizes are accepted and stretched to "
-            + "fill the meter - keep the {2} aspect so the dial stays in shape.",
-            Spec.RecommendedWidth, Spec.RecommendedHeight, AspectLabel);
-
     /// <summary>A ready-to-paste prompt for an AI image generator that produces a matching dial face for
     /// the current needle origin. The app draws the needle, so the prompt forbids one and pins the pivot.</summary>
     public string ImagePrompt =>
@@ -248,7 +241,6 @@ public sealed class VuMeterBackgroundSettingsViewModel : ViewModelBase
     private void RaiseGuidanceChanged()
     {
         this.RaisePropertyChanged(nameof(Spec));
-        this.RaisePropertyChanged(nameof(SizeRequirement));
         this.RaisePropertyChanged(nameof(ImagePrompt));
     }
 

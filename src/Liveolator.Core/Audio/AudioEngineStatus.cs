@@ -17,5 +17,4 @@ public sealed record AudioEngineStatus(bool PlaybackAvailable, bool EffectsAvail
     public static AudioEngineStatus Healthy { get; } = new(PlaybackAvailable: true, EffectsAvailable: true, Warning: null);
 
     /// <summary>True when there is a warning worth showing the user.</summary>
-    public bool HasWarning => !string.IsNullOrEmpty(Warning);
 }

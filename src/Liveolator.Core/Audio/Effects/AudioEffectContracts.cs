@@ -8,21 +8,6 @@ public static class AudioEffectRackSlot
     public const int Count = 3;
 }
 
-public sealed record AudioEffectParameterDescriptor(
-    string Id,
-    string Name,
-    double Default,
-    int StepCount = 0);
-
-public sealed record AudioEffectPluginDescriptor(
-    string PluginUid,
-    string Name,
-    string Vendor,
-    IReadOnlyList<AudioEffectParameterDescriptor> Parameters,
-    int LatencySamples,
-    bool IsAvailable,
-    bool IsQuarantined = false);
-
 public sealed record AudioEffectInstanceState(
     string InstanceId,
     string PluginUid,
@@ -48,12 +33,6 @@ public interface IAudioEffectProcessor : IDisposable
 public interface IAudioEffectProcessorFactory
 {
     bool TryCreate(string pluginUid, out IAudioEffectProcessor processor);
-}
-
-public interface IAudioEffectPluginCatalog
-{
-    IReadOnlyList<AudioEffectPluginDescriptor> Plugins { get; }
-    Task RefreshAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IAudioEffectRack

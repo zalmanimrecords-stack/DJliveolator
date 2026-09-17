@@ -98,7 +98,6 @@ public sealed class TrackRowViewModel
         Track.Rating <= 0 ? string.Empty : new string('★', Track.Rating) + new string('☆', 5 - Track.Rating);
 
     /// <summary>True once the track has been loaded to a deck at least once (drives a "played" marker).</summary>
-    public bool IsPlayed => Track.PlayCount > 0;
 
     /// <summary>"Played N×" when the track has plays, otherwise blank.</summary>
     public string PlayCountText => Track.PlayCount > 0 ? $"Played {Track.PlayCount}×" : string.Empty;

@@ -14,14 +14,12 @@ public sealed class AddonItemViewModel : ViewModelBase
         string title,
         string description,
         bool hasSettings,
-        bool isBuiltIn,
         string state)
     {
         Id = id;
         Title = title;
         Description = description;
         HasSettings = hasSettings;
-        IsBuiltIn = isBuiltIn;
         State = state;
     }
 
@@ -34,8 +32,6 @@ public sealed class AddonItemViewModel : ViewModelBase
 
     /// <summary>True when selecting this row reveals a configuration panel (only the VU meter today).</summary>
     public bool HasSettings { get; }
-
-    public bool IsBuiltIn { get; }
 
     /// <summary>Short status chip: "Built-in", or "Enabled"/"Disabled" for an installed package.</summary>
     public string State { get; }

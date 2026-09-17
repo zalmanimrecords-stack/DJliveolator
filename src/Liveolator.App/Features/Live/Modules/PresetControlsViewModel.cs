@@ -46,7 +46,6 @@ public sealed class PresetControlsViewModel : ViewModelBase, IDisposable
     public bool IsEnabled => _dispatcher is not null && _presets is not null && _effects is not null;
 
     /// <summary>The compositor layer a loaded preset occupies.</summary>
-    public int TargetLayer => _targetLayer;
 
     /// <summary>The active preset's controllable knobs (≤5), rebuilt on each load and cleared otherwise.</summary>
     public ObservableCollection<ContinuousControlViewModel> Controls { get; }

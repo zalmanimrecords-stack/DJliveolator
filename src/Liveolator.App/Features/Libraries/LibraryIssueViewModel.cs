@@ -16,6 +16,5 @@ public sealed class LibraryIssueViewModel : ViewModelBase
     public string Path => Issue.Path;
     public string Message => Issue.Message;
     public IReadOnlyList<string> RelatedPaths => Issue.RelatedPaths;
-    public string RelatedText => Issue.RelatedPaths.Count <= 1 ? string.Empty : string.Join(" | ", Issue.RelatedPaths);
 }
 

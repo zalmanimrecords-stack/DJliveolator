@@ -18,7 +18,6 @@ using Liveolator.Audio.Capture;
 using Liveolator.Audio.Playback;
 using Liveolator.Audio.Recording;
 using Liveolator.Audio.Waveform;
-using Liveolator.Audio.Vst3;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
 using Liveolator.Core.Analysis.Stems;
@@ -135,13 +134,8 @@ public static class ServiceConfig
         var generatorPresets = new GeneratorPresetRegistry();
         var uiThemes = new UiThemeManager();
         BuiltInUiThemes.Register(uiThemes);
-        string shaderProbeName = OperatingSystem.IsWindows()
-            ? "liveolator-shader-probe.exe"
-            : "liveolator-shader-probe";
-        var shaderProbe = new ProcessVisualShaderProbe(
-            Path.Combine(AppContext.BaseDirectory, shaderProbeName));
         var extensionContent = new ExtensionContentLoader(
-            extensionCatalog, visualEffects, uiThemes, shaderProbe,
+            extensionCatalog, visualEffects, uiThemes, shaderProbe: null,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w),
             presets: generatorPresets);
         extensionContent.ReloadAsync().GetAwaiter().GetResult();
@@ -220,29 +214,15 @@ public static class ServiceConfig
         services.AddSingleton<IExtensionInstaller>(extensionInstaller);
         services.AddSingleton<IVisualEffectRegistry>(visualEffects);
         services.AddSingleton<IGeneratorPresetRegistry>(generatorPresets);
-        services.AddSingleton<IVisualShaderProbe>(shaderProbe);
         services.AddSingleton<IUiThemeManager>(uiThemes);
         services.AddSingleton<IExtensionContentReloader>(extensionContent);
 
-        // --- VST3 catalog + realtime racks -------------------------------------------------------
-        // The scanner and native processor bridge are deliberately separate. Without the optional
-        // native helper/bridge, plugins remain visible as unavailable placeholders and audio passes
-        // through unchanged.
-        string vstCatalogPath = Path.Combine(persistenceRoot, "vst3-catalog.json");
-        string scannerName = OperatingSystem.IsWindows()
-            ? "liveolator-vst3-scanner.exe"
-            : "liveolator-vst3-scanner";
-        var vstCatalog = new Vst3ScannerClient(
-            Path.Combine(AppContext.BaseDirectory, scannerName),
-            vstCatalogPath,
-            onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
-        vstCatalog.RefreshAsync().GetAwaiter().GetResult();
-        // The rack takes ONE factory: the built-in managed DSP effects (Moog LP / reverb / phaser that back
-        // the channel-strip FX mode) first, then the VST3 host for external plugins. 48 kHz matches the
-        // mixer/engine default; the built-in effects retune themselves if BASS opens at another rate.
+        // --- realtime effect racks ---------------------------------------------------------------
+        // The built-in managed DSP effects (Moog LP / reverb / phaser that back the channel-strip FX
+        // mode). 48 kHz matches the mixer/engine default; the effects retune themselves if BASS opens
+        // at another rate.
         var effectRacks = new AudioEffectRackProvider(new CompositeAudioEffectProcessorFactory(
-            new ManagedAudioEffectProcessorFactory(48_000),
-            new Vst3AudioEffectProcessorFactory()));
+            new ManagedAudioEffectProcessorFactory(48_000)));
         // Restore persisted audio-effect rack state at startup and persist on every change, so VST3
         // chains / parameters / missing-plugin placeholders survive restarts (app-shell wave).
         var rackStateStore = new JsonAudioEffectRackStateStore(
@@ -273,7 +253,6 @@ public static class ServiceConfig
                     return;
             rack.Load(pluginUid, instanceId);
         }
-        services.AddSingleton<IAudioEffectPluginCatalog>(vstCatalog);
         services.AddSingleton<IAudioEffectRackProvider>(effectRacks);
         services.AddSingleton<IAudioEffectRackStateStore>(rackStateStore);
         var audioEffectHandler = new AudioEffectActionHandler(effectRacks, onChanged: () =>
@@ -334,9 +313,6 @@ public static class ServiceConfig
             _ => new JsonMediaIdentityStore(
                 persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         services.AddSingleton<IFileContentHasher, Sha256FileContentHasher>();
-        services.AddSingleton<ISmartCollectionStore>(
-            _ => new JsonSmartCollectionStore(
-                persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w)));
         services.AddSingleton<LibraryDoctor>(sp => new LibraryDoctor(
             sp.GetRequiredService<IFileExistenceProbe>(),
             sp.GetRequiredService<IFolderExistenceProbe>()));
@@ -527,15 +503,6 @@ public static class ServiceConfig
             persistenceRoot,
             onWarning: w => System.Diagnostics.Trace.TraceWarning(w), fileName: "deck-b-set.json");
         RestoreAndPersistLiveSet(deckBPlaylist, deckBSetStore);
-
-        services.AddSingleton<LibraryReferenceRewriter>(sp => new LibraryReferenceRewriter(
-            new ILibraryReferenceRewriteStore[]
-            {
-                new PlaylistReferenceRewriteStore(sp.GetRequiredService<IPlaylistStore>()),
-                new LiveSetReferenceRewriteStore("deck A live set", liveSetStore),
-                new LiveSetReferenceRewriteStore("deck B live set", deckBSetStore),
-                new TrackVisualProgramReferenceRewriteStore(sp.GetRequiredService<ITrackVisualProgramStore>()),
-            }));
 
         var deckSessionStore = new JsonDeckSessionStore(
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
@@ -1277,10 +1244,6 @@ public static class ServiceConfig
     // engine is up — headless (no native BASS) there is no deck to drive, so the app stays a catalog
     // browser and the queue still edits freely. Registered as a singleton so the binding outlives Build()
     // and keeps reacting for the app's lifetime.
-    //
-    // PRELOAD SEAM: NextTrackPreloader is wired only when an IDeckPreloader is registered. The native
-    // pre-buffering implementation (opening the upcoming BASS stream ahead, verified manually) is the
-    // remaining deferred piece; the pure preloader sequencing is built + unit-tested in Liveolator.Audio.
     private static void WirePlaylistAudio(
         IServiceCollection services,
         ILivePlaylist livePlaylist,

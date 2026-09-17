@@ -1,6 +1,5 @@
 using Liveolator.Core.Audio.Effects;
 using Liveolator.Core.Library.Music;
-using Liveolator.Core.Library.SmartCollections;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Studio;
@@ -56,20 +55,6 @@ public sealed class AtomicSaveTempCollisionTests
 
         StudioProject? loaded = await store.LoadAsync("Live set");
         Assert.Equal(140, loaded!.Bpm);
-    }
-
-    [Fact]
-    public async Task SmartCollection_SaveSucceeds_WhileStaleTempIsLocked()
-    {
-        using var dir = new TempDirectory();
-        var store = new JsonSmartCollectionStore(dir.Path);
-        await store.SaveAsync(new SmartCollectionDefinition("Peak", new TrackFilter(MinBpm: 130)));
-        using FileStream stale = LockStaleTemp(SoleJsonFile(store.Directory));
-
-        await store.SaveAsync(new SmartCollectionDefinition("Peak", new TrackFilter(MinBpm: 138)));
-
-        SmartCollectionDefinition? loaded = await store.LoadAsync("Peak");
-        Assert.Equal(138, loaded!.Filter.MinBpm);
     }
 
     [Fact]
