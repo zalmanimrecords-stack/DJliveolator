@@ -113,6 +113,28 @@
     via `dotnet list package --vulnerable --include-transitive`; the decision to bump is open.
     Tracked as GitHub issue #11; treatment in [15](./15-refactor-recommendations.md).
 
+## Opened by the 2026-09-17 pass
+
+23. **`VisualLaunchClip` and `Transition` are wired end to end and do nothing.** `Verified`. Both
+    engine bodies are `LogDeferred(...)` in
+    `src/Liveolator.Visuals/Gl/GlVisualPerformanceEngine.cs`, yet `VisualLaunchClip` and the three
+    `VisualTransition*` kinds are live in `ActionTargetVocabulary` — so a VJ can map a Push button to
+    an action that will never fire, and the only trace is a warning in the log. **Deferred by the
+    owner on 2026-09-17 to a later pass**, with the analysis below already done so it can resume cold:
+    - *`LaunchClip` is the small half.* It needs only to resolve `clipId` to a `VisualSourceRef` and
+      put it on the layer — the same mutation `SetLayerSource` already performs, so it is testable
+      without a GPU. Two gaps block it: **`clipId` is undefined** (the signature is its only mention
+      anywhere in the repo, so what it refers to is still a product decision — a visual-library asset
+      is the natural reading), and **its quantization is dead twice over** — `VisualActionHandler`
+      passes a hardcoded `Quantize.Immediate`, unlike scene launch which really goes through
+      `IBeatScheduler.Schedule`, so beat-locking needs the handler fixed as well as the engine.
+    - *`Transition` is the large half.* The engine holds ONE `_activeScene`, so there is no outgoing
+      and incoming stack to blend between; it needs a pending-scene model plus a per-frame blend in
+      the compositor. `Cut` is trivial and `Crossfade` can ride an opacity ramp, but `Wipe` and
+      `Dissolve` need their own shaders. It cannot be verified except by eye on real GL output.
+    - *Cheap interim guard:* drop the `VisualTransition*` kinds from `ActionTargetVocabulary` so a
+      button cannot be mapped to an action that silently fails, and restore them with the feature.
+
 ## Assumptions this documentation makes
 
 - Code and executable tests outrank every document, including this one; where they disagreed, the
