@@ -103,12 +103,10 @@ public sealed class LiveViewModel : ViewModelBase, IDisposable
 
     public ProgramOutViewModel ProgramOut { get; }
     public VisualControlViewModel VisualControl { get; }
-    public DeckViewModel DeckA => _decks.DeckA;
-    public DeckViewModel DeckB => _decks.DeckB;
-    public MixerViewModel Mixer => _decks.Mixer;
 
-    /// <summary>The shared deck set — exposes the waveform ZOOM knob (<see cref="PerformanceDeckSet.WaveformZoom"/>).</summary>
-    public PerformanceDeckSet Decks => _decks;
+    // The deck set is deliberately NOT exposed: LIVE is the visual screen and shows no transport. It is
+    // still held privately because this view-model's render timer advances the SHARED playheads for the
+    // whole app (see OnTimerTick) — dropping the field would stop DJ PRO's waveform moving.
     public SceneGridViewModel SceneGrid { get; }
     public MasterFxViewModel MasterFx { get; }
 

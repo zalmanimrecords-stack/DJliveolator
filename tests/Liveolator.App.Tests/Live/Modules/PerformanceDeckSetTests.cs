@@ -55,21 +55,21 @@ public sealed class PerformanceDeckSetTests
         decks.Dispose(); // second call must be a safe no-op
     }
 
+    /// <summary>
+    /// The DJ surface drives the injected instances rather than building its own. LIVE is no longer part
+    /// of this assertion: it shows no transport since the console moved off that page, so it takes the
+    /// shared set only to pump the playheads and deliberately exposes nothing - see LiveViewModelTests.
+    /// </summary>
     [Fact]
-    public void DjAndLive_DriveTheSameDeckInstances_WhenSharedSetInjected()
+    public void Dj_DrivesTheSameDeckInstances_WhenSharedSetInjected()
     {
         var shared = new PerformanceDeckSet();
 
         var dj = new DjViewModel(decks: shared);
-        var live = new LiveViewModel(decks: shared);
 
         Assert.Same(shared.DeckA, dj.DeckA);
         Assert.Same(shared.DeckB, dj.DeckB);
         Assert.Same(shared.Mixer, dj.Mixer);
-
-        Assert.Same(dj.DeckA, live.DeckA);
-        Assert.Same(dj.DeckB, live.DeckB);
-        Assert.Same(dj.Mixer, live.Mixer);
     }
 
     // --- Shared waveform ZOOM knob (one control zooms both decks in seconds → kicks stack on A and B) ---

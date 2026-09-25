@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reactive.Concurrency;
 using Liveolator.App.Features.Live;
+using Liveolator.App.Features.Live.Modules;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Beat;
 using ReactiveUI;
@@ -64,18 +65,50 @@ public sealed class LiveViewModelTests
         Assert.True(vm.IsLiveModeEnabled);
     }
 
+    /// <summary>LIVE is the visual screen: it exposes the visual modules and no transport at all.</summary>
     [Fact]
-    public void ExposesAllPerformanceModules()
+    public void ExposesTheVisualModules_AndNoDeckSurface()
     {
         var vm = new LiveViewModel(new RecordingDispatcher());
 
         Assert.NotNull(vm.ProgramOut);
         Assert.NotNull(vm.VisualControl);
-        Assert.Equal("A", vm.DeckA.DeckId);
-        Assert.Equal("B", vm.DeckB.DeckId);
-        Assert.NotNull(vm.Mixer);
         Assert.NotNull(vm.SceneGrid);
         Assert.NotNull(vm.MasterFx);
+
+        // The decks moved to DJ PRO. Re-exposing them here would quietly put the console back on the
+        // page the next time someone binds "whatever the view-model offers".
+        Type vmType = typeof(LiveViewModel);
+        Assert.Null(vmType.GetProperty("Decks"));
+        Assert.Null(vmType.GetProperty("DeckA"));
+        Assert.Null(vmType.GetProperty("DeckB"));
+        Assert.Null(vmType.GetProperty("Mixer"));
+    }
+
+    /// <summary>
+    /// LIVE shows no decks but still DRIVES them: its render timer is what advances the SHARED playheads,
+    /// which is what keeps DJ PRO's zoomed waveform moving. Removing the console from the page must not
+    /// take the pump with it, and that breakage would be silent on the LIVE page itself - it would only
+    /// show up as a frozen waveform on another tab.
+    /// </summary>
+    [Fact]
+    public void TimerTick_StillPumpsASharedDeckSet_AndDisposeLeavesItAlive()
+    {
+        var host = new StubHostClock { TicksPerSecond = 1000 };
+        var clock = new ManualBeatClock(host.TicksPerSecond);
+        var timer = new FakeLiveBeatTimer();
+        var decks = new PerformanceDeckSet(new RecordingDispatcher());
+
+        var vm = new LiveViewModel(new RecordingDispatcher(), clock, clock, host, timer, decks: decks);
+
+        host.NowTicks = 1000;
+        timer.FireTick();
+
+        // Closing the visual page must not take the shared decks down with it - they belong to the
+        // composition root and DJ PRO is still using them.
+        vm.Dispose();
+        decks.UpdatePlayheads();
+        Assert.NotNull(decks.DeckA);
     }
 
     [Fact]
