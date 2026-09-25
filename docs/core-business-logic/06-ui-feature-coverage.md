@@ -68,7 +68,8 @@ capability ships but no person can invoke it from the product.
 | Track-linked visual programme authoring | Visuals | `JsonTrackVisualProgramStore` | hand-written JSON | none | `Configuration only` | no save path in `Liveolator.App` or MCP |
 | Visual media library (browse assets) | Visuals | `MusicLibrary` visual catalog | VJ tab | VJ tab | `Full` | `VisualLibraryViewModel` |
 | Generator presets and controllable parameters | Visuals | `IGeneratorPresetRegistry` | `VisualLoadPreset`, `VisualSetMacro` | LIVE preset controls; learn targets generated per parameter | `Full` | `PresetControlsViewModel`, `MappingsViewModel` |
-| Stem gain and mute | Decks | `DeckActionHandler` | `DeckStemGain`, `DeckStemMute` | DJ PRO stem rack | `Full` | `DeckStemRackViewModel` |
+| Stem gain and mute | Decks | `DeckActionHandler` | `DeckStemGain`, `DeckStemMute` | hidden: DJ PRO stem rack, DJ and LIVE mixer stem buttons, learn targets | `Configuration only` | shelved 2026-09-24 behind `StemsFeature` (`LIVEOLATOR_STEMS=1`) |
+| Stem separation (Open-Unmix) | Analysis | `OpenUnmixStemSeparator` | "Separate stems" track action | hidden: LIBRARIES right-click menu, SETTINGS stem-deck toggle | `Configuration only` | separator is not registered unless `StemsFeature.IsEnabled` |
 | Audio effect parameters | Audio effects | `AudioEffectActionHandler` | `AudioFxSetParameter` | DJ PRO FX rack | `Partial` | `DeckFxRackViewModel` |
 | Audio effect load, unload, move, bypass, preset | Audio effects | `AudioEffectActionHandler` | `AudioFxLoad`, `AudioFxUnload`, `AudioFxMove`, `AudioFxToggleBypass`, `AudioFxLoadPreset` | none | `Internal only` | no emitter, no binding, no learn target |
 | Master recording | Recording | `RecordingActionHandler` | `MasterRecordToggle` | LIVE master FX | `Full` | `MasterFxViewModel` |
@@ -96,7 +97,12 @@ its own persistence format that nothing in the product ever runs. Visual scene a
 second: banks are read at startup and can only be produced outside the product.
 
 **Reachable only by editing configuration.** Track-linked visual programmes must be authored as JSON
-by hand. Controller mappings are no longer in this category: ten devices ship a profile (seven as
+by hand. Stems are shelved (owner decision, 2026-09-24): they did not work reliably, so every stem
+surface — the SETTINGS toggle, "Separate stems" in the LIBRARIES menu, the DJ PRO stem racks, the
+DJ and LIVE mixer stem buttons and the two stem learn targets — is hidden, and no deck loads as a stem
+deck, unless the process starts with `LIVEOLATOR_STEMS=1` (`Composition/StemsFeature.cs`). The code,
+its tests and the persisted `AppSettings.Audio.StemsEnabled` value are kept; while shelved that
+setting is ignored. Controller mappings are no longer in this category: ten devices ship a profile (seven as
 `mappings/*.json` loaded at startup by `ShippedMappingProfiles`, three as profile classes), every
 bindable kind is offered as a learn target, and a profile can be picked by hand in SETTINGS.
 

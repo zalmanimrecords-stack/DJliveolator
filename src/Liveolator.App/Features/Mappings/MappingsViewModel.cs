@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Reactive;
 using System.Reactive.Concurrency;
+using Liveolator.App.Composition;
 using Liveolator.App.Shell;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Mapping;
@@ -372,6 +373,7 @@ public sealed class MappingsViewModel : ViewModelBase, IDisposable
         HashSet<PerformanceActionKind> handWritten = targets.Select(target => target.Action).ToHashSet();
         foreach ((PerformanceActionKind kind, ActionTarget target) in ActionTargetVocabulary.Targets
                      .Where(entry => !handWritten.Contains(entry.Key))
+                     .Where(entry => StemsFeature.IsEnabled || !StemsFeature.IsStemAction(entry.Key))
                      .OrderBy(entry => entry.Value.Label, StringComparer.OrdinalIgnoreCase))
         {
             foreach (MappingTargetViewModel generated in Expand(kind, target))

@@ -135,6 +135,15 @@
     - *Cheap interim guard:* drop the `VisualTransition*` kinds from `ActionTargetVocabulary` so a
       button cannot be mapped to an action that silently fails, and restore them with the feature.
 
+## Opened 2026-09-24
+
+24. **When do stems come back, and what must work first?** `Needs validation`. Shelved 2026-09-24
+    because the stem mechanism did not work; hidden behind `StemsFeature` (`LIVEOLATOR_STEMS=1`) with
+    the code kept. Before it returns, someone has to find out *why* it failed (separation through
+    Python/Open-Unmix, the stem-deck load path in `TwoDeckBassEngine`, or both), and the owner has to
+    decide whether the persisted `StemsEnabled` toggle comes back or the flag becomes the only switch.
+    *Who can answer:* the owner, after a reproduction.
+
 ## Assumptions this documentation makes
 
 - Code and executable tests outrank every document, including this one; where they disagreed, the

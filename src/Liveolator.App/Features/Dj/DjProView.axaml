@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:comp="clr-namespace:Liveolator.App.Composition"
              xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
              x:Class="Liveolator.App.Features.Dj.DjProView"
@@ -44,7 +45,7 @@
         <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckA}"
                           BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
                           BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
-        <dj:DeckStemRackView Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackA}" />
+        <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackA}" />
         <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackA}" />
       </Grid>
 
@@ -54,7 +55,7 @@
         <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckB}"
                           BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
                           BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
-        <dj:DeckStemRackView Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackB}" />
+        <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackB}" />
         <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackB}" />
       </Grid>
     </Grid>

@@ -1,6 +1,10 @@
 # 32 — Python analysis seam: stems + structure segmentation (work plan)
 
 > Status: **PLAN / pending owner sign-off on the blocking decisions in §2.**
+> **2026-09-24 — stems SHELVED.** The stem half of this plan did not work in practice. Until the rest of
+> the app is stable, every stem UI surface is hidden and no deck loads as a stem deck unless
+> `LIVEOLATOR_STEMS=1` (`src/Liveolator.App/Composition/StemsFeature.cs`). The code is kept. Structure
+> segmentation is unaffected. Current state: `core-business-logic/06-ui-feature-coverage.md`.
 > Decided via the advisors gate (2026-06-29, `dj-software-advisor` + code inventory).
 > Builds on the licensing analysis and the existing pure-C# analysis brain (doc 16).
 

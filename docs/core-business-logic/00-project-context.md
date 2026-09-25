@@ -129,7 +129,8 @@ business rules testable without hardware, and it is enforced by convention and b
 ## Known limitations
 
 Windows is the only packaged platform. Autopilot and visual scene authoring have no UI, and the DJ
-set builder is reachable from MCP only. The mapping-learn target list is a fixed subset of the
+set builder is reachable from MCP only. Stems are shelved until the rest of the app is stable: hidden
+from the UI and off in the engine unless `LIVEOLATOR_STEMS=1` (`StemsFeature`, 2026-09-24). The mapping-learn target list is a fixed subset of the
 action vocabulary. Full list with evidence:
 [06 — UI feature coverage](./06-ui-feature-coverage.md).
 

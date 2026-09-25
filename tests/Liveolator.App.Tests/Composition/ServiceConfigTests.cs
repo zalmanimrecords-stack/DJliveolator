@@ -192,6 +192,19 @@ public sealed class ServiceConfigTests
 
     // Roots all persistence in a temp directory so these tests never touch %APPDATA%/Liveolator.
     // The root is not deleted per-test (the provider outlives the helper); the OS temp cleaner gets it.
+    // Stems are shelved (StemsFeature): with the flag off there is no separator, which is what hides the
+    // "Separate stems" track action.
+    [Fact]
+    public void Build_WithStemsShelved_RegistersNoStemSeparator()
+    {
+        if (StemsFeature.IsEnabled)
+            return; // a developer run with LIVEOLATOR_STEMS=1 wires it on purpose
+        using var provider = BuildForTest();
+
+        Assert.Null(provider.GetService<Liveolator.Core.Analysis.Stems.IStemSeparator>());
+        Assert.False(provider.GetRequiredService<Liveolator.App.Features.Shared.TrackContextActions>().CanSeparateStems);
+    }
+
     private static ServiceProvider BuildForTest() =>
         new TempPersistenceRoot().Build();
 }

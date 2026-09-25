@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:comp="clr-namespace:Liveolator.App.Composition"
              xmlns:settings="clr-namespace:Liveolator.App.Features.Settings"
              xmlns:mappings="clr-namespace:Liveolator.App.Features.Mappings"
              xmlns:audio="clr-namespace:Liveolator.Core.Audio;assembly=Liveolator.Core"
@@ -272,10 +273,13 @@
                         Command="{Binding EnableAdvancedAnalysisCommand}"
                         IsEnabled="{Binding CanEnableAdvancedAnalysis}" />
                 <TextBlock Classes="faint" TextWrapping="Wrap" Text="{Binding AdvancedAnalysisStatus}" />
-                <!-- Stem decks reuse the advanced-analysis runtime, so the toggle lives here next to it. -->
-                <CheckBox Content="Stem decks (experimental)" IsChecked="{Binding StemsEnabled}" />
-                <TextBlock Classes="faint" TextWrapping="Wrap"
-                           Text="Load tracks as 4 separated stems (drums / bass / vocals / other) so each can be muted. Requires advanced analysis and per-track &quot;Separate stems&quot; (right-click a track). Four FLAC stems per track use extra disk. Takes effect on the next launch." />
+                <!-- Stem decks reuse the advanced-analysis runtime, so the toggle lives here next to it.
+                     Shelved: shown only when StemsFeature is on (LIVEOLATOR_STEMS=1). -->
+                <StackPanel Spacing="10" IsVisible="{x:Static comp:StemsFeature.IsEnabled}">
+                  <CheckBox Content="Stem decks (experimental)" IsChecked="{Binding StemsEnabled}" />
+                  <TextBlock Classes="faint" TextWrapping="Wrap"
+                             Text="Load tracks as 4 separated stems (drums / bass / vocals / other) so each can be muted. Requires advanced analysis and per-track &quot;Separate stems&quot; (right-click a track). Four FLAC stems per track use extra disk. Takes effect on the next launch." />
+                </StackPanel>
               </StackPanel>
             </Border>
            </StackPanel>

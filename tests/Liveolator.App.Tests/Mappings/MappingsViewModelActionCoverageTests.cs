@@ -1,3 +1,4 @@
+using Liveolator.App.Composition;
 using Liveolator.App.Features.Mappings;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Mapping;
@@ -23,6 +24,7 @@ public sealed class MappingsViewModelActionCoverageTests
 
         PerformanceActionKind[] missing = Enum.GetValues<PerformanceActionKind>()
             .Where(kind => !ActionTargetVocabulary.NotBindable.Contains(kind))
+            .Where(kind => StemsFeature.IsEnabled || !StemsFeature.IsStemAction(kind))
             .Where(kind => !offered.Contains(kind))
             .ToArray();
 
@@ -88,6 +90,17 @@ public sealed class MappingsViewModelActionCoverageTests
 
         foreach (PerformanceActionKind kind in ActionTargetVocabulary.NotBindable)
             Assert.DoesNotContain(vm.Targets, target => target.Action == kind);
+    }
+
+    // Stems are shelved (StemsFeature): their learn targets stay hidden unless LIVEOLATOR_STEMS=1.
+    [Fact]
+    public void StemTargets_AreHidden_WhileStemsAreShelved()
+    {
+        if (StemsFeature.IsEnabled)
+            return; // a developer run with LIVEOLATOR_STEMS=1 offers them on purpose
+        using MappingsViewModel vm = NewViewModel();
+
+        Assert.DoesNotContain(vm.Targets, target => StemsFeature.IsStemAction(target.Action));
     }
 
     private sealed class StubMidiControlSession : IMidiControlSession
