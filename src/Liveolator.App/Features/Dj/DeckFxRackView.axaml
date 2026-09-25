@@ -7,33 +7,33 @@
 
   <!-- "Effects outside": one deck's built-in FX as always-visible knobs (no FX-mode button). Each knob
        drives the deck's realtime rack instance via AudioFxSetParameter. CUT defaults fully open (dry). -->
-  <Border Classes="hardware-well" Padding="8,6">
-    <StackPanel Spacing="4">
+  <Border Classes="hardware-well" Padding="4,3">
+    <StackPanel Spacing="1">
       <TextBlock Classes="section" HorizontalAlignment="Center" Text="FX" />
       <UniformGrid Columns="4">
-        <StackPanel Spacing="2">
-          <controls:Knob Width="34" Height="34" DefaultValue="1" HorizontalAlignment="Center"
+        <StackPanel Spacing="0">
+          <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" DefaultValue="1" HorizontalAlignment="Center"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding Cutoff.Value}" IsEnabled="{Binding Cutoff.IsEnabled}"
                          ToolTip.Tip="Moog low-pass cutoff" />
           <TextBlock Classes="tick" HorizontalAlignment="Center" Text="CUT" />
         </StackPanel>
-        <StackPanel Spacing="2">
-          <controls:Knob Width="34" Height="34" DefaultValue="0" HorizontalAlignment="Center"
+        <StackPanel Spacing="0">
+          <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" DefaultValue="0" HorizontalAlignment="Center"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding Resonance.Value}" IsEnabled="{Binding Resonance.IsEnabled}"
                          ToolTip.Tip="Moog resonance" />
           <TextBlock Classes="tick" HorizontalAlignment="Center" Text="RES" />
         </StackPanel>
-        <StackPanel Spacing="2">
-          <controls:Knob Width="34" Height="34" DefaultValue="0" HorizontalAlignment="Center"
+        <StackPanel Spacing="0">
+          <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" DefaultValue="0" HorizontalAlignment="Center"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding Phaser.Value}" IsEnabled="{Binding Phaser.IsEnabled}"
                          ToolTip.Tip="Phaser dry↔wet" />
           <TextBlock Classes="tick" HorizontalAlignment="Center" Text="PHASE" />
         </StackPanel>
-        <StackPanel Spacing="2">
-          <controls:Knob Width="34" Height="34" DefaultValue="0" HorizontalAlignment="Center"
+        <StackPanel Spacing="0">
+          <controls:Knob Width="{DynamicResource SizeKnobEq}" Height="{DynamicResource SizeKnobEq}" DefaultValue="0" HorizontalAlignment="Center"
                          ArcBrush="{DynamicResource Accent}"
                          Value="{Binding Reverb.Value}" IsEnabled="{Binding Reverb.IsEnabled}"
                          ToolTip.Tip="Reverb dry↔wet" />

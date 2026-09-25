@@ -2,10 +2,12 @@ using System.IO;
 using System.Reactive.Concurrency;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Layout;
 using Avalonia.Threading;
+using Liveolator.App.Composition;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Tests.Live;
@@ -138,17 +140,30 @@ public class DjProShot
             new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
     }
 
+    // Mirrors DjProView: [STEMS (flag-gated)] · FX · HOT CUES, then LOOP · SYNC · TRACK, then the deck.
     private static Grid Column(Control deck, Control stems, Control fx, Thickness margin)
     {
-        var grid = new Grid { RowDefinitions = new RowDefinitions("*,Auto,Auto"), Margin = margin };
-        Grid.SetRow(deck, 0);
-        stems.Margin = new Thickness(0, 6, 0, 0);
-        Grid.SetRow(stems, 1);
-        fx.Margin = new Thickness(0, 6, 0, 0);
-        Grid.SetRow(fx, 2);
+        stems.IsVisible = StemsFeature.IsEnabled;
+        stems.Margin = new Thickness(0, 0, 3, 0);
+        fx.Margin = new Thickness(3, 0, 3, 0);
+        var cues = new DjProHotCueStripView { DataContext = deck.DataContext, Margin = new Thickness(3, 0, 0, 0) };
+        var racks = new UniformGrid { Rows = 1, Margin = new Thickness(0, 0, 0, 6) };
+        racks.Children.Add(stems);
+        racks.Children.Add(fx);
+        racks.Children.Add(cues);
+
+        var transport = new UniformGrid { Rows = 1, Margin = new Thickness(0, 0, 0, 6) };
+        transport.Children.Add(new DjProLoopView { DataContext = deck.DataContext, Margin = new Thickness(0, 0, 3, 0) });
+        transport.Children.Add(new DjProSyncView { DataContext = deck.DataContext, Margin = new Thickness(3, 0, 3, 0) });
+        transport.Children.Add(new DjProTrackBrowseView { Margin = new Thickness(3, 0, 0, 0) });
+
+        var grid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto"), Margin = margin };
+        Grid.SetRow(racks, 0);
+        Grid.SetRow(transport, 1);
+        Grid.SetRow(deck, 2);
+        grid.Children.Add(racks);
+        grid.Children.Add(transport);
         grid.Children.Add(deck);
-        grid.Children.Add(stems);
-        grid.Children.Add(fx);
         return grid;
     }
 

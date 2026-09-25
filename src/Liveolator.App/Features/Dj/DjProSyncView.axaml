@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Dj.DjProSyncView"
+             x:DataType="m:DeckViewModel">
+
+  <!-- DJ PRO sync panel (under the hot cues): SYNC = Sync Lock (tempo + phase, green when locked in the
+       pocket); T·SYNC = Tempo Sync (tempo only, ride the phase by hand). -->
+  <UserControl.Styles>
+    <Style Selector="Button.key.cantsync">
+      <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    </Style>
+    <!-- SYNC fully phase-locked (SyncLockState.Locked): GREEN, distinct from the amber "pulling in" /
+         "recovering" engaged look (SYNC-BEHAVIOR-SPEC §11). A control-level style, so it wins the
+         Background/border over the theme's amber .on. -->
+    <Style Selector="Button.key.locked">
+      <Setter Property="Background" Value="{DynamicResource Green}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Green}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="hardware-well" Padding="4,3">
+    <StackPanel Spacing="1">
+      <TextBlock Classes="section" HorizontalAlignment="Center" Text="SYNC" />
+      <Grid ColumnDefinitions="*,*">
+        <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsSync}"
+                Classes.locked="{Binding IsSyncLockedTight}"
+                Classes.cantsync="{Binding IsSyncOutOfRange}" Height="30" Margin="1.5,0"
+                Command="{Binding SyncCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Sync Lock — match tempo + phase to the other deck (green = locked in the pocket)">
+          <Panel>
+            <TextBlock Text="SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding !IsSyncOutOfRange}" />
+            <TextBlock Text="✕ SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Red}" IsVisible="{Binding IsSyncOutOfRange}" />
+          </Panel>
+        </Button>
+        <Button Grid.Column="1" Classes="key" Classes.on="{Binding IsTempoSync}"
+                Classes.cantsync="{Binding IsTempoSyncOutOfRange}" Height="30" Margin="1.5,0"
+                Command="{Binding TempoSyncCommand}" IsEnabled="{Binding CanSync}"
+                ToolTip.Tip="Tempo Sync — match tempo only; you ride the phase by hand">
+          <Panel>
+            <TextBlock Text="T·SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding !IsTempoSyncOutOfRange}" />
+            <TextBlock Text="✕ T·SYNC" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Red}" IsVisible="{Binding IsTempoSyncOutOfRange}" />
+          </Panel>
+        </Button>
+      </Grid>
+      <!-- Grid-confidence downgrade (§7): weak grid ⇒ SYNC is tempo-only. Collapses when fine. -->
+      <TextBlock Classes="mono" FontSize="9" HorizontalAlignment="Center"
+                 Foreground="{DynamicResource Amber}" Text="◆ GRID UNCERTAIN · TEMPO-ONLY"
+                 IsVisible="{Binding IsGridUncertain}"
+                 ToolTip.Tip="The analyzed beatgrid is low-confidence, so SYNC matches tempo only (no phase lock). Re-analyze the track for full beat sync." />
+    </StackPanel>
+  </Border>
+</UserControl>

@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
+             x:Class="Liveolator.App.Features.Dj.DjProHotCueStripView"
+             x:DataType="m:DeckViewModel">
+
+  <!-- DJ PRO hot cues: the active bank's four pads in one row, sharing the rack row above the deck with the
+       FX knobs. Cues 5–8 (bank B) stay reachable from MIDI/hardware via ToggleHotCueBankCommand. -->
+  <UserControl.Styles>
+    <Style Selector="Button.cuepad.suggested">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border Classes="hardware-well" Padding="4,3">
+    <StackPanel Spacing="1">
+      <TextBlock Classes="section" HorizontalAlignment="Center" Text="HOT CUES" />
+      <ItemsControl ItemsSource="{Binding VisibleHotCues}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="m:HotCuePadViewModel">
+            <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+                    Height="30" Margin="1.5,0" Command="{Binding TriggerCommand}"
+                    IsEnabled="{Binding IsEnabled}" ToolTip.Tip="{Binding CueLabel}">
+              <Grid RowDefinitions="*,3">
+                <TextBlock Grid.Row="0" Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                           FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Rectangle Grid.Row="1" Height="3" RadiusX="1" RadiusY="1" IsVisible="{Binding IsSet}"
+                           Fill="{Binding Color, Converter={x:Static shared:CueColorToBrushConverter.Instance}}" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </Border>
+</UserControl>

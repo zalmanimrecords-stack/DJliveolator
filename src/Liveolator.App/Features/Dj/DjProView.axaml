@@ -8,7 +8,7 @@
 
   <!-- DJ PRO — a denser DJ surface built ALONGSIDE the DJ tab (new files only; the DJ tab is untouched).
        It drives the SAME shared decks + mixer, but with DJ-PRO-specific compact deck/mixer views: a smaller
-       jog, tighter buttons, all 8 hot-cue pads, an "effects outside" FX rack under each deck, and NO FX-mode
+       jog, tighter buttons, the FX knobs + four hot cues in one row above each deck, and NO FX-mode
        button (the FX are their own knobs now). Everything is designed to fit one screen with no scroll; the
        browser row collapses on laptop tiers (code-behind, via DjBrowserLayout) and opens on wide/4K. -->
   <Grid Name="RootGrid" RowDefinitions="Auto,*,0">
@@ -39,24 +39,37 @@
       </Grid>
     </Border>
 
-    <!-- PERFORMANCE: [Deck A + FX] · Mixer · [Deck B + FX] -->
+    <!-- PERFORMANCE: each deck column is [FX · HOT CUES] / [LOOP · SYNC · TRACK] / deck, around the mixer. The racks
+         share one row above each deck; UniformGrid skips the hidden STEMS rack, so FX + cues split the row when stems are off. -->
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*">
-      <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto" Margin="0,0,10,0">
-        <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckA}"
-                          BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
-                          BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextACommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
-        <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackA}" />
-        <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackA}" />
+      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto" Margin="0,0,10,0">
+        <UniformGrid Grid.Row="0" Rows="1" Margin="0,0,0,6">
+          <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Margin="0,0,3,0" DataContext="{Binding StemRackA}" />
+          <dj:DeckFxRackView Margin="3,0,3,0" DataContext="{Binding FxRackA}" />
+          <dj:DjProHotCueStripView Margin="3,0,0,0" DataContext="{Binding Decks.DeckA}" />
+        </UniformGrid>
+        <UniformGrid Grid.Row="1" Rows="1" Margin="0,0,0,6">
+          <dj:DjProLoopView Margin="0,0,3,0" DataContext="{Binding Decks.DeckA}" />
+          <dj:DjProSyncView Margin="3,0,3,0" DataContext="{Binding Decks.DeckA}" />
+          <dj:DjProTrackBrowseView Margin="3,0,0,0" PrevCommand="{Binding BrowsePrevACommand}" NextCommand="{Binding BrowseNextACommand}" />
+        </UniformGrid>
+        <dj:DjProDeckView Grid.Row="2" DataContext="{Binding Decks.DeckA}" />
       </Grid>
 
       <dj:DjProMixerView Grid.Column="1" Margin="0,0,10,0" DataContext="{Binding Decks.Mixer}" />
 
-      <Grid Grid.Column="2" RowDefinitions="*,Auto,Auto">
-        <dj:DjProDeckView Grid.Row="0" DataContext="{Binding Decks.DeckB}"
-                          BrowsePrevCommand="{ReflectionBinding DataContext.BrowsePrevBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}"
-                          BrowseNextCommand="{ReflectionBinding DataContext.BrowseNextBCommand, RelativeSource={RelativeSource AncestorType=dj:DjProView}}" />
-        <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Grid.Row="1" Margin="0,6,0,0" DataContext="{Binding StemRackB}" />
-        <dj:DeckFxRackView Grid.Row="2" Margin="0,6,0,0" DataContext="{Binding FxRackB}" />
+      <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto">
+        <UniformGrid Grid.Row="0" Rows="1" Margin="0,0,0,6">
+          <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Margin="0,0,3,0" DataContext="{Binding StemRackB}" />
+          <dj:DeckFxRackView Margin="3,0,3,0" DataContext="{Binding FxRackB}" />
+          <dj:DjProHotCueStripView Margin="3,0,0,0" DataContext="{Binding Decks.DeckB}" />
+        </UniformGrid>
+        <UniformGrid Grid.Row="1" Rows="1" Margin="0,0,0,6">
+          <dj:DjProLoopView Margin="0,0,3,0" DataContext="{Binding Decks.DeckB}" />
+          <dj:DjProSyncView Margin="3,0,3,0" DataContext="{Binding Decks.DeckB}" />
+          <dj:DjProTrackBrowseView Margin="3,0,0,0" PrevCommand="{Binding BrowsePrevBCommand}" NextCommand="{Binding BrowseNextBCommand}" />
+        </UniformGrid>
+        <dj:DjProDeckView Grid.Row="2" DataContext="{Binding Decks.DeckB}" />
       </Grid>
     </Grid>
 

@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:Liveolator.App.Features.Live.Modules"
+             x:Class="Liveolator.App.Features.Dj.DjProLoopView"
+             x:DataType="m:DeckViewModel">
+
+  <!-- DJ PRO loop panel (under the FX knobs): arm a loop of the armed length · release it. -->
+  <Border Classes="hardware-well" Padding="4,3">
+    <StackPanel Spacing="1">
+      <TextBlock Classes="section" HorizontalAlignment="Center" Text="LOOP" />
+      <Grid ColumnDefinitions="*,Auto">
+        <Button Grid.Column="0" Classes="key" Classes.on="{Binding IsLooping}" Height="30" Padding="2,3"
+                Margin="1.5,0" Content="{Binding LoopLengthLabel}"
+                Command="{Binding LoopCommand}" IsEnabled="{Binding CanLoop}" ToolTip.Tip="Arm a loop" />
+        <Button Grid.Column="1" Classes="key" Content="✕" Width="30" Height="30" MinWidth="0" Padding="0"
+                Margin="1.5,0" FontSize="14" FontWeight="SemiBold"
+                Command="{Binding ExitLoopCommand}" IsEnabled="{Binding IsLooping}" ToolTip.Tip="Release the loop" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>

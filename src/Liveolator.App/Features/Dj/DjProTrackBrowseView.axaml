@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Liveolator.App.Features.Dj.DjProTrackBrowseView"
+             x:Name="Root">
+
+  <!-- DJ PRO track browse (beside LOOP · SYNC): ◀/▶ step the shared browser's current list and load-or-queue
+       onto this deck (never cuts a playing deck). Commands are injected by DjProView; disabled when none. -->
+  <Border Classes="hardware-well" Padding="4,3">
+    <StackPanel Spacing="1">
+      <TextBlock Classes="section" HorizontalAlignment="Center" Text="TRACK" />
+      <Grid ColumnDefinitions="*,*">
+        <Button Grid.Column="0" Classes="key" Content="◀" Height="30" MinWidth="0" Padding="0" Margin="1.5,0"
+                FontSize="14" FontWeight="SemiBold"
+                Command="{Binding #Root.PrevCommand}" ToolTip.Tip="Previous track → load on this deck" />
+        <Button Grid.Column="1" Classes="key" Content="▶" Height="30" MinWidth="0" Padding="0" Margin="1.5,0"
+                FontSize="14" FontWeight="SemiBold"
+                Command="{Binding #Root.NextCommand}" ToolTip.Tip="Next track → load on this deck" />
+      </Grid>
+    </StackPanel>
+  </Border>
+</UserControl>
