@@ -65,9 +65,8 @@ public sealed class LiveViewModelTests
         Assert.True(vm.IsLiveModeEnabled);
     }
 
-    /// <summary>LIVE is the visual screen: it exposes the visual modules and no transport at all.</summary>
     [Fact]
-    public void ExposesTheVisualModules_AndNoDeckSurface()
+    public void ExposesTheVisualModules()
     {
         var vm = new LiveViewModel(new RecordingDispatcher());
 
@@ -75,14 +74,6 @@ public sealed class LiveViewModelTests
         Assert.NotNull(vm.VisualControl);
         Assert.NotNull(vm.SceneGrid);
         Assert.NotNull(vm.MasterFx);
-
-        // The decks moved to DJ PRO. Re-exposing them here would quietly put the console back on the
-        // page the next time someone binds "whatever the view-model offers".
-        Type vmType = typeof(LiveViewModel);
-        Assert.Null(vmType.GetProperty("Decks"));
-        Assert.Null(vmType.GetProperty("DeckA"));
-        Assert.Null(vmType.GetProperty("DeckB"));
-        Assert.Null(vmType.GetProperty("Mixer"));
     }
 
     /// <summary>

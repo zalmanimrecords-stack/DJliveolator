@@ -4,13 +4,8 @@
              x:Class="Liveolator.App.Features.Live.LiveView"
              x:DataType="live:LiveViewModel">
 
-  <!-- LIVE = the VISUAL performance screen. The DJ console used to sit on top of this page (the same
-       DjConsoleView control over the shared decks) and was removed: the audio side is DJ PRO's job, and
-       sharing one screen meant neither half got the room it needed. The decks are still driven from here
-       in the view-model — LiveViewModel's render timer advances the SHARED playheads, which is what keeps
-       DJ PRO's zoomed waveform moving — so this is a display change, not a wiring change.
-       The on-screen Push macro-encoder strip was dropped earlier (the Push encoders still drive visual
-       macros through the controller mapping, not this panel). -->
+  <!-- LIVE = visuals only. The decks still pump from LiveViewModel's render timer, which keeps DJ PRO's
+       waveform moving. -->
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
     <!-- MaxWidth is tier-dependent (Theme/ResponsiveLayout.axaml via the .live-root class) so the page uses
          the full width on large/4K screens instead of the old fixed 1440 cap. -->

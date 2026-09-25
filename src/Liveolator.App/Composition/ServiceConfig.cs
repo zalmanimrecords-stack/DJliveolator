@@ -424,9 +424,8 @@ public static class ServiceConfig
                 stemCache,
                 logger: loggerFactory.CreateLogger<OpenUnmixStemSeparator>()));
         }
-        bool stemsEnabled = StemsFeature.IsEnabled;
         TwoDeckBassEngine? deckEngine = TryBuildDeckEngine(
-            mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory, stemCache, stemsEnabled);
+            mixer, appSettings.Audio, effectRacks, hotCueStore, loggerFactory, stemCache, StemsFeature.IsEnabled);
         // The master-mix clock phase-locks its detected grid onto the audible kick (OnsetPhaseLock), so
         // when a deck is NOT the sync master — an un-analyzed track, or live input with no precomputed
         // grid — the shared clock still tracks the beat without drifting (doc 03 drift prevention).

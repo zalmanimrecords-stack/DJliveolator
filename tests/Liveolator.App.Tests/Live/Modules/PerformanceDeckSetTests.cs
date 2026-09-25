@@ -55,11 +55,6 @@ public sealed class PerformanceDeckSetTests
         decks.Dispose(); // second call must be a safe no-op
     }
 
-    /// <summary>
-    /// The DJ surface drives the injected instances rather than building its own. LIVE is no longer part
-    /// of this assertion: it shows no transport since the console moved off that page, so it takes the
-    /// shared set only to pump the playheads and deliberately exposes nothing - see LiveViewModelTests.
-    /// </summary>
     [Fact]
     public void Dj_DrivesTheSameDeckInstances_WhenSharedSetInjected()
     {

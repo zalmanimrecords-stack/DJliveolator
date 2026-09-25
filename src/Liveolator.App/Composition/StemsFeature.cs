@@ -10,10 +10,8 @@ namespace Liveolator.App.Composition;
 /// </summary>
 public static class StemsFeature
 {
-    public const string EnvironmentVariable = "LIVEOLATOR_STEMS";
-
     /// <summary>Read once at startup; XAML binds to it through <c>x:Static</c>.</summary>
-    public static bool IsEnabled { get; } = IsOn(Environment.GetEnvironmentVariable(EnvironmentVariable));
+    public static bool IsEnabled { get; } = IsOn(Environment.GetEnvironmentVariable("LIVEOLATOR_STEMS"));
 
     public static bool IsOn(string? environmentValue) => environmentValue == "1";
 
