@@ -6,13 +6,6 @@
              x:Class="Liveolator.App.Features.Live.Modules.DeckView"
              x:DataType="m:DeckViewModel">
 
-  <UserControl.Styles>
-    <!-- A still-suggested (auto-placed) hot cue is ghosted; it solidifies once the DJ presses (commits) it. -->
-    <Style Selector="Button.cuepad.suggested">
-      <Setter Property="Opacity" Value="0.6" />
-    </Style>
-  </UserControl.Styles>
-
   <Border Classes="panel">
     <StackPanel Margin="18" Spacing="14">
 
@@ -85,7 +78,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="m:HotCuePadViewModel">
-              <Button Classes="key cuepad" Classes.on="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
+              <Button Classes="key cuepad" Classes.set="{Binding IsSet}" Classes.suggested="{Binding IsAuto}"
                       Command="{Binding TriggerCommand}" IsEnabled="{Binding IsEnabled}" Margin="0,0,4,0"
                       ToolTip.Tip="{Binding CueLabel}">
                 <Grid RowDefinitions="*,3">

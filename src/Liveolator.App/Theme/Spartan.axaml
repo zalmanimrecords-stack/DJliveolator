@@ -386,7 +386,7 @@
     <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkColor}" />
   </Style>
   <!-- Lit toggle sits 1px down (like play/pad .on), NOT the full 2px of :pressed — otherwise an engaged
-       LOOP or a set hot-cue is indistinguishable from a held-down key and reads as "stuck pressed". -->
+       LOOP is indistinguishable from a held-down key and reads as "stuck pressed". -->
   <Style Selector="Button.key.on /template/ ContentPresenter#PART_Face">
     <Setter Property="RenderTransform" Value="translate(0px, 1px)" />
     <Setter Property="BoxShadow" Value="0 1 2 0 #66000000, inset 0 1 0 0 #47FFFFFF, inset 0 -1 0 0 #8C000000" />
@@ -408,6 +408,47 @@
   <Style Selector="Button.key:disabled">
     <Setter Property="Opacity" Value="0.5" />
     <Setter Property="Cursor" Value="Arrow" />
+  </Style>
+  <!-- a refused press (e.g. AUTO into a deck that is not playing): a brief red flash, with the reason in the log -->
+  <Style Selector="Button.key.refused">
+    <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    <Setter Property="Foreground" Value="{DynamicResource Red}" />
+  </Style>
+  <!-- the pointer is still over AUTO after the click, and :pointerover restyles the face directly -->
+  <Style Selector="Button.key.refused:pointerover /template/ ContentPresenter#PART_Face">
+    <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    <Setter Property="TextElement.Foreground" Value="{DynamicResource Red}" />
+  </Style>
+
+  <!-- hot-cue pad: a momentary trigger, so it never takes the blue latched .on look. Empty slot = Red
+       outline, stored cue (.set) = CueSet green fill. Tight padding so a bold number fits a 30px pad. -->
+  <Style Selector="Button.cuepad">
+    <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+    <Setter Property="Padding" Value="4,2" />
+  </Style>
+  <!-- The label is styled directly: the global TextBlock style pins Foreground/FontSize, so values set on
+       the Button would never reach it. -->
+  <Style Selector="Button.cuepad TextBlock">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="Bold" />
+  </Style>
+  <Style Selector="Button.cuepad:pointerover /template/ ContentPresenter#PART_Face">
+    <Setter Property="BorderBrush" Value="{DynamicResource Red}" />
+  </Style>
+  <Style Selector="Button.cuepad.set">
+    <Setter Property="Background" Value="{DynamicResource CueSet}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CueSet}" />
+  </Style>
+  <Style Selector="Button.cuepad.set TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource Bg}" />
+  </Style>
+  <Style Selector="Button.cuepad.set:pointerover /template/ ContentPresenter#PART_Face">
+    <Setter Property="Background" Value="{DynamicResource CueSet}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource CueSet}" />
+  </Style>
+  <!-- A still-suggested (auto-placed) hot cue is ghosted; it solidifies once the DJ presses (commits) it. -->
+  <Style Selector="Button.cuepad.suggested">
+    <Setter Property="Opacity" Value="0.6" />
   </Style>
 
   <!-- play button: holds a blue triangle; "on" (playing) accents the border instead of filling -->
