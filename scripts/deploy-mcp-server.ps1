@@ -41,6 +41,8 @@ param(
     [string]$RemoteHost = "simonsrv",
     [string]$MusicDir   = "/media/simon/external_4tb/Navidrome/music",
     [string]$DataDir    = "/home/simon/liveolator/next-data",
+    [string]$LabelDir   = "/media/simon/external_4tb/ZALMANIM",
+    [string]$SetsDir    = "/media/simon/external_4tb/ZALMANIM/dj-sets/liveolator-renders",
     [int]$Port          = 5175,
     [string]$RemoteRoot = "/home/simon/liveolator/next",
     [string]$SeedCatalogFrom = ""
@@ -88,9 +90,16 @@ set -e
 mkdir -p '$DataDir'
 $seed
 sudo chown -R 10001:10001 '$DataDir' 2>/dev/null || chown -R 10001:10001 '$DataDir' 2>/dev/null || true
+# Renders are written BY the container into a folder the owner browses. The label drive is owned by the
+# desktop uid, not the image's 10001, so without an own-able directory here every render fails on
+# permission. Never fall back to chmod 777: any local account could then replace a render.
+mkdir -p '$SetsDir'
+sudo chown 10001:10001 '$SetsDir' 2>/dev/null || chown 10001:10001 '$SetsDir' 2>/dev/null || { echo "cannot hand '$SetsDir' to uid 10001 (the container user) - renders would fail on permission" >&2; exit 1; }
 cd '$RemoteRoot'
 export LIVEOLATOR_MUSIC_DIR='$MusicDir'
 export LIVEOLATOR_DATA_DIR='$DataDir'
+export LIVEOLATOR_LABEL_DIR='$LabelDir'
+export LIVEOLATOR_SETS_DIR='$SetsDir'
 export LIVEOLATOR_MCP_PORT='$Port'
 docker compose up -d --build
 docker compose ps

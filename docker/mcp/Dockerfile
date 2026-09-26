@@ -4,10 +4,14 @@
 # .NET SDK or runtime: `runtime-deps` is the Microsoft image that holds exactly the native libraries
 # a self-contained .NET app needs (ICU, OpenSSL, zlib) and nothing else.
 #
-# ffmpeg is the point of the image. There is no libbass.so for Linux here, so BassAudioDecoder
-# catches DllNotFoundException, marks itself unusable, and CompositeAudioDecoder falls through to
-# FfmpegAudioDecoder. That fallback is what lets the analyser run on this box at all — without
-# ffmpeg present the server starts fine and then fails on the first track.
+# ffmpeg carries the analyser: when a native is missing BassAudioDecoder catches DllNotFoundException,
+# marks itself unusable, and CompositeAudioDecoder falls through to FfmpegAudioDecoder — without ffmpeg
+# present the server starts fine and then fails on the first track.
+#
+# The publish output also carries the linux-x64 BASS natives (scripts/fetch-bass.sh linux-x64), because
+# ffmpeg does NOT cover rendering: every warped clip is time-stretched through BASS_FX, which has no
+# managed fallback. Without them render_set_preview and export_set_mix produce full-length digital
+# silence — this image shipped eleven silent transition WAVs before the natives were added.
 FROM mcr.microsoft.com/dotnet/runtime-deps:8.0-bookworm-slim
 
 RUN apt-get update \

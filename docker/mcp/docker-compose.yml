@@ -25,6 +25,13 @@ services:
       - "${LIVEOLATOR_MUSIC_DIR:?set LIVEOLATOR_MUSIC_DIR}:${LIVEOLATOR_MUSIC_DIR:?}:ro"
       # Catalog + analysis artefacts. Its own directory, not the live one.
       - "${LIVEOLATOR_DATA_DIR:?set LIVEOLATOR_DATA_DIR}:/data"
+      # The label masters, at the SAME absolute path the catalog stores — the catalog already holds
+      # rows under this path, and without the mount every one of them fails as FileUnreachable.
+      # Read-only: masters are never written by this server.
+      - "${LIVEOLATOR_LABEL_DIR:?set LIVEOLATOR_LABEL_DIR}:${LIVEOLATOR_LABEL_DIR:?}:ro"
+      # Where rendered sets land. Writable, and deliberately the folder the owner already browses,
+      # so a render is reachable without copying it out of the container.
+      - "${LIVEOLATOR_SETS_DIR:?set LIVEOLATOR_SETS_DIR}:/sets"
 
     environment:
       - DOTNET_EnableDiagnostics=0
