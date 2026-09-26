@@ -182,6 +182,8 @@ public sealed class DjSetSession
         double total = project.DurationSeconds;
 
         var clips = new List<SetPreviewClip>();
+        var silentSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int sourceCount = 0;
         IReadOnlyList<Join> joins = Joins(project);
         for (int i = 0; i < joins.Count; i++)
         {
@@ -197,8 +199,12 @@ public sealed class DjSetSession
             string outputPath = Path.Combine(outputDirectory, PreviewFileName(name, i, join));
             try
             {
-                await _renderer.RenderAsync(slice, outputPath, sampleRate, progress: null, cancellationToken)
+                MixRenderResult render = await _renderer
+                    .RenderAsync(slice, outputPath, sampleRate, progress: null, cancellationToken)
                     .ConfigureAwait(false);
+                sourceCount += render.SourceCount;
+                foreach (string silent in render.SilentSources)
+                    silentSources.Add(silent);
             }
             catch (Exception ex) when (ex is IOException or InvalidOperationException)
             {
@@ -211,9 +217,40 @@ public sealed class DjSetSession
                 i, outputPath, Math.Round(start, 3), Math.Round(end - start, 3), join.FromPath, join.ToPath));
         }
 
+        RequireAudiblePreview(name, outputDirectory, silentSources, sourceCount);
+
         return new SetPreviewResult(
             project.Name, outputDirectory, clips.Count,
             Math.Round(clips.Sum(c => c.DurationSeconds), 1), clips);
+    }
+
+    /// <summary>
+    /// Refuses a preview whose sources decoded to nothing, the way <see cref="RequireAudibleMix"/> refuses
+    /// such an export.
+    /// <para>Exists because the preview path discarded <see cref="MixRenderResult"/> entirely: on a host
+    /// without the native BASS libraries every clip decodes to an empty buffer, and this reported success
+    /// over a folder of full-length, correctly-named, digitally silent WAVs. Silence that announces itself
+    /// as a finished render is worse than a failure, because the next person to learn of it is whoever
+    /// pressed play.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">At least one source decoded to nothing.</exception>
+    private void RequireAudiblePreview(
+        string name, string outputDirectory, IReadOnlyCollection<string> silentSources, int sourceCount)
+    {
+        if (silentSources.Count == 0)
+            return;
+
+        _logger.LogError(
+            "Preview of '{Name}' produced no audio for {Count} of {Total} source(s): {Sources}",
+            name, silentSources.Count, sourceCount, string.Join(", ", silentSources));
+        throw new InvalidOperationException(
+            $"{silentSources.Count} of {sourceCount} source(s) decoded to nothing, so the preview clips are " +
+            $"silent where they should play: {string.Join(", ", silentSources.Take(3))}" +
+            (silentSources.Count > 3 ? $" (+{silentSources.Count - 3} more)" : string.Empty) +
+            $". The silent files are in {outputDirectory} — check the app log for the decode warnings, and " +
+            "that the native BASS libraries (including bassflac for flac sources) are present on the render " +
+            "host. A time-stretched clip has no managed fallback, so on a host without them every warped " +
+            "clip renders as silence.");
     }
 
     /// <summary>

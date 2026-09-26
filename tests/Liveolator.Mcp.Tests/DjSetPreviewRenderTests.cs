@@ -54,6 +54,32 @@ public sealed class DjSetPreviewRenderTests : IDisposable
         Assert.True(PeakAmplitude(clip.OutputPath) > 0.01, "the rendered transition is silent");
     }
 
+    /// <summary>
+    /// The complement of the test above, and the one that runs EVERYWHERE — including the hosts that have
+    /// no native BASS, which is exactly where the defect lived. A source that decodes to nothing must make
+    /// <c>render_set_preview</c> fail, not return a success carrying full-length silent WAVs.
+    /// <para>Regression: the preview path discarded the <see cref="MixRenderResult"/>, so a headless Linux
+    /// server with no BASS reported eleven rendered transitions that measured -91 dBFS from first sample to
+    /// last. The test above could not catch it because it skips when BASS is missing.</para>
+    /// </summary>
+    [Fact]
+    public async Task RenderSetPreview_WhenASourceDecodesToNothing_Fails()
+    {
+        DjSetSession session = await CreateSessionAsync();
+        await DjSetTools.BuildDjSet(session, seedPath: Path.Combine(_directory, "a.wav"), length: 2, name: "Silent Test");
+
+        // A structurally valid WAV carrying no frames: every decoder opens it and returns nothing, which is
+        // what an absent native library produces too — without needing a machine that lacks one.
+        WavWriter.WriteMono(Path.Combine(_directory, "a.wav"), Array.Empty<float>(), SampleRate);
+
+        string previews = Path.Combine(_directory, "silent-previews");
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => DjSetTools.RenderSetPreview(session, "Silent Test", previews, SampleRate));
+
+        Assert.Contains("decoded to nothing", error.Message, StringComparison.Ordinal);
+        Assert.Contains("a.wav", error.Message, StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))
