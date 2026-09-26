@@ -37,6 +37,9 @@ public sealed record AppSettings
     /// <summary>Online-enrichment preferences (the GetSongBPM API key for genre/BPM/key lookup).</summary>
     public OnlineSettings Online { get; init; } = OnlineSettings.Default;
 
+    /// <summary>Mixer preferences (MIX SEC, the AUTO crossfade time).</summary>
+    public MixerSettings Mixer { get; init; } = MixerSettings.Default;
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
@@ -54,5 +57,6 @@ public sealed record AppSettings
             Legal = Legal.Normalized(),
             Updates = Updates.Normalized(),
             Online = Online.Normalized(),
+            Mixer = Mixer.Normalized(),
         };
 }

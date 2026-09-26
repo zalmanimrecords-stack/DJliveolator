@@ -33,7 +33,9 @@ public class MixerActionHandlerTests
         Assert.Contains(PerformanceActionKind.MixerLimiterSmart, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerLimiterCharacter, handler.HandledKinds);
         Assert.Contains(PerformanceActionKind.MixerLimiterCeiling, handler.HandledKinds);
-        Assert.Equal(12, handler.HandledKinds.Count);
+        Assert.Contains(PerformanceActionKind.MixerAutoCrossfade, handler.HandledKinds);
+        Assert.Contains(PerformanceActionKind.MixerAutoCrossfadeTime, handler.HandledKinds);
+        Assert.Equal(14, handler.HandledKinds.Count);
     }
 
     // --- Smart limiter ------------------------------------------------------------------------------

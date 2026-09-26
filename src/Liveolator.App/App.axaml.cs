@@ -11,6 +11,8 @@ using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Skins;
 using Liveolator.App.Theme;
+using Liveolator.Core.Actions;
+using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Skins;
@@ -74,7 +76,10 @@ public partial class App : Application
             mainWindow.Closing += (_, _) =>
             {
                 ArmForcedExitWatchdog(ShutdownGrace);
-                SaveWindowLayout(services.GetRequiredService<ISettingsStore>(), mainWindow, mainWindowViewModel);
+                SaveShutdownSettings(
+                    services.GetRequiredService<ISettingsStore>(),
+                    services.GetRequiredService<IPerformanceActionDispatcher>(),
+                    mainWindow, mainWindowViewModel);
                 BeginShutdown(services);
             };
             // Defensive secondary trigger: dispose the rest of the container once the app is actually
@@ -250,10 +255,11 @@ public partial class App : Application
         window.SetFullScreen(layout.IsFullScreen);
     }
 
-    // Persists the current window layout on close. Reloads the latest settings first so a device/theme
-    // change saved during the session is preserved (only the WindowLayout section is updated). Tolerant:
+    // Persists the current window layout and MIX SEC on close. Reloads the latest settings first so a
+    // device/theme change saved during the session is preserved (only those two sections are updated). Tolerant:
     // a failed read/write is logged, never thrown, so it cannot block shutdown (global standards #16/#26).
-    private static void SaveWindowLayout(ISettingsStore store, MainWindow window, MainWindowViewModel vm)
+    private static void SaveShutdownSettings(
+        ISettingsStore store, IPerformanceActionDispatcher dispatcher, MainWindow window, MainWindowViewModel vm)
     {
         try
         {
@@ -271,11 +277,17 @@ public partial class App : Application
                     X: window.Position.X,
                     Y: window.Position.Y,
                     IsFullScreen: false);
-            store.SaveAsync(current with { WindowLayout = layout.Normalized() }).GetAwaiter().GetResult();
+            double mixSeconds = AutoCrossfadeRamp.KnobToSeconds(
+                dispatcher.GetFeedback(PerformanceActionKind.MixerAutoCrossfadeTime).Value);
+            store.SaveAsync(current with
+            {
+                WindowLayout = layout.Normalized(),
+                Mixer = new MixerSettings(mixSeconds),
+            }).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Trace.TraceWarning($"Could not save the window layout: {ex.Message}.");
+            System.Diagnostics.Trace.TraceWarning($"Could not save the window layout and MIX SEC: {ex.Message}.");
         }
     }
 }

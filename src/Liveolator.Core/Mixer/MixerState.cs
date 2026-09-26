@@ -28,6 +28,9 @@ public sealed record MixerState(
     /// </summary>
     public LimiterSettings Limiter { get; init; } = LimiterSettings.Default;
 
+    /// <summary>MIX SEC: how long an AUTO crossfade takes, whole seconds in 0..20 (see <see cref="AutoCrossfadeRamp"/>).</summary>
+    public double AutoCrossfadeSeconds { get; init; } = AutoCrossfadeRamp.DefaultSeconds;
+
     /// <summary>Number of supported deck slots: A and B.</summary>
     public const int DeckCount = 2;
 

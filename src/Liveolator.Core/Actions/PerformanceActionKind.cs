@@ -260,4 +260,20 @@ public enum PerformanceActionKind
     /// so engaging either switches the deck's sync mode. Owned by the deck handler.
     /// </summary>
     DeckTempoSyncToggle,
+
+    /// <summary>
+    /// AUTO crossfade (a button): move the crossfader from the side it is on to the far side over MIX SEC
+    /// (<see cref="MixerAutoCrossfadeTime"/>); the centre counts as the A side, so it goes to B. A press while
+    /// a fade runs stops it where it is, and any <see cref="MixerCrossfade"/> takes over from it. Refused
+    /// (feedback Argument = <c>MixerActionHandler.AutoCrossfadeRefused</c>, briefly) when the deck it would
+    /// fade into is not playing. Feedback IsActive = a fade is running, so the button/LED lights while it moves.
+    /// </summary>
+    MixerAutoCrossfade,
+
+    /// <summary>
+    /// Set MIX SEC, the AUTO crossfade time: <see cref="PerformanceAction.Value"/> is the knob position 0..1
+    /// (absolute) or a signed delta (relative), mapped to 0..20 whole seconds (0 = instant cut, default 10).
+    /// Feedback Value reports the same 0..1 knob position.
+    /// </summary>
+    MixerAutoCrossfadeTime,
 }

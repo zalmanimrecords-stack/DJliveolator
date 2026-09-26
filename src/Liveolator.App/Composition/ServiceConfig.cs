@@ -390,7 +390,6 @@ public static class ServiceConfig
         services.AddSingleton<IMixer>(mixer);
         services.AddSingleton<IDeckLevelMeter>(mixer);
         services.AddSingleton<ILimiterMeter>(mixer);
-        var mixerHandler = new MixerActionHandler(mixer);
 
         // --- Global OS volume (the computer's master output level, not the app's mix): the per-OS
         // controller (WASAPI on Windows, osascript on macOS, no-op elsewhere) behind the Core seam, driven
@@ -433,6 +432,11 @@ public static class ServiceConfig
             ? null
             : new MasterMixPlaybackEngine(deckEngine.MasterSource, hostClock, phaseLock: new OnsetPhaseLock());
         bool realtimeUp = deckEngine is not null;
+
+        // The mixer handler reads deck play state so AUTO never fades the floor into a silent deck; headless
+        // there is no engine and that guard is skipped.
+        var mixerHandler = new MixerActionHandler(
+            mixer, loggerFactory: loggerFactory, isDeckPlaying: deckEngine is null ? null : deckEngine.IsPlaying);
 
         // Audio-engine self-check (doc 11 / global #26): a missing native library is otherwise invisible —
         // the decks render but every track load throws and is swallowed, so playback and SYNC silently do
@@ -561,23 +565,35 @@ public static class ServiceConfig
             audioEffectHandler,
             recordingHandler,
         };
+        DeckActionHandler? deckHandler = null;
         if (realtimeUp)
         {
-            var deckHandler = new DeckActionHandler(deckEngine!);
+            deckHandler = new DeckActionHandler(deckEngine!);
             handlers.Add(deckHandler);
-            // An endless jog encoder sends no "release", so a playing-jog pitch-bend is snapped back once
-            // the ticks stop by polling the handler off the UI thread (doc 11 / jog-bend). Registered as a
-            // singleton so it shares the provider's lifetime and is disposed on shutdown with the engine.
-            services.AddSingleton(new JogReleasePump(
-                deckHandler.PumpJogRelease,
-                logger: loggerFactory.CreateLogger<JogReleasePump>()));
         }
+        // The handlers' time-driven work, polled off the UI thread: an endless jog encoder sends no
+        // "release", so a playing-jog pitch-bend is snapped back once the ticks stop (doc 11 / jog-bend), and a
+        // running AUTO crossfade steps. Registered as a singleton so it shares the provider's lifetime and is
+        // disposed on shutdown with the engine.
+        services.AddSingleton(new HandlerPump(
+            () =>
+            {
+                deckHandler?.PumpJogRelease();
+                mixerHandler.PumpAutoCrossfade();
+            },
+            logger: loggerFactory.CreateLogger<HandlerPump>()));
 
         var dispatcher = new PerformanceActionDispatcher(
             handlers,
             loggerFactory.CreateLogger<PerformanceActionDispatcher>(),
             requireCompleteOwnership: realtimeUp);
         services.AddSingleton(dispatcher);
+
+        // Restore the DJ's MIX SEC (saved on shutdown with the window layout).
+        dispatcher.Dispatch(new PerformanceAction(
+            PerformanceActionKind.MixerAutoCrossfadeTime,
+            ActionInputMode.Absolute,
+            Value: AutoCrossfadeRamp.SecondsToKnob(appSettings.Mixer.AutoCrossfadeSeconds)));
 
         // Seed BassMixer's per-slot gain cache with the initial crossfader position (default = centre).
         // Without this, the first deck loaded would play at raw BASS volume (1.0) regardless of the
@@ -885,7 +901,7 @@ public static class ServiceConfig
         foreach (PlaylistAudioPlayer player in provider.GetServices<PlaylistAudioPlayer>())
             _ = player;
         provider.GetService<MasterClockPump>()?.Start();
-        provider.GetService<JogReleasePump>()?.Start();
+        provider.GetService<HandlerPump>()?.Start();
         return provider;
     }
 

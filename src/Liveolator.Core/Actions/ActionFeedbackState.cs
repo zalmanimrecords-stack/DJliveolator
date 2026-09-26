@@ -12,6 +12,13 @@ namespace Liveolator.Core.Actions;
 /// when unused.</param>
 public sealed record ActionFeedbackState(bool IsActive, bool IsAvailable, double Value, string? Argument = null)
 {
+    /// <summary>
+    /// True when automation (e.g. an AUTO crossfade) moved <see cref="Value"/> away from where a bound physical
+    /// control sits, so the controller mapper holds that control until it reaches the value instead of letting
+    /// the first touch jump it back. Non-positional so every existing construction stays valid.
+    /// </summary>
+    public bool RequiresPickup { get; init; }
+
     /// <summary>The state for an action that has no owning handler or cannot currently run.</summary>
     public static ActionFeedbackState Unavailable { get; } = new(IsActive: false, IsAvailable: false, Value: 0);
 }

@@ -41,7 +41,7 @@ public sealed class JsonSettingsStoreTests : IDisposable
         using var done = new ManualResetEventSlim(false);
         Exception? failure = null;
 
-        // Reproduces window-close (SaveWindowLayout): a thread that OWNS a SynchronizationContext blocks
+        // Reproduces window-close (SaveShutdownSettings): a thread that OWNS a SynchronizationContext blocks
         // on the async settings IO with GetResult(). If the store omits ConfigureAwait(false) on its
         // stream dispose, that continuation is captured back onto this (blocked) context and never runs,
         // so GetResult never returns — the app freezes on X. The fix keeps the IO off the captured context.
@@ -172,6 +172,38 @@ public sealed class JsonSettingsStoreTests : IDisposable
 
         Assert.True(loaded.Audio.StemsEnabled); // a new bool must be threaded through the flat snapshot
     }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsMixSec()
+    {
+        var store = NewStore();
+
+        await store.SaveAsync(AppSettings.Default with { Mixer = new MixerSettings(AutoCrossfadeSeconds: 16) });
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(16, loaded.Mixer.AutoCrossfadeSeconds);
+    }
+
+    [Fact]
+    public async Task Load_OlderFileWithoutMixSec_DefaultsToTenSeconds()
+    {
+        var store = NewStore();
+        await File.WriteAllTextAsync(
+            store.FilePath,
+            "{\"Version\":2,\"OutputDeviceId\":null,\"BufferMilliseconds\":50,"
+            + "\"MidiControllerInputName\":null,\"MidiFeedbackOutputName\":null}");
+
+        AppSettings loaded = await store.LoadAsync();
+
+        Assert.Equal(10, loaded.Mixer.AutoCrossfadeSeconds);
+    }
+
+    [Theory]
+    [InlineData(35.0, 20.0)]
+    [InlineData(-4.0, 0.0)]
+    [InlineData(7.6, 8.0)]
+    public void MixerSettings_Normalized_ClampsToWholeSecondsInRange(double saved, double expected)
+        => Assert.Equal(expected, new MixerSettings(saved).Normalized().AutoCrossfadeSeconds);
 
     [Fact]
     public async Task Load_DefaultsStemsEnabledToFalse()

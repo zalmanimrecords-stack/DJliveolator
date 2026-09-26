@@ -36,7 +36,8 @@ SETTINGS → MIDI mapping and press **Export**, then drop the file here:
 - Buttons are `Momentary` or `Toggle`, faders and knobs `Absolute`, endless encoders `Relative`
   (set `Relative` to the device's encoding and `RelativeTicksPerRevolution` for a jog).
 - `SoftTakeover` belongs on a pitch fader, **never** on a channel fader or crossfader — there the
-  physical position is the truth.
+  physical position is the truth. The one exception is automatic, not a profile key: after an AUTO
+  crossfade moves the mix, the mapper holds the crossfader until the hardware reaches the new position.
 - Optional profile-level keys: `ActivationSysEx` / `DeactivationSysEx` (byte arrays, e.g. to put a
   device into user/programmer mode) and `UsesColorFeedback` for velocity-addressed colour pads.
 

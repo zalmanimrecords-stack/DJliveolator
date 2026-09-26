@@ -7,7 +7,8 @@ namespace Liveolator.Core.Mixer;
 
 /// <summary>
 /// The dispatcher handler that owns the software-mixer actions (doc 04/11): crossfade, per-deck
-/// gain, 3-band EQ, single-knob filter, and headphone-cue toggle. It holds the authoritative
+/// gain, 3-band EQ, single-knob filter, headphone-cue toggle, and the timed AUTO crossfade (stepped by
+/// <see cref="PumpAutoCrossfade"/>). It holds the authoritative
 /// <see cref="MixerState"/>, derives audible gains and biquad coefficients via <see cref="MixerMath"/>,
 /// and pushes them to the realtime <see cref="IMixer"/> seam — so the UI, a controller, or autopilot
 /// all drive the mixer through the one action layer. Pure managed; unit-tests with a fake mixer.
@@ -31,25 +32,54 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         PerformanceActionKind.MixerLimiterSmart,
         PerformanceActionKind.MixerLimiterCharacter,
         PerformanceActionKind.MixerLimiterCeiling,
+        PerformanceActionKind.MixerAutoCrossfade,
+        PerformanceActionKind.MixerAutoCrossfadeTime,
     };
+
+    /// <summary>MixerAutoCrossfade feedback Argument while a refused AUTO press is being flashed.</summary>
+    public const string AutoCrossfadeRefused = "TargetNotPlaying";
+
+    /// <summary>How long a refused AUTO press stays flagged, so the button can flash it.</summary>
+    public const double AutoCrossfadeRefusedFlashSeconds = 0.6;
 
     /// <summary>UI/controller-meaningful true-peak ceiling range (dBTP): hot but never full scale.</summary>
     private const double CeilingMaxDbTp = -0.3;
     private const double CeilingMinDbTp = -2.0;
 
+    private static readonly System.Diagnostics.Stopwatch MonotonicClock = System.Diagnostics.Stopwatch.StartNew();
+
     private readonly IMixer _mixer;
     private readonly int _sampleRate;
     private readonly ILogger _logger;
+    private readonly Func<int, bool>? _isDeckPlaying;
+    private readonly Func<double> _nowSeconds;
     private readonly object _gate = new();
     private MixerState _state = MixerState.Default;
 
-    public MixerActionHandler(IMixer mixer, int sampleRate = 48_000, ILoggerFactory? loggerFactory = null)
+    // AUTO crossfade (all guarded by _gate): the running fade, the end of a refused press's flash, and whether
+    // AUTO left the physical crossfader out of sync (it must pick the position up before it moves the mix).
+    private AutoCrossfadeRamp? _autoRamp;
+    private double? _autoRefusedUntil;
+    private bool _crossfaderNeedsPickup;
+
+    /// <param name="isDeckPlaying">Whether a deck slot is playing — AUTO refuses to fade into a silent deck.
+    /// Null (no realtime engine, tests) skips that check.</param>
+    /// <param name="nowSeconds">Monotonic seconds for AUTO timing; defaults to a process Stopwatch. Injected in
+    /// tests so a fade's steps are deterministic.</param>
+    public MixerActionHandler(
+        IMixer mixer,
+        int sampleRate = 48_000,
+        ILoggerFactory? loggerFactory = null,
+        Func<int, bool>? isDeckPlaying = null,
+        Func<double>? nowSeconds = null)
     {
         _mixer = mixer ?? throw new ArgumentNullException(nameof(mixer));
         if (sampleRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
         _sampleRate = sampleRate;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MixerActionHandler>();
+        _isDeckPlaying = isDeckPlaying;
+        _nowSeconds = nowSeconds ?? (() => MonotonicClock.Elapsed.TotalSeconds);
     }
 
     /// <inheritdoc />
@@ -104,6 +134,12 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
             case PerformanceActionKind.MixerLimiterCeiling:
                 ApplyLimiterCeiling(action);
                 break;
+            case PerformanceActionKind.MixerAutoCrossfade:
+                ApplyAutoCrossfade(action);
+                break;
+            case PerformanceActionKind.MixerAutoCrossfadeTime:
+                ApplyAutoCrossfadeTime(action);
+                break;
             default:
                 break; // dispatcher guarantees only handled kinds reach here
         }
@@ -111,6 +147,7 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
 
     private void ApplyCrossfade(PerformanceAction action)
     {
+        bool tookOverFade;
         lock (_gate)
         {
             double position = action.InputMode == ActionInputMode.Relative
@@ -118,9 +155,110 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
                 : action.Value;
             _state = _state.WithCrossfader(position);
             PushDeckGains();
+            tookOverFade = _autoRamp is not null;
+            _autoRamp = null;
+            // A human move (UI or hardware) ends the AUTO hand-off: the physical fader is the truth again, as
+            // it always is for the crossfader. Other automation (Origin set) leaves it out of sync.
+            if (action.Origin is null)
+                _crossfaderNeedsPickup = false;
         }
         RaiseCrossfadeFeedback();
+        if (tookOverFade)
+        {
+            RaiseAutoCrossfadeFeedback();
+            _logger.LogInformation("AUTO crossfade taken over by a crossfader move at {Position}", State.Crossfader);
+        }
         _logger.LogDebug("Crossfade set to {Position}", State.Crossfader);
+    }
+
+    // AUTO: a second press stops a running fade where it is; otherwise start one toward the far side, unless
+    // the deck it would fade into is silent (flash the refusal instead of fading the floor into nothing).
+    private void ApplyAutoCrossfade(PerformanceAction action)
+    {
+        if (!action.IsPressed)
+            return; // a press-and-release binding: only the press starts or stops a fade
+
+        double now = _nowSeconds();
+        AutoCrossfadeRamp ramp;
+        bool stopped;
+        lock (_gate)
+        {
+            stopped = _autoRamp is not null;
+            _autoRamp = null;
+            ramp = AutoCrossfadeRamp.TowardFarSide(_state.Crossfader, _state.AutoCrossfadeSeconds, now);
+        }
+        if (stopped)
+        {
+            RaiseAutoCrossfadeFeedback();
+            _logger.LogInformation("AUTO crossfade stopped at {Position}", State.Crossfader);
+            return;
+        }
+
+        int targetSlot = ramp.To > 0.5 ? MixerState.DeckB : MixerState.DeckA;
+        if (_isDeckPlaying is not null && !_isDeckPlaying(targetSlot))
+        {
+            lock (_gate)
+                _autoRefusedUntil = now + AutoCrossfadeRefusedFlashSeconds;
+            RaiseAutoCrossfadeFeedback();
+            _logger.LogInformation("AUTO crossfade refused: deck {Deck} is not playing", targetSlot == MixerState.DeckA ? "A" : "B");
+            return;
+        }
+
+        lock (_gate)
+        {
+            _autoRefusedUntil = null;
+            _crossfaderNeedsPickup = true;
+            _autoRamp = ramp;
+        }
+        RaiseAutoCrossfadeFeedback();
+        _logger.LogInformation("AUTO crossfade {From} → {To} over {Seconds} s", ramp.From, ramp.To, ramp.DurationSeconds);
+        PumpAutoCrossfade(); // the first step now — the whole move for a 0-second MIX SEC
+    }
+
+    private void ApplyAutoCrossfadeTime(PerformanceAction action)
+    {
+        lock (_gate)
+        {
+            double knob = ResolveAbsoluteOrDelta(action, AutoCrossfadeRamp.SecondsToKnob(_state.AutoCrossfadeSeconds));
+            _state = _state with { AutoCrossfadeSeconds = AutoCrossfadeRamp.KnobToSeconds(knob) };
+        }
+        RaiseFeedback(PerformanceActionKind.MixerAutoCrossfadeTime, slot: 0,
+            ValueFeedback(AutoCrossfadeRamp.SecondsToKnob(State.AutoCrossfadeSeconds)));
+    }
+
+    /// <summary>
+    /// Advances a running AUTO crossfade to "now" and ends a refused press's flash once it has shown. The
+    /// composition root calls this on its handler pump (~30 ms) so a fade keeps moving even if the UI stalls;
+    /// a no-op while nothing is running.
+    /// </summary>
+    public void PumpAutoCrossfade()
+    {
+        double now = _nowSeconds();
+        bool moved = false;
+        bool autoChanged = false;
+        lock (_gate)
+        {
+            if (_autoRamp is { } ramp)
+            {
+                _state = _state.WithCrossfader(ramp.PositionAt(now));
+                PushDeckGains();
+                moved = true;
+                if (ramp.IsCompleteAt(now))
+                {
+                    _autoRamp = null;
+                    autoChanged = true;
+                }
+            }
+            if (_autoRefusedUntil is { } until && now >= until)
+            {
+                _autoRefusedUntil = null;
+                autoChanged = true;
+            }
+        }
+        if (moved)
+            RaiseCrossfadeFeedback();
+        if (autoChanged)
+            RaiseAutoCrossfadeFeedback();
     }
 
     private void ApplyChannelGain(PerformanceAction action)
@@ -324,8 +462,10 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
         MixerState state = State;
         return kind switch
         {
-            PerformanceActionKind.MixerCrossfade
-                => new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: state.Crossfader),
+            PerformanceActionKind.MixerCrossfade => CrossfadeFeedback(),
+            PerformanceActionKind.MixerAutoCrossfade => AutoCrossfadeFeedback(),
+            PerformanceActionKind.MixerAutoCrossfadeTime
+                => ValueFeedback(AutoCrossfadeRamp.SecondsToKnob(state.AutoCrossfadeSeconds)),
             PerformanceActionKind.MixerCueToggle when slot >= 0 && slot < state.Channels.Count
                 => new ActionFeedbackState(IsActive: state.Channel(slot).CueEnabled, IsAvailable: true, Value: 0),
             PerformanceActionKind.MixerCueLevel
@@ -371,9 +511,27 @@ public sealed class MixerActionHandler : PerformanceActionHandlerBase
     private void PushDeckGain(int slot) => _mixer.SetDeckGain(slot, MixerMath.DeckOutputGain(_state, slot));
 
     private void RaiseCrossfadeFeedback()
-        => RaiseFeedback(
-            PerformanceActionKind.MixerCrossfade, slot: 0,
-            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: State.Crossfader));
+        => RaiseFeedback(PerformanceActionKind.MixerCrossfade, slot: 0, CrossfadeFeedback());
+
+    private void RaiseAutoCrossfadeFeedback()
+        => RaiseFeedback(PerformanceActionKind.MixerAutoCrossfade, slot: 0, AutoCrossfadeFeedback());
+
+    private ActionFeedbackState CrossfadeFeedback()
+    {
+        lock (_gate)
+            return new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: _state.Crossfader)
+            {
+                RequiresPickup = _crossfaderNeedsPickup,
+            };
+    }
+
+    private ActionFeedbackState AutoCrossfadeFeedback()
+    {
+        lock (_gate)
+            return new ActionFeedbackState(
+                IsActive: _autoRamp is not null, IsAvailable: true, Value: 0,
+                Argument: _autoRefusedUntil is null ? null : AutoCrossfadeRefused);
+    }
 
     private static double ResolveAbsoluteOrDelta(PerformanceAction action, double current)
         => action.InputMode == ActionInputMode.Relative ? current + action.Value : action.Value;

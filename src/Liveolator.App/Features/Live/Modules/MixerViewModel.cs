@@ -42,6 +42,8 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private bool _isCueA;
     private bool _isCueB;
     private bool _isSmartLimiter;
+    private bool _isAutoCrossfading;
+    private bool _isAutoCrossfadeRefused;
     private double _levelA;
     private double _levelB;
     private double _limiterGrHeldDb;
@@ -86,6 +88,19 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
         CrossfadeToACommand = ReactiveCommand.Create(() => { Crossfader.Value = 0.0; }, canCue);
         CrossfadeToBCommand = ReactiveCommand.Create(() => { Crossfader.Value = 1.0; }, canCue);
 
+        AutoCrossfadeCommand = ReactiveCommand.Create(EmitAutoCrossfade, canCue);
+        AutoCrossfadeTime = new ContinuousControlViewModel(
+            "Mix sec",
+            Seed(PerformanceActionKind.MixerAutoCrossfadeTime, slot: 0,
+                AutoCrossfadeRamp.SecondsToKnob(AutoCrossfadeRamp.DefaultSeconds)),
+            enabled
+                ? v =>
+                {
+                    Emit(PerformanceActionKind.MixerAutoCrossfadeTime, v, slot: 0);
+                    this.RaisePropertyChanged(nameof(AutoCrossfadeTimeLabel));
+                }
+                : null);
+
         EqCut = new EqCutModeKnobViewModel(
             ModeFromFeedback(_dispatcher?.GetFeedback(PerformanceActionKind.MixerEqCutMode, 0)),
             enabled ? EmitEqCutMode : null);
@@ -113,6 +128,7 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
             _isCueA = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 0).IsActive;
             _isCueB = _dispatcher.GetFeedback(PerformanceActionKind.MixerCueToggle, 1).IsActive;
             _isSmartLimiter = _dispatcher.GetFeedback(PerformanceActionKind.MixerLimiterSmart, 0).IsActive;
+            _isAutoCrossfading = _dispatcher.GetFeedback(PerformanceActionKind.MixerAutoCrossfade, 0).IsActive;
             _dispatcher.FeedbackChanged += OnFeedback;
         }
     }
@@ -193,6 +209,29 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     public ReactiveCommand<Unit, Unit> CrossfadeToACommand { get; }
     public ReactiveCommand<Unit, Unit> CrossfadeToBCommand { get; }
 
+    /// <summary>AUTO: fade the crossfader to the other side over MIX SEC; a press mid-fade stops it (MixerAutoCrossfade).</summary>
+    public ReactiveCommand<Unit, Unit> AutoCrossfadeCommand { get; }
+
+    /// <summary>MIX SEC knob (normalized 0..1 = 0..20 s, whole-second detents) — the AUTO crossfade time.</summary>
+    public ContinuousControlViewModel AutoCrossfadeTime { get; }
+
+    /// <summary>MIX SEC in seconds for the caption under the knob, e.g. "10 s".</summary>
+    public string AutoCrossfadeTimeLabel => $"{AutoCrossfadeRamp.KnobToSeconds(AutoCrossfadeTime.Value):0} s";
+
+    /// <summary>True while an AUTO crossfade is running (lights the AUTO button).</summary>
+    public bool IsAutoCrossfading
+    {
+        get => _isAutoCrossfading;
+        private set => this.RaiseAndSetIfChanged(ref _isAutoCrossfading, value);
+    }
+
+    /// <summary>True briefly after AUTO was refused because the deck it would fade into is not playing.</summary>
+    public bool IsAutoCrossfadeRefused
+    {
+        get => _isAutoCrossfadeRefused;
+        private set => this.RaiseAndSetIfChanged(ref _isAutoCrossfadeRefused, value);
+    }
+
     /// <summary>Smart-limiter CHARACTER knob: 0 = Transparent (gentle), 1 = Punchy (faster release).</summary>
     public ContinuousControlViewModel LimiterCharacter { get; }
 
@@ -251,6 +290,9 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
     private void EmitLimiterSmart()
         => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerLimiterSmart));
 
+    private void EmitAutoCrossfade()
+        => _dispatcher?.Dispatch(new PerformanceAction(PerformanceActionKind.MixerAutoCrossfade));
+
     // Knob (0..1) ↔ ceiling (dBTP) — a linear map between the hottest and quietest allowed ceilings.
     private static double KnobToCeiling(double knob)
         => CeilingQuietestDbTp + Math.Clamp(knob, 0.0, 1.0) * (CeilingHottestDbTp - CeilingQuietestDbTp);
@@ -304,6 +346,14 @@ public sealed class MixerViewModel : ViewModelBase, IDisposable
                     break;
                 case PerformanceActionKind.MixerLimiterCeiling:
                     LimiterCeiling.SetFromFeedback(CeilingToKnob(e.State.Value));
+                    break;
+                case PerformanceActionKind.MixerAutoCrossfade:
+                    IsAutoCrossfading = e.State.IsActive;
+                    IsAutoCrossfadeRefused = e.State.Argument == MixerActionHandler.AutoCrossfadeRefused;
+                    break;
+                case PerformanceActionKind.MixerAutoCrossfadeTime:
+                    AutoCrossfadeTime.SetFromFeedback(e.State.Value);
+                    this.RaisePropertyChanged(nameof(AutoCrossfadeTimeLabel));
                     break;
             }
         });

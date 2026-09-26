@@ -38,7 +38,8 @@ public sealed record SettingsSnapshot(
     bool? CheckForUpdatesOnStartup = null,
     string? SkippedUpdateVersion = null,
     string? GetSongBpmApiKey = null,
-    bool? StemsEnabled = null)
+    bool? StemsEnabled = null,
+    double? AutoCrossfadeSeconds = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -152,6 +153,8 @@ public sealed class JsonSettingsStore : ISettingsStore
                 snapshot.SkippedUpdateVersion),
             // Written before the online key existed reads null → enrichment disabled until a key is set.
             Online = new OnlineSettings(snapshot.GetSongBpmApiKey),
+            // Written before MIX SEC was persisted reads null → the 10-second default.
+            Mixer = new MixerSettings(snapshot.AutoCrossfadeSeconds ?? MixerSettings.Default.AutoCrossfadeSeconds),
         }.Normalized();
     }
 
@@ -190,11 +193,12 @@ public sealed class JsonSettingsStore : ISettingsStore
             CheckForUpdatesOnStartup: normalized.Updates.CheckOnStartup,
             SkippedUpdateVersion: normalized.Updates.SkippedVersion,
             GetSongBpmApiKey: normalized.Online.GetSongBpmApiKey,
-            StemsEnabled: normalized.Audio.StemsEnabled);
+            StemsEnabled: normalized.Audio.StemsEnabled,
+            AutoCrossfadeSeconds: normalized.Mixer.AutoCrossfadeSeconds);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to
-        // resume on the captured SynchronizationContext — so SaveWindowLayout's GetResult() on the UI
+        // resume on the captured SynchronizationContext — so SaveShutdownSettings' GetResult() on the UI
         // thread at window close DEADLOCKS the app ("X freezes, only killing the process stops it").
         try
         {

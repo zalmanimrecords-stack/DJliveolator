@@ -1,17 +1,17 @@
 using System;
 using System.Threading;
-using Liveolator.Core.Audio;
+using Liveolator.Core.Actions;
 using Xunit;
 
-namespace Liveolator.Core.Tests.Audio;
+namespace Liveolator.Core.Tests.Actions;
 
-public class JogReleasePumpTests
+public class HandlerPumpTests
 {
     [Fact]
     public void Start_InvokesTheCallbackRepeatedly_UntilDisposed()
     {
         var fired = new CountdownEvent(3);
-        using var pump = new JogReleasePump(
+        using var pump = new HandlerPump(
             () => { if (!fired.IsSet) fired.Signal(); },
             TimeSpan.FromMilliseconds(2));
 
@@ -29,7 +29,7 @@ public class JogReleasePumpTests
     {
         int calls = 0;
         var reached = new CountdownEvent(3);
-        using var pump = new JogReleasePump(
+        using var pump = new HandlerPump(
             () =>
             {
                 Interlocked.Increment(ref calls);
@@ -46,10 +46,10 @@ public class JogReleasePumpTests
 
     [Fact]
     public void NullCallback_Throws()
-        => Assert.Throws<ArgumentNullException>(() => new JogReleasePump(null!));
+        => Assert.Throws<ArgumentNullException>(() => new HandlerPump(null!));
 
     [Fact]
     public void NonPositiveInterval_Throws()
         => Assert.Throws<ArgumentOutOfRangeException>(
-            () => new JogReleasePump(() => { }, TimeSpan.Zero));
+            () => new HandlerPump(() => { }, TimeSpan.Zero));
 }

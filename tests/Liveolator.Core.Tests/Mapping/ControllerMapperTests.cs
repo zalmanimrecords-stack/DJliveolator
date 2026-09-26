@@ -31,6 +31,37 @@ public class ControllerMapperTests
     }
 
     [Fact]
+    public void Apply_AbsoluteControl_AfterAutomationMovedItsTarget_HoldsUntilTheHardwareReachesIt()
+    {
+        var mapper = Build(new ControllerBinding(
+            MidiMessageType.ControlChange, 0, 10, PerformanceActionKind.MixerCrossfade, ActionInputMode.Absolute));
+        _dispatcher.FeedbackValue = 1.0;           // an AUTO fade left the crossfader on B
+        _dispatcher.FeedbackRequiresPickup = true; // ...while the physical fader still sits on A
+
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 10, 0));
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 10, 64));
+        Assert.Empty(_dispatcher.Dispatched);      // the first touch does not jump the mix back to A
+
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 10, 127));
+        Assert.Equal(1.0, Assert.Single(_dispatcher.Dispatched).Value, precision: 6);
+    }
+
+    [Fact]
+    public void Apply_AbsoluteControl_OtherThanTheCrossfader_NeverAsksForFeedback()
+    {
+        // Only AUTO moves a target out from under the hardware, and only the crossfader. Asking on every other
+        // knob tick is wasted work on the MIDI path — on macOS a system-volume query spawns osascript.
+        var mapper = Build(new ControllerBinding(
+            MidiMessageType.ControlChange, 0, 11, PerformanceActionKind.SystemMasterVolume, ActionInputMode.Absolute));
+        _dispatcher.FeedbackRequiresPickup = true;
+
+        mapper.Apply(new MidiMessage(MidiMessageType.ControlChange, 0, 11, 64));
+
+        Assert.Single(_dispatcher.Dispatched);
+        Assert.Equal(0, _dispatcher.FeedbackQueries);
+    }
+
+    [Fact]
     public void Apply_NoMatchingBinding_DispatchesNothing()
     {
         var mapper = Build(new ControllerBinding(

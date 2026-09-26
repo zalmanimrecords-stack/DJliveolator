@@ -163,6 +163,71 @@ public sealed class MixerViewModelTests
     }
 
     [Fact]
+    public async Task Auto_EmitsMixerAutoCrossfade()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        await vm.AutoCrossfadeCommand.Execute().ToTask();
+
+        Assert.Equal(PerformanceActionKind.MixerAutoCrossfade, Assert.Single(dispatcher.Dispatched).Kind);
+    }
+
+    [Fact]
+    public void MixSec_DefaultsToTenSeconds()
+    {
+        var vm = new MixerViewModel(new FakeDispatcher());
+
+        Assert.Equal(0.5, vm.AutoCrossfadeTime.Value);
+        Assert.Equal("10 s", vm.AutoCrossfadeTimeLabel);
+    }
+
+    [Fact]
+    public void MixSec_Turn_EmitsTheKnobPosition_AndRelabels()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        vm.AutoCrossfadeTime.Value = 0.75;
+
+        PerformanceAction action = Assert.Single(dispatcher.Dispatched);
+        Assert.Equal(PerformanceActionKind.MixerAutoCrossfadeTime, action.Kind);
+        Assert.Equal(0.75, action.Value);
+        Assert.Equal("15 s", vm.AutoCrossfadeTimeLabel);
+    }
+
+    [Fact]
+    public void MixSec_Feedback_UpdatesKnobAndLabel_WithoutReDispatching()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerAutoCrossfadeTime, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0.25));
+
+        Assert.Equal(0.25, vm.AutoCrossfadeTime.Value);
+        Assert.Equal("5 s", vm.AutoCrossfadeTimeLabel);
+        Assert.Empty(dispatcher.Dispatched);
+    }
+
+    [Fact]
+    public void AutoFeedback_LightsTheButtonWhileFading_AndFlagsARefusal()
+    {
+        var dispatcher = new FakeDispatcher();
+        var vm = new MixerViewModel(dispatcher);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerAutoCrossfade, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 0));
+        Assert.True(vm.IsAutoCrossfading);
+        Assert.False(vm.IsAutoCrossfadeRefused);
+
+        dispatcher.RaiseFeedback(PerformanceActionKind.MixerAutoCrossfade, 0,
+            new ActionFeedbackState(IsActive: false, IsAvailable: true, Value: 0, Argument: MixerActionHandler.AutoCrossfadeRefused));
+        Assert.False(vm.IsAutoCrossfading);
+        Assert.True(vm.IsAutoCrossfadeRefused);
+    }
+
+    [Fact]
     public void Cue_LatchesFromFeedback()
     {
         var dispatcher = new FakeDispatcher();

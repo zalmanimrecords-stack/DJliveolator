@@ -1,15 +1,16 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Liveolator.Core.Audio;
+namespace Liveolator.Core.Actions;
 
 /// <summary>
-/// Calls a jog-release callback on a background thread at a fixed interval. A jog encoder is endless and
-/// sends no "release", so <see cref="DeckActionHandler.PumpJogRelease"/> must be polled to snap a stale
-/// bend back to the deck's normal rate. Kept off the UI thread (a stall must not leave the deck detuned)
-/// and mirrors <c>MasterClockPump</c>. A tick that throws is logged and the loop continues.
+/// Calls the handlers' time-driven work on a background thread at a fixed interval: the jog-release poll
+/// (an endless jog encoder sends no "release", so <c>DeckActionHandler.PumpJogRelease</c> must be polled to
+/// snap a stale bend back) and the AUTO crossfade step (<c>MixerActionHandler.PumpAutoCrossfade</c>). Kept off
+/// the UI thread — a stall must not leave a deck detuned or a fade frozen mid-mix — and mirrors
+/// <c>MasterClockPump</c>. A tick that throws is logged and the loop continues.
 /// </summary>
-public sealed class JogReleasePump : IDisposable
+public sealed class HandlerPump : IDisposable
 {
     private static readonly TimeSpan DefaultInterval = TimeSpan.FromMilliseconds(30);
 
@@ -22,13 +23,13 @@ public sealed class JogReleasePump : IDisposable
     private Thread? _thread;
     private bool _disposed;
 
-    public JogReleasePump(Action tick, TimeSpan? interval = null, ILogger<JogReleasePump>? logger = null)
+    public HandlerPump(Action tick, TimeSpan? interval = null, ILogger<HandlerPump>? logger = null)
     {
         _tick = tick ?? throw new ArgumentNullException(nameof(tick));
         _interval = interval ?? DefaultInterval;
         if (_interval <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(interval), _interval, "Pump interval must be positive.");
-        _logger = logger ?? NullLogger<JogReleasePump>.Instance;
+        _logger = logger ?? NullLogger<HandlerPump>.Instance;
     }
 
     public bool IsRunning
@@ -48,7 +49,7 @@ public sealed class JogReleasePump : IDisposable
             if (_thread is { IsAlive: true })
                 return;
 
-            _thread = new Thread(Run) { IsBackground = true, Name = "Liveolator Jog Release" };
+            _thread = new Thread(Run) { IsBackground = true, Name = "Liveolator Handler Pump" };
             _thread.Start();
         }
     }
@@ -65,7 +66,7 @@ public sealed class JogReleasePump : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Jog-release pump tick failed; continuing.");
+                    _logger.LogError(ex, "Handler pump tick failed; continuing.");
                 }
 
                 _stop.Wait(_interval);

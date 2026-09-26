@@ -13,6 +13,12 @@ internal sealed class RecordingDispatcher : IPerformanceActionDispatcher
     /// <summary>Current value reported by <see cref="GetFeedback"/> (the soft-takeover target).</summary>
     public double FeedbackValue { get; set; }
 
+    /// <summary>Reported as <see cref="ActionFeedbackState.RequiresPickup"/> (automation moved the target).</summary>
+    public bool FeedbackRequiresPickup { get; set; }
+
+    /// <summary>How many times <see cref="GetFeedback"/> was called.</summary>
+    public int FeedbackQueries { get; private set; }
+
     public event EventHandler<ActionFeedbackChanged>? FeedbackChanged;
 
     public event EventHandler<PerformanceAction>? ActionDispatched { add { } remove { } }
@@ -25,7 +31,10 @@ internal sealed class RecordingDispatcher : IPerformanceActionDispatcher
     }
 
     public ActionFeedbackState GetFeedback(PerformanceActionKind kind, int slot = 0)
-        => new(IsActive: false, IsAvailable: true, Value: FeedbackValue);
+    {
+        FeedbackQueries++;
+        return new(IsActive: false, IsAvailable: true, Value: FeedbackValue) { RequiresPickup = FeedbackRequiresPickup };
+    }
 
     public void RaiseFeedback(ActionFeedbackChanged change) => FeedbackChanged?.Invoke(this, change);
 }

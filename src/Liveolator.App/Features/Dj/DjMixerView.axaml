@@ -139,6 +139,12 @@
 
           <Button Grid.Row="3" Grid.Column="1" Classes="key mixer" Classes.on="{Binding IsCueA}" Content="CUE"
                   Command="{Binding CueACommand}" Margin="0,8,0,0" />
+          <!-- AUTO: fade the crossfader to the other side over MIX SEC (lit while fading; red flash = refused) -->
+          <Button Grid.Row="3" Grid.Column="2" Classes="key mixer" Classes.on="{Binding IsAutoCrossfading}"
+                  Classes.refused="{Binding IsAutoCrossfadeRefused}" Content="AUTO" FontSize="9" Padding="4,3"
+                  MinWidth="0" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,8,0,0"
+                  Command="{Binding AutoCrossfadeCommand}"
+                  ToolTip.Tip="Fade the crossfader to the other side over MIX SEC. Press again to stop." />
           <Button Grid.Row="3" Grid.Column="3" Classes="key mixer" Classes.on="{Binding IsCueB}" Content="CUE"
                   Command="{Binding CueBCommand}" Margin="0,8,0,0" />
 
@@ -186,8 +192,8 @@
           </StackPanel>
         </Grid>
 
-        <!-- Headphone-cue LEVEL + MIX, inside the mixer frame -->
-        <Grid ColumnDefinitions="*,14,*">
+        <!-- Headphone-cue LEVEL · AUTO crossfade MIX SEC · headphone-cue MIX, inside the mixer frame -->
+        <Grid ColumnDefinitions="*,14,*,14,*">
           <StackPanel Grid.Column="0" Spacing="4" HorizontalAlignment="Center">
             <TextBlock Classes="section" HorizontalAlignment="Center" Text="LEVEL" />
             <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
@@ -196,7 +202,17 @@
             <TextBlock Classes="tick" HorizontalAlignment="Center" Text="MIN   MAX" />
           </StackPanel>
 
-          <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center">
+          <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Center"
+                      ToolTip.Tip="AUTO crossfade time, 0–20 seconds (double-click: 10)">
+            <TextBlock Classes="section" HorizontalAlignment="Center" Text="MIX SEC" />
+            <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
+                           Detents="21" DefaultValue="0.5"
+                           Value="{Binding AutoCrossfadeTime.Value}"
+                           IsEnabled="{Binding AutoCrossfadeTime.IsEnabled}" />
+            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="{Binding AutoCrossfadeTimeLabel}" />
+          </StackPanel>
+
+          <StackPanel Grid.Column="4" Spacing="4" HorizontalAlignment="Center">
             <TextBlock Classes="section" HorizontalAlignment="Center" Text="MIX" />
             <controls:Knob Width="{DynamicResource SizeKnobCue}" Height="{DynamicResource SizeKnobCue}"
                            Value="{Binding CueMix.Value}"

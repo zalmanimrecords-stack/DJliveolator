@@ -69,6 +69,8 @@ public static class ActionTargetVocabulary
             [PerformanceActionKind.MixerLimiterCharacter] = new("Mixer: Limiter character", ActionInputMode.Absolute),
             // dBTP, but the handler clamps to a sane sub-0 range, so a fader/encoder is still usable.
             [PerformanceActionKind.MixerLimiterCeiling] = new("Mixer: Limiter ceiling", ActionInputMode.Absolute),
+            [PerformanceActionKind.MixerAutoCrossfade] = new("Mixer: AUTO crossfade", ActionInputMode.Momentary),
+            [PerformanceActionKind.MixerAutoCrossfadeTime] = new("Mixer: AUTO crossfade time (MIX SEC)", ActionInputMode.Absolute),
             [PerformanceActionKind.MasterRecordToggle] = new("Master: Record mix", ActionInputMode.Toggle),
             [PerformanceActionKind.SystemMasterVolume] = new("System: Master volume", ActionInputMode.Absolute),
 
