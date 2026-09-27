@@ -1,7 +1,7 @@
 # 03 — Beat Engine
 
 > **✅ Status (2026-06-05): clock primitives BUILT in `Liveolator.Core/Beat/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested:
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). Implemented and tested:
 > `BeatClockState`/`TempoCandidate`/`BeatClockSource`, `IBeatClock`, the Link-style
 > `IBeatTimeline`/`BeatTimeline`, `Quantize` + `IBeatScheduler` + `BeatQuantizer`,
 > `TapTempoService`, the manual clock (`ManualBeatClock` + `IBeatClockControl`,

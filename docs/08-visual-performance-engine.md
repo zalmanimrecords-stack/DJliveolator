@@ -8,14 +8,14 @@
 > Push pads and autopilot actually trigger.
 
 > **✅ Status (2026-06-05): scene model BUILT in `Liveolator.Core/Visuals/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested: the
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). Implemented and tested: the
 > vocabulary (`VisualScene`/`VisualLayer`/`VisualBank`/`VisualSourceRef`/`EffectRef`/
 > `BeatBehavior`, `BlendMode`/`TransitionStyle`/`VisualSourceKind`), `VisualMacro` + `MacroTarget`
 > with normalized→range resolution, the `IVisualPerformanceEngine` seam, and the shared
 > confidence-gated `Beat.QuantizedLaunch` (visuals reuse the **same** `Quantize`/clock as audio).
 > Also BUILT: the first GL compositor slice (`Liveolator.Visuals/Gl/`) and the
 > `VisualActionHandler` dispatcher bridge (`Liveolator.Core/Visuals/`, mirrors `BeatActionHandler`,
-> app-wired in `ServiceConfig.WireVisuals`) — see [`18`](18-implementation-status.md). **Pending:**
+> app-wired in `ServiceConfig.WireVisuals`) — see [`18`](archive/2026-09-27-18-implementation-status.md) (archived). **Pending:**
 > the full layer/effect chain + video/camera sources in the engine, `VisualSetLayerSource` (no action
 > payload yet), and launching the GL render window on demand. **Don't rebuild the scene/macro model,
 > redefine `Quantize`, or re-add the handler.**

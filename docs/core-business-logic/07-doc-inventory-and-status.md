@@ -3,7 +3,7 @@
 - **Purpose:** the audit trail of the consolidation — every documentation file, what happened to it, and where its content went.
 - **Scope:** every markdown file in the repository outside this canonical directory.
 - **Source of truth:** the files themselves; this document records decisions about them, never their content.
-- **Last validated:** 2026-09-26 (scoped refresh; see the refresh log below)
+- **Last validated:** 2026-09-27 (cleanup pass — archived `docs/18`; see the refresh log below)
 - **Confidence:** High for status and destination; the design documents were classified from their own status banners and purpose sections rather than a line-by-line re-verification, and are labelled accordingly.
 - **Related:** [context](./00-project-context.md) · [open questions](./11-open-questions-and-assumptions.md)
 
@@ -62,7 +62,6 @@ wins; where it explains *why* a subsystem is shaped as it is, the design documen
 | `docs/13-data-and-persistence.md` | Persistence design and rules | Current | `Merged` | Storage layout now owned by [05](./05-integrations-and-side-effects.md); the file keeps the design rationale |
 | `docs/16-track-analysis-library.md` | Analysis and library design | Current | `Canonical` | |
 | `docs/17-mcp-agent-interface.md` | Agent interface design | Current | `Canonical` | Tool list now owned by [05](./05-integrations-and-side-effects.md) |
-| `docs/18-implementation-status.md` | Living implementation map | Stale as a status claim | `Archive candidate` | Last updated 2026-06-12 while claiming to track reality; root `CLAUDE.md` instructs agents to read it first, so retiring it is an owner decision. Pointer added to this set |
 | `docs/19-ui-design-line.md` | The canonical visual line | Partly contradicted | `Historical` | Correct about the default theme; the two alternative built-in themes it forbids now ship — see [11](./11-open-questions-and-assumptions.md) |
 | `docs/21-extension-system.md` | Extension packaging | Current | `Canonical` | |
 | `docs/23-learnings-from-mixxx.md` | Study of Mixxx, with a licensing wall | Current | `Canonical` | Records why no Mixxx code may be copied |
@@ -96,6 +95,7 @@ tree that has since moved, which is the failure mode this consolidation exists t
 | `docs/31-system-review-2026-06-27.md` | Panel review, music-library focus | `Historical` | as above |
 | `docs/improvement-report.md` | Autonomous maintenance pass, 2026-07-18 | `Historical` | Refactor themes in [15](./15-refactor-recommendations.md) |
 | `docs/qa-reports/qa-report-2026-06-18.md` | Full-app QA sweep | `Historical` | Verdict was tied to an in-flight branch |
+| `docs/18-implementation-status.md` | Living implementation map | `Stale as a status claim` | Last updated 2026-06-12 while claiming to track reality; superseded by this set, notably [00](./00-project-context.md) and [02](./02-core-domains.md) |
 
 Their archived paths, all under `docs/archive/` and covered by
 [`docs/archive/README.md`](../archive/README.md):
@@ -103,8 +103,8 @@ Their archived paths, all under `docs/archive/` and covered by
 `2026-08-01-20-dj-feature-gap-analysis.md`, `2026-08-01-21-dj-feature-gap-analysis-followup.md`,
 `2026-08-01-22-status-and-roadmap.md`, `2026-08-01-24-system-review-2026-06-07.md`,
 `2026-08-01-27-system-review-2026-06-10.md`, `2026-08-01-31-system-review-2026-06-27.md`,
-`2026-08-01-improvement-report.md`, `2026-08-01-qa-report-2026-06-18.md`. The now-empty
-`docs/qa-reports/` directory was removed.
+`2026-08-01-improvement-report.md`, `2026-08-01-qa-report-2026-06-18.md`,
+`2026-09-27-18-implementation-status.md`. The now-empty `docs/qa-reports/` directory was removed.
 
 ## AI-context and instruction files
 
@@ -137,6 +137,19 @@ Their archived paths, all under `docs/archive/` and covered by
 | `THIRD-PARTY-NOTICES.txt`, `LICENSE`, `LICENSE-EXCEPTION.txt` | Legal | `Canonical` | Required; never archived |
 
 ## Refresh log
+
+### 2026-09-27 — archive `docs/18-implementation-status.md`
+
+Owner decision, previously left open (see the 2026-08-01 migration and every refresh since): the
+stale increment log is superseded by this set and root `CLAUDE.md` no longer tells agents to read it
+first, so nothing depended on keeping it in place. Archived to
+`docs/archive/2026-09-27-18-implementation-status.md` with the standard archive banner. No content
+was merged — everything current it once tracked already lives in [00](./00-project-context.md) and
+[02](./02-core-domains.md). Updated the two pointers to it: root `CLAUDE.md`'s working notes and
+`AGENTS.md`'s working notes. `docs/README.md` did not reference it (already dropped from that index
+in an earlier pass) and needed no change.
+
+No other document changed in this pass; content-wise this was cleanup only.
 
 ### 2026-09-26 — scoped refresh (Stems, Docker/MCP, Live view, Mappings)
 
@@ -201,9 +214,12 @@ artefact rather than a lifecycle, so it gains no entry there.
 ## Cleanup log
 
 - Removed: the sixteen previous canonical files listed in the migration table, after merging.
-- Archived: the ten files listed above, to `docs/archive/`.
-- Left in place pending an owner decision: `docs/18-implementation-status.md`.
-- Links fixed: `README.md` (two), `docs/README.md` (index rows for the archived files),
-  `docs/18-implementation-status.md` (pointer to this set).
+- Archived: the ten files listed above, plus `docs/18-implementation-status.md` on 2026-09-27
+  (the owner decision that was previously left open), all to `docs/archive/`.
+- Links fixed: `README.md` (two), `docs/README.md` (index rows for the archived files), root
+  `CLAUDE.md` and `AGENTS.md` (working notes pointer to `docs/18`, repointed to its archived path),
+  and the six inbound links from still-canonical design docs (`docs/03`, `docs/04`, `docs/05`,
+  `docs/08` (two), `docs/09`, `docs/10`) that cited `docs/18` as evidence of a built status —
+  repointed to the archived path and marked `(archived)`.
 - Known broken links inside archived files: `docs/20` and `docs/21-followup` cross-reference each
   other and `docs/18` by their original paths. Archived files are not maintained.

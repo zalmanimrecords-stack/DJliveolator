@@ -1,7 +1,7 @@
 # 05 — Controller Mapping Engine
 
 > **✅ Status (2026-06-05): pure layer BUILT in `Liveolator.Core/Mapping/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested:
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). Implemented and tested:
 > library-agnostic model (`MidiMessage`, `ControllerBinding`, `ControllerMappingProfile`,
 > `ValueCurve`, `RelativeEncoding`), value conversion (`ControlValueConverter`), matching
 > (`BindingMatcher`), `ControllerMapper`, conflict detection (`MappingConflictDetector`), MIDI

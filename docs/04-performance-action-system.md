@@ -1,7 +1,7 @@
 # 04 — Performance Action System
 
 > **✅ Status (2026-06-05): BUILT in `Liveolator.Core/Actions/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). The full model
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). The full model
 > (`PerformanceAction`/`Kind`/`ActionInputMode`), the dispatcher (`PerformanceActionDispatcher`
 > with handler-registration routing, no giant switch), the handler seam
 > (`IPerformanceActionHandler` + base), feedback (`ActionFeedbackState`/`Changed`), and the

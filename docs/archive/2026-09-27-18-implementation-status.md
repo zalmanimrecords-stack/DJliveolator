@@ -1,3 +1,5 @@
+> **Archived on 2026-09-27. Not current.** Current documentation lives in `docs/core-business-logic/`.
+
 # 18 — Implementation Status (living map)
 
 > **⚠️ Superseded for current behaviour (2026-08-01).** Verified current behaviour now lives in

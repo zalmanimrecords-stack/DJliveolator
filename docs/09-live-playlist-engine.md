@@ -1,7 +1,7 @@
 # 09 — Live Playlist Engine
 
 > **✅ Status (2026-06-05): queue model BUILT in `Liveolator.Core/Playlist/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested:
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). Implemented and tested:
 > `QueueEntry`/`TrackState`, the `ILivePlaylist` seam, and `LivePlaylist` (Load/Append/InsertNext/
 > Move/RemoveFuture/SetAutoAdvance/SkipNow/SkipOn/NotifyTrackEnded + `NowChanged`). Editing the
 > future never disturbs Now; `SkipOn` defers through `IBeatScheduler`. **Pending (blocked on the

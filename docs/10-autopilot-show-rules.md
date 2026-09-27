@@ -1,7 +1,7 @@
 # 10 — Autopilot Show Rules
 
 > **✅ Status (2026-06-05): BUILT in `Liveolator.Core/Autopilot/`** — see
-> [`18-implementation-status.md`](18-implementation-status.md). Implemented and tested: the rule
+> [`18-implementation-status.md`](archive/2026-09-27-18-implementation-status.md) (archived). Implemented and tested: the rule
 > model (`AutopilotRule`/`RuleTrigger`/`TriggerKind`/`RuleCondition`/`Cooldown`), the show
 > definition (`AutopilotRuleSet`/`ScenePool`/`AutopilotOverridePolicy`/`OverrideMode`),
 > `AutopilotTickContext`, the `IAutopilotEngine` seam, and `AutopilotEngine` — triggers, condition
