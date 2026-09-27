@@ -52,6 +52,7 @@ capability ships but no person can invoke it from the product.
 | Master smart limiter (SMART/SAFE, character, ceiling) | Mixer | `MixerActionHandler` | `MixerLimiter*` | Shell top bar | `Full` | `MainWindowViewModel.Limiter` |
 | Operating-system master volume | Platform | `SystemVolumeActionHandler` | `SystemMasterVolume` | Shell top bar | `Full` | `SystemVolumeControlViewModel` |
 | Deck sync (toggle and once) | Beat | `DeckActionHandler` | `DeckSyncToggle`, `DeckSyncOnce` | Deck views; CMD STUDIO and FLX4 profiles | `Full` | mapping profiles |
+| Kick-sync zipper (on-beat kick ticks where the A/B combs meet, at the true playhead) | Decks | `FourOnTheFloorKicks`, `WaveformStrip.RenderKickTicks` | none (display) | DJ PRO deck waveforms | `Full` | `DeckViewModel.KickMarkers`, `DeckWaveform`; `WaveformGridShot.Render_kick_zipper_to_png`; no ticks without kick-phase proof |
 | Tap tempo and beat nudge | Beat | `BeatActionHandler` | `BeatTapTempo`, `BeatNudge*` | LIVE beat controls; Push and CMD profiles | `Full` | `MappingsViewModel` targets |
 | Beat lock, half/double tempo, reset grid, set downbeat | Beat | `BeatActionHandler` | `BeatLock`, `BeatUnlock`, `BeatHalfTempo`, `BeatDoubleTempo`, `BeatResetGrid`, `BeatSetDownbeat` | Push 1 only, and only lock/half/double | `Partial` | `Push1Profile`; no on-screen emitter, no learn target |
 | Library scan, search, filter, badges, track editing | Library | `MusicLibrary`, `TrackAnalyzer` | LIBRARIES commands | LIBRARIES tab | `Full` | `LibrariesViewModel`, `TrackEditorWindow` |

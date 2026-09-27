@@ -1,5 +1,7 @@
 using Liveolator.App.Features.Live.Modules;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Persistence;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,6 +35,7 @@ internal sealed class DeckSessionPersistence : IDisposable
     private readonly IPerformanceActionDispatcher _dispatcher;
     private readonly IDeckSessionStore _store;
     private readonly Func<string, bool> _fileExists;
+    private readonly Func<string, BpmResult?>? _analysisLookup;
     private readonly ILogger _logger;
     private readonly Dictionary<int, DeckSessionState> _decks = new();
     // Decks whose file was offline at restore, awaiting the drive to mount (keyed by slot).
@@ -50,6 +53,8 @@ internal sealed class DeckSessionPersistence : IDisposable
     /// <param name="fileExists">File-reachability probe (the composition root passes <c>File.Exists</c>;
     /// injected so the offline/deferred path stays unit-testable).</param>
     /// <param name="logger">Writes restore/defer diagnostics to the rolling log file; null = no logging.</param>
+    /// <param name="analysisLookup">The catalog analysis for a track path (called on the retry thread), so a
+    /// restored deck's engine gets the same on-beat kicks its comb draws; null = none are sent.</param>
     /// <param name="enableRetryTimer">Arms the background reachability retry (false in unit tests, which
     /// drive <see cref="RetryPending"/> deterministically).</param>
     public DeckSessionPersistence(
@@ -58,11 +63,13 @@ internal sealed class DeckSessionPersistence : IDisposable
         int deckCount,
         Func<string, bool>? fileExists = null,
         ILogger<DeckSessionPersistence>? logger = null,
+        Func<string, BpmResult?>? analysisLookup = null,
         bool enableRetryTimer = true)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _fileExists = fileExists ?? File.Exists;
+        _analysisLookup = analysisLookup;
         _logger = logger ?? (ILogger)NullLogger<DeckSessionPersistence>.Instance;
 
         Restore(deckCount);
@@ -183,11 +190,15 @@ internal sealed class DeckSessionPersistence : IDisposable
             Value: deck.Bpm,
             Slot: deck.Slot,
             Argument: deck.TrackPath));
+        // The load cleared the engine's kicks. The saved BPM skips the deck's catalog self-heal (the other route
+        // they reach the engine by), yet the deck still draws the catalog's kicks: without them here, SYNC would
+        // lock on the first beat while the comb shows the kicks.
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat,
             ActionInputMode.Absolute,
             Value: deck.FirstBeatSeconds,
-            Slot: deck.Slot));
+            Slot: deck.Slot,
+            Argument: DeckKickOnsetCodec.Encode(FourOnTheFloorKicks.From(LookUpAnalysis(deck.TrackPath)))));
         // Re-apply a manually-set downbeat ("one") so a grid edit survives the restart. Only when one was
         // saved (> 0) — a 0 would just echo the default and the deck would keep its auto-resolved downbeat.
         if (deck.DownbeatSeconds > 0)
@@ -196,6 +207,21 @@ internal sealed class DeckSessionPersistence : IDisposable
                 ActionInputMode.Absolute,
                 Value: deck.DownbeatSeconds,
                 Slot: deck.Slot));
+    }
+
+    // A catalog failure must not cost the restore itself (this runs on the timer thread): the deck then loads
+    // without kicks and anchors on the saved first beat, as it did before kicks were restored.
+    private BpmResult? LookUpAnalysis(string trackPath)
+    {
+        try
+        {
+            return _analysisLookup?.Invoke(trackPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the catalog analysis for restored track {Path}; loading it without kicks.", trackPath);
+            return null;
+        }
     }
 
     private void OnActionDispatched(object? sender, PerformanceAction action)

@@ -113,26 +113,57 @@ public sealed class PlaylistAudioPlayerTests
     }
 
     [Fact]
-    public void NowChanged_DispatchesCataloguedKickOnsetsToTheDeck()
+    public void NowChanged_SendsTheDeckTheOnBeatKicks_SmoothedLikeTheCombDrawsThem()
     {
+        // The engine phase-locks on the kick nearest the playhead, so it must lock on the list the DJ sees
+        // (FourOnTheFloorKicks), not the raw picks: here a 20 ms flam is pulled back onto the lattice.
+        double[] lattice = Enumerable.Range(0, 20).Select(i => 1.0 + (0.5 * i)).ToArray();
+        double[] picked = lattice.ToArray();
+        picked[10] += 0.020;
         var playlist = new FakeLivePlaylist();
         var engine = new FakeMultiDeckPlaybackEngine();
-        var dispatcher = new PerformanceActionDispatcher(
-            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
-            NullLogger<PerformanceActionDispatcher>.Instance);
         using var player = new PlaylistAudioPlayer(
             playlist,
-            dispatcher,
+            DispatcherFor(engine),
             engine,
-            analysisResolver: path => path == "a.wav"
-                ? new BpmResult(126.0, 0.9, 0.375) { KickOnsetsSeconds = new[] { 1.25, 0.75 } }
-                : null,
+            analysisResolver: _ => new BpmResult(120.0, 0.9, 0.0)
+            {
+                KickOnsetsSeconds = picked,
+                KickPhaseMarginRatio = 3.4,
+                PhaseWindowDisagreementSeconds = 0.002,
+            },
             slot: 1);
 
         playlist.RaiseNowChanged(Entry("a.wav"));
 
-        Assert.Equal(new[] { 0.75, 1.25 }, engine.DeckKickOnsets(1));
+        IReadOnlyList<double> sent = engine.DeckKickOnsets(1);
+        Assert.Equal(lattice.Length, sent.Count);
+        for (int i = 0; i < lattice.Length; i++)
+            Assert.Equal(lattice[i], sent[i], precision: 6);
     }
+
+    [Fact]
+    public void NowChanged_WithoutOnBeatProof_SendsTheDeckNoKicks()
+    {
+        // Unproven picks may hold the off-beat; with none sent the engine anchors on the first beat instead.
+        var playlist = new FakeLivePlaylist();
+        var engine = new FakeMultiDeckPlaybackEngine();
+        using var player = new PlaylistAudioPlayer(
+            playlist,
+            DispatcherFor(engine),
+            engine,
+            analysisResolver: _ => new BpmResult(126.0, 0.9, 0.375) { KickOnsetsSeconds = new[] { 0.75, 1.25 } },
+            slot: 1);
+
+        playlist.RaiseNowChanged(Entry("a.wav"));
+
+        Assert.Empty(engine.DeckKickOnsets(1));
+    }
+
+    private static PerformanceActionDispatcher DispatcherFor(FakeMultiDeckPlaybackEngine engine)
+        => new(
+            new IPerformanceActionHandler[] { new DeckActionHandler(engine) },
+            NullLogger<PerformanceActionDispatcher>.Instance);
 
     [Fact]
     public void NowChanged_WhenAutoPlayOff_LoadsButDoesNotPlay()

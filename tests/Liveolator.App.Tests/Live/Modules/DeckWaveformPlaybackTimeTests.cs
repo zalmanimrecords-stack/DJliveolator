@@ -63,6 +63,21 @@ public sealed class DeckWaveformPlaybackTimeTests
         Assert.Equal(8.0 * (128.0 / 124.0) / 250.0, vm.ZoomWindow, 6);
     }
 
+    [Theory]
+    [InlineData(360.0)]
+    [InlineData(480.0)]
+    public async Task TightestZoom_ShowsTheSameSeconds_OnEveryTrackLength(double durationSeconds)
+    {
+        // Two stacked decks only zip kick-for-kick when a beat is the same pixel width on both, so the
+        // window must be the zoom's seconds on ANY length — never floored to a fraction of the track.
+        var disp = new FakeDispatcher();
+        var vm = new DeckViewModel(slot: 0, disp, FakeWaveformProvider.WithDuration(durationSeconds),
+            waveformZoomSeconds: 2.0);
+        await LoadAndSettle(vm, disp, slot: 0, baseBpm: 125);
+
+        Assert.Equal(2.0, vm.ZoomWindow * durationSeconds, 6);
+    }
+
     [Fact]
     public async Task BeatGrid_StaysAtBaseTempo_WhenPitchedAboveBase_SoLinesKeepSittingOnKicks()
     {

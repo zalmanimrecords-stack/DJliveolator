@@ -20,6 +20,22 @@ public sealed class BeatGridCalculatorTests
     }
 
     [Fact]
+    public void KickFractions_MapsStrikeSecondsOntoTheGridsTimeBase_DroppingAnyPastTheTrack()
+    {
+        // Ticks, grid and playhead share seconds ÷ duration; a catalogued strike past a shorter decode is dropped.
+        IReadOnlyList<double> ticks = BeatGridCalculator.KickFractions(new[] { 0.0, 1.0, 4.0, 8.0, 8.5 }, durationSeconds: 8);
+
+        Assert.Equal(new[] { 0.0, 0.125, 0.5, 1.0 }, ticks);
+    }
+
+    [Fact]
+    public void KickFractions_IsEmpty_UntilTheDurationAndTheKicksAreKnown()
+    {
+        Assert.Empty(BeatGridCalculator.KickFractions(new[] { 1.0 }, durationSeconds: 0));
+        Assert.Empty(BeatGridCalculator.KickFractions(System.Array.Empty<double>(), durationSeconds: 8));
+    }
+
+    [Fact]
     public void BeatFractions_AnchorsTheGridOnTheFirstBeat()
     {
         // 120 BPM (0.5 s/beat), 8 s track, first beat at 1.0 s → lines at 1.0,1.5,…,8.0 s. Index 0 is the

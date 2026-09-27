@@ -41,7 +41,6 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     /// (the strip samples down to its pixel width when showing the whole track).</summary>
     private const int WaveformBuckets = 6_000;
 
-    private const double MinZoomWindow = 0.01;
     private const double DefaultZoomWindow = 0.04; // fallback when the duration is unknown
 
     /// <summary>Total hot-cue slots per deck (matches the engine's bank), surfaced as two A/B banks of
@@ -118,17 +117,18 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     private IReadOnlyList<float>? _highPeaks;
     private IReadOnlyList<double> _beatGrid = Array.Empty<double>();
     private double _progress;
-    private double _syncScrollOffset; // render-time beat-phase lock to the master (0 unless a synced follower)
     private double _trackBpm;
     private double _firstBeatSeconds;
     // The downbeat (bar-1, the musical "one") anchor in seconds: where the BAR starts, distinct from the
     // first-beat anchor (where beats land). Drives which grid line carries the red bar marker. Auto-set from
     // the analyzed downbeat when confident, or placed by the DJ via SET ONE; 0 = unknown → index 0 is the bar.
     private double _downbeatSeconds;
-    // The track's detected kick strike times (seconds), from analysis. SET PHASE and SYNC snap the
-    // grid onto the kick nearest the playhead from this list, so alignment lands on the real transient
-    // rather than the raw playhead. Empty until analysis is known.
+    // The track's on-beat kick strike times (seconds, FourOnTheFloorKicks: gated + de-quantised). SET PHASE
+    // and SYNC snap the grid onto the kick nearest the playhead from this list, so alignment lands on the real
+    // transient rather than the raw playhead; the comb draws them as kick ticks. Empty until analysis is known
+    // and for a track without on-beat proof.
     private IReadOnlyList<double> _kickOnsets = Array.Empty<double>();
+    private IReadOnlyList<double> _kickMarkers = Array.Empty<double>();
     private int _downbeatBarOffset;
     private double _durationSeconds;
     private double _zoomWindow;
@@ -237,11 +237,14 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // Top-level Sync: match tempo, align phase, then keep the deck locked to the other deck until the
         // performer turns it off. First it auto-SETs PHASE (snaps this deck's grid onto the real kick
         // nearest the playhead, via EmitGridHere) so alignment lands on the true transient even when
-        // analysis put the grid a hair off; then DeckSyncToggle engages the continuous lock.
+        // analysis put the grid a hair off; then DeckSyncToggle engages the continuous lock. Without on-beat
+        // kicks there is no transient to snap to — EmitGridHere would fold the raw playhead, an arbitrary
+        // phase — so the analysed (or hand-set) first beat stands.
         SyncCommand = ReactiveCommand.Create(
             () =>
             {
-                EmitGridHere(); // auto SET PHASE to the nearest kick before matching
+                if (_kickOnsets.Count > 0)
+                    EmitGridHere();
                 _dispatcher?.Dispatch(new PerformanceAction(
                     PerformanceActionKind.DeckSyncToggle, ActionInputMode.Toggle, Slot: slot));
             },
@@ -584,6 +587,17 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// The analysed on-beat kicks as 0..1 track fractions, drawn as ticks in the comb so a synced A/B pair
+    /// reads as one zipper. Never derived from the grid, so a SET PHASE moves <see cref="BeatGrid"/> but not
+    /// these. Empty until the duration is known, and for a track without on-beat proof.
+    /// </summary>
+    public IReadOnlyList<double> KickMarkers
+    {
+        get => _kickMarkers;
+        private set => this.RaiseAndSetIfChanged(ref _kickMarkers, value);
+    }
+
+    /// <summary>
     /// Which beat of the bar the <see cref="BeatGrid"/> starts on (0..3 for 4/4): the strip marks comb line
     /// <c>i</c> as a bar downbeat when <c>((i - DownbeatBarOffset) mod 4) == 0</c>, so the red bars sit on the
     /// analyzed/edited downbeat (the "one") rather than on an arbitrary beat. 0 until a downbeat is known.
@@ -609,29 +623,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         private set
         {
             this.RaiseAndSetIfChanged(ref _progress, value);
-            this.RaisePropertyChanged(nameof(RenderProgress));
             UpdateTimeTexts();
         }
-    }
-
-    /// <summary>The playhead fraction the WAVEFORM renders at: the true <see cref="Progress"/> plus a small
-    /// beat-phase lock (<see cref="_syncScrollOffset"/>) when this deck is a Sync-Locked follower, so its
-    /// grid moves together with the master's. Equal to <see cref="Progress"/> when not synced (offset 0).</summary>
-    public double RenderProgress => _progress + _syncScrollOffset;
-
-    /// <summary>Grid state <see cref="PerformanceDeckSet"/> reads to compute the follower's sync-scroll lock:
-    /// the true playhead + the track's duration / first-beat anchor / base (grid) tempo.</summary>
-    internal (double Progress, double DurationSeconds, double FirstBeatSeconds, double BaseBpm) SyncScrollState
-        => (_progress, _durationSeconds, _firstBeatSeconds, _trackBpm);
-
-    /// <summary>Set the render-time beat-phase lock offset (progress-fraction) that aligns this follower's
-    /// grid to the master's. 0 clears it (not a follower). Driven by <see cref="PerformanceDeckSet"/>.</summary>
-    internal void SetSyncScrollOffset(double offset)
-    {
-        if (_syncScrollOffset == offset)
-            return;
-        _syncScrollOffset = offset;
-        this.RaisePropertyChanged(nameof(RenderProgress));
     }
 
     /// <summary>Time elapsed in the loaded track ("m:ss"), or the placeholder until the duration decodes.</summary>
@@ -952,7 +945,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         // AUDIBLE tempo then show the same wall-clock span — a beat is the same pixel width and scrolls at
         // the same speed on A and B, so their kicks stay stacked all the way across the window (beat-locked
         // motion), not just at the playhead. At unity rate this is the original _zoomSeconds / duration.
-        return Math.Clamp(_zoomSeconds * PlaybackRate() / _durationSeconds, MinZoomWindow, 1.0);
+        // No lower floor: a fraction floor would widen long tracks only, giving A and B different beat widths.
+        return Math.Min(_zoomSeconds * PlaybackRate() / _durationSeconds, 1.0);
     }
 
     // The deck's effective playback rate = audible tempo ÷ base (grid) tempo. 1.0 when either is unknown, so
@@ -1000,6 +994,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             ? BeatGridCalculator.BeatFractions(_trackBpm, _durationSeconds, _firstBeatSeconds)
             : Array.Empty<double>();
     }
+
+    // Call before RecomputeBeatGrid on the same update: a BeatGrid change reads as "the load has settled".
+    private void RecomputeKickMarkers() => KickMarkers = BeatGridCalculator.KickFractions(_kickOnsets, _durationSeconds);
 
     // Slide the grid so a beat line lands on the KICK nearest the playhead. Snaps to the analyzed kick
     // transient (KickGridSnap) so it lands on the real kick, not on wherever the playhead happened to stop;
@@ -1653,6 +1650,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         KickPeaks = null;
         MidPeaks = null;
         HighPeaks = null;
+        _kickOnsets = Array.Empty<double>();
+        KickMarkers = Array.Empty<double>();
         BeatGrid = Array.Empty<double>();
         _trackBpm = 0;
         _durationSeconds = 0;
@@ -1693,11 +1692,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         KickPeaks = null;
         MidPeaks = null;
         HighPeaks = null;
+        KickMarkers = Array.Empty<double>(); // the previous track's ticks go with it, before the grid resets
         BeatGrid = Array.Empty<double>();
         _trackBpm = bpm;          // analyzed tempo from the load (0 = unknown); grid waits on the duration
         _firstBeatSeconds = 0;    // re-anchored when the DeckSetFirstBeat feedback arrives for this load
         _downbeatSeconds = 0;     // re-resolved below from analysis (or set by SET ONE / a restore)
-        _kickOnsets = Array.Empty<double>(); // the track's kick times, for SET PHASE / SYNC kick-snap
         _durationSeconds = 0;     // unknown until the overview decodes; re-zoom then
         IsGridUncertain = false;  // clear the previous track's grid verdict; DispatchGridConfidence re-sets it below
         UpdateTimeTexts();        // back to placeholders until the new track's duration is known
@@ -1706,7 +1705,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         ClearHotCues();           // hot-cues belong to the track and clear on load (doc 18)
 
         BpmResult? analysis = _analysisInfo?.Invoke(trackPath);
-        _kickOnsets = analysis?.KickOnsetsSeconds ?? Array.Empty<double>();
+        _kickOnsets = FourOnTheFloorKicks.From(analysis); // ticks appear once the overview gives the duration
 
         // Gate phase sync on grid confidence for the loaded track (no-op when the track has no signals yet).
         if (analysis is not null)
@@ -1774,7 +1773,8 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 return;
             if (analysis is { Bpm: > 0 })
             {
-                _kickOnsets = analysis.KickOnsetsSeconds; // so SET PHASE / SYNC can kick-snap this track
+                _kickOnsets = FourOnTheFloorKicks.From(analysis); // so SET PHASE / SYNC can kick-snap this track
+                RecomputeKickMarkers();
                 DispatchAnalyzedGrid(analysis);
                 DispatchAnalyzedDownbeat(analysis);
                 DispatchGridConfidence(analysis);
@@ -1804,7 +1804,9 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
     // The ONE analysis-derived grid emit (BPM + first-beat), shared by the catalog self-heal and the
     // background-analysis completion so the two load routes can never drift apart. Stamped with
     // AnalysisOrigin so observers of the raw action stream (DeckSessionPersistence) can tell an
-    // analyzer-derived grid from a manual edit.
+    // analyzer-derived grid from a manual edit. The first-beat action also carries the on-beat kicks
+    // (_kickOnsets, set by the caller from this analysis): it is the only way they reach the engine, which
+    // phase-locks on the kick nearest the playhead — the same list the comb draws.
     private void DispatchAnalyzedGrid(BpmResult analysis)
     {
         if (_dispatcher is null || analysis.Bpm <= 0)
@@ -1812,10 +1814,11 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetGridBpm, ActionInputMode.Absolute,
             Value: analysis.Bpm, Slot: _slot, Origin: AnalysisOrigin));
-        if (analysis.FirstBeatSeconds > 0)
+        string? kicks = DeckKickOnsetCodec.Encode(_kickOnsets);
+        if (analysis.FirstBeatSeconds > 0 || kicks is not null)
             _dispatcher.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSetFirstBeat, ActionInputMode.Absolute,
-                Value: analysis.FirstBeatSeconds, Slot: _slot, Origin: AnalysisOrigin));
+                Value: analysis.FirstBeatSeconds, Slot: _slot, Argument: kicks, Origin: AnalysisOrigin));
     }
 
     private void CancelBackgroundBpmAnalysis()
@@ -1902,6 +1905,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
             // raises BeatGrid, which any awaiter (e.g. the UI / tests) treats as "the load has settled"; if
             // the zoom were sized after, that observer could read a stale (pre-duration) window.
             ZoomWindow = ComputeZoomWindow();
+            RecomputeKickMarkers();
             RecomputeBeatGrid();
         }
         catch (OperationCanceledException)
@@ -1918,6 +1922,7 @@ public sealed class DeckViewModel : ViewModelBase, IDisposable
                 KickPeaks = null;
                 MidPeaks = null;
                 HighPeaks = null;
+                KickMarkers = Array.Empty<double>();
                 BeatGrid = Array.Empty<double>();
             }
         }

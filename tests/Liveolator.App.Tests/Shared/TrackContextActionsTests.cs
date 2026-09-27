@@ -114,7 +114,7 @@ public sealed class TrackContextActionsTests
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
             deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => true));
 
-        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5);
+        actions.LoadToDeck(1, "/m/a.wav", new BpmResult(126.0, 0.9, 0.5));
 
         Assert.Equal(2, dispatcher.Dispatched.Count);
         PerformanceAction load = dispatcher.Dispatched[0];
@@ -137,7 +137,7 @@ public sealed class TrackContextActionsTests
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
             deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => true));
 
-        actions.LoadToDeck(1, "/m/a.wav", bpm: 126.0);
+        actions.LoadToDeck(1, "/m/a.wav", new BpmResult(126.0, 0.9));
 
         PerformanceAction append = Assert.Single(dispatcher.Dispatched);
         Assert.Equal(PerformanceActionKind.PlaylistAppendTrack, append.Kind);
@@ -154,7 +154,7 @@ public sealed class TrackContextActionsTests
             onStatus: s => status = s,
             deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, _ => false));
 
-        actions.LoadToDeck(0, @"S:\offline\a.mp3", bpm: 126.0);
+        actions.LoadToDeck(0, @"S:\offline\a.mp3", new BpmResult(126.0, 0.9));
 
         Assert.Empty(dispatcher.Dispatched);
         Assert.NotNull(status);

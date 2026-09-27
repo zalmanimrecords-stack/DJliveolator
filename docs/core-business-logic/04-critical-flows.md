@@ -66,11 +66,15 @@ survives ([03](./03-business-entities-and-rules.md)).
 **Objective:** stage a track without ever cutting off audio the room is hearing.
 **Trigger:** load or double-click in LIBRARIES, the DJ PRO browser, or a deck drop target.
 
-1. The surface picks a deck slot and calls `DeckTrackLoader.Load` with the analysed BPM and downbeat.
+1. The surface picks a deck slot and calls `DeckTrackLoader.Load` with the track's `BpmResult`.
 2. Reachability, playing-state and audition rules decide the outcome
    ([03](./03-business-entities-and-rules.md)).
 3. An idle deck receives `DeckLoadTrack` and then `DeckSetFirstBeat` carrying the downbeat anchor and
-   encoded kick onsets; a playing deck receives `PlaylistAppendTrack`.
+   the encoded on-beat kicks — only the list `FourOnTheFloorKicks` vouches for (kick-phase gate passed,
+   kicks on the stored tempo's beat lattice), smoothed of frame quantisation; none for a track without
+   that proof. A playing deck receives `PlaylistAppendTrack`. The queue player and the deck's catalog
+   self-heal, background analysis and session restore (`DeckSessionPersistence`, via its catalog
+   lookup) send the same list.
 4. `PlaylistActionHandler` routes by deck slot; `PlaylistAudioPlayer` loads and plays Now and advances
    on that deck's end-of-track event.
 
@@ -83,9 +87,14 @@ silently.
 **Objective:** hold two decks in tempo and phase agreement.
 **Trigger:** `DeckSyncToggle` or `DeckSyncOnce`.
 
-1. `DeckActionHandler` resolves the sync target and the reference tempo.
-2. Tempo matching establishes a compatible rate; the phase controller applies bounded corrections and
-   releases them once aligned.
+1. `DeckActionHandler` resolves the sync target and the reference tempo. The on-screen SYNC first
+   snaps the deck's grid onto the on-beat kick nearest the playhead; a deck with no such kicks keeps its
+   analysed or hand-set first beat.
+2. Tempo matching establishes a compatible rate and a one-shot seek aligns phase, landing ahead by the
+   mixer's buffered audio when the other deck is playing. `PhaseLockController` then corrects the rate
+   on every tick, `Locked` included — `Locked` (enter 0.01 beat, exit 0.02) is a label, not a pause —
+   with gain 0.08 clamped to ±0.03, and re-snaps past 0.25 beat. The phase is measured on the kick
+   nearest the playhead when the deck has kicks, else on the first beat.
 3. `DeckPitchBend` from a jog or nudge slides phase temporarily without moving the pitch fader, and is
    ignored while sync owns the rate.
 

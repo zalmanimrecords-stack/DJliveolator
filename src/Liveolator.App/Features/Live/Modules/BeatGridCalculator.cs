@@ -60,6 +60,23 @@ public static class BeatGridCalculator
     }
 
     /// <summary>
+    /// Kick strike times (seconds) as 0..1 track fractions — the same time base as <see cref="BeatFractions"/>
+    /// and the playhead, so a kick tick sits exactly where the grid and the needle say that moment is. Strikes
+    /// past the decoded end are dropped; empty while the duration is unknown.
+    /// </summary>
+    public static IReadOnlyList<double> KickFractions(IReadOnlyList<double> kickSeconds, double durationSeconds)
+    {
+        if (!IsUsable(durationSeconds) || kickSeconds.Count == 0)
+            return Array.Empty<double>();
+
+        var fractions = new List<double>(kickSeconds.Count);
+        foreach (double t in kickSeconds)
+            if (t >= 0 && t <= durationSeconds)
+                fractions.Add(t / durationSeconds);
+        return fractions;
+    }
+
+    /// <summary>
     /// Which beat of the bar the grid (anchored on <paramref name="firstBeatSeconds"/>, index 0) starts on,
     /// given the track's downbeat (the musical "one"): the 0..<paramref name="beatsPerBar"/>-1 index offset
     /// the strip uses to mark a comb line as a bar downbeat — line <c>i</c> is a downbeat when

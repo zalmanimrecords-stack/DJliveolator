@@ -133,12 +133,15 @@ public sealed class PlaylistAudioPlayer : IDisposable
                 Value: analysis?.Bpm ?? 0.0,
                 Slot: _slot,
                 Argument: now.TrackPath));
+            // The engine phase-locks on the kick nearest the playhead, so it gets the list the kick comb draws:
+            // on-beat-proven and de-quantised. Unproven picks may be the off-beat, so none are sent and the
+            // engine anchors on the first beat instead.
             _dispatcher.Dispatch(new PerformanceAction(
                 PerformanceActionKind.DeckSetFirstBeat,
                 ActionInputMode.Absolute,
                 Value: analysis?.FirstBeatSeconds ?? 0.0,
                 Slot: _slot,
-                Argument: DeckKickOnsetCodec.Encode(analysis?.KickOnsetsSeconds)));
+                Argument: DeckKickOnsetCodec.Encode(FourOnTheFloorKicks.From(analysis))));
             // Gate an automatic load exactly like a UI load. This path used to send the anchor and the kick
             // list but no VERDICT, so the engine kept whatever the slot held; now that a slot without one is
             // tempo-only, staying silent would quietly cost every queue/auto-advance track its phase lock.

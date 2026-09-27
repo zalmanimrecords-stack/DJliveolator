@@ -188,35 +188,7 @@ public sealed class PerformanceDeckSet : ViewModelBase, IDisposable
     {
         DeckA.UpdatePlayhead();
         DeckB.UpdatePlayhead();
-        RefreshSyncScroll();
         Mixer.UpdateLevels(DeckA.IsPlaying, DeckB.IsPlaying);
-    }
-
-    // Beat-phase lock for the waveforms (owner: "same BPM ⇒ the grids must move together"). A Sync-Locked
-    // follower's waveform is nudged sub-beat each frame so its grid lines up with the master's; the two then
-    // scroll as one (the playback-time zoom already matches their pixels-per-beat). Only the phase-lock mode
-    // (IsSync/BeatLock) aligns — Tempo Sync leaves the phase to the DJ. When the engine already phase-locks
-    // the audio the nudge is ~0 (faithful); when it doesn't the DJ still sees the locked grid.
-    private void RefreshSyncScroll()
-    {
-        if (DeckA.IsSync && !DeckB.IsSync)
-            ApplyFollowerScroll(follower: DeckA, master: DeckB);
-        else if (DeckB.IsSync && !DeckA.IsSync)
-            ApplyFollowerScroll(follower: DeckB, master: DeckA);
-        else
-        {
-            DeckA.SetSyncScrollOffset(0.0);
-            DeckB.SetSyncScrollOffset(0.0);
-        }
-    }
-
-    private static void ApplyFollowerScroll(DeckViewModel follower, DeckViewModel master)
-    {
-        (double mProgress, double mDuration, double mFirstBeat, double mBpm) = master.SyncScrollState;
-        (double fProgress, double fDuration, double fFirstBeat, double fBpm) = follower.SyncScrollState;
-        follower.SetSyncScrollOffset(WaveformSyncScroll.FollowerOffset(
-            mProgress, mDuration, mFirstBeat, mBpm, fProgress, fDuration, fFirstBeat, fBpm));
-        master.SetSyncScrollOffset(0.0);
     }
 
     public void Dispose()
