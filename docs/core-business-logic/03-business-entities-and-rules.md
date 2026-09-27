@@ -3,7 +3,7 @@
 - **Purpose:** the entities the product depends on, and the invariants, validations and decision rules applied to them — with the point where each is enforced.
 - **Scope:** `Liveolator.Core` and the policy that `Liveolator.Media` enforces on installation and persistence.
 - **Source of truth:** `src/Liveolator.Core/**`, `src/Liveolator.Media/Extensions/**`, `tests/Liveolator.Core.Tests/**`.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-26 (scoped refresh — Controller mapping section only; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** High for the rules cited with an enforcement point; anything else is labelled inline.
 - **Related:** [domains](./02-core-domains.md) · [flows](./04-critical-flows.md) · [lifecycles](./08-state-machines-and-lifecycles.md) · [glossary](./12-glossary.md)
 
@@ -109,6 +109,12 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
 
 - **A knob never jumps its target.** `SoftTakeover` holds the target until the incoming hardware
   value crosses or meets it, then tracks directly. One instance per physical control. `Verified`.
+- **Nor does automation moving the target out from under a physical control.** When
+  `ActionFeedbackState.RequiresPickup` is set (currently only after an AUTO crossfade moves the
+  crossfader), `ControllerMapper` holds an absolute binding's dispatch — a second, independent
+  `SoftTakeover` instance per binding — until the physical control's value crosses the automated
+  value, then drops the pickup and tracks directly again. Cleared whenever the profile changes.
+  *Enforced in* `ControllerMapper.PickedUpAfterAutomation`. `Verified`.
 - Velocity-zero NoteOn is normalised to NoteOff, absolute and relative encodings are converted per
   binding, and duplicate `(type, channel, data1)` bindings are reported by
   `MappingConflictDetector`. *Enforced in* `Core/Mapping`. `Verified`.

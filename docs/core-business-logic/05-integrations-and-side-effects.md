@@ -3,7 +3,7 @@
 - **Purpose:** everything the product reaches outside its own process, and everything it writes.
 - **Scope:** native bindings, external processes and services, on-disk stores, and the agent-facing interface.
 - **Source of truth:** `src/Liveolator.Audio/**`, `.Midi`, `.Visuals`, `.Online`, `.Media`, `src/Liveolator.Mcp/**`.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-26 (scoped refresh — Agent surface section: new tool, HTTP transport, Docker deployment; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** High for the adapters present in code; runtime availability is configuration-dependent throughout.
 - **Related:** [flows](./04-critical-flows.md) · [permissions and trust](./09-permissions-and-roles.md) · [hotspots](./10-business-logic-hotspots.md)
 
@@ -101,12 +101,11 @@ before a destructive step. Item in [11](./11-open-questions-and-assumptions.md),
 
 ## Agent surface
 
-`Liveolator.Mcp` exposes **30** attributed tools over stdio (`src/Liveolator.Mcp/Tools/*.cs`),
-grouped as:
+`Liveolator.Mcp` exposes **31** attributed tools (`src/Liveolator.Mcp/Tools/*.cs`), grouped as:
 
 | Group | Tools |
 | --- | --- |
-| Library | `scan_music_folders`, `list_tracks`, `get_track`, `get_catalog_stats`, `reanalyze_track`, `reanalyze_pending_tracks`, `set_track_analysis`, `import_library` |
+| Library | `scan_music_folders`, `list_tracks`, `get_track`, `get_catalog_stats`, `reanalyze_track`, `reanalyze_pending_tracks`, `set_track_analysis`, `import_library`, `pull_server_catalog` |
 | Search | `find_tracks` |
 | Analysis | `analyze_track`, `measure_catalog_loudness` |
 | Harmonic | `harmonic_matches`, `compatible_keys` |
@@ -120,6 +119,45 @@ The DJ-set group is the only one that writes a `StudioProject` and renders audio
 gates are in [04](./04-critical-flows.md). A connection guide for agent authors lives at
 [`docs/mcp-connect-guide.md`](../mcp-connect-guide.md).
 
+`pull_server_catalog` (`LibrarySession.PullFromServerAsync`) is one-way, server to local, and fills
+gaps only: it merges analysis (beat grid, downbeat, key, cues, structure, loudness) from a remote
+scanning server's own `catalog.db`, but a local tempo always wins on disagreement (reported in
+`ServerPullSummaryDto.Disagreements`, never auto-resolved), a hand-corrected track is never touched,
+and no library field (rating, play count, date added) is overwritten. It enriches tracks the local
+catalog already holds and never adds new ones. `apply=false` (the default) previews the plan without
+writing; the preview and the write compute the identical plan from the same read, so the numbers an
+agent shows a DJ are the rows that later get written.
+
 **A child process must never inherit the server's stdin.** `FfmpegAudioDecoder` handed the spawned
 ffmpeg the stdio server's JSON-RPC stdin, which deadlocked `scan_music_folders` at 0% CPU. Fixed in
 `3611ad6`; the App's own library scan was never affected.
+
+**A silent render must fail loudly, not succeed quietly.** `export_set_mix` already refused to
+publish a mix with no audible source (`RequireAudibleMix`); `render_set_preview` did not, and on a
+render host missing the native BASS libraries every clip decoded to an empty buffer — the tool
+reported success over a folder of full-length, correctly-named, digitally silent WAVs. `DjSetSession`
+now runs the same check on the preview path (`RequireAudiblePreview`), throwing with the exact
+silent sources, the output directory and the missing-native remediation instead of returning a
+result that looks fine until someone presses play.
+
+## Deployment: stdio vs. the Docker/HTTP server
+
+`Liveolator.Mcp` ships two transports from the same binary (`ServerConfig.Mode`):
+
+- **stdio** (default) — a local child process an AI client spawns directly; no network exposure at all.
+- **HTTP** (`--http --port N --bind ADDR`) — used for the always-on deployment on the music host
+  (`simonsrv`), so a scan that reads audio over SMB at roughly 1 MB/s runs where the files actually
+  are instead of over the network. Shipped as a headless Linux container
+  (`docker/mcp/Dockerfile` + `docker/mcp/docker-compose.yml`): a self-contained `linux-x64` publish
+  (`scripts/deploy-mcp-server.ps1`) on `mcr.microsoft.com/dotnet/runtime-deps`, plus ffmpeg and the
+  linux-x64 BASS natives (`fetch-bass.sh`) — without the BASS natives specifically, rendering silently
+  produces empty audio (the incident the previous paragraph's guard now catches).
+
+**This transport has no authentication of its own** — `ServerConfig.BindAddress` defaults to
+`127.0.0.1` for exactly that reason. A container must override it to `0.0.0.0` (`LIVEOLATOR_BIND`),
+because Docker forwards a published port to the container's own network interface and a server bound
+to the container's loopback would make that port dead; the isolation then comes entirely from the
+compose file publishing `127.0.0.1:5175:5175` on the **host**, which keeps the server off the LAN just
+as strictly. An agent reaches it over an SSH tunnel (`ssh -N -L 5175:127.0.0.1:5175 simonsrv`), never
+directly. Runs alongside any pre-existing server on a different port and data directory, so the
+catalog already in service is never at risk while a new build is being judged.

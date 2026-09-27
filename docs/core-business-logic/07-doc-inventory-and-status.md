@@ -3,7 +3,7 @@
 - **Purpose:** the audit trail of the consolidation — every documentation file, what happened to it, and where its content went.
 - **Scope:** every markdown file in the repository outside this canonical directory.
 - **Source of truth:** the files themselves; this document records decisions about them, never their content.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-26 (scoped refresh; see the refresh log below)
 - **Confidence:** High for status and destination; the design documents were classified from their own status banners and purpose sections rather than a line-by-line re-verification, and are labelled accordingly.
 - **Related:** [context](./00-project-context.md) · [open questions](./11-open-questions-and-assumptions.md)
 
@@ -72,6 +72,7 @@ wins; where it explains *why* a subsystem is shaped as it is, the design documen
 | `docs/29-frktl-preset-authoring.md` | `.frktl` authoring guide | Current | `Canonical` | Public authoring guide |
 | `docs/30-ui-skins-png-controls.md` | PNG control skins | Design and POC | `Canonical` | |
 | `docs/32-python-analysis-seam.md` | Python seam work plan | Plan | `Canonical` | Pending owner sign-off per its own banner |
+| `docs/33-dj-pro-controls-reference.md` | Button/knob-by-button legend for the DJ PRO deck + mixer surface | Current | `Canonical` | New 2026-09-25, at the owner's request for a permanent, kept-current control reference; distinct fact from [06](./06-ui-feature-coverage.md)'s reachability matrix — see that document's "Related" line. Re-validated and rewritten 2026-09-26 against `feat(dj-pro): move FX, hot cues, loop, sync and track browse above the decks` — the layout it described the day before was already superseded |
 | `docs/SYNC-BEHAVIOR-SPEC.md` | Proposed sync contract and acceptance tests | Proposal | `Canonical` | Proposed, not current; referenced from [04](./04-critical-flows.md) |
 | `docs/research/audio-stack-recommendation.md` | Input to the audio-library decision | Superseded by the decision | `Historical` | Recommended against BASS; BASS was chosen |
 | `docs/research/dj-market-and-dsp-research.md` | Market and DSP research | Background | `Historical` | |
@@ -136,6 +137,35 @@ Their archived paths, all under `docs/archive/` and covered by
 | `THIRD-PARTY-NOTICES.txt`, `LICENSE`, `LICENSE-EXCEPTION.txt` | Legal | `Canonical` | Required; never archived |
 
 ## Refresh log
+
+### 2026-09-26 — scoped refresh (Stems, Docker/MCP, Live view, Mappings)
+
+Owner-requested scoped refresh, not a full pass: re-validated only the docs touched by four named
+areas, diffed from the previous baseline (`b809ec7`, 2026-09-11/12) against the current working tree.
+Two owner-named domains (Stems, Mappings) turned out to already be accurately documented from an
+earlier session's work; the other two, and one undocumented cross-cutting feature, were not.
+
+| Document | What changed |
+| --- | --- |
+| `00` | MCP tool count 30 -> 31; mentioned the HTTP/Docker transport alongside stdio; replaced a stale "fixed subset" claim about the MIDI-learn target list (already false — see `06`'s 2026-09-12 entry) with the LIVE on-screen-controls gap; authorization model line updated for the HTTP transport |
+| `01` | MCP server description: 31 tools, stdio-or-HTTP |
+| `03` | New rule: `ControllerMapper`'s automation-pickup soft takeover (`ActionFeedbackState.RequiresPickup`), added for the new AUTO crossfade feature |
+| `05` | Agent surface table: `pull_server_catalog` added, 31 tools; new "Deployment: stdio vs. the Docker/HTTP server" section (bind-address security model, no built-in auth, SSH-tunnel access); `render_set_preview` gained the same silent-output guard `export_set_mix` already had |
+| `06` | Deck/mixer reachability corrected: LIVE no longer hosts either (dropped `DjConsoleView`); AUTO crossfade is DJ-PRO-only; scene launch/blackout/strobe/master-record downgraded from `Full` to `Partial` — their on-screen views (`SceneGridView`, `MasterFxView`) are now unreachable, confirmed alongside `DjConsoleView`, `DjDeckView`, `DjMixerView`, `Live/Modules/DeckView` and `MixerView` (five orphaned views total, checked exhaustively by both XAML tag and ViewLocator-binding pattern); MCP tool count 31 |
+| `11` | Item 15 (`DjView` dead?) and item 18 (MCP stdio-only?) closed, both now `Verified`; new item 25 opened asking whether dropping LIVE's on-screen scene/blackout/strobe/record controls was intentional |
+
+Not re-validated this pass: `02`, `04`, `08`, `09`, `10`, `12`, `13`, `14`, `15` — each was spot-checked
+against the four named domains' diffs and found to already describe them correctly at their own level
+of altitude (e.g. `02`'s Mixer/Agent-interface domain rows still hold; `04`'s controller-input flow was
+already abstract enough to cover the new automation-pickup case), so none needed a content change or a
+restamp.
+
+`docs/33-dj-pro-controls-reference.md` (outside the canonical set, added 2026-09-25) was found stale
+against `feat(dj-pro): move FX, hot cues, loop, sync and track browse above the decks` — five controls
+(hot cues, loop, sync, track browse, and the deck panel they used to live inside) had all moved into
+separate view files the day after it was written. Owner asked for it to be re-validated in the same
+pass; rewritten against the current `DjProDeckView.axaml`, `DjProHotCueStripView.axaml`,
+`DjProLoopView.axaml`, `DjProSyncView.axaml` and `DjProTrackBrowseView.axaml`.
 
 ### 2026-09-11 — refresh against `b809ec7`
 

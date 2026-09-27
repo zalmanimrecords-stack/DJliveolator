@@ -3,7 +3,7 @@
 - **Purpose:** the work queue of everything this documentation could not resolve from code, ordered by impact. An item leaves this document when it is answered and the answer moves into its owner.
 - **Scope:** contradictions, unenforced rules, runtime-sensitive behaviour and product decisions.
 - **Source of truth:** the code that was read, and the places where it was silent.
-- **Last validated:** 2026-09-12 (against the merge of `feat/shipped-controller-profiles`)
+- **Last validated:** 2026-09-26 (scoped refresh — Live view, Mappings, Docker/MCP; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** every item here is deliberately uncertain and labelled.
 - **Related:** [rules](./03-business-entities-and-rules.md) · [UI coverage](./06-ui-feature-coverage.md) · [permissions](./09-permissions-and-roles.md)
 
@@ -81,8 +81,12 @@
     acceptance tests are still not implemented.
 14. **Native device latency, LED feedback and GL behaviour.** `Needs validation` — pure Core rules
     cannot guarantee any of it.
-15. **Is `DjView.axaml` genuinely dead?** `Needs validation`. No view references it and it is not a
-    shell page, but confirm no launch path renders it before removing it.
+15. ~~**Is `DjView.axaml` genuinely dead?**~~ **Closed 2026-09-26.** `Verified`. `MainWindowViewModel.Tabs`
+    is a fixed seven-tab list that never includes it, so it renders nowhere. The 2026-09-26 LIVE
+    redesign also removed the *other* consumer of the chain it hosts (`DjConsoleView`), so
+    `DjConsoleView.axaml`, `DjDeckView.axaml` and `DjMixerView.axaml` are now unreachable too, alongside
+    two more orphaned views found in the same pass (`Live/Modules/DeckView.axaml`, `MixerView.axaml`).
+    Detail in [06](./06-ui-feature-coverage.md#called-out-explicitly).
 
 ## Policy gaps
 
@@ -92,8 +96,12 @@
 17. **Backward-compatibility policy for authored formats.** `Unclear from code`. Snapshots are
     versioned and load defensively, but no published guarantee covers presets, add-ons, mappings and
     projects as third-party ecosystems grow.
-18. **Will MCP remain local stdio only?** `Unclear from code`. The answer changes the security
-    requirements in [09](./09-permissions-and-roles.md) completely.
+18. ~~**Will MCP remain local stdio only?**~~ **Closed 2026-09-26.** `Verified`. No — it now also ships
+    as an always-on HTTP deployment (`docker/mcp/`), for the scanning server that reads music over SMB.
+    The transport has no authentication of its own; isolation is bind-address (loopback by default,
+    `0.0.0.0` only inside the container) plus the compose file publishing to `127.0.0.1` on the host
+    plus an SSH tunnel for access — never a credential. Detail in
+    [05](./05-integrations-and-side-effects.md#deployment-stdio-vs-the-dockerhttp-server).
 
 ## Opened by the 2026-09-11 refresh
 
@@ -143,6 +151,19 @@
     Python/Open-Unmix, the stem-deck load path in `TwoDeckBassEngine`, or both), and the owner has to
     decide whether the persisted `StemsEnabled` toggle comes back or the flag becomes the only switch.
     *Who can answer:* the owner, after a reproduction.
+
+## Opened 2026-09-26
+
+25. **Was dropping the on-screen scene/blackout/strobe/record controls from LIVE intentional?**
+    `Unclear from code`. `feat(live): LIVE shows only the visuals` stopped `LiveView.axaml` from
+    embedding `SceneGridView`/`MasterFxView` (and dropped the deck/mixer console with them), but nothing
+    replaced what those two views drove: launching a scene by hand, blackout, strobe and starting a
+    recording now have **no mouse-only path** at all — reachable only via Push 1 hardware (scene load
+    and blackout) or a MIDI-learn binding the performer must create themselves (all four). If the
+    redesign's intent was "visuals fill the screen," that is achieved; if it was not meant to also
+    remove the only pointer-driven way to blackout the show or start recording, that is a gap.
+    *Who can answer:* product/owner. Coverage detail in
+    [06](./06-ui-feature-coverage.md#called-out-explicitly).
 
 ## Assumptions this documentation makes
 

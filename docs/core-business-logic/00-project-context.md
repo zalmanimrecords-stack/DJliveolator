@@ -3,7 +3,7 @@
 - **Purpose:** the entry point for a developer or AI agent joining this repository. Summaries and links only.
 - **Scope:** the whole repository.
 - **Source of truth:** `src/**`, `tests/**`, `.github/workflows/ci.yml`, `scripts/**`.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-26 (scoped refresh — Agent server, known limitations, authorization model; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** High for structure, commands and entry points; Medium for anything requiring native devices at runtime.
 - **Related:** [overview](./01-system-overview.md) · [domains](./02-core-domains.md) · [UI coverage](./06-ui-feature-coverage.md) · [open questions](./11-open-questions-and-assumptions.md)
 
@@ -24,7 +24,7 @@ One solution, `Liveolator.sln`, nine source projects and nine test projects.
 | Runtime | Project | Role |
 | --- | --- | --- |
 | Desktop app | `src/Liveolator.App` | Avalonia UI, view models, composition root |
-| Agent server | `src/Liveolator.Mcp` | MCP stdio server for external AI clients |
+| Agent server | `src/Liveolator.Mcp` | MCP server (stdio, or HTTP in the Docker deployment) for external AI clients |
 | Library | `src/Liveolator.Core` | All platform-agnostic business logic |
 | Adapters | `Liveolator.Audio`, `.Media`, `.Midi`, `.Online`, `.Platform`, `.Visuals` | Native and IO bindings |
 
@@ -39,8 +39,8 @@ account or role model — see [09 — permissions and roles](./09-permissions-an
 
 - Desktop: `src/Liveolator.App/Program.cs` → `App.axaml.cs` → `Composition/ServiceConfig.cs` (the
   single DI root) → `Shell/MainWindow.axaml`.
-- Agent: `src/Liveolator.Mcp/Program.cs` (stdio), 30 tools; connection guide in
-  [`docs/mcp-connect-guide.md`](../mcp-connect-guide.md).
+- Agent: `src/Liveolator.Mcp/Program.cs` (stdio by default, `--http` for the Docker deployment),
+  31 tools; connection guide in [`docs/mcp-connect-guide.md`](../mcp-connect-guide.md).
 - Shell tabs: LIVE · DJ PRO · STUDIO · VJ · LIBRARIES · ADDONS · SETTINGS
   (`Shell/MainWindowViewModel.cs`). MIDI mapping lives inside the SETTINGS tab, not its own tab.
 
@@ -85,9 +85,11 @@ installation, and the update decision — all in
 
 ## Authorization model
 
-None in the application sense: a local desktop process and a local stdio MCP process, both running
-with the operating-system user's authority. The real controls are extension trust and configuration
-gating. See [09](./09-permissions-and-roles.md).
+None in the application sense: a local desktop process, and an MCP process running with the
+operating-system user's authority — stdio (no network exposure) by default, or an unauthenticated
+loopback-only HTTP transport in the Docker deployment, isolated by bind-address plus port publishing
+plus an SSH tunnel rather than by any credential ([05](./05-integrations-and-side-effects.md)). The
+real controls are extension trust and configuration gating. See [09](./09-permissions-and-roles.md).
 
 ## Commands
 
@@ -130,9 +132,10 @@ business rules testable without hardware, and it is enforced by convention and b
 
 Windows is the only packaged platform. Autopilot and visual scene authoring have no UI, and the DJ
 set builder is reachable from MCP only. Stems are shelved until the rest of the app is stable: hidden
-from the UI and off in the engine unless `LIVEOLATOR_STEMS=1` (`StemsFeature`, 2026-09-24). The mapping-learn target list is a fixed subset of the
-action vocabulary. Full list with evidence:
-[06 — UI feature coverage](./06-ui-feature-coverage.md).
+from the UI and off in the engine unless `LIVEOLATOR_STEMS=1` (`StemsFeature`, 2026-09-24). LIVE's
+2026-09 redesign ("shows only the visuals") left scene launching, blackout, strobe and master
+recording with no on-screen control at all — reachable only via Push 1 hardware (the first two) or a
+user-created MIDI-learn binding. Full list with evidence: [06 — UI feature coverage](./06-ui-feature-coverage.md).
 
 ## Open questions
 

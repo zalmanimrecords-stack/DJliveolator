@@ -3,7 +3,7 @@
 - **Purpose:** what the system does, for whom, and where the business logic physically lives.
 - **Scope:** all runtime components; excludes build tooling and the marketing website.
 - **Source of truth:** `src/**`, `tests/**`, `Liveolator.sln`, `scripts/build-installer.ps1`.
-- **Last validated:** 2026-09-11 (against commit `b809ec7`)
+- **Last validated:** 2026-09-26 (scoped refresh — MCP server description only; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** High for component boundaries and the action layer; Medium for behaviour that only appears with native devices present.
 - **Related:** [context](./00-project-context.md) · [domains](./02-core-domains.md) · [flows](./04-critical-flows.md) · [UI coverage](./06-ui-feature-coverage.md)
 
@@ -25,9 +25,11 @@ Two executables ship from this repository:
 
 1. **The desktop application** (`Liveolator.App`) — an Avalonia shell of seven tabs over a shared set
    of engines.
-2. **The MCP server** (`Liveolator.Mcp`) — a stdio process exposing 30 music-intelligence, set-building
-   and authoring tools to an external AI client. It reads and writes the same stores as the app but does
-   not dispatch performance actions; it cannot drive playback.
+2. **The MCP server** (`Liveolator.Mcp`) — exposes 31 music-intelligence, set-building and authoring
+   tools to an external AI client, over stdio (a local child process) or, for the always-on deployment
+   on the music host, HTTP inside a Docker container reached over an SSH tunnel ([05](./05-integrations-and-side-effects.md)).
+   It reads and writes the same stores as the app but does not dispatch performance actions; it cannot
+   drive playback.
 
 A marketing website lives under `website/` and is not part of the product runtime.
 
@@ -37,7 +39,8 @@ A marketing website lives under `website/` and is not part of the product runtim
 - **Studio arranger** — places clips and automation on a two-lane timeline, or has the set builder
   arrange one from the catalog, then plays, previews or renders it ([04](./04-critical-flows.md)).
 - **Add-on author / operator** — installs packaged extensions and authors visual and control presets.
-- **External AI client** — calls MCP tools over stdio.
+- **External AI client** — calls MCP tools over stdio, or over HTTP through an SSH tunnel against the
+  Docker deployment.
 - **External metadata services** — AcoustID and a GetSongBPM-compatible provider, when configured.
 
 ## Deck count

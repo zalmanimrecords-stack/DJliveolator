@@ -65,7 +65,7 @@ Minor: `DeckSlot.KeyLocked` docstring is stale (claims "intent only"; key-lock i
 - **Phase align** — moving the follower's playhead so its beat (ideally downbeat) lands on
   the master's beat.
 - **Lock zone** — the beat-phase error band inside which the decks are audibly in sync and
-  no correction is applied.
+  reported `Locked`. The correction keeps running inside it, pulling the error toward zero.
 - **Re-snap** — a one-shot seek onto the nearest aligned beat, used only after a
   discontinuity (scratch / beat-jump / loop-out) too large to ride back on pitch.
 - **Grid confidence** — a 0..1 measure of how trustworthy a track's beatgrid is; gates
@@ -220,24 +220,27 @@ threshold** (~73% of music is "trackable"). Sources: Essentia `BeatTrackerMultiF
 ## 8. Phase-correction policy (the musical part)
 
 Golden rule: **a deck already audible in the mix must never get an aggressive seek** — a
-hard jump is an audible skip, the #1 way sync "sounds broken." Three tiers by error size,
-already implemented in `PhaseLockController` with these defaults (`PhaseLockSettings`):
+hard jump is an audible skip, the #1 way sync "sounds broken." Every tick the rate is the
+matched rate + error × gain `0.08`, clamped **±0.03** (τ ≈ 6 s at 125 BPM) — inside the lock
+zone too, so a "locked" pair cannot rest anywhere in it. The error size decides only the
+reported state and whether to re-snap, as implemented in `PhaseLockController` with these
+defaults (`PhaseLockSettings`):
 
 | Tier | Condition (|phase error|) | Action | State |
 |---|---|---|---|
-| Lock zone (enter) | `< 0.02 beats` (~9.4 ms @128) | hold matched rate exactly | `Locked` |
-| Lock zone (exit / hysteresis) | hold `Locked` out to `0.04 beats` | dead-band stops `Locked↔Active` chatter | `Locked` |
-| Ride-in | between exit tol and re-snap | rate += error × gain `0.01`, clamped **±0.03** | `Active` |
-| Re-snap | `> 0.25 beats` (¼ beat) | one-shot seek to nearest aligned beat (+ micro-correction that tick, no gap) | `Drifting` |
+| Lock zone (enter) | `< 0.01 beats` (~4.7 ms @128) | correction continues | `Locked` |
+| Lock zone (exit / hysteresis) | hold `Locked` out to `0.02 beats` | label hysteresis only; stops `Locked↔Active` badge chatter | `Locked` |
+| Ride-in | between the lock zone and re-snap | correction continues (at most 0.08 × 0.25 = 2%) | `Active` |
+| Re-snap | `> 0.25 beats` (¼ beat) | one-shot seek to nearest aligned beat, ahead by the mixer's buffered audio when the other deck plays (+ correction that tick, no gap) | `Drifting` |
 
 Refinements to add:
 - **Playing follower re-snaps at most ±½ beat** (beat-level), never a bar jump — already
   enforced (`PhaseAlignToLeader` restricts bar-snap to non-playing decks). Preserve it.
 - **Glide on master tempo change** — ramp the follower's matched rate over ~1 bar rather
   than stepping it (§5 transition).
-- The **±0.03 (3%) clamp is a catch-up *ceiling*, not a steady-state value** — steady-state
-  correction sits far below 1% and is inaudible. Fix the stale "sub-percent" wording in
-  `PhaseLockSettings` (it describes steady-state, but reads as if 0.03 were sub-percent).
+- The **±0.03 (3%) clamp is a catch-up *ceiling*, not a steady-state value** — at gain 0.08 it
+  binds only past the re-snap threshold, and a settled pair's correction is a few hundredths of
+  a percent.
 
 ## 9. Half / double tempo handling
 

@@ -3,9 +3,9 @@
 - **Purpose:** which implemented capabilities a user can actually reach, and which exist only in code.
 - **Scope:** the Avalonia shell (`src/Liveolator.App`), the built-in controller profiles, and the MCP tool surface.
 - **Source of truth:** `src/Liveolator.App/Shell/MainWindowViewModel.cs`, `src/Liveolator.App/Features/**`, `src/Liveolator.Core/Mapping/Profiles/**`, `src/Liveolator.Core/Actions/PerformanceActionKind.cs`.
-- **Last validated:** 2026-09-12 (against the merge of `feat/shipped-controller-profiles`)
+- **Last validated:** 2026-09-26 (scoped refresh — Live view, Mappings, Stems, Docker/MCP; see [07](./07-doc-inventory-and-status.md#refresh-log))
 - **Confidence:** High for the shell surfaces and the action-kind reachability analysis; Medium for anything requiring a device to become visible.
-- **Related:** [flows](./04-critical-flows.md) · [domains](./02-core-domains.md) · [improvements](./14-final-improvement-report.md)
+- **Related:** [flows](./04-critical-flows.md) · [domains](./02-core-domains.md) · [improvements](./14-final-improvement-report.md) · [DJ PRO control-by-control reference](../33-dj-pro-controls-reference.md) (what each button/knob does, as opposed to the reachability facts below)
 
 ## How reachability was determined
 
@@ -47,11 +47,13 @@ capability ships but no person can invoke it from the product.
 
 | Feature | Domain | Implementation | Entry point | UI surface | Status | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| Deck transport, cue, hot cues, loops, jog, key lock | Decks | `DeckActionHandler` | `Deck*` kinds | LIVE, DJ PRO deck views | `Full` | `DeckViewModel`, `DjProDeckView` |
-| Crossfader, channel gain, EQ, filter, headphone cue | Mixer | `MixerActionHandler` | `Mixer*` kinds | LIVE, DJ PRO mixer views | `Full` | `MixerViewModel`, `DjProMixerView` |
+| Deck transport, cue, hot cues, loops, jog, key lock | Decks | `DeckActionHandler` | `Deck*` kinds | DJ PRO deck views only | `Full` | `DeckViewModel`, `DjProDeckView`; LIVE dropped its embedded `DjConsoleView` (`feat(live): LIVE shows only the visuals`) — [see below](#called-out-explicitly) |
+| Crossfader, channel gain, EQ, filter, headphone cue | Mixer | `MixerActionHandler` | `Mixer*` kinds | DJ PRO mixer view only | `Full` | `MixerViewModel`, `DjProMixerView` |
+| AUTO crossfade and MIX SEC (0–20 s, saved on exit) | Mixer | `MixerActionHandler`, stepped by `HandlerPump` | `MixerAutoCrossfade`, `MixerAutoCrossfadeTime` | DJ PRO mixer view; MIDI learn target | `Full` | `MixerViewModel`, `DjProMixerView`; `DjMixerView` renders the same button but that view is currently unreachable too |
 | Master smart limiter (SMART/SAFE, character, ceiling) | Mixer | `MixerActionHandler` | `MixerLimiter*` | Shell top bar | `Full` | `MainWindowViewModel.Limiter` |
 | Operating-system master volume | Platform | `SystemVolumeActionHandler` | `SystemMasterVolume` | Shell top bar | `Full` | `SystemVolumeControlViewModel` |
 | Deck sync (toggle and once) | Beat | `DeckActionHandler` | `DeckSyncToggle`, `DeckSyncOnce` | Deck views; CMD STUDIO and FLX4 profiles | `Full` | mapping profiles |
+| Kick-sync zipper (on-beat kick ticks where the A/B combs meet, at the true playhead) | Decks | `FourOnTheFloorKicks`, `WaveformStrip.RenderKickTicks` | none (display) | DJ PRO deck waveforms | `Full` | `DeckViewModel.KickMarkers`, `DeckWaveform`; `WaveformGridShot.Render_kick_zipper_to_png`; no ticks without kick-phase proof |
 | Tap tempo and beat nudge | Beat | `BeatActionHandler` | `BeatTapTempo`, `BeatNudge*` | LIVE beat controls; Push and CMD profiles | `Full` | `MappingsViewModel` targets |
 | Beat lock, half/double tempo, reset grid, set downbeat | Beat | `BeatActionHandler` | `BeatLock`, `BeatUnlock`, `BeatHalfTempo`, `BeatDoubleTempo`, `BeatResetGrid`, `BeatSetDownbeat` | Push 1 only, and only lock/half/double | `Partial` | `Push1Profile`; no on-screen emitter, no learn target |
 | Library scan, search, filter, badges, track editing | Library | `MusicLibrary`, `TrackAnalyzer` | LIBRARIES commands | LIBRARIES tab | `Full` | `LibrariesViewModel`, `TrackEditorWindow` |
@@ -60,8 +62,10 @@ capability ships but no person can invoke it from the product.
 | Playlist building (harmonic sets) | Playlist | `HarmonicSetBuilder` | Playlist builder | LIBRARIES → playlist builder window | `Full` | `PlaylistBuilderWindow` |
 | Load or queue a track onto a deck | Playlist | `DeckTrackLoader` | `DeckLoadTrack`, `PlaylistAppendTrack` | LIBRARIES, DJ PRO browser | `Full` | `DjBrowserViewModel`, `LibrariesViewModel` |
 | Live-queue editing: insert next, move, remove future | Playlist | `PlaylistActionHandler` | `PlaylistInsertTrackNext`, `PlaylistMoveTrack`, `PlaylistRemoveFutureTrack` | none for insert and move | `Internal only` | no emitter in `Liveolator.App`, no built-in binding, no learn target |
-| Visual scene launching and macros | Visuals | `VisualActionHandler` | `VisualLoadScene`, `VisualSetMacro`, `VisualSetLaunchQuantize` | LIVE scene grid and visual control | `Full` | `SceneGridViewModel`, `VisualControlViewModel` |
-| Visual blackout and strobe | Visuals | `VisualActionHandler` | `VisualBlackout`, `VisualToggleStrobe` | LIVE and DJ PRO | `Full` | `MasterFxViewModel` |
+| Visual macros and launch quantize | Visuals | `VisualActionHandler` | `VisualSetMacro`, `VisualSetLaunchQuantize` | LIVE visual control | `Full` | `VisualControlViewModel` (still embedded in `LiveView.axaml`) |
+| Visual scene launching (load scene) | Visuals | `VisualActionHandler` | `VisualLoadScene` | Push 1 (64 pads); MIDI learn target | `Partial` | `Push1Profile`; **no on-screen control** — `SceneGridView` is unreachable, [see below](#called-out-explicitly) |
+| Visual blackout | Visuals | `VisualActionHandler` | `VisualBlackout` | Push 1 (one button); MIDI learn target | `Partial` | `Push1Profile`; **no on-screen control** — `MasterFxView` is unreachable |
+| Visual strobe | Visuals | `VisualActionHandler` | `VisualToggleStrobe` | MIDI learn target only | `Partial` | no built-in profile binds it; **no on-screen control** — `MasterFxView` is unreachable |
 | Visual clip launch | Visuals | `VisualActionHandler` | `VisualLaunchClip` | none | `Internal only` | handler exists; nothing emits it |
 | Visual scene and bank authoring | Visuals | `VisualBank`, `VisualScene`, `ILiveProfileStore` | file under `live/scenes/` | none | `Missing` | `ServiceConfig.LoadBanksOrStarter` reads banks; no application code saves one |
 | Track-linked visual programme playback | Visuals | `ITrackVisualProgramStore` | LIVE visual control | LIVE tab | `Full` | `VisualControlViewModel` |
@@ -72,7 +76,7 @@ capability ships but no person can invoke it from the product.
 | Stem separation (Open-Unmix) | Analysis | `OpenUnmixStemSeparator` | "Separate stems" track action | hidden: LIBRARIES right-click menu, SETTINGS stem-deck toggle | `Configuration only` | separator is not registered unless `StemsFeature.IsEnabled` |
 | Audio effect parameters | Audio effects | `AudioEffectActionHandler` | `AudioFxSetParameter` | DJ PRO FX rack | `Partial` | `DeckFxRackViewModel` |
 | Audio effect load, unload, move, bypass, preset | Audio effects | `AudioEffectActionHandler` | `AudioFxLoad`, `AudioFxUnload`, `AudioFxMove`, `AudioFxToggleBypass`, `AudioFxLoadPreset` | none | `Internal only` | no emitter, no binding, no learn target |
-| Master recording | Recording | `RecordingActionHandler` | `MasterRecordToggle` | LIVE master FX | `Full` | `MasterFxViewModel` |
+| Master recording | Recording | `RecordingActionHandler` | `MasterRecordToggle` | MIDI learn target only | `Partial` | no built-in profile binds it; **no on-screen control** — `MasterFxView` is unreachable, [see below](#called-out-explicitly) |
 | MIDI learn and mapping management | Mapping | `MidiControlSession` | learn, remove, import, export, pick a profile | SETTINGS → mapping panel | `Full` | `MappingsViewModel`; ten devices ship a profile |
 | Studio timeline, automation, tempo curve, render | Studio | `StudioTransport`, `StudioArranger`, `MixPlan` | STUDIO commands | STUDIO tab | `Full` | `StudioViewModel` |
 | Extension install, enable, trust | Extensions | `ExtensionInstaller`, `ExtensionPackageValidator` | ADDONS commands | ADDONS tab | `Full` | `AddonsViewModel` |
@@ -88,7 +92,7 @@ capability ships but no person can invoke it from the product.
 | Library Doctor health scan | Library | `LibraryHealthScanner`, `LibraryDoctor` | health-scan command | LIBRARIES → folders/status window | `Full` | `ScanHealthCommand`, `FoldersStatusWindow.axaml` |
 | Library repair (apply a repair plan) | Library | `LibraryDoctor.Preview`, `LibraryRepairPlan`, `LibraryReferenceRewriter` | none | none | `Internal only` | no call site in `src`; the rewriter is registered in `ServiceConfig` but never resolved |
 | DJ set builder and continuous-mix export | Studio, Library | `Core/Studio/Set` (15 files) and `DjSetTools` | `build_dj_set`, `render_set_preview`, `export_set_mix` | none | `Agent only` | The largest capability added since the previous pass is reachable from MCP alone; no STUDIO surface builds, auditions or exports a set ([04](./04-critical-flows.md)) |
-| MCP agent tools | Agent interface | `Liveolator.Mcp` | stdio | no in-app UI by design | `API only` | 22 attributed tools |
+| MCP agent tools | Agent interface | `Liveolator.Mcp` | stdio, or HTTP in the Docker deployment | no in-app UI by design | `API only` | 31 attributed tools |
 
 ## Called out explicitly
 
@@ -134,12 +138,36 @@ are guarded.
 **Effects rack is half-exposed.** Parameters can be moved from the DJ PRO FX rack, but an effect
 cannot be loaded, removed, reordered or bypassed from anywhere.
 
-**Possibly unused UI.** `DjView.axaml` and its code-behind are referenced by no other view and
-`DjViewModel` is not one of the shell's tab pages — the DJ tab was replaced by DJ PRO.
-`DjViewModel` itself is still very much alive: `MainWindowViewModel` takes it for the shared
-`PerformanceDeckSet`, the mixer and the browser instance that DJ PRO reuses. So the view is dead
-while the view model is load-bearing. `Needs validation` — confirm no launch path renders it before
-treating the view as removable.
+**`DjView` and the whole console chain it hosted are now confirmed unreachable — `Verified`, not
+`Needs validation` as the previous pass left it.** `MainWindowViewModel.Tabs` is a fixed list of seven
+`TabItemViewModel`s (LIVE, DJ PRO, STUDIO, VJ, LIBRARIES, ADDONS, SETTINGS); `DjViewModel` is
+constructed and held (for `dj.Mixer`/`dj.Decks`, the shared `PerformanceDeckSet` DJ PRO also reuses)
+but is never one of them, and the `(tab?.Page as DjViewModel)?.Browser?.Refresh()` guard can therefore
+never match. `DjView.axaml` was the only thing that ever embedded `DjConsoleView.axaml`, and
+`feat(live): LIVE shows only the visuals` just removed `LiveView.axaml`'s own embed of it — the other
+consumer `DjConsoleView`'s own header comment still claims ("Embedded by both DjView and LiveView"),
+which is now stale. That makes the whole chain dead: `DjConsoleView.axaml`, `DjDeckView.axaml` and
+`DjMixerView.axaml` render nothing a user can reach. Checked exhaustively (both as an explicit XAML
+tag and as a `Content="{Binding ...}"` ViewLocator target, across every `.axaml` in
+`Liveolator.App`): `Features/Live/Modules/DeckView.axaml`, `MixerView.axaml`, `SceneGridView.axaml`
+and `MasterFxView.axaml` are likewise referenced by nothing but their own `x:Class`. Five view files,
+zero consumers — while `DeckViewModel`, `MixerViewModel`, `SceneGridViewModel` and `MasterFxViewModel`
+stay load-bearing (DJ PRO reuses the first two directly; the latter two are still constructed by
+`LiveViewModel` and simply have no view bound to them any more). Active development still touches the
+dead views in step with their live counterparts (e.g. the AUTO crossfade button landed in `DjMixerView`
+alongside `DjProMixerView`), so nothing here is abandoned code — it is reachable-code-with-no-caller,
+which is the more dangerous of the two to leave undocumented.
+
+**LIVE's redesign silently dropped the only on-screen route to four capabilities.** Scene launching,
+blackout, strobe and master recording were driven entirely by `SceneGridView`/`MasterFxView`, which
+`LiveView.axaml` no longer embeds anywhere (nor does any other shell surface — DJ PRO never showed
+them either). `VisualLoadScene` and `VisualBlackout` still work by wire because `Push1Profile` binds
+them directly to hardware, and all four remain generated MIDI-learn targets (`ActionTargetVocabulary`),
+so none crossed into `Internal only` — but a performer with no MIDI controller connected now has **no
+mouse-only way** to blank the screen, strobe, launch a scene by hand, or start a recording. `Needs
+validation` — confirm with the owner whether this was an intended trade of the on-screen panel for
+screen space, or a gap the LIVE redesign should close; tracked in
+[11](./11-open-questions-and-assumptions.md).
 
 **False-positive risk.** This analysis is static. A binding created by an earlier session and saved
 under `live/mappings/` would make an `Internal only` action reachable on that machine without

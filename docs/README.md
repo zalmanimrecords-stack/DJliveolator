@@ -54,6 +54,7 @@ Hardware / UI / Autopilot
 | 17 | [MCP agent interface](17-mcp-agent-interface.md) | Agent tools | Built — 27 tools over the catalog |
 | — | [MCP connect guide](mcp-connect-guide.md) | Agent tools | How an external agent connects to the MCP server |
 | 25 | [Track-linked media and VJ foundation](25-track-linked-media-and-vj-foundation.md) | Media / Visuals | Detailed implementation plan |
+| 33 | [DJ PRO controls reference](33-dj-pro-controls-reference.md) | DJ playback (UI) | Live button/knob legend — kept current, not a design record |
 
 ## Confirmed hardware targets
 
