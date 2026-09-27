@@ -572,7 +572,8 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         // flushing it on a seek of one deck audibly skips every OTHER playing deck and jumps its reported
         // playhead — the "jog moves both channels" bug. So only request the flush when no other deck is
         // playing; with two decks running the new position lands one buffer later, which is imperceptible
-        // (the DJ playback buffer is short) and never disturbs the other deck.
+        // for a jog and never disturbs the other deck. A sync snap cannot ignore it (the leader moves on
+        // meanwhile), so it leads by GetDeckSeekDelaySeconds.
         PositionFlags flags = PositionFlags.Bytes;
         if (!AnyOtherDeckPlaying(deckHandle))
             flags |= PositionFlags.MixerReset;
@@ -584,6 +585,28 @@ internal sealed class BassMixerBackend : IBassMixerBackend, ICueOutput, ILimiter
         // reads from their current decode position, not vice-versa).
         if (_decks.TryGetValue(deckHandle, out DeckDsp? deck) && deck.StemDecoders.Length > 0)
             SeekStemDecodersToFraction(deck, fraction);
+    }
+
+    // An unflushed seek is rendered at the next mixer update, behind everything already buffered, and the
+    // buffer drains in real time — so the new position is heard exactly the CURRENT fill level from now, not
+    // the configured buffer length (up to one update period more). BassMix.ChannelGetPosition compensates for
+    // that same buffer to report the heard position, so a snap computed from GetDeckPositionSeconds and led
+    // by this lands on the beat. NATIVE: not exercised in CI (tests drive the fake backend); verify by ear.
+    public double GetDeckSeekDelaySeconds(int deckHandle)
+    {
+        if (!AnyOtherDeckPlaying(deckHandle))
+            return 0.0; // SetDeckPositionFraction flushes the buffer, so the seek is heard at once
+
+        int bufferedBytes = Bass.ChannelGetData(_mixer, IntPtr.Zero, (int)DataFlags.Available);
+        if (bufferedBytes < 0)
+        {
+            _logger.LogWarning(
+                "Reading the master buffer level failed: {Error}; the sync snap is not buffer-compensated.",
+                Bass.LastError);
+            return 0.0;
+        }
+
+        return Bass.ChannelBytes2Seconds(_mixer, bufferedBytes);
     }
 
     // Reposition every inner stem decoder to <fraction> of its own length (same fraction → same byte

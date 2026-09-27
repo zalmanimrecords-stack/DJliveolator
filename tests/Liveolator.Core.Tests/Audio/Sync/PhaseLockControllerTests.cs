@@ -18,17 +18,22 @@ public class PhaseLockControllerTests
 
     private static DeckPhase At(double positionSeconds) => new(positionSeconds, FirstBeatSeconds: 0.0, Bpm);
 
-    [Fact]
-    public void WithinLockTolerance_HoldsBeatmatchedRate_AndReportsLocked()
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(-1.0)]
+    public void InsideLockZone_ReportsLocked_ButStillCorrectsTowardZero(double sign)
     {
-        // 0.01 beat error is inside the 0.02-beat lock zone: no correction, rate stays exactly base.
-        DeckPhase master = At(0.01 * BeatSeconds);
+        // The lock zone only names the state. A residual inside it is still pulled in, so a locked pair
+        // settles on zero error instead of resting anywhere inside the zone.
+        double errorBeats = sign * Settings.LockToleranceBeats / 2.0;
+        DeckPhase master = At(errorBeats * BeatSeconds);
         DeckPhase slave = At(0.0);
 
         PhaseLockCorrection result = PhaseLockController.Correct(slave, master, beatmatchedRate: 1.0, Settings);
 
         Assert.Equal(SyncLockState.Locked, result.State);
-        Assert.Equal(1.0, result.EffectiveRate, precision: 9);
+        Assert.Equal(1.0 + (errorBeats * Settings.Gain), result.EffectiveRate, precision: 9);
+        Assert.Equal(Math.Sign(errorBeats), Math.Sign(result.EffectiveRate - 1.0));
         Assert.False(result.RequiresReSnap);
     }
 
@@ -64,8 +69,8 @@ public class PhaseLockControllerTests
     [Fact]
     public void CorrectionIsClampedToMaxCorrection()
     {
-        // A 0.2-beat error with gain 0.01 would ask for 0.002 — well under the 0.03 ceiling — so to test
-        // the clamp we use a large gain. error 0.2 * gain 1.0 = 0.2, clamped to +MaxCorrection.
+        // Below the re-snap threshold the default gain never reaches the 0.03 ceiling, so to test the
+        // clamp we use a large gain. error 0.2 * gain 1.0 = 0.2, clamped to +MaxCorrection.
         var hotGain = Settings with { Gain = 1.0 };
         DeckPhase master = At(0.2 * BeatSeconds);
         DeckPhase slave = At(0.0);
@@ -95,11 +100,11 @@ public class PhaseLockControllerTests
     }
 
     [Fact]
-    public void JustOutsideEnterZone_WhenAlreadyLocked_StaysLocked_NoCorrection()
+    public void JustOutsideEnterZone_WhenAlreadyLocked_HoldsTheLockedLabel_AndStillCorrects()
     {
-        // Error sits between the tight enter tolerance (0.02) and the wider exit tolerance: a deck that is
-        // ALREADY Locked must hold (hysteresis dead-band), not flip to Active and step the rate. This is the
-        // anti-chatter guarantee for a deck resting on the lock boundary.
+        // Error sits between the tight enter tolerance and the wider exit tolerance: a deck that is ALREADY
+        // Locked keeps the label (hysteresis), so a deck resting on the boundary does not flicker the badge.
+        // The rate follows the error either way — the correction is continuous, so there is no step to chatter.
         double errorBeats = (Settings.LockToleranceBeats + Settings.ExitLockToleranceBeats) / 2.0;
         DeckPhase master = At(errorBeats * BeatSeconds);
         DeckPhase slave = At(0.0);
@@ -108,7 +113,7 @@ public class PhaseLockControllerTests
             slave, master, beatmatchedRate: 1.0, Settings, previousState: SyncLockState.Locked);
 
         Assert.Equal(SyncLockState.Locked, result.State);
-        Assert.Equal(1.0, result.EffectiveRate, precision: 9);
+        Assert.Equal(1.0 + (errorBeats * Settings.Gain), result.EffectiveRate, precision: 9);
     }
 
     [Fact]
@@ -166,5 +171,42 @@ public class PhaseLockControllerTests
         PhaseLockCorrection result = PhaseLockController.Correct(slave, master, beatmatched, Settings);
 
         Assert.Equal(beatmatched + (0.1 * Settings.Gain), result.EffectiveRate, precision: 9);
+    }
+
+    [Fact]
+    public void FromATenthOfABeat_SettlesUnderTwoMilliseconds_WithinTwentySeconds_WithoutOvershoot()
+    {
+        // Integrate a 125 BPM pair at a 60 Hz correction tick. The error decays with τ = 60 / (bpm · Gain),
+        // 6 s at the default gain, so 0.1 → 0.004 beat (≈ 1.9 ms, ln 25 ≈ 3.2 τ) lands at ~19.3 s.
+        const double bpm = 125.0;
+        const double tick = 1.0 / 60.0;
+        double masterSeconds = 0.1 * 60.0 / bpm;
+        double slaveSeconds = 0.0;
+        SyncLockState state = SyncLockState.Active;
+        double previousError = double.MaxValue;
+        double? settledAt = null;
+        bool wasLocked = false;
+
+        for (int n = 0; n < 60 * 60; n++)
+        {
+            PhaseLockCorrection c = PhaseLockController.Correct(
+                new DeckPhase(slaveSeconds, 0.0, bpm), new DeckPhase(masterSeconds, 0.0, bpm), 1.0, Settings, state);
+
+            // Monotone and never across zero: no overshoot, no oscillation.
+            Assert.InRange(c.ErrorBeats, double.Epsilon, previousError);
+            if (wasLocked)
+                Assert.Equal(SyncLockState.Locked, c.State);
+            settledAt ??= c.ErrorBeats < 0.004 ? n * tick : null;
+
+            previousError = c.ErrorBeats;
+            wasLocked = c.State == SyncLockState.Locked;
+            state = c.State;
+            masterSeconds += tick;
+            slaveSeconds += c.EffectiveRate * tick;
+        }
+
+        Assert.NotNull(settledAt);
+        Assert.True(settledAt <= 20.0, $"settled at {settledAt:F1} s");
+        Assert.Equal(SyncLockState.Locked, state);
     }
 }

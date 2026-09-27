@@ -1,6 +1,8 @@
 using Liveolator.App.Composition;
 using Liveolator.App.Tests.Live;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
+using Liveolator.Core.Audio;
 using Liveolator.Core.Persistence;
 using Xunit;
 
@@ -47,6 +49,45 @@ public sealed class DeckSessionPersistenceTests
         {
             File.Delete(track);
         }
+    }
+
+    [Theory]
+    [InlineData(2.0, true)]  // on-beat proof: the engine locks on the kicks the restored deck draws
+    [InlineData(0.9, false)] // none: the first beat anchors, as before
+    public void Restore_SendsTheEngineTheCatalogsOnBeatKicks(double marginRatio, bool expectKicks)
+    {
+        var analysis = new BpmResult(120.0, 0.9, 0.25)
+        {
+            KickOnsetsSeconds = Enumerable.Range(0, 20).Select(i => 0.25 + (i * 0.5)).ToArray(),
+            KickPhaseMarginRatio = marginRatio,
+            PhaseWindowDisagreementSeconds = 0.004,
+        };
+        var dispatcher = new FakeDispatcher();
+        var store = new FakeDeckSessionStore([new DeckSessionState(0, "/m/a.wav", 120, 0.3)]);
+        using var persistence = new DeckSessionPersistence(
+            dispatcher, store, deckCount: 2, fileExists: _ => true,
+            analysisLookup: path => path == "/m/a.wav" ? analysis : null, enableRetryTimer: false);
+
+        persistence.RetryPending();
+
+        PerformanceAction firstBeat = Assert.Single(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetFirstBeat);
+        Assert.Equal(0.3, firstBeat.Value); // the saved anchor still wins — it may be a DJ's SET PHASE
+        Assert.Equal(expectKicks ? DeckKickOnsetCodec.Encode(FourOnTheFloorKicks.From(analysis)) : null, firstBeat.Argument);
+    }
+
+    [Fact]
+    public void Restore_StillLoads_WhenTheCatalogLookupThrows()
+    {
+        var dispatcher = new FakeDispatcher();
+        var store = new FakeDeckSessionStore([new DeckSessionState(0, "/m/a.wav", 120, 0.3)]);
+        using var persistence = new DeckSessionPersistence(
+            dispatcher, store, deckCount: 2, fileExists: _ => true,
+            analysisLookup: _ => throw new InvalidOperationException("catalog busy"), enableRetryTimer: false);
+
+        persistence.RetryPending();
+
+        PerformanceAction firstBeat = Assert.Single(dispatcher.Dispatched, a => a.Kind == PerformanceActionKind.DeckSetFirstBeat);
+        Assert.Null(firstBeat.Argument);
     }
 
     [Fact]

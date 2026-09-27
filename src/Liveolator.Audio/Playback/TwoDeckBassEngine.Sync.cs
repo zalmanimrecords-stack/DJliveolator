@@ -391,8 +391,10 @@ Flush:
                 // absolute seek target it would land the deck OutputLatencySeconds behind the beat.
                 // ReSnapSeconds is playback time; scale it back to source time before seeking.
                 // (doc 27 medium — now live because production OutputLatencySeconds is non-zero.)
+                // Lead by the seek delay as PhaseAlignToLeader does: the master moves on before it is heard.
                 double rawPosition = _backend.GetDeckPositionSeconds(deck.Handle);
-                double target = Math.Clamp((rawPosition + correction.ReSnapSeconds * beatmatchedRate) / length, 0.0, 1.0);
+                double leadSeconds = correction.ReSnapSeconds + _backend.GetDeckSeekDelaySeconds(deck.Handle);
+                double target = Math.Clamp((rawPosition + leadSeconds * beatmatchedRate) / length, 0.0, 1.0);
                 _backend.SetDeckPositionFraction(deck.Handle, target);
             }
         }
@@ -613,11 +615,15 @@ Flush:
         if (length <= 0.0)
             return;
 
-        double targetFraction = Math.Clamp((followerPosition + nudgeSeconds * followerRate) / length, 0.0, 1.0);
+        // The seek is heard only after the audio already buffered plays out, and a playing leader moves on
+        // meanwhile: land where its grid will be then, not where it is now. The delay is playback time.
+        double seekDelaySeconds = _backend.GetDeckSeekDelaySeconds(deck.Handle);
+        double targetFraction = Math.Clamp(
+            (followerPosition + (nudgeSeconds + seekDelaySeconds) * followerRate) / length, 0.0, 1.0);
         _backend.SetDeckPositionFraction(deck.Handle, targetFraction);
         _logger.LogInformation(
-            "Deck slot {Slot} quantize: {Grid}-aligned by {Nudge:F4}s to the leader grid.",
-            slot, barSnap ? "bar" : "beat", nudgeSeconds);
+            "Deck slot {Slot} quantize: {Grid}-aligned by {Nudge:F4}s (+{Delay:F4}s seek delay) to the leader grid.",
+            slot, barSnap ? "bar" : "beat", nudgeSeconds, seekDelaySeconds);
     }
 
     // This is a coordinate conversion at the current nominal speed, not elapsed playback time.

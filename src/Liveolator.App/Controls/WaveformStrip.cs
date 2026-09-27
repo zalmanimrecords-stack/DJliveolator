@@ -147,6 +147,11 @@ public sealed partial class WaveformStrip : Control
     public static readonly StyledProperty<IReadOnlyList<double>?> HotCueMarkersProperty =
         AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<double>?>(nameof(HotCueMarkers));
 
+    /// <summary>The analysed on-beat kicks as 0..1 track fractions, drawn as bright ticks through the comb so
+    /// a stacked, synced A/B pair reads as one zipper; null/empty draws none (and keeps the grey beat teeth).</summary>
+    public static readonly StyledProperty<IReadOnlyList<double>?> KickMarkersProperty =
+        AvaloniaProperty.Register<WaveformStrip, IReadOnlyList<double>?>(nameof(KickMarkers));
+
     /// <summary>Playhead position as a 0..1 fraction of the track.</summary>
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<WaveformStrip, double>(nameof(Progress));
@@ -174,7 +179,7 @@ public sealed partial class WaveformStrip : Control
             CueBrushProperty,
             PeaksProperty, KickPeaksProperty, MidPeaksProperty, HighPeaksProperty,
             BeatGridProperty, DownbeatOffsetProperty, KickAnchorProperty, HotCueMarkersProperty,
-            ProgressProperty, ZoomWindowProperty);
+            KickMarkersProperty, ProgressProperty, ZoomWindowProperty);
     }
 
     public WaveformStrip()
@@ -205,6 +210,7 @@ public sealed partial class WaveformStrip : Control
     public int DownbeatOffset { get => GetValue(DownbeatOffsetProperty); set => SetValue(DownbeatOffsetProperty, value); }
     public double? KickAnchor { get => GetValue(KickAnchorProperty); set => SetValue(KickAnchorProperty, value); }
     public IReadOnlyList<double>? HotCueMarkers { get => GetValue(HotCueMarkersProperty); set => SetValue(HotCueMarkersProperty, value); }
+    public IReadOnlyList<double>? KickMarkers { get => GetValue(KickMarkersProperty); set => SetValue(KickMarkersProperty, value); }
     public double Progress { get => GetValue(ProgressProperty); set => SetValue(ProgressProperty, value); }
     public double ZoomWindow { get => GetValue(ZoomWindowProperty); set => SetValue(ZoomWindowProperty, value); }
     public ICommand? SeekCommand { get => GetValue(SeekCommandProperty); set => SetValue(SeekCommandProperty, value); }
@@ -307,6 +313,7 @@ public sealed partial class WaveformStrip : Control
         // The CBG comb (beat marking), then the playhead over everything so the current position is never
         // buried under a kick bar or a comb tooth.
         RenderBeatComb(context, b, combY, combH, combAtTop, start, span);
+        RenderKickTicks(context, b, combY, combH, start, span);
         RenderCueMarkers(context, b, start, span);
         RenderPlayhead(context, b, start, span);
     }

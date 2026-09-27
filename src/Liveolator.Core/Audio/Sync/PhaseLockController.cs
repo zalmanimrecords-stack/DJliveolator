@@ -49,26 +49,25 @@ public static class PhaseLockController
         double errorBeats = PhaseAlignmentCalculator.BeatPhaseError(slave, master);
         double absError = Math.Abs(errorBeats);
 
-        // PHASE LOCK TOLERANCE (with HYSTERESIS) — inside the lock zone the decks are audibly in sync;
-        // applying micro corrections here would only jitter the pitch, so hold the beatmatched rate exactly
-        // and report Locked. Entering the zone needs the tight LockToleranceBeats, but once Locked the deck
-        // holds out to the wider ExitLockToleranceBeats: that dead-band stops a deck on the boundary from
-        // flipping Locked↔Active every tick and stepping the rate by the correction each time (audible
-        // chatter). The exit tolerance is clamped to be at least the enter tolerance so a misconfiguration
-        // can never invert the band.
+        // CONTINUOUS CORRECTION — a proportional law on EVERY tick, lock zone included: nudge the rate by
+        // error·gain, hard-clamped to ±MaxCorrection. (base + correction) eases the slave toward zero error;
+        // because the error is re-measured from the real playhead every tick, there is no integral term to
+        // wind up and no drift to accumulate (DRIFT PREVENTION). Holding the bare beatmatched rate inside the
+        // lock zone instead would let a "locked" pair rest anywhere in it, a split the DJ PRO kick comb makes
+        // visible. The law is continuous in the error, so there is no rate step at the zone edge to chatter.
+        double correction = Math.Clamp(errorBeats * settings.Gain, -settings.MaxCorrection, settings.MaxCorrection);
+        double effectiveRate = beatmatchedRate + correction;
+
+        // PHASE LOCK TOLERANCE (with HYSTERESIS) — decides only the REPORTED state. Entering needs the tight
+        // LockToleranceBeats; once Locked the deck holds the label out to the wider ExitLockToleranceBeats so
+        // measurement jitter on the boundary cannot flicker the Locked badge / LED. The exit tolerance is
+        // clamped to at least the enter tolerance so a misconfiguration can never invert the band.
         double lockTolerance = previousState == SyncLockState.Locked
             ? Math.Max(settings.ExitLockToleranceBeats, settings.LockToleranceBeats)
             : settings.LockToleranceBeats;
         if (absError < lockTolerance)
             return new PhaseLockCorrection(
-                beatmatchedRate, SyncLockState.Locked, errorBeats, RequiresReSnap: false, ReSnapSeconds: 0.0);
-
-        // CONTINUOUS CORRECTION — a proportional law: nudge the rate by error·gain, hard-clamped to
-        // ±MaxCorrection so the pitch shift stays sub-percent and inaudible. (base + correction) eases
-        // the slave toward zero error; because the error is re-measured from the real playhead every
-        // tick, there is no integral term to wind up and no drift to accumulate (DRIFT PREVENTION).
-        double correction = Math.Clamp(errorBeats * settings.Gain, -settings.MaxCorrection, settings.MaxCorrection);
-        double effectiveRate = beatmatchedRate + correction;
+                effectiveRate, SyncLockState.Locked, errorBeats, RequiresReSnap: false, ReSnapSeconds: 0.0);
 
         // LARGE ERROR HANDLING — if the phase has slipped past the re-snap threshold (the user nudged the
         // platter, a loop dropped the playhead, a track was swapped mid-flight), riding it back at

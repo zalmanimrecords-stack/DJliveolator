@@ -2,6 +2,7 @@ using System.Reactive.Concurrency;
 using System.Reactive.Threading.Tasks;
 using Liveolator.App.Features.Shared;
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
 using ReactiveUI;
@@ -73,7 +74,7 @@ public sealed class TrackMenuViewModelTests
         var dispatcher = new RecordingDispatcher(deckCount: 2);
         var actions = new TrackContextActions(dispatcher, new FakePlaylistStore(),
             deckLoader: new DeckTrackLoader(dispatcher, _ => true));
-        var menu = new TrackMenuViewModel("/m/track.wav", actions, bpm: 124.0, firstBeatSeconds: 0.25);
+        var menu = new TrackMenuViewModel("/m/track.wav", actions, new BpmResult(124.0, 0.9, 0.25));
 
         await menu.LoadToDeckACommand.Execute().ToTask();
 

@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Playlist;
 using Xunit;
@@ -42,7 +43,7 @@ public sealed class DeckTrackLoaderTests
         var dispatcher = new RecordingDispatcher();
         var loader = new DeckTrackLoader(dispatcher, _ => true);
 
-        DeckLoadResult result = loader.Load(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5);
+        DeckLoadResult result = loader.Load(1, "/m/a.wav", new BpmResult(126.0, 0.9, 0.5));
 
         Assert.Equal(DeckLoadOutcome.Loaded, result.Outcome);
         Assert.Equal(2, dispatcher.Dispatched.Count);
@@ -57,17 +58,25 @@ public sealed class DeckTrackLoaderTests
         Assert.Equal(0.5, anchor.Value, precision: 6);
     }
 
-    [Fact]
-    public void Load_WithKickOnsets_CarriesThemOnTheFirstBeatAction()
+    [Theory]
+    [InlineData(2.0, true)]  // on-beat proof → the engine phase-locks on the smoothed kicks the comb draws
+    [InlineData(0.9, false)] // no proof → no kicks, even though the analysis holds a list; the first beat anchors
+    public void Load_CarriesOnlyOnBeatProvenKicks_OnTheFirstBeatAction(double marginRatio, bool expectKicks)
     {
         var dispatcher = new RecordingDispatcher();
         var loader = new DeckTrackLoader(dispatcher, _ => true);
+        var analysis = new BpmResult(120.0, 0.9, 0.25)
+        {
+            KickOnsetsSeconds = Enumerable.Range(0, 20).Select(i => 0.25 + (i * 0.5) + (i == 10 ? 0.02 : 0.0)).ToArray(),
+            KickPhaseMarginRatio = marginRatio,
+            PhaseWindowDisagreementSeconds = 0.004,
+        };
 
-        loader.Load(1, "/m/a.wav", bpm: 126.0, firstBeatSeconds: 0.5, kickOnsetsSeconds: new[] { 1.25, 0.75 });
+        loader.Load(1, "/m/a.wav", analysis);
 
         PerformanceAction anchor = dispatcher.Dispatched[1];
         Assert.Equal(PerformanceActionKind.DeckSetFirstBeat, anchor.Kind);
-        Assert.Equal(new[] { 0.75, 1.25 }, DeckKickOnsetCodec.Decode(anchor.Argument));
+        Assert.Equal(expectKicks ? DeckKickOnsetCodec.Encode(FourOnTheFloorKicks.From(analysis)) : null, anchor.Argument);
     }
 
     [Fact]
@@ -77,7 +86,7 @@ public sealed class DeckTrackLoaderTests
         dispatcher.SetPlaying(1);
         var loader = new DeckTrackLoader(dispatcher, _ => true);
 
-        DeckLoadResult result = loader.Load(1, "/m/a.wav", bpm: 126.0);
+        DeckLoadResult result = loader.Load(1, "/m/a.wav", new BpmResult(126.0, 0.9));
 
         Assert.Equal(DeckLoadOutcome.Queued, result.Outcome);
         PerformanceAction append = Assert.Single(dispatcher.Dispatched);
@@ -96,7 +105,7 @@ public sealed class DeckTrackLoaderTests
         dispatcher.SetPlaying(0);
         var loader = new DeckTrackLoader(dispatcher, _ => true);
 
-        DeckLoadResult result = loader.Load(0, "/m/b.wav", bpm: 120.0, replacePlaying: true);
+        DeckLoadResult result = loader.Load(0, "/m/b.wav", new BpmResult(120.0, 0.9), replacePlaying: true);
 
         Assert.Equal(DeckLoadOutcome.Loaded, result.Outcome);
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, dispatcher.Dispatched[0].Kind);
@@ -110,7 +119,7 @@ public sealed class DeckTrackLoaderTests
         dispatcher.SetPlaying(0); // deck A plays; loading onto deck B must not queue
         var loader = new DeckTrackLoader(dispatcher, _ => true);
 
-        DeckLoadResult result = loader.Load(1, "/m/a.wav", bpm: 0);
+        DeckLoadResult result = loader.Load(1, "/m/a.wav", analysis: null);
 
         Assert.Equal(DeckLoadOutcome.Loaded, result.Outcome);
         Assert.Equal(PerformanceActionKind.DeckLoadTrack, dispatcher.Dispatched[0].Kind);
@@ -122,7 +131,7 @@ public sealed class DeckTrackLoaderTests
         var dispatcher = new RecordingDispatcher();
         var loader = new DeckTrackLoader(dispatcher, _ => false);
 
-        DeckLoadResult result = loader.Load(0, @"S:\offline\track.mp3", bpm: 140.0);
+        DeckLoadResult result = loader.Load(0, @"S:\offline\track.mp3", new BpmResult(140.0, 0.9));
 
         Assert.Equal(DeckLoadOutcome.FileMissing, result.Outcome);
         Assert.Empty(dispatcher.Dispatched);
@@ -140,7 +149,7 @@ public sealed class DeckTrackLoaderTests
         dispatcher.FailLoadOnSlot(0);
         var loader = new DeckTrackLoader(dispatcher, _ => true);
 
-        DeckLoadResult result = loader.Load(0, @"C:\music\corrupt.flac", bpm: 128.0, firstBeatSeconds: 0.5);
+        DeckLoadResult result = loader.Load(0, @"C:\music\corrupt.flac", new BpmResult(128.0, 0.9, 0.5));
 
         Assert.Equal(DeckLoadOutcome.LoadFailed, result.Outcome);
         // The load was attempted, but the downbeat anchor is NOT dispatched for a deck that never loaded.

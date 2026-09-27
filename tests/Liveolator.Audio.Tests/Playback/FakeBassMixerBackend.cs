@@ -91,6 +91,18 @@ internal sealed class FakeBassMixerBackend : IBassMixerBackend
 
     public void SetDeckPositionFraction(int deckHandle, double fraction) => PositionFraction[deckHandle] = fraction;
 
+    /// <summary>Audio buffered for playback that a seek waits out while another deck plays; 0 by default.</summary>
+    public double BufferedSeconds { get; set; }
+
+    // Mirrors the real flush rule: with no other deck playing the seek flushes the buffer and is heard at once.
+    public double GetDeckSeekDelaySeconds(int deckHandle)
+    {
+        foreach ((int handle, bool playing) in Playing)
+            if (handle != deckHandle && playing)
+                return BufferedSeconds;
+        return 0.0;
+    }
+
     public void SetDeckRate(int deckHandle, double rateMultiplier)
     {
         Rate[deckHandle] = rateMultiplier;

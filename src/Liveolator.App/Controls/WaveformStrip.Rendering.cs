@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 
 namespace Liveolator.App.Controls;
 
@@ -105,10 +106,13 @@ public sealed partial class WaveformStrip
         if (BeatGrid is not { Count: >= 2 } grid || span <= 0 || combHeight <= 0)
             return;
         double beatPx = (grid[1] - grid[0]) / span * bounds.Width;
-        if (beatPx <= 0 || beatPx * BeatsPerBar < 7)
+        if (beatPx <= 0 || beatPx * BeatsPerBar < MinBeatDetailPx)
             return;
 
-        bool drawBeats = beatPx >= 7;
+        // Kick ticks replace the grey beat teeth, so the seam shows ONE zipper rather than two combs.
+        // ponytail: decided per track, not per beat, so a kickless breakdown shows bar lines only; fill grey teeth
+        // where no tick lands if DJs miss the beat count there.
+        bool drawBeats = beatPx >= MinBeatDetailPx && KickMarkers is not { Count: > 0 };
         bool drawLabels = beatPx * BeatsPerBar >= 46 && combHeight >= 12;
         double combBottom = combTop + combHeight;
         double beatNear = combAtTop ? combTop : combTop + combHeight * 0.64;
@@ -160,6 +164,29 @@ public sealed partial class WaveformStrip
                     context.DrawText(label, new Point(x + 5, combTop + (combHeight - label.Height) / 2));
             }
         }
+    }
+
+    // Below this many pixels per beat, per-beat marks (grey teeth, kick ticks) merge into a smear.
+    private const double MinBeatDetailPx = 7;
+
+    private const double KickTickWidth = 2.0;
+    private const double KickTickLighten = 0.5;
+
+    // One tick per analysed kick, the full comb height, so A's ticks (comb at its bottom) run straight on into
+    // B's (comb at its top) when the decks are locked. Fractional x, never pixel-snapped: snapping would add up
+    // to half a pixel of split to a pair that is actually locked.
+    private void RenderKickTicks(
+        DrawingContext context, Rect bounds, double combTop, double combHeight, double start, double span)
+    {
+        if (KickMarkers is not { Count: > 0 } kicks || BeatGrid is not { Count: >= 2 } grid || span <= 0
+            || combHeight <= 0 || (grid[1] - grid[0]) / span * bounds.Width < MinBeatDetailPx)
+            return;
+
+        Color kick = (KickBrush as ISolidColorBrush)?.Color ?? Colors.White;
+        var pen = new Pen(new ImmutableSolidColorBrush(Lighten(kick, KickTickLighten), KickBrush.Opacity), KickTickWidth);
+        foreach (double fraction in kicks)
+            if (MarkerX(fraction, start, span, bounds.Width) is { } x)
+                context.DrawLine(pen, new Point(x, combTop), new Point(x, combTop + combHeight));
     }
 
     private void RenderPlayhead(DrawingContext context, Rect bounds, double start, double span)

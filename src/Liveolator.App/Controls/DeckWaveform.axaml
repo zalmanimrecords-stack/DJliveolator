@@ -30,8 +30,8 @@
                               DownbeatBrush="{DynamicResource DownbeatMark}"
                               BodyScale="0.65"
                               Folded="{Binding #root.Folded}" CombAtTop="{Binding #root.CombAtTop}"
-                              Progress="{Binding RenderProgress}" ZoomWindow="{Binding ZoomWindow}"
-                              BeatGrid="{Binding BeatGrid}"
+                              Progress="{Binding Progress}" ZoomWindow="{Binding ZoomWindow}"
+                              BeatGrid="{Binding BeatGrid}" KickMarkers="{Binding KickMarkers}"
                               DownbeatOffset="{Binding DownbeatBarOffset}"
                               KickAnchor="{Binding KickAnchorFraction}"
                               SeekCommand="{Binding SeekCommand}" />
