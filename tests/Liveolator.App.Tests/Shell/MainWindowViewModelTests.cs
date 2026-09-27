@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reactive.Concurrency;
 using System.Threading;
 using System.Threading.Tasks;
-using Liveolator.App.Features.Addons;
 using Liveolator.App.Features.Dj;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
@@ -11,12 +11,10 @@ using Liveolator.App.Features.Live.Modules;
 using Liveolator.App.Features.Mappings;
 using Liveolator.App.Features.Settings;
 using Liveolator.App.Features.Studio;
-using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Tests.Fakes;
 using Liveolator.Core.Audio;
 using Liveolator.Core.Library.Music;
-using Liveolator.Core.Library.Visual;
 using Liveolator.Core.Mapping;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
@@ -111,10 +109,6 @@ public sealed class MainWindowViewModelTests
             new FakeMidiStatus(), new FakeOutputCatalog(), AppSettings.Default, new HistoricalScheduler());
         var settings = new SettingsViewModel(
             new FakeOutputCatalog(), new FakeCaptureCatalog(), new FakeMidiProvider(), new FakeSettingsStore());
-        var visualLibrary = new VisualLibraryViewModel(
-            new VisualMediaLibrary(new FakeFileEnumerator(), new FakeVisualMediaProbe()));
-        var addons = new AddonsViewModel(
-            new FakeSettingsStore(), VuMeterAddon.FaceSpec, _ => "default-face.png");
         var midiLearn = new GlobalMidiLearnCoordinator(new FakeMidiControlSession());
 
         var studio = new StudioViewModel(library, new FakeStudioProjectStore());
@@ -122,7 +116,7 @@ public sealed class MainWindowViewModelTests
         return new MainWindowViewModel(
             new LibrariesViewModel(library), new LiveViewModel(), dj ?? new DjViewModel(),
             new DjProViewModel(new PerformanceDeckSet()),
-            studio, visualLibrary, addons, settings, midiLearn, status,
+            studio, settings, midiLearn, status,
             new SystemVolumeControlViewModel(), appSettings, audioStatus);
     }
 
@@ -168,6 +162,16 @@ public sealed class MainWindowViewModelTests
         var vm = BuildShell(dj: dj);
 
         Assert.Same(dj.Mixer, vm.Limiter);
+    }
+
+    [Fact]
+    public void Tabs_HaveNoVjOrAddonsTab_AndLibrariesSitsRightAfterDjPro()
+    {
+        var vm = BuildShell();
+
+        Assert.Equal(
+            new[] { "LIVE", "DJ PRO", "LIBRARIES", "STUDIO", "SETTINGS" },
+            vm.Tabs.Select(tab => tab.Title));
     }
 
     [Fact]
