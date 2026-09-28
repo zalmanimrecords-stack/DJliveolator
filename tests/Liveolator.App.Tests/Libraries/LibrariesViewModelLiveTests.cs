@@ -213,6 +213,28 @@ public sealed class LibrariesViewModelLiveTests
     }
 
     [Fact]
+    public async Task LoadToDeckA_WithAnUnreachableFile_DoesNotRecordAPlay()
+    {
+        // LoadToDeck must mirror PlaySelected's guard: a load that dispatched nothing (file missing)
+        // never happened, so it must not bump play count / last-played either.
+        const string path = "/music/Alpha.wav";
+        var library = new MusicLibrary(new FakeFileEnumerator(path), new FakeAudioDecoder());
+        var dispatcher = new RecordingDispatcher(deckCount: 2);
+        var vm = new LibrariesViewModel(library, dispatcher, new FakeBeatClock(),
+            deckLoader: new Liveolator.Core.Playlist.DeckTrackLoader(dispatcher, fileExists: _ => false));
+        vm.AddFolder("/music");
+        await vm.ScanCommand.Execute().ToTask();
+        vm.SelectedTrack = vm.Tracks[0];
+        int playCountBefore = library.TryGet(path)!.PlayCount;
+
+        await vm.LoadToDeckACommand.Execute().ToTask();
+
+        MusicTrack afterLoad = library.TryGet(path)!;
+        Assert.Equal(playCountBefore, afterLoad.PlayCount);
+        Assert.Null(afterLoad.LastPlayed);
+    }
+
+    [Fact]
     public void CanLoadToDeckB_FalseWithOneDeck_TrueWithTwoDecks()
     {
         var oneDeck = BuildLiveViewModel(new RecordingDispatcher(deckCount: 1), new FakeBeatClock(), "/music/A.wav");

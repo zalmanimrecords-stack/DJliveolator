@@ -7,6 +7,7 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Liveolator.App.Features.Live.Modules;
 
 namespace Liveolator.App.Tests.Ui;
 
@@ -74,54 +75,122 @@ public class WaveformGridShot
         Capture(window, "waveform-ab-grid.png");
     }
 
-    // Demonstrates the render-time beat-phase lock (owner: "same BPM ⇒ the grids must move together").
-    // Top = master (on a beat). Middle = the follower UNLOCKED — a quarter-beat off, its grid clearly offset.
-    // Bottom = the follower LOCKED via WaveformSyncScroll.FollowerOffset — its grid snapped onto the master's.
+    // The DJ PRO kick zipper, laid out like DjProView: folded pairs, A's comb at its bottom and B's at its top,
+    // 5 px apart, 62 px strips, body 0.65, both needles dead-centre at the TRUE playhead, a kick on every beat.
+    // (1) locked: A's ticks run straight on into B's. (2) B 20 ms late: every pair splits by the same amount.
+    // (3) B at 126 BPM against 125: together at the needle, fanning apart toward the edges.
+    // Eyeball artifacts/ui-shots/waveform-kick-zipper.png.
     [AvaloniaFact]
-    public void Render_synced_decks_grid_lock_to_png()
+    public void Render_kick_zipper_to_png()
     {
-        const double duration = 40.0, firstBeat = 0.0, bpm = 125.0; // beatSeconds 0.48
-        double beatFrac = 60.0 / bpm / duration;                    // one beat as a track fraction
-        double[] grid = Enumerable.Range(0, 83).Select(i => i * beatFrac).ToArray();
-        float[] peaks = Enumerable.Range(0, 400)
-            .Select(i => (float)(0.35 + 0.5 * Math.Abs(Math.Sin(i * 0.15)))).ToArray();
-        const double zoom = 0.24; // ~20 beats visible
+        const double beat125 = 60.0 / 125.0, beat126 = 60.0 / 126.0;
+        var a = new ZipperDeck(125, 240, FirstBeat: 0.12, Playhead: 0.12 + (200.3 * beat125));
+        var locked = new ZipperDeck(125, 300, FirstBeat: 0.31, Playhead: 0.31 + (150.3 * beat125)); // same phase, another track
+        var late = locked with { Playhead = locked.Playhead - 0.020 };
+        var faster = new ZipperDeck(126, 300, FirstBeat: 0.31, Playhead: 0.31 + (150.3 * beat126));
 
-        double masterProgress = 0.30;                    // lands on beat 25 (phase 0)
-        double followerRaw = masterProgress + 0.25 * beatFrac; // a quarter-beat late
-        double offset = Liveolator.App.Features.Live.Modules.WaveformSyncScroll.FollowerOffset(
-            masterProgress, duration, firstBeat, bpm, followerRaw, duration, firstBeat, bpm);
-
-        var master = SyncStrip(grid, peaks, masterProgress, zoom);
-        var unlocked = SyncStrip(grid, peaks, followerRaw, zoom);
-        var locked = SyncStrip(grid, peaks, followerRaw + offset, zoom);
-
-        var stack = new Grid { RowDefinitions = new RowDefinitions("*,*,*") };
-        Grid.SetRow(master, 0); Grid.SetRow(unlocked, 1); Grid.SetRow(locked, 2);
-        stack.Children.Add(master); stack.Children.Add(unlocked); stack.Children.Add(locked);
+        var pairs = new StackPanel { Spacing = 14 };
+        pairs.Children.Add(ZipperPair("LOCKED", a, locked));
+        pairs.Children.Add(ZipperPair("B 20 ms LATE", a, late));
+        pairs.Children.Add(ZipperPair("B 126 BPM vs A 125", a, faster));
 
         var window = new Window
         {
-            Width = 1232,
-            Height = 340,
-            Content = new Border { Padding = new Thickness(16), Background = Brushes.Black, Child = stack },
+            Width = 1432,
+            Height = 520,
+            Content = new Border { Padding = new Thickness(16), Background = Brushes.Black, Child = pairs },
         };
         window.Show();
         Dispatcher.UIThread.RunJobs();
 
-        Capture(window, "waveform-sync-lock.png");
+        Capture(window, "waveform-kick-zipper.png");
     }
 
-    private static Liveolator.App.Controls.WaveformStrip SyncStrip(double[] grid, float[] peaks, double progress, double zoom)
-        => new()
+    private sealed record ZipperDeck(double Bpm, double Duration, double FirstBeat, double Playhead);
+
+    private static Control ZipperPair(string caption, ZipperDeck a, ZipperDeck b)
+    {
+        var pair = new StackPanel { Spacing = 5 };
+        pair.Children.Add(new TextBlock { Text = caption, FontSize = 10, Foreground = Token<IBrush>("Dim") });
+        pair.Children.Add(ZipperStrip(a, combAtTop: false));
+        pair.Children.Add(ZipperStrip(b, combAtTop: true));
+        return pair;
+    }
+
+    // One DeckWaveform look-alike: the same border, well gradient, theme brushes and 7 s window DJ PRO shows.
+    private static Control ZipperStrip(ZipperDeck deck, bool combAtTop)
+    {
+        const double zoomSeconds = 7.0, bucketsPerSecond = 150.0;
+        double beat = 60.0 / deck.Bpm;
+        double[] kickSeconds = Enumerable.Range(0, (int)((deck.Duration - deck.FirstBeat) / beat))
+            .Select(i => deck.FirstBeat + (i * beat)).ToArray();
+
+        int n = (int)(deck.Duration * bucketsPerSecond);
+        var rng = new Random(combAtTop ? 7 : 3);
+        var kick = new float[n];
+        var mid = new float[n];
+        var high = new float[n];
+        for (int i = 0; i < n; i++)
         {
-            Peaks = peaks,
-            BeatGrid = grid,
-            DownbeatOffset = 0,
-            Progress = progress,
-            ZoomWindow = zoom,
+            double sinceBeat = ((i / bucketsPerSecond) - deck.FirstBeat) % beat;
+            mid[i] = (float)((0.35 + (0.35 * Math.Exp(-sinceBeat * 6))) * (0.7 + (0.3 * rng.NextDouble())));
+            high[i] = (float)(0.25 + (0.35 * rng.NextDouble()));
+        }
+        float[] attack = { 1.0f, 0.8f, 0.55f, 0.3f };
+        foreach (double t in kickSeconds)
+        {
+            int k = (int)Math.Round(t * bucketsPerSecond);
+            for (int j = 0; j < attack.Length && k + j < n; j++)
+                kick[k + j] = attack[j];
+        }
+
+        var strip = new Liveolator.App.Controls.WaveformStrip
+        {
+            Peaks = mid,
+            KickPeaks = kick,
+            MidPeaks = mid,
+            HighPeaks = high,
+            BarBrush = Token<IBrush>("WaveformAhead"),
+            PlayedBrush = Token<IBrush>("Waveform"),
+            KickBrush = Token<IBrush>("Kick"),
+            MidBrush = Token<IBrush>("Accent"),
+            HighBrush = Token<IBrush>("WaveHigh"),
+            PlayheadBrush = Token<IBrush>("WavePlayhead"),
+            BeatBrush = Token<IBrush>("BeatMark"),
+            BarLineBrush = Token<IBrush>("BarLineMark"),
+            DownbeatBrush = Token<IBrush>("DownbeatMark"),
             BodyScale = 0.65,
+            Folded = true,
+            CombAtTop = combAtTop,
+            BeatGrid = BeatGridCalculator.BeatFractions(deck.Bpm, deck.Duration, deck.FirstBeat),
+            KickMarkers = BeatGridCalculator.KickFractions(kickSeconds, deck.Duration),
+            Progress = deck.Playhead / deck.Duration,
+            ZoomWindow = zoomSeconds / deck.Duration,
         };
+
+        return new Border
+        {
+            Height = 62,
+            BorderBrush = Token<IBrush>("Hair"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(7),
+            ClipToBounds = true,
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
+                GradientStops =
+                {
+                    new GradientStop(Token<Color>("BgColor"), 0),
+                    new GradientStop(Token<Color>("S2Color"), 0.5),
+                    new GradientStop(Token<Color>("S1Color"), 1),
+                },
+            },
+            Child = strip,
+        };
+    }
+
+    private static T Token<T>(string key) => (T)Application.Current!.FindResource(key)!;
 
     private static Liveolator.App.Controls.WaveformStrip MakeStrip(double[] grid, float[] peaks, bool combAtTop)
         => new()

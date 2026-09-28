@@ -1,3 +1,4 @@
+using System.Reactive.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -7,6 +8,7 @@ using Liveolator.App.Features.Legal;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Features.Live;
 using Liveolator.App.Features.Settings;
+using Liveolator.App.Features.Shared;
 using Liveolator.App.Features.VisualLibrary;
 using Liveolator.App.Shell;
 using Liveolator.App.Skins;
@@ -87,19 +89,29 @@ public partial class App : Application
             desktop.Exit += (_, _) => BeginShutdown(services);
             desktop.MainWindow = mainWindow;
 
-            // First-launch Terms of Use gate (doc 12): if the user has not accepted the current terms,
-            // prompt as a modal over the main window the moment it opens. Accepting persists the
-            // acceptance; declining (or closing the dialog) exits the app, so it never runs unaccepted.
-            if (!settings.Legal.HasAcceptedCurrentTerms)
-                mainWindow.Opened += async (_, _) =>
-                    await EnforceTermsAcceptanceAsync(services.GetRequiredService<ISettingsStore>(), mainWindow);
-
             // Restore the persisted library state (scan folders + analyzed catalog) so the app opens
             // where the last run left off. The same Libraries singleton backs the open tab; the call
             // is guarded internally and updates the UI on the main scheduler, so it is safe to start
             // here without blocking window creation.
-            _ = services.GetRequiredService<LibrariesViewModel>().InitializeAsync();
-            // Likewise restore the VJ / Visual Library tab (scan folders + asset catalog), Track C C1.
+            var librariesViewModel = services.GetRequiredService<LibrariesViewModel>();
+            Task librariesRestored = librariesViewModel.InitializeAsync();
+
+            // First-launch Terms of Use gate (doc 12), then the startup scan prompt (owner request,
+            // 2026-09-26): both are modal, so they run in sequence over the main window the moment it
+            // opens rather than racing each other. Declining the terms exits the app (mainWindow.Close()
+            // inside EnforceTermsAcceptanceAsync), which skips the scan prompt.
+            mainWindow.Opened += async (_, _) =>
+            {
+                bool proceed = true;
+                if (!settings.Legal.HasAcceptedCurrentTerms)
+                    proceed = await EnforceTermsAcceptanceAsync(services.GetRequiredService<ISettingsStore>(), mainWindow);
+                if (proceed)
+                    await PromptStartupScanAsync(
+                        services.GetRequiredService<IMusicCatalogStore>(),
+                        services.GetRequiredService<IConfirmationService>(),
+                        librariesViewModel, librariesRestored);
+            };
+            // Restore the visual catalog (scan folders + assets) — LIBRARIES reads it even with the VJ tab gone.
             _ = services.GetRequiredService<VisualLibraryViewModel>().InitializeAsync();
             // Restore device selections and extension settings into the Settings tab. Without this,
             // the pickers always start at "(none)" even when settings.json contains a controller.
@@ -205,7 +217,9 @@ public partial class App : Application
     // accepted terms version (re-reading the latest settings first so a concurrent change is preserved);
     // on decline or any other close, exits the app by closing the main window (which runs the normal
     // teardown). Tolerant: a failed persist is logged, never thrown, so it cannot wedge startup (#16/#26).
-    private static async Task EnforceTermsAcceptanceAsync(ISettingsStore store, MainWindow mainWindow)
+    // Returns whether the app should proceed (true = accepted), so a caller chaining another startup
+    // prompt after this one knows not to run it once the app is on its way out.
+    private static async Task<bool> EnforceTermsAcceptanceAsync(ISettingsStore store, MainWindow mainWindow)
     {
         bool accepted;
         try
@@ -217,13 +231,13 @@ public partial class App : Application
             // If the dialog itself fails we cannot confirm consent — fail closed by exiting.
             System.Diagnostics.Trace.TraceWarning($"Terms-of-use dialog failed to show: {ex.Message}.");
             mainWindow.Close();
-            return;
+            return false;
         }
 
         if (!accepted)
         {
             mainWindow.Close();
-            return;
+            return false;
         }
 
         try
@@ -235,6 +249,65 @@ public partial class App : Application
         {
             // Acceptance not persisted — the user re-accepts next launch; do not block this session.
             System.Diagnostics.Trace.TraceWarning($"Could not persist terms acceptance: {ex.Message}.");
+        }
+
+        return true;
+    }
+
+    // Startup scan prompt (owner request, 2026-09-26): ask once per launch whether to scan the
+    // configured music folders for new files. InitializeAsync only restores the last saved catalog —
+    // it does not pick up files added since the last scan — so without this prompt a DJ who dropped new
+    // tracks into a watched folder would not see them until manually pressing "Scan" in Libraries.
+    // Skipped when no folder is configured yet (nothing to scan; first-time setup happens via the
+    // Libraries tab's own "Add folder" flow). Tolerant throughout: any failure here is logged and
+    // never blocks the rest of startup (global #16/#26).
+    private static async Task PromptStartupScanAsync(
+        IMusicCatalogStore store, IConfirmationService confirmation,
+        LibrariesViewModel libraries, Task librariesRestored)
+    {
+        IReadOnlyList<string> folders;
+        try
+        {
+            // Wait for the same restore InitializeAsync started, so the folder set read here (and the
+            // one RunScanAsync reads from the view-model's Folders collection if the user says yes)
+            // agree — otherwise "yes" could scan zero folders because the restore hadn't populated them yet.
+            await librariesRestored;
+            folders = await store.LoadScanFoldersAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not read scan folders for the startup scan prompt: {ex.Message}.");
+            return;
+        }
+        if (folders.Count == 0)
+            return;
+
+        bool scan;
+        try
+        {
+            scan = await confirmation.ConfirmAsync(
+                "Scan music folders",
+                "Scan your music folders for new files now?",
+                confirmLabel: "Scan");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Startup scan prompt failed to show: {ex.Message}.");
+            return;
+        }
+
+        if (!scan)
+            return;
+
+        try
+        {
+            await libraries.ScanCommand.Execute().ToTask();
+        }
+        catch (Exception ex)
+        {
+            // RunScanAsync already catches and surfaces its own failures on ScanStatus; this only
+            // guards against the command plumbing itself throwing.
+            System.Diagnostics.Trace.TraceWarning($"Startup scan failed: {ex.Message}.");
         }
     }
 

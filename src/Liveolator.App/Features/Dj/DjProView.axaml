@@ -56,7 +56,7 @@
         <dj:DjProDeckView Grid.Row="2" DataContext="{Binding Decks.DeckA}" />
       </Grid>
 
-      <dj:DjProMixerView Grid.Column="1" Margin="0,0,10,0" DataContext="{Binding Decks.Mixer}" />
+      <dj:DjProMixerView Grid.Column="1" Margin="0,0,10,0" VerticalAlignment="Top" DataContext="{Binding Decks.Mixer}" />
 
       <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto">
         <UniformGrid Grid.Row="0" Rows="1" Margin="0,0,0,6">

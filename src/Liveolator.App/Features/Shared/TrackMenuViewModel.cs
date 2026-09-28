@@ -1,5 +1,6 @@
 using System.Reactive;
 using System.Reactive.Linq;
+using Liveolator.Core.Analysis.Bpm;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Shared;
@@ -12,30 +13,21 @@ namespace Liveolator.App.Features.Shared;
 public sealed class TrackMenuViewModel
 {
     private readonly string _trackPath;
-    private readonly double _bpm;
-    private readonly double _firstBeatSeconds;
-    private readonly IReadOnlyList<double>? _kickOnsetsSeconds;
+    private readonly BpmResult? _analysis;
     private readonly TrackContextActions _actions;
 
-    /// <param name="bpm">The track's analyzed tempo (0 = unknown), fed to the deck as its Sync reference (doc 11).</param>
-    /// <param name="firstBeatSeconds">The analyzed downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1).</param>
-    public TrackMenuViewModel(
-        string trackPath,
-        TrackContextActions actions,
-        double bpm = 0,
-        double firstBeatSeconds = 0,
-        IReadOnlyList<double>? kickOnsetsSeconds = null)
+    /// <param name="analysis">The track's analysis (null = none), handed to the deck on a load: tempo as its Sync
+    /// reference (doc 11), first beat to phase-match (doc 22 A1), on-beat kicks for kick-phase sync.</param>
+    public TrackMenuViewModel(string trackPath, TrackContextActions actions, BpmResult? analysis = null)
     {
         _trackPath = trackPath ?? throw new ArgumentNullException(nameof(trackPath));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
-        _bpm = bpm;
-        _firstBeatSeconds = firstBeatSeconds;
-        _kickOnsetsSeconds = kickOnsetsSeconds;
+        _analysis = analysis;
 
         LoadToDeckACommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(0, _trackPath, _bpm, _firstBeatSeconds, _kickOnsetsSeconds), Observable.Return(_actions.CanLoadToDeckA));
+            () => _actions.LoadToDeck(0, _trackPath, _analysis), Observable.Return(_actions.CanLoadToDeckA));
         LoadToDeckBCommand = ReactiveCommand.Create(
-            () => _actions.LoadToDeck(1, _trackPath, _bpm, _firstBeatSeconds, _kickOnsetsSeconds), Observable.Return(_actions.CanLoadToDeckB));
+            () => _actions.LoadToDeck(1, _trackPath, _analysis), Observable.Return(_actions.CanLoadToDeckB));
         AnalyzeAgainCommand = ReactiveCommand.CreateFromTask(
             () => _actions.AnalyzeAgainAsync(_trackPath), Observable.Return(_actions.CanAnalyze));
         EditMetadataCommand = ReactiveCommand.CreateFromTask(

@@ -54,6 +54,13 @@ public sealed class ShellStatusViewModel : ViewModelBase, IDisposable
         MidiInputName = midi.InputDeviceName ?? settings.Midi.ControllerInputName ?? "No controller";
         MidiFeedbackName = midi.OutputDeviceName ?? settings.Midi.FeedbackOutputName;
 
+        // The merged single-row top bar (owner, 2026-09-27) drops the OUT/MIDI text from the bar itself —
+        // there is no room next to the tabs and the master limiter — and surfaces them as one tooltip on
+        // the MIDI Learn button instead, so the routing info is a hover away rather than gone.
+        RoutingSummary = MidiFeedbackName is { } feedback
+            ? $"MIDI: {MidiInputName} · LED: {feedback} · OUT: {AudioOutputName}"
+            : $"MIDI: {MidiInputName} · OUT: {AudioOutputName}";
+
         // Each message turns the indicator green; the green clears after FlashWindow of silence.
         // ObserveOn marshals off the MIDI callback thread onto the UI (or test) scheduler.
         IObservable<EventArgs> activity = Observable
@@ -91,6 +98,10 @@ public sealed class ShellStatusViewModel : ViewModelBase, IDisposable
 
     /// <summary>The feedback (LED) device name, or null when none is configured/connected.</summary>
     public string? MidiFeedbackName { get; }
+
+    /// <summary>One-line "MIDI: … · LED: … · OUT: …" summary for the MIDI Learn button's tooltip, since the
+    /// merged top bar has no room to print the routing device names directly.</summary>
+    public string RoutingSummary { get; }
 
     /// <summary>Pulses true on each inbound MIDI message; drives the green signal LED.</summary>
     public bool MidiActive

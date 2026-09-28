@@ -10,7 +10,7 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Distribution identity: the installer (installer/windows) reads Version from here,
          so the exe metadata, setup filename, and Add/Remove Programs entry always agree. -->
-    <Version>0.10.2</Version>
+    <Version>0.10.3</Version>
     <ApplicationIcon>Liveolator.ico</ApplicationIcon>
     <Product>Liveolator</Product>
     <Company>Zalman Im Records</Company>
@@ -26,6 +26,10 @@
     <!-- DevTools only in Debug builds -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <!-- Pin the transitive Avalonia.FreeDesktop dependency past GHSA-xrw6-gwf8-vvr9 (signal
+         spoofing / fd exhaustion on a local D-Bus session) - inert on our Windows-only build,
+         but a free, one-line fix. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
   </ItemGroup>
 
   <ItemGroup>

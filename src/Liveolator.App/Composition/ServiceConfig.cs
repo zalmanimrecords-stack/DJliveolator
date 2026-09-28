@@ -620,11 +620,14 @@ public static class ServiceConfig
 
         if (realtimeUp)
         {
-            var deckSession = new DeckSessionPersistence(
+            // A provider factory (resolved eagerly right after BuildServiceProvider) rather than an instance:
+            // the restore hands the engine the catalog's on-beat kicks, and MusicLibrary only exists once the
+            // provider does — an instance built here would race its 150 ms first load against the rest of Build.
+            services.AddSingleton(sp => new DeckSessionPersistence(
                 dispatcher, deckSessionStore, deckEngine!.DeckCount,
                 fileExists: File.Exists,
-                logger: loggerFactory.CreateLogger<DeckSessionPersistence>());
-            services.AddSingleton(deckSession);
+                logger: loggerFactory.CreateLogger<DeckSessionPersistence>(),
+                analysisLookup: path => sp.GetRequiredService<MusicLibrary>().TryGetByPathOrName(path)?.Bpm));
         }
 
         // Autosave the live visual layer arrangement so it survives a restart (the engine otherwise only
@@ -894,6 +897,8 @@ public static class ServiceConfig
         services.AddSingleton<MainWindowViewModel>();
 
         ServiceProvider provider = services.BuildServiceProvider();
+        // Nothing else resolves the deck-session restore; start it before the live-queue players load.
+        _ = provider.GetService<DeckSessionPersistence>();
         // Populate the "Add to playlist" submenu once at startup (best-effort; guarded internally).
         _ = provider.GetRequiredService<TrackContextActions>().RefreshPlaylistsAsync();
         // Eagerly activate the live-queue audio bindings (when the realtime engine is up) so both

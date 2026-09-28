@@ -84,6 +84,29 @@ public class DjProShot
         }
     }
 
+    // A loaded deck: its only key · BPM readout is the yellow track line. artifacts/ui-shots/dj-pro-deck-loaded.png.
+    [AvaloniaFact]
+    public void Render_dj_pro_deck_with_loaded_track_to_png()
+    {
+        RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
+        var dispatcher = new FakeDispatcher();
+        var deck = new DeckViewModel(0, dispatcher,
+            trackInfo: _ => new DeckTrackInfo("Teleport (2000 Mix)", "140.0", "5A", "7:46"));
+        var window = new Window
+        {
+            Width = 620,
+            Height = 240,
+            Content = new Border { Padding = new Thickness(16), Child = new DjProDeckView { DataContext = deck } },
+        };
+        window.Show();
+        dispatcher.RaiseFeedback(PerformanceActionKind.DeckLoadTrack, 0,
+            new ActionFeedbackState(IsActive: true, IsAvailable: true, Value: 140, Argument: @"C:\teleport.flac"));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(deck.HasTrackMeta);
+        Capture(window, "dj-pro-deck-loaded.png");
+    }
+
     private static Window BuildPerformanceRow(FakeDispatcher dispatcher, out PerformanceDeckSet decks)
     {
         RxApp.MainThreadScheduler = ImmediateScheduler.Instance;
@@ -97,7 +120,12 @@ public class DjProShot
                           new Thickness(0, 0, 10, 0));
         Grid.SetColumn(colA, 0);
 
-        var mixer = new DjProMixerView { DataContext = decks.Mixer, Margin = new Thickness(0, 0, 10, 0) };
+        var mixer = new DjProMixerView
+        {
+            DataContext = decks.Mixer,
+            Margin = new Thickness(0, 0, 10, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+        };
         Grid.SetColumn(mixer, 1);
 
         var colB = Column(new DjProDeckView { DataContext = decks.DeckB },

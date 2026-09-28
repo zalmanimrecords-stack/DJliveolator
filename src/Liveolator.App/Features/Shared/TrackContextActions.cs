@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reactive.Concurrency;
 using Liveolator.Core.Actions;
 using Liveolator.Core.Analysis;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Analysis.Cues;
 using Liveolator.Core.Analysis.Stems;
 using Liveolator.Core.Enrichment;
@@ -284,26 +285,14 @@ public sealed class TrackContextActions
     /// Stages a track on a deck slot (A = 0, B = 1) without auto-playing it — unless that deck is
     /// playing, in which case the track is appended to the deck's live queue instead (a load never
     /// cuts off the floor's audio). An unreachable file (missing / offline drive) dispatches nothing
-    /// and reports why. <paramref name="bpm"/> is the track's analyzed tempo (0 = unknown), fed to the
-    /// deck as its Sync reference (doc 11); <paramref name="firstBeatSeconds"/> is the analyzed
-    /// downbeat anchor (0 = unknown), fed to phase-match (doc 22 A1) right after the load.
+    /// and reports why. <paramref name="analysis"/> (null = none) gives the deck its Sync reference,
+    /// phase-match anchor and on-beat kicks (<see cref="DeckTrackLoader.Load"/>).
     /// </summary>
-    public void LoadToDeck(
-        int slot,
-        string trackPath,
-        double bpm,
-        double firstBeatSeconds = 0,
-        IReadOnlyList<double>? kickOnsetsSeconds = null)
+    public void LoadToDeck(int slot, string trackPath, BpmResult? analysis)
     {
         if (_deckLoader is null || string.IsNullOrWhiteSpace(trackPath))
             return;
-        DeckLoadResult result = _deckLoader.Load(
-            slot,
-            trackPath,
-            bpm,
-            firstBeatSeconds,
-            kickOnsetsSeconds: kickOnsetsSeconds);
-        ReportStatus(result.Message);
+        ReportStatus(_deckLoader.Load(slot, trackPath, analysis).Message);
     }
 
     /// <summary>Reloads the saved-set names (call at startup and after a set is created/changed).</summary>

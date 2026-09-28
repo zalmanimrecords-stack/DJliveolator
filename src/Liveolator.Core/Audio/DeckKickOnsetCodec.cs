@@ -7,8 +7,8 @@ namespace Liveolator.Core.Audio;
 /// </summary>
 public static class DeckKickOnsetCodec
 {
-    private const int MaxOnsets = 2048;
-
+    // Uncapped on purpose: the comb draws every kick, so the engine must phase-lock on every kick too — a cut
+    // list extrapolates the last kick's lattice over the rest of a long track and splits the pair it shows.
     public static string? Encode(IReadOnlyList<double>? kickOnsetsSeconds)
     {
         if (kickOnsetsSeconds is null || kickOnsetsSeconds.Count == 0)
@@ -17,7 +17,6 @@ public static class DeckKickOnsetCodec
         double[] values = kickOnsetsSeconds
             .Where(v => double.IsFinite(v) && v >= 0.0)
             .OrderBy(v => v)
-            .Take(MaxOnsets)
             .ToArray();
         if (values.Length == 0)
             return null;

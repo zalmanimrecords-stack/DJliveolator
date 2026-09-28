@@ -1934,8 +1934,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         Core.Playlist.DeckLoadResult result = _deckLoader.Load(
             slot: 0,
             _selectedTrack.Track.File.Path,
-            bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0, // downbeat anchor → phase-match (doc 22 A1)
+            _selectedTrack.Track.Bpm, // tempo → sync reference (doc 11), first beat → phase-match (doc 22 A1)
             replacePlaying: true);
         if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded
             && !_dispatcher.GetFeedback(PerformanceActionKind.DeckPlayPause, 0).IsActive)
@@ -1967,16 +1966,14 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             return;
 
         string path = _selectedTrack.Track.File.Path;
-        LoadStatus = _deckLoader.Load(
-            slot,
-            path,
-            bpm: _selectedTrack.Track.Bpm?.Bpm ?? 0, // analyzed BPM → deck sync reference (doc 11)
-            firstBeatSeconds: _selectedTrack.Track.Bpm?.FirstBeatSeconds ?? 0,
-            kickOnsetsSeconds: _selectedTrack.Track.Bpm?.KickOnsetsSeconds).Message; // doc 22 A1
+        Core.Playlist.DeckLoadResult result = _deckLoader.Load(slot, path, _selectedTrack.Track.Bpm); // doc 11 / doc 22 A1
+        LoadStatus = result.Message;
 
-        // Count the load as a play (play count + last-played), persisted per-row. Fire-and-forget so it
-        // never delays the load.
-        _ = RecordPlayAsync(path);
+        // Count the load as a play (play count + last-played), persisted per-row — only when it actually
+        // loaded (mirrors PlaySelected's guard); a missing/failed load must not count as a play. Fire-and-
+        // forget so it never delays the load.
+        if (result.Outcome == Core.Playlist.DeckLoadOutcome.Loaded)
+            _ = RecordPlayAsync(path);
     }
 
     // A deck slot is loadable only if the engine backs it — discovered via the feedback seam

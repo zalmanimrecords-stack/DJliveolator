@@ -53,6 +53,13 @@ internal interface IBassMixerBackend : IDisposable
     /// <summary>Seek the deck to a 0..1 fraction of its length (the caller clamps to range).</summary>
     void SetDeckPositionFraction(int deckHandle, double fraction);
 
+    /// <summary>
+    /// Seconds until a seek of this deck is heard: 0 when <see cref="SetDeckPositionFraction"/> flushes the
+    /// mixer's playback buffer (no other deck playing), otherwise the audio already buffered, which plays out
+    /// first while the other decks keep moving. A sync snap leads the leader by this much.
+    /// </summary>
+    double GetDeckSeekDelaySeconds(int deckHandle);
+
     /// <summary>Set the deck's playback rate as a multiplier of its original sample rate (1.0 = original).</summary>
     void SetDeckRate(int deckHandle, double rateMultiplier);
 
@@ -81,7 +88,10 @@ internal interface IBassMixerBackend : IDisposable
     /// </summary>
     void SetStemVolume(int deckHandle, Core.Analysis.Stems.StemKind kind, double volume);
 
-    /// <summary>The deck's current playback position in seconds from the track start (0 if unknown).</summary>
+    /// <summary>
+    /// The deck's HEARD playback position in seconds from the track start (0 if unknown): BASSmix compensates
+    /// for the mixer's playback buffer, so this is what is audible now, not the decode position.
+    /// </summary>
     double GetDeckPositionSeconds(int deckHandle);
 
     /// <summary>The deck's total length in seconds (0 if unknown), used to scale loop/position math.</summary>

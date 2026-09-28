@@ -44,6 +44,9 @@
     <!-- Same exception, by owner request (2026-09-25): a stored hot cue fills true green and an empty slot
          is outlined Red, so the pad reads "cue here / nothing here" — never the blue latched-toggle look. -->
     <Color x:Key="CueSetColor">#29C467</Color>
+    <!-- Same exception, by owner request (2026-09-26): the deck's key · BPM · length line is yellow, so the
+         deck's only tempo/key readout stands out from the title and the blue timers. -->
+    <Color x:Key="DeckMetaColor">#F2C94C</Color>
     <!-- Deck waveform — the VirtualDJ 3-band scheme (deliberate exception to the single-blue line, by owner
          request): the low/kick band is RED (drawn LAST in front, with a glow, so kick transients pop for
          beat-align by eye), the mid body is GREEN, and the high caps are BLUE/CYAN. The beat marking lives
@@ -113,6 +116,7 @@
     <SolidColorBrush x:Key="Violet" Color="{DynamicResource VioletColor}" />
     <SolidColorBrush x:Key="MidiActive" Color="{DynamicResource MidiActiveColor}" />
     <SolidColorBrush x:Key="CueSet" Color="{DynamicResource CueSetColor}" />
+    <SolidColorBrush x:Key="DeckMeta" Color="{DynamicResource DeckMetaColor}" />
     <SolidColorBrush x:Key="Kick" Color="{DynamicResource KickColor}" />
     <!-- Waveform body: opaque for the played portion, half-transparent for the part still ahead of the playhead. -->
     <SolidColorBrush x:Key="Waveform" Color="{DynamicResource WaveformColor}" />

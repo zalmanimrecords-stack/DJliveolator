@@ -1,6 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:conv="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
         xmlns:controls="clr-namespace:Liveolator.App.Controls"
         xmlns:shell="clr-namespace:Liveolator.App.Shell"
         x:Class="Liveolator.App.Shell.MainWindow"
@@ -24,54 +23,49 @@
     <Style Selector="Ellipse.led.live">
       <Setter Property="Fill" Value="{DynamicResource MidiActive}" />
     </Style>
+
+    <!-- The merged top bar is tight at the 960px MinWidth floor (owner testing, 2026-09-27): on the
+         Compact tier, drop the peripheral SYS VOL/CPU captions (the knob/value themselves, and every
+         tooltip, are unaffected) so the master limiter's own labels — the one live-critical group in this
+         bar — keep their room. -->
+    <Style Selector="Window.compact TextBlock.hide-compact">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
   </Window.Styles>
 
   <DockPanel LastChildFill="True">
 
-    <!-- Top status strip, grouped by MEANING: STATUS (left) · MASTER (centre) · system/window
-         utilities (right). The OS volume is deliberately kept on the right, away from the master
-         limiter, so the two "loudness" concepts are not mistaken for one another (doc 19/UX review). -->
+    <!-- Merged top bar (owner, 2026-09-27): tabs + status + master + system utilities in ONE row instead
+         of two, freeing height for the performance surfaces below. OUT and the MIDI device name are
+         dropped from the bar's face — the device is chosen in Settings, and the audio-engine warning
+         further down still fires if playback can't work — and now live in Status.RoutingSummary, one
+         tooltip on the MIDI Learn button; RAM moves into the CPU readout's tooltip the same way. The MIDI
+         activity LED rides on the Learn button so the signal is still visible at a glance. Grouped by
+         MEANING: TABS (left) · MASTER (centre) · system/window utilities (right). The OS volume stays on
+         the right, away from the master limiter, so the two "loudness" concepts are never mistaken for one
+         another (doc 19/UX review). -->
     <Border DockPanel.Dock="Top"
             BorderBrush="{DynamicResource Hair}"
             BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,6">
+      <Grid ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="12,4">
 
-        <!-- LEFT: passive routing / connectivity / telemetry status (one quiet tier) -->
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <!-- audio routing -->
-          <TextBlock Classes="mono faint" Text="OUT" />
-          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.AudioOutputName}" />
-
-          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center" />
-
-          <!-- MIDI connectivity + activity (green on signal) -->
-          <TextBlock Classes="mono faint" Text="MIDI" />
-          <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                   Classes="led"
-                   Classes.linked="{Binding Status.MidiInputConnected}"
-                   Classes.live="{Binding Status.MidiActive}" />
-          <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MidiInputName}" />
-          <TextBlock Classes="mono faint"
-                     Text="{Binding Status.MidiFeedbackName, StringFormat='· LED {0}'}"
-                     IsVisible="{Binding Status.MidiFeedbackName, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
-
-          <!-- CPU / memory of the running app (only when metrics are available) -->
-          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
-                  IsVisible="{Binding Status.HasMetrics}" />
-          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
-                      IsVisible="{Binding Status.HasMetrics}">
-            <TextBlock Classes="mono faint" Text="CPU" />
-            <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.CpuText}" />
-            <TextBlock Classes="mono faint" Text="RAM" Margin="8,0,0,0" />
-            <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.MemoryText}" />
-          </StackPanel>
-        </StackPanel>
+        <!-- LEFT: tab strip -->
+        <ListBox Grid.Column="0" Classes="tabs"
+                 ItemsSource="{Binding Tabs}"
+                 SelectedItem="{Binding CurrentTab, Mode=TwoWay}"
+                 VerticalAlignment="Center">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="shell:TabItemViewModel">
+              <TextBlock Text="{Binding Title}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
 
         <!-- CENTRE: the master output stage — the one live-critical control in this bar.
              Master "smart limiter" (relocated from the DJ mixer frame): CHARACTER knob, the brain
              SMART toggle, CEILING knob. Bound to the DJ mixer VM (the only one with a limiter). The
              brick-wall peak guarantee always holds; SMART only reshapes the release (doc 11). -->
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8"
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
           <TextBlock Classes="tick" VerticalAlignment="Center" Margin="0,0,4,0" Text="MASTER" />
 
@@ -131,7 +125,18 @@
         </StackPanel>
 
         <!-- RIGHT: system / window utilities (not DJ-output controls) -->
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <!-- CPU of the running app (only when metrics are available); RAM rides along in the tooltip —
+               it was its own labelled readout before the bar merged into one row. -->
+          <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                      IsVisible="{Binding Status.HasMetrics}"
+                      ToolTip.Tip="{Binding Status.MemoryText, StringFormat='RAM {0}'}">
+            <TextBlock Classes="mono faint hide-compact" Text="CPU" />
+            <TextBlock Classes="mono" Foreground="{DynamicResource Dim}" Text="{Binding Status.CpuText}" />
+          </StackPanel>
+          <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
+                  IsVisible="{Binding Status.HasMetrics}" />
+
           <!-- Global computer master volume: drives the OS system volume (affects every app), NOT the
                DJ master. Labelled SYS VOL and kept apart from the limiter so it is never mistaken for
                the master output. Hidden on hosts where the OS volume cannot be controlled. -->
@@ -142,7 +147,7 @@
                            Value="{Binding SystemVolume.Volume.Value}"
                            IsEnabled="{Binding SystemVolume.Volume.IsEnabled}"
                            ArcBrush="{DynamicResource Accent}" />
-            <TextBlock Classes="tick" HorizontalAlignment="Center" Text="SYS VOL" />
+            <TextBlock Classes="tick hide-compact" HorizontalAlignment="Center" Text="SYS VOL" />
           </StackPanel>
           <Border Width="1" Height="16" Background="{DynamicResource Hair}" VerticalAlignment="Center"
                   IsVisible="{Binding SystemVolume.IsAvailable}" />
@@ -151,20 +156,28 @@
                   Width="32" Height="32" Padding="0"
                   VerticalAlignment="Center"
                   HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                  ToolTip.Tip="MIDI Learn — bind a control to the next hardware message"
+                  ToolTip.Tip="{Binding Status.RoutingSummary, StringFormat='{}{0} — MIDI Learn: bind a control to the next hardware message'}"
                   Command="{Binding MidiLearn.ToggleCommand}">
-            <!-- 5-pin DIN connector: the universal MIDI glyph (ring + pins) -->
-            <Viewbox Width="18" Height="18">
-              <Canvas Width="24" Height="24">
-                <Ellipse Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
-                         Stroke="{DynamicResource Accent}" StrokeThickness="2" />
-                <Ellipse Width="3" Height="3" Canvas.Left="10.5" Canvas.Top="4"  Fill="{DynamicResource Accent}" />
-                <Ellipse Width="3" Height="3" Canvas.Left="5"    Canvas.Top="8"  Fill="{DynamicResource Accent}" />
-                <Ellipse Width="3" Height="3" Canvas.Left="16"   Canvas.Top="8"  Fill="{DynamicResource Accent}" />
-                <Ellipse Width="3" Height="3" Canvas.Left="7"    Canvas.Top="14" Fill="{DynamicResource Accent}" />
-                <Ellipse Width="3" Height="3" Canvas.Left="14"   Canvas.Top="14" Fill="{DynamicResource Accent}" />
-              </Canvas>
-            </Viewbox>
+            <Panel>
+              <!-- 5-pin DIN connector: the universal MIDI glyph (ring + pins) -->
+              <Viewbox Width="18" Height="18">
+                <Canvas Width="24" Height="24">
+                  <Ellipse Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
+                           Stroke="{DynamicResource Accent}" StrokeThickness="2" />
+                  <Ellipse Width="3" Height="3" Canvas.Left="10.5" Canvas.Top="4"  Fill="{DynamicResource Accent}" />
+                  <Ellipse Width="3" Height="3" Canvas.Left="5"    Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                  <Ellipse Width="3" Height="3" Canvas.Left="16"   Canvas.Top="8"  Fill="{DynamicResource Accent}" />
+                  <Ellipse Width="3" Height="3" Canvas.Left="7"    Canvas.Top="14" Fill="{DynamicResource Accent}" />
+                  <Ellipse Width="3" Height="3" Canvas.Left="14"   Canvas.Top="14" Fill="{DynamicResource Accent}" />
+                </Canvas>
+              </Viewbox>
+              <!-- MIDI activity LED, moved here from the dropped MIDI status readout — still the quickest
+                   way to see mid-set that the controller is actually sending. -->
+              <Ellipse Width="7" Height="7" Classes="led"
+                       Classes.linked="{Binding Status.MidiInputConnected}"
+                       Classes.live="{Binding Status.MidiActive}"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0" />
+            </Panel>
           </Button>
           <Button x:Name="FullScreenButton"
                   Classes="spartan"
@@ -183,21 +196,6 @@
         </StackPanel>
 
       </Grid>
-    </Border>
-
-    <!-- tab strip -->
-    <Border DockPanel.Dock="Top"
-            BorderBrush="{DynamicResource Hair}"
-            BorderThickness="0,0,0,1">
-      <ListBox Classes="tabs"
-               ItemsSource="{Binding Tabs}"
-               SelectedItem="{Binding CurrentTab, Mode=TwoWay}">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="shell:TabItemViewModel">
-            <TextBlock Text="{Binding Title}" />
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
     </Border>
 
     <Border DockPanel.Dock="Bottom"

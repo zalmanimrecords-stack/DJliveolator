@@ -1,4 +1,5 @@
 using Liveolator.Core.Actions;
+using Liveolator.Core.Analysis.Bpm;
 using Liveolator.Core.Audio;
 
 namespace Liveolator.Core.Playlist;
@@ -45,23 +46,18 @@ public sealed class DeckTrackLoader
 
     /// <summary>
     /// Stages <paramref name="trackPath"/> on deck <paramref name="slot"/> (A = 0, B = 1) without
-    /// auto-playing it — or queues it on that deck when the deck is playing. <paramref name="bpm"/> is
-    /// the analyzed tempo (0 = unknown) fed as the deck's Sync reference; <paramref name="firstBeatSeconds"/>
-    /// is the analyzed downbeat anchor fed to phase-match (doc 22 A1).
+    /// auto-playing it — or queues it on that deck when the deck is playing.
     /// </summary>
+    /// <param name="analysis">The track's analysis (null = none): its tempo is the deck's Sync reference, its
+    /// first beat the phase-match anchor (doc 22 A1), and its on-beat kicks — only those
+    /// <see cref="FourOnTheFloorKicks"/> vouches for, never the raw list — what the engine phase-locks on.</param>
     /// <param name="replacePlaying">
     /// When true, load onto the deck even if it is playing (replacing the current track) instead of
     /// queueing behind it — for an <b>audition</b> where the user explicitly asked to hear THIS track now
     /// (the library "Play" button). The default (false) keeps the never-cut-off-a-playing-deck policy for
     /// the staging surfaces ("Load → Deck", "Add to Deck").
     /// </param>
-    public DeckLoadResult Load(
-        int slot,
-        string trackPath,
-        double bpm,
-        double firstBeatSeconds = 0,
-        bool replacePlaying = false,
-        IReadOnlyList<double>? kickOnsetsSeconds = null)
+    public DeckLoadResult Load(int slot, string trackPath, BpmResult? analysis, bool replacePlaying = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(trackPath);
         string deck = slot == 0 ? "A" : "B";
@@ -84,7 +80,7 @@ public sealed class DeckTrackLoader
         }
 
         _dispatcher.Dispatch(new PerformanceAction(
-            PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: bpm, Argument: trackPath));
+            PerformanceActionKind.DeckLoadTrack, Slot: slot, Value: analysis?.Bpm ?? 0, Argument: trackPath));
 
         // The handler raises DeckLoadTrack feedback synchronously during Dispatch, marking the load
         // unavailable when the engine could not open the file (a deep BASS/decoder failure that the
@@ -100,8 +96,8 @@ public sealed class DeckTrackLoader
         _dispatcher.Dispatch(new PerformanceAction(
             PerformanceActionKind.DeckSetFirstBeat,
             Slot: slot,
-            Value: firstBeatSeconds,
-            Argument: DeckKickOnsetCodec.Encode(kickOnsetsSeconds)));
+            Value: analysis?.FirstBeatSeconds ?? 0,
+            Argument: DeckKickOnsetCodec.Encode(FourOnTheFloorKicks.From(analysis))));
         return new DeckLoadResult(DeckLoadOutcome.Loaded, $"Loaded \"{title}\" → Deck {deck}");
     }
 }

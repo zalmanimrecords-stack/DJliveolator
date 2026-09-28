@@ -1,5 +1,3 @@
-using System.IO;
-
 namespace Liveolator.Core.Library.Music;
 
 /// <summary>
@@ -55,19 +53,26 @@ public static class TrackQuery
     /// match all), ordered by title and capped at <paramref name="limit"/>.
     /// </summary>
     public static IReadOnlyList<MusicTrack> Apply(
-        IEnumerable<MusicTrack> tracks, TrackFilter filter, int limit = 100)
-        => Query(tracks, filter, TrackSortKey.Title, descending: false, limit);
+        IEnumerable<MusicTrack> tracks, TrackFilter filter, int limit = 100, GenreHierarchy? genreHierarchy = null)
+        => Query(tracks, filter, TrackSortKey.Title, descending: false, limit, offset: 0, genreHierarchy);
 
     /// <summary>
     /// Filters, sorts, and pages a catalog query in one deterministic operation.
     /// </summary>
+    /// <param name="genreHierarchy">
+    /// Optional user-curated genre parent/child grouping (see <see cref="GenreHierarchy"/>). Omitted or
+    /// null, or when <paramref name="filter"/>'s genre has no assigned children, this behaves exactly as
+    /// before (zero-cost default). When the filtered genre HAS children, matches widen to also include
+    /// tracks tagged with any child genre.
+    /// </param>
     public static IReadOnlyList<MusicTrack> Query(
         IEnumerable<MusicTrack> tracks,
         TrackFilter filter,
         TrackSortKey sortKey = TrackSortKey.Title,
         bool descending = false,
         int limit = 100,
-        int offset = 0)
+        int offset = 0,
+        GenreHierarchy? genreHierarchy = null)
     {
         ArgumentNullException.ThrowIfNull(tracks);
         ArgumentNullException.ThrowIfNull(filter);
@@ -92,6 +97,22 @@ public static class TrackQuery
         // owner's library. Compare token sets instead, which also lets the facet carry SEVERAL selected
         // genres joined by a separator the tag grammar already splits on, without a second filter field.
         IReadOnlySet<string> wantedGenres = GenreTag.Normalize(filter.Genre);
+        // Widen to the children's tags BEFORE the intersection check below, so filtering on a parent
+        // genre (e.g. "House") also catches tracks tagged only with a child style (e.g. "Deep House").
+        // A genre with no children (or no hierarchy supplied at all) adds nothing here — same tokens as
+        // today, so existing behavior is unchanged (zero-cost default).
+        if (genreHierarchy is not null && !string.IsNullOrWhiteSpace(filter.Genre))
+        {
+            IReadOnlyList<string> children = genreHierarchy.ChildrenOf(filter.Genre);
+            if (children.Count > 0)
+            {
+                var expanded = new HashSet<string>(wantedGenres, StringComparer.Ordinal);
+                foreach (string child in children)
+                    expanded.UnionWith(GenreTag.Normalize(child));
+                wantedGenres = expanded;
+            }
+        }
+
         if (wantedGenres.Count > 0)
             query = query.Where(t => GenreTag.Intersects(wantedGenres, GenreTag.Normalize(t.Metadata?.Genre)));
 
@@ -126,7 +147,7 @@ public static class TrackQuery
     private static bool MatchesTerm(MusicTrack track, string term)
         => Contains(track.Title, term)
            || Contains(track.Artist, term)
-           || Contains(Path.GetFileName(track.File.Path), term)
+           || Contains(PortablePath.GetFileName(track.File.Path), term)
            || Contains(track.Metadata?.Album, term)
            || Contains(track.Metadata?.Genre, term)
            || Contains(track.Metadata?.Comment, term)

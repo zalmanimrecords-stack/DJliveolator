@@ -136,4 +136,54 @@ public class TrackFilterTests
     [Fact]
     public void Genre_filter_of_pure_punctuation_matches_all()
         => Assert.Equal(GenreCatalog.Length, TrackQuery.Apply(GenreCatalog, new TrackFilter(Genre: " / | , ")).Count);
+
+    // ---------- genre hierarchy: optional parent/child widening (GenreHierarchy) ----------
+
+    private static readonly MusicTrack[] HierarchyCatalog =
+    {
+        Track("/h/house.mp3", genre: "House"),
+        Track("/h/deephouse.mp3", genre: "Deep House"),
+        Track("/h/techhouse.mp3", genre: "Tech House"),
+        Track("/h/techno.mp3", genre: "Techno"),
+    };
+
+    private static GenreHierarchy HouseHierarchy() => new GenreHierarchy()
+        .SetParent("Deep House", "House")
+        .SetParent("Tech House", "House");
+
+    [Fact]
+    public void GenreHierarchy_FilteringOnParent_CatchesTrackTaggedOnlyWithChildStyle()
+        => Assert.Equal(
+            new[] { "/h/deephouse.mp3", "/h/house.mp3", "/h/techhouse.mp3" },
+            Paths(TrackQuery.Apply(HierarchyCatalog, new TrackFilter(Genre: "House"), genreHierarchy: HouseHierarchy())));
+
+    [Fact]
+    public void GenreHierarchy_FilteringOnOneChild_DoesNotCatchSiblingOrUnrelatedTrack()
+        => Assert.Equal(
+            new[] { "/h/deephouse.mp3" },
+            Paths(TrackQuery.Apply(HierarchyCatalog, new TrackFilter(Genre: "Deep House"), genreHierarchy: HouseHierarchy())));
+
+    /// <summary>
+    /// The owner's zero-cost-migration promise: a genre with no children filters byte-for-byte the same
+    /// whether or not a hierarchy is supplied. A regression here is a stop-ship, not a nit.
+    /// </summary>
+    [Fact]
+    public void GenreHierarchy_GenreWithNoChildren_FiltersIdenticallyToPlainGenreFilter()
+    {
+        var withoutHierarchy = TrackQuery.Apply(HierarchyCatalog, new TrackFilter(Genre: "Techno"));
+        var withHierarchy = TrackQuery.Apply(HierarchyCatalog, new TrackFilter(Genre: "Techno"), genreHierarchy: HouseHierarchy());
+
+        Assert.Equal(Paths(withoutHierarchy), Paths(withHierarchy));
+        Assert.Equal(new[] { "/h/techno.mp3" }, Paths(withHierarchy));
+    }
+
+    /// <summary>
+    /// Omitting the hierarchy argument entirely (every existing caller, today) must not widen anything,
+    /// even for a genre that has children elsewhere — the default is truly zero-cost.
+    /// </summary>
+    [Fact]
+    public void GenreHierarchy_OmittedEntirely_BehavesExactlyLikeTodaysPlainFilter()
+        => Assert.Equal(
+            new[] { "/h/house.mp3" },
+            Paths(TrackQuery.Apply(HierarchyCatalog, new TrackFilter(Genre: "House"))));
 }

@@ -88,6 +88,19 @@ public sealed class ShellStatusViewModelTests
     }
 
     [Fact]
+    public void RoutingSummary_CombinesMidiAndOutput_ForTheLearnButtonTooltip()
+    {
+        var withFeedback = new ShellStatusViewModel(
+            new FakeMidiStatus { IsInputConnected = true, InputDeviceName = "CMD Studio 2a", OutputDeviceName = "CMD Studio 2a" },
+            new FakeOutputCatalog(), SettingsWith("1", null, null), new HistoricalScheduler());
+        var noFeedback = new ShellStatusViewModel(
+            new FakeMidiStatus(), new FakeOutputCatalog(), SettingsWith(null, "Push", null), new HistoricalScheduler());
+
+        Assert.Equal("MIDI: CMD Studio 2a · LED: CMD Studio 2a · OUT: Speakers", withFeedback.RoutingSummary);
+        Assert.Equal("MIDI: Push · OUT: System default", noFeedback.RoutingSummary);
+    }
+
+    [Fact]
     public void Activity_SetsMidiActive_ThenClearsAfterFlashWindow()
     {
         var scheduler = new HistoricalScheduler();

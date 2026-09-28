@@ -213,12 +213,7 @@ public sealed class DjBrowserViewModel : ViewModelBase
         if (_loader is null || track is null)
             return;
 
-        LoadStatus = _loader.Load(
-            slot,
-            track.Track.File.Path,
-            bpm: track.Track.Bpm?.Bpm ?? 0,
-            firstBeatSeconds: track.Track.Bpm?.FirstBeatSeconds ?? 0,
-            kickOnsetsSeconds: track.Track.Bpm?.KickOnsetsSeconds).Message;
+        LoadStatus = _loader.Load(slot, track.Track.File.Path, track.Track.Bpm).Message;
     }
 
     // A deck slot is loadable only if the engine backs it (DeckPlayPause reports IsAvailable iff

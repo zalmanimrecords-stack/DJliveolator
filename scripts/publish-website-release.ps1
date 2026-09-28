@@ -293,10 +293,13 @@ echo "WPPATH=$WPPATH"
 echo "EXISTS=$([ -f "/docker/liveolator$WPPATH" ] && echo yes || echo no)"
 '@
     try {
-        # Send LF-only: a PowerShell here-string carries CRLF, and bash reading it over stdin sees
-        # "set -u`r" -> 'bash: line 1: set: -' and dies on the FIRST line, so this whole check has been
-        # inert on Windows since it was added. That is why the stale 0.1.4 gate went on 404'ing unseen.
-        $out = (($probe -replace "`r`n", "`n") | & ssh @sshOpts $VpsHost 'bash -s' 2>&1) -join "`n"
+        # Ship the probe as a base64 argument, never over stdin. Windows PowerShell re-encodes a pipe
+        # into a native exe with the host's $OutputEncoding and appends CRLF: a here-string's CRLF gave
+        # 'bash: line 1: set: -' (the stale 0.1.4 gate 404'd unseen), and a UTF-8 $OutputEncoding
+        # prepends a BOM -> 'bash: line 1: <BOM>set: command not found' (the 0.10.2 publish). Either
+        # kills bash on line 1, so the check was inert. Base64 bytes are exactly what we encode here.
+        $probeB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($probe -replace "`r`n", "`n")))
+        $out = (& ssh @sshOpts $VpsHost "echo $probeB64 | base64 -d | bash" 2>&1) -join "`n"
         $wpVer   = ([regex]::Match($out, 'WPVER=(\S+)')).Groups[1].Value
         $wpPath  = ([regex]::Match($out, 'WPPATH=(\S+)')).Groups[1].Value
         $exists  = ([regex]::Match($out, 'EXISTS=(\S+)')).Groups[1].Value
