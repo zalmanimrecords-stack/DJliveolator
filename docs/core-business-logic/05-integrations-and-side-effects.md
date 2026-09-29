@@ -122,6 +122,10 @@ confirmation at every entry point:
   references and, where explicitly requested, remove files.
 - **Extension installation** writes package content plus registry and trust state.
 - **Library import** writes tracks, cues, grids and playlists into the existing stores.
+- **Copy to this computer** (playlists window, `PlaylistLocalCopyService`) copies a set's audio files to a
+  folder the DJ picks, plus a catalog row, the hot cues and a `"<name> (local)"` playlist for each copy.
+  The folder becomes a library folder. It never deletes or moves the NAS files or their rows. When run
+  again, a local row or cue set that already exists wins, so edits made at a gig are kept.
 
 `Needs validation`: whether every entry point to library repair requires a preview and confirmation
 before a destructive step. Item in [11](./11-open-questions-and-assumptions.md), improvement in

@@ -26,6 +26,13 @@
         <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" />
         <Button Classes="spartan" Content="Send to live set"
                 Command="{Binding SendToLiveSetCommand}" IsVisible="{Binding CanSendToLiveSet}" />
+        <Button Classes="spartan" Content="Copy to this computer…" Click="OnCopyToComputer"
+                IsVisible="{Binding IsLocalCopyAvailable}" IsEnabled="{Binding CanCopyToComputer}"
+                ToolTip.Tip="Copy the set's files, with their analysis and cues, to a local folder for a gig away from the NAS" />
+        <ProgressBar Width="140" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                     Value="{Binding CopyProgress}" IsVisible="{Binding IsCopying}" />
+        <Button Classes="spartan" Content="Cancel copy"
+                Command="{Binding CancelCopyCommand}" IsVisible="{Binding IsCopying}" />
       </StackPanel>
     </StackPanel>
 

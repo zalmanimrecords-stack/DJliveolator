@@ -108,7 +108,10 @@ public sealed class PlaylistLocalCopyService
         Playlist? localPlaylist = null;
         if (localPaths.Count > 0)
         {
-            localPlaylist = new Playlist(playlist.Name + LocalSuffix, localPaths);
+            string name = playlist.Name.EndsWith(LocalSuffix, StringComparison.OrdinalIgnoreCase)
+                ? playlist.Name
+                : playlist.Name + LocalSuffix;
+            localPlaylist = new Playlist(name, localPaths);
             await _playlistStore.SaveAsync(localPlaylist, cancellationToken).ConfigureAwait(false);
         }
 

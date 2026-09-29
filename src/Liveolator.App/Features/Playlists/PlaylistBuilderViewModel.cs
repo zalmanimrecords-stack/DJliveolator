@@ -4,9 +4,13 @@ using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using Liveolator.App.Features.Libraries;
 using Liveolator.App.Shell;
+using Liveolator.Core;
+using Liveolator.Core.Library;
 using Liveolator.Core.Library.Music;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Playlist.LocalCopy;
+using Liveolator.Core.Settings;
 using ReactiveUI;
 
 namespace Liveolator.App.Features.Playlists;
@@ -26,7 +30,11 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
     private readonly IPlaylistStore _store;
     private readonly ILivePlaylist? _livePlaylist;
     private readonly Shared.TrackContextActions? _contextActions;
+    private readonly LocalCopyWiring? _localCopy;
     private readonly HarmonicSetBuilder _setBuilder = new();
+    private CancellationTokenSource? _copyCancellation;
+    private bool _isCopying;
+    private double _copyProgress;
     private List<TrackRowViewModel> _allLibrary = new();
 
     private string _name = "New playlist";
@@ -40,12 +48,14 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
         MusicLibrary library,
         IPlaylistStore store,
         ILivePlaylist? livePlaylist = null,
-        Shared.TrackContextActions? contextActions = null)
+        Shared.TrackContextActions? contextActions = null,
+        LocalCopyWiring? localCopy = null)
     {
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _livePlaylist = livePlaylist;
         _contextActions = contextActions;
+        _localCopy = localCopy;
 
         var hasName = this.WhenAnyValue(x => x.Name).Select(n => !string.IsNullOrWhiteSpace(n));
         var hasSaved = this.WhenAnyValue(x => x.SelectedSaved).Select(s => !string.IsNullOrWhiteSpace(s));
@@ -66,6 +76,10 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
             SendToLiveSet,
             this.WhenAnyValue(x => x.Current.Count).Select(c => c > 0 && _livePlaylist is not null));
 
+        CancelCopyCommand = ReactiveCommand.Create(
+            () => _copyCancellation?.Cancel(), this.WhenAnyValue(x => x.IsCopying));
+        Current.CollectionChanged += (_, _) => this.RaisePropertyChanged(nameof(CanCopyToComputer));
+
         this.WhenAnyValue(x => x.LibrarySearch).Subscribe(_ => ApplyLibraryFilter());
     }
 
@@ -84,8 +98,33 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> DeleteCommand { get; }
     public ReactiveCommand<Unit, Unit> SendToLiveSetCommand { get; }
 
+    public ReactiveCommand<Unit, Unit> CancelCopyCommand { get; }
+
     /// <summary>True when a live queue is wired (drives the "Send to live set" button).</summary>
     public bool CanSendToLiveSet => _livePlaylist is not null;
+
+    /// <summary>True when copying to this computer is wired at all (drives the button's visibility).</summary>
+    public bool IsLocalCopyAvailable => _localCopy is not null;
+
+    /// <summary>True when the current set can be copied now (drives the button's enabled state).</summary>
+    public bool CanCopyToComputer => _localCopy is not null && !IsCopying && Current.Count > 0;
+
+    public bool IsCopying
+    {
+        get => _isCopying;
+        private set
+        {
+            this.RaiseAndSetIfChanged(ref _isCopying, value);
+            this.RaisePropertyChanged(nameof(CanCopyToComputer));
+        }
+    }
+
+    /// <summary>Copy progress, 0–100.</summary>
+    public double CopyProgress
+    {
+        get => _copyProgress;
+        private set => this.RaiseAndSetIfChanged(ref _copyProgress, value);
+    }
 
     public string Name
     {
@@ -244,6 +283,114 @@ public sealed class PlaylistBuilderViewModel : ViewModelBase
         {
             RxApp.MainThreadScheduler.Schedule(() => Status = $"Delete failed: {ex.Message}");
         }
+    }
+
+    /// <summary>The folder the last copy went to, offered as the picker's starting point; null when none yet.</summary>
+    public async Task<string?> LastLocalCopyFolderAsync()
+        => _localCopy is null ? null : (await _localCopy.Settings.LoadAsync().ConfigureAwait(false)).LocalCopyFolder;
+
+    /// <summary>
+    /// Copies the current set's files to <paramref name="destination"/> for a gig away from the NAS, and
+    /// saves a "(local)" playlist pointing at the copies. The destination is picked by the view.
+    /// </summary>
+    public async Task CopyToComputerAsync(string destination)
+    {
+        if (!CanCopyToComputer)
+            return;
+        if (string.IsNullOrWhiteSpace(destination))
+        {
+            Status = "That folder has no local path. Choose a folder on this computer's disk.";
+            return;
+        }
+
+        LocalCopyWiring wiring = _localCopy!;
+        var playlist = new Playlist(Name.Trim(), Current.Select(e => e.Path).ToList());
+        IReadOnlyList<string> folders = wiring.LibraryFolders();
+        IReadOnlyCollection<MusicTrack> catalog = _library.All;
+        using var cancellation = new CancellationTokenSource();
+        _copyCancellation = cancellation;
+        IsCopying = true;
+        CopyProgress = 0;
+        Status = $"Copying \"{playlist.Name}\" to {destination}…";
+        var progress = new MainThreadProgress(p =>
+        {
+            CopyProgress = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
+            if (p.Done < p.Total)
+                Status = $"Copying {p.Done + 1} / {p.Total}: {PortablePath.GetFileName(p.CurrentFile)}";
+        });
+
+        try
+        {
+            LocalCopyResult result = await Task.Run(
+                () => wiring.Service.CopyAsync(playlist, catalog, folders, destination, progress, cancellation.Token),
+                cancellation.Token).ConfigureAwait(false);
+
+            if (result.InsufficientSpace)
+            {
+                RxApp.MainThreadScheduler.Schedule(() => Status =
+                    $"Not enough space at {destination}: needs {Gigabytes(result.BytesToCopy)}, "
+                    + $"{Gigabytes(result.BytesFree)} free. Nothing was copied.");
+                return;
+            }
+
+            RxApp.MainThreadScheduler.Schedule(() => wiring.AdoptCopies(destination, result.LocalTracks));
+            await RememberFolderAsync(wiring.Settings, destination).ConfigureAwait(false);
+            await RefreshSavedAsync().ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() => Status = Describe(result));
+        }
+        catch (OperationCanceledException)
+        {
+            // Finished files already have their rows saved; registering the folder keeps them from being
+            // pruned before the re-run that completes the set.
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                wiring.AdoptCopies(destination, Array.Empty<MusicTrack>());
+                Status = "Copy cancelled. Files already copied are kept; copy again to finish.";
+            });
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => Status = $"Copy failed: {ex.Message}");
+        }
+        finally
+        {
+            _copyCancellation = null;
+            RxApp.MainThreadScheduler.Schedule(() => IsCopying = false);
+        }
+    }
+
+    private async Task RememberFolderAsync(ISettingsStore settings, string folder)
+    {
+        try
+        {
+            AppSettings current = await settings.LoadAsync().ConfigureAwait(false);
+            await settings.SaveAsync(current with { LocalCopyFolder = folder }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => Status = $"Copied, but remembering the folder failed: {ex.Message}");
+        }
+    }
+
+    private static string Describe(LocalCopyResult result)
+    {
+        string summary = $"Copied {result.Copied}, {result.AlreadyPresent} already on this computer";
+        if (result.LocalPlaylist is { } local)
+            summary += $". Saved \"{local.Name}\"";
+        if (result.Problems.Count > 0)
+            summary += $". {result.Problems.Count} left out: "
+                + string.Join("; ", result.Problems.Take(3).Select(p => $"{PortablePath.GetFileName(p.SourcePath)} ({p.Reason})"))
+                + (result.Problems.Count > 3 ? "; …" : string.Empty);
+        return summary + ".";
+    }
+
+    private static string Gigabytes(long bytes) => $"{bytes / 1e9:0.0} GB";
+
+    // Progress<T> posts to whatever context built it; routing through the main-thread scheduler keeps the
+    // updates on the UI thread in the app and synchronous in tests, and ordered before the final status.
+    private sealed class MainThreadProgress(Action<ScanProgress> onReport) : IProgress<ScanProgress>
+    {
+        public void Report(ScanProgress value) => RxApp.MainThreadScheduler.Schedule(() => onReport(value));
     }
 
     private void SendToLiveSet()

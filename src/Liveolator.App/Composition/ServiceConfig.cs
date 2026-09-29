@@ -38,6 +38,7 @@ using Liveolator.Core.Mapping.Profiles;
 using Liveolator.Core.Mixer;
 using Liveolator.Core.Persistence;
 using Liveolator.Core.Playlist;
+using Liveolator.Core.Playlist.LocalCopy;
 using Liveolator.Core.Recording;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Update;
@@ -400,6 +401,16 @@ public static class ServiceConfig
             path => ImportFileProbe.Stat(
                 path, msg => sp.GetRequiredService<ILogger<LibraryImportService>>().LogWarning("{Warning}", msg))));
 
+        // Taking a playlist offline for a gig away from the NAS: copies its files to a local folder and
+        // gives each copy the source's catalog row and hot cues (the file IO is Liveolator.Platform's).
+        services.AddSingleton<IFileCopier, FileSystemFileCopier>();
+        services.AddSingleton<PlaylistLocalCopyService>(sp => new PlaylistLocalCopyService(
+            sp.GetRequiredService<IFileCopier>(),
+            sp.GetRequiredService<IMusicCatalogStore>(),
+            sp.GetRequiredService<IHotCueStore>(),
+            sp.GetRequiredService<IPlaylistStore>(),
+            loggerFactory.CreateLogger<PlaylistLocalCopyService>()));
+
         // --- Shared performance clock (the product differentiator: ONE beat clock drives both the
         // visuals and the Live tap controls). Pure-managed, no native — so the "tap a tempo and the
         // visuals pulse on the beat" experience works with NO audio hardware. The audio-driven
@@ -753,7 +764,13 @@ public static class ServiceConfig
             sp.GetRequiredService<MusicLibrary>(),
             sp.GetRequiredService<IPlaylistStore>(),
             sp.GetRequiredService<ILivePlaylist>(),
-            sp.GetRequiredService<TrackContextActions>()));
+            sp.GetRequiredService<TrackContextActions>(),
+            // LIBRARIES owns the folder list and the visible rows, so the copy reads and extends them there.
+            new LocalCopyWiring(
+                sp.GetRequiredService<PlaylistLocalCopyService>(),
+                () => sp.GetRequiredService<LibrariesViewModel>().Folders.ToList(),
+                (folder, tracks) => sp.GetRequiredService<LibrariesViewModel>().AdoptLocalCopies(folder, tracks),
+                sp.GetRequiredService<ISettingsStore>())));
 
         services.AddSingleton<LibrariesViewModel>(sp => new LibrariesViewModel(
             sp.GetRequiredService<MusicLibrary>(),

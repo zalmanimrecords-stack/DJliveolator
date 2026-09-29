@@ -897,6 +897,20 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _ = PersistFoldersAsync();
     }
 
+    /// <summary>
+    /// Takes in a playlist's local copies (<see cref="Core.Playlist.LocalCopy.PlaylistLocalCopyService"/>):
+    /// their already-saved rows join the in-memory catalog, and their folder becomes a library folder so a
+    /// later folder removal does not prune them.
+    /// </summary>
+    public void AdoptLocalCopies(string folder, IReadOnlyList<MusicTrack> tracks)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        if (tracks.Count > 0)
+            _library.Restore(_library.All.Concat(tracks).ToList());
+        AddFolder(folder);
+        RefreshRows();
+    }
+
     /// <summary>Removes a scan folder (no-op if absent): drops it from the set, clears any sample-folder
     /// designation it carried, prunes the catalogued tracks that lived only under it (exactly what a
     /// re-scan of the reduced set would drop), refreshes the view, and persists the trimmed folder set +

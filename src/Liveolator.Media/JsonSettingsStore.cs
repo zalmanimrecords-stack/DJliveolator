@@ -39,7 +39,8 @@ public sealed record SettingsSnapshot(
     string? SkippedUpdateVersion = null,
     string? GetSongBpmApiKey = null,
     bool? StemsEnabled = null,
-    double? AutoCrossfadeSeconds = null)
+    double? AutoCrossfadeSeconds = null,
+    string? LocalCopyFolder = null)
 {
     public const int CurrentVersion = 2;
 }
@@ -155,6 +156,7 @@ public sealed class JsonSettingsStore : ISettingsStore
             Online = new OnlineSettings(snapshot.GetSongBpmApiKey),
             // Written before MIX SEC was persisted reads null → the 10-second default.
             Mixer = new MixerSettings(snapshot.AutoCrossfadeSeconds ?? MixerSettings.Default.AutoCrossfadeSeconds),
+            LocalCopyFolder = snapshot.LocalCopyFolder,
         }.Normalized();
     }
 
@@ -194,7 +196,8 @@ public sealed class JsonSettingsStore : ISettingsStore
             SkippedUpdateVersion: normalized.Updates.SkippedVersion,
             GetSongBpmApiKey: normalized.Online.GetSongBpmApiKey,
             StemsEnabled: normalized.Audio.StemsEnabled,
-            AutoCrossfadeSeconds: normalized.Mixer.AutoCrossfadeSeconds);
+            AutoCrossfadeSeconds: normalized.Mixer.AutoCrossfadeSeconds,
+            LocalCopyFolder: normalized.LocalCopyFolder);
 
         // ConfigureAwait(false) on BOTH the serialize and the stream's implicit DisposeAsync. Without it,
         // a synchronous-completing SerializeAsync (small settings JSON) leaves the closing DisposeAsync to
