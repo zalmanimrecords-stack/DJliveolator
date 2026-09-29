@@ -16,7 +16,11 @@
   ASCII-only on purpose (PowerShell 5.1 smart-quote trap).
 
 .PARAMETER RemoteHost
-  SSH host alias. Default: simonsrv.
+  SSH host alias.
+
+  The host, its paths and its folder layout are deployment-specific and never live in the public
+  repo: every path parameter defaults to a LIVEOLATOR_MCP_* environment variable, which the
+  maintainer's private env script sets. A missing value stops the deploy before anything ships.
 
 .PARAMETER MusicDir
   Absolute path to the music on the HOST. Must match the paths already stored in the catalog, or
@@ -34,21 +38,26 @@
 
 .EXAMPLE
   scripts/deploy-mcp-server.ps1
-  scripts/deploy-mcp-server.ps1 -SeedCatalogFrom /home/simon/liveolator/data/catalog.db
+  scripts/deploy-mcp-server.ps1 -SeedCatalogFrom /srv/liveolator/data/catalog.db
 #>
 [CmdletBinding()]
 param(
-    [string]$RemoteHost = "simonsrv",
-    [string]$MusicDir   = "/media/simon/external_4tb/Navidrome/music",
-    [string]$DataDir    = "/home/simon/liveolator/next-data",
-    [string]$LabelDir   = "/media/simon/external_4tb/ZALMANIM",
-    [string]$SetsDir    = "/media/simon/external_4tb/ZALMANIM/dj-sets/liveolator-renders",
+    [string]$RemoteHost = $env:LIVEOLATOR_MCP_HOST,
+    [string]$MusicDir   = $env:LIVEOLATOR_MCP_MUSIC_DIR,
+    [string]$DataDir    = $env:LIVEOLATOR_MCP_DATA_DIR,
+    [string]$LabelDir   = $env:LIVEOLATOR_MCP_LABEL_DIR,
+    [string]$SetsDir    = $env:LIVEOLATOR_MCP_SETS_DIR,
     [int]$Port          = 5175,
-    [string]$RemoteRoot = "/home/simon/liveolator/next",
+    [string]$RemoteRoot = $env:LIVEOLATOR_MCP_REMOTE_ROOT,
     [string]$SeedCatalogFrom = ""
 )
 
 $ErrorActionPreference = "Stop"
+$missing = @{ RemoteHost = $RemoteHost; MusicDir = $MusicDir; DataDir = $DataDir; LabelDir = $LabelDir;
+              SetsDir = $SetsDir; RemoteRoot = $RemoteRoot }.GetEnumerator() | Where-Object { -not $_.Value }
+if ($missing) {
+    throw "Missing deploy target: $(($missing.Name | Sort-Object) -join ', '). Pass them, or set the LIVEOLATOR_MCP_* env vars (internal-info/liveolator/env.ps1 in the private skills repo does)."
+}
 $repo = Split-Path -Parent $PSScriptRoot
 $publishDir = Join-Path $repo "artifacts/dist/linux-x64"
 

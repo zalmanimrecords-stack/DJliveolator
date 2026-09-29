@@ -129,8 +129,7 @@ Their archived paths, all under `docs/archive/` and covered by
 | `design/mockups/README.md` | UI mockup index | `Canonical` | Unchanged |
 | `tests/corpus/README.md` | Test-audio corpus notes | `Canonical` | Unchanged |
 | `website/README.md`, `website/DEPLOY.md`, `website/RELEASE_NOTES_NEXT.md` | Marketing site and its deployment | `Canonical` | Separate deliverable, outside the product runtime |
-| `marketing/brand-brief.md`, `content-plan-week1.md`, `launch-email.md`, `launch-post.md`, `marketing-manager.agent.md` | Marketing collateral | `Canonical` | Not product documentation |
-| `marketing/post-0.9.0-open-source.md`, `marketing/gh-discussion-0.9.0.md` | Release announcement copy for the 0.9.0 open-source push (2026-09-11) | `Canonical` | Not product documentation; every claim traces to `website/src/data/changelog.json` |
+| `marketing/` (brand brief, content plans, launch copy, the marketing agent) | Marketing collateral and publishing state | `Moved` | Lives in the private repo (see the `internal-info` skill) - not product documentation |
 | `docs/mcp-connect-guide.md` | How an external agent connects to the MCP server | `Canonical` | Kept in place, linked from [05](./05-integrations-and-side-effects.md); a third-party how-to, not a business-logic fact |
 | `orchestration/README.md`, `OWNERSHIP.md`, `TASKS.md` | Multi-agent worktree coordination (git-ignored) | `Maintained adapter` | Working state, not documentation |
 | `artifacts/codex-brief-hardware-controls.md` | One-off agent brief (git-ignored) | `Historical` | Left in a git-ignored directory |

@@ -6,7 +6,13 @@
 set -u
 
 z="0000000000000000000000000000000000000000"
-pat='187\.124\.22\.93|root@([0-9]{1,3}\.){3}[0-9]{1,3}|BEGIN (OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY|(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}'
+pat='root@([0-9]{1,3}\.){3}[0-9]{1,3}|BEGIN (OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY|(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}'
+# Real hosts/IPs/names are internal themselves: kept in the maintainer's private skills repo, not in this file.
+private_patterns="${LIVEOLATOR_PRIVATE_DIR:-$HOME/.claude/skills/internal-info/liveolator}/leak-patterns.txt"
+if [ -f "$private_patterns" ]; then
+  alternation=$(grep -Ev '^[[:space:]]*(#|$)' "$private_patterns" | tr -d '\r' | paste -sd'|' -)
+  [ -n "$alternation" ] && pat="$pat|$alternation"
+fi
 fail=0
 
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -18,10 +24,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     commits=$(git rev-list "$remote_sha..$local_sha")
   fi
   [ -z "$commits" ] && continue
-  # Scan the diffs of the outgoing commits (exclude the hook sources).
-  if git show --no-color $commits -- . ':(exclude).githooks' 2>/dev/null | grep -Eq "$pat"; then
-    echo "PUSH BLOCKED - commits headed for ${remote_ref:-remote} contain a secret" >&2
-    echo "(e.g. the production VPS IP). That history predates the secret scrub." >&2
+  # Scan the lines the outgoing commits ADD (a scrub commit only removes them), excluding the hook sources.
+  if git show --no-color $commits -- . ':(exclude).githooks' 2>/dev/null | grep '^+' | grep -Eq "$pat"; then
+    echo "PUSH BLOCKED - commits headed for ${remote_ref:-remote} contain a secret or internal info" >&2
+    echo "(e.g. the production VPS IP, a private host or path). That history predates the scrub." >&2
     echo "Rebase the branch onto clean master, or scrub it, before pushing." >&2
     fail=1
   fi

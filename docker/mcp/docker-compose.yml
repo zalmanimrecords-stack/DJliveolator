@@ -15,7 +15,7 @@ services:
     ports:
       # 127.0.0.1 ONLY. The MCP HTTP transport has no authentication of its own, so exposing it on
       # the LAN would hand anyone on the network the whole library API. Reach it over SSH:
-      #   ssh -N -L 5175:127.0.0.1:5175 simonsrv
+      #   ssh -N -L 5175:127.0.0.1:5175 <music-host>
       - "127.0.0.1:${LIVEOLATOR_MCP_PORT:-5175}:5175"
 
     volumes:

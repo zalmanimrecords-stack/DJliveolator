@@ -49,7 +49,7 @@ public static class AppDataRedirection
     /// <summary>
     /// True when a file created under <paramref name="requestedDirectory"/> landed in a package's private
     /// LocalCache. Compared by shape, not by string equality, because the requested path may use 8.3
-    /// short names (<c>SIMONR~1</c>) that the final path never does.
+    /// short names (<c>DJUSER~1</c>) that the final path never does.
     /// </summary>
     public static bool IsPackageRedirect(string requestedDirectory, string finalPath)
     {

@@ -48,7 +48,7 @@ public sealed class StemDeckDecisionTests
     [Fact]
     public void GateOn_NetworkStemPath_DoesNotUseStems()
     {
-        StemSet onNetwork = Complete(root: @"\\192.168.68.131\Storage\stems");
+        StemSet onNetwork = Complete(root: @"\\nas\Storage\stems");
         Assert.False(StemDeckDecision.ShouldUseStems(gateEnabled: true, onNetwork, out string reason));
         Assert.Equal("stem path is not local", reason);
     }

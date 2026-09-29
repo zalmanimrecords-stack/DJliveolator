@@ -278,14 +278,14 @@ public class ServerCatalogPullTests
     [Fact]
     public void Plan_RebasesServerPathsOntoTheLocalRoot()
     {
-        MusicTrack local = Track(@"\\simonsrv\Storage\music\a.mp3");
+        MusicTrack local = Track(@"\\nas\Storage\music\a.mp3");
         MusicTrack server = Track("/srv/music/a.mp3") with { Bpm = new BpmResult(145.0, 0.9) };
 
         ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
-            new[] { server }, new[] { local }, "/srv/music", @"\\simonsrv\Storage\music");
+            new[] { server }, new[] { local }, "/srv/music", @"\\nas\Storage\music");
 
         MusicTrack merged = Assert.Single(plan.TracksToUpsert);
-        Assert.Equal(@"\\simonsrv\Storage\music\a.mp3", merged.File.Path);
+        Assert.Equal(@"\\nas\Storage\music\a.mp3", merged.File.Path);
         Assert.Equal(145.0, merged.Bpm!.Bpm, 6);
     }
 

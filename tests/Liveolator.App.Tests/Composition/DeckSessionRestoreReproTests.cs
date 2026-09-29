@@ -19,7 +19,7 @@ namespace Liveolator.App.Tests.Composition;
 public sealed class DeckSessionRestoreReproTests
 {
     // DEFECT 1 — a deck track whose drive is offline at launch (the user's library lives on the
-    // network share \\192.168.68.131\Storage / S:, Unavailable at launch) must NOT be lost. Restore()
+    // network share \\nas\Storage / S:, Unavailable at launch) must NOT be lost. Restore()
     // used to skip any deck whose File.Exists was false and forget it. The fix: never dispatch a doomed
     // load to the engine while offline (BASS cannot tell a failed open from a real one — DeckTrackLoader's
     // invariant), but keep the entry and auto-load it with its saved BPM + downbeat anchor once the share
