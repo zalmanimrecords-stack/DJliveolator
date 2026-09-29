@@ -37,7 +37,9 @@ public class MediaLibraryScopedScanTests
         MusicLibrary library = Library(out FolderScopedEnumerator enumerator);
         await library.ScanAsync(new[] { Curated, Other });
 
+        // The folder still yields a file: a folder that yields none counts as offline, not emptied.
         enumerator.Files.RemoveAll(f => f.Path == $"{Curated}/mine.mp3");
+        enumerator.Files.Add(new ScannedFile($"{Curated}/kept.mp3", 1000, T));
         await library.ScanAsync(new[] { Curated });
 
         Assert.Null(library.TryGet($"{Curated}/mine.mp3"));
@@ -54,6 +56,24 @@ public class MediaLibraryScopedScanTests
         await library.ScanAsync(new[] { Curated });
 
         Assert.Equal(before, decoder.DecodeCalls[$"{Other}/theirs.mp3"]);
+    }
+
+    [Fact]
+    public async Task Scan_OfAnOfflineFolder_KeepsItsTracksAndDeletesNothingFromTheStore()
+    {
+        MusicLibrary library = Library(out FolderScopedEnumerator enumerator);
+        await library.ScanAsync(new[] { Curated, Other });
+        var removed = new List<string>();
+
+        // An unreachable share enumerates as zero files, exactly like the real enumerator's
+        // Directory.Exists skip.
+        enumerator.Files.RemoveAll(f => FolderScope.IsUnder(f.Path, Other));
+        await library.ScanAsync(
+            new[] { Curated, Other },
+            onEntryRemoved: (path, _) => { removed.Add(path); return Task.CompletedTask; });
+
+        Assert.NotNull(library.TryGet($"{Other}/theirs.mp3"));
+        Assert.Empty(removed);
     }
 
     private static MusicLibrary Library(out FolderScopedEnumerator enumerator)
