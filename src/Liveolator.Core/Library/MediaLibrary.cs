@@ -219,9 +219,15 @@ public abstract class MediaLibrary<TEntry> where TEntry : class, IMediaEntry
         // ever scanned just to keep those entries alive — turning a ten-file request into a whole-library
         // pass (issue #3). Dropping entries because their folder left the scan set stays a separate,
         // deliberate act (see PruneToFolders).
+        // A folder that yielded no files was not walked either: an unreachable share enumerates as empty,
+        // and treating that as "everything deleted" wiped the NAS catalog whenever a scan ran with the
+        // share away. The cost is that a folder emptied on purpose keeps its rows until the Library Doctor
+        // flags them as missing.
+        string[] currentPaths = current.Select(f => FolderScope.Normalize(f.Path)).ToArray();
         string[] roots = folders
             .Where(f => !string.IsNullOrWhiteSpace(f))
             .Select(FolderScope.Normalize)
+            .Where(root => currentPaths.Any(p => FolderScope.IsUnderNormalized(p, root)))
             .ToArray();
 
         foreach (ScanDelta delta in deltas)
