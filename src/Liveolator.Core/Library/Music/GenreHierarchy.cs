@@ -68,7 +68,10 @@ public sealed class GenreHierarchy
     /// Returns a new hierarchy with <paramref name="genre"/>'s parent set to <paramref name="parent"/>,
     /// or cleared back to top-level when <paramref name="parent"/> is null. Rejects (throws
     /// <see cref="ArgumentException"/>, unchanged) a parent that would create a cycle — direct
-    /// (<paramref name="genre"/> as its own parent) or transitive (parent already descends from genre).
+    /// (<paramref name="genre"/> as its own parent) or transitive (parent already descends from genre) —
+    /// and, to hold the owner's "exactly two levels" rule (main genre → sub-genre, never deeper), also
+    /// rejects <paramref name="parent"/> already having a parent of its own, or <paramref name="genre"/>
+    /// already having children of its own.
     /// </summary>
     public GenreHierarchy SetParent(string genre, string? parent)
     {
@@ -85,6 +88,21 @@ public sealed class GenreHierarchy
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(parent);
+
+        // Depth guard (owner rule: exactly two levels, never deeper). Checked before the cycle guard
+        // below, which stays in place as-is — largely redundant with these two for most cases now, but
+        // harmless, and removing it would be an unrequested behavior change.
+        if (ParentOf(parent) is not null)
+        {
+            throw new ArgumentException(
+                $"'{parent}' already has a parent — only a top-level genre can be a parent.", nameof(parent));
+        }
+
+        if (ChildrenOf(genre).Count > 0)
+        {
+            throw new ArgumentException(
+                $"'{genre}' already has sub-genres of its own and can't become one itself.", nameof(genre));
+        }
 
         if (WouldCreateCycle(genre, parent))
         {

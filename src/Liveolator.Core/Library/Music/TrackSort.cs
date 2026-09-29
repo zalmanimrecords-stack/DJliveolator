@@ -29,6 +29,17 @@ public static class TrackSort
             return byTitle.ToList();
         }
 
+        if (key == TrackSortKey.Status)
+        {
+            // Every track always has a status, so — like Title — there is no "missing" partition.
+            // Ascending = best-analyzed first (StatusPriority, not enum ordinal, so a future reordering
+            // of MediaAnalysisStatus can't silently flip this).
+            IOrderedEnumerable<MusicTrack> byStatus = descending
+                ? tracks.OrderByDescending(t => StatusPriority(t.Status))
+                : tracks.OrderBy(t => StatusPriority(t.Status));
+            return byStatus.ThenBy(t => t.Title, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
         // Present-before-missing first, so blanks never lead in either direction.
         IOrderedEnumerable<MusicTrack> ordered = tracks.OrderByDescending(HasValue);
 
@@ -40,6 +51,8 @@ public static class TrackSort
             TrackSortKey.Rating => ThenByValue(ordered, t => t.Rating > 0 ? t.Rating : (double?)null, descending),
             TrackSortKey.DateAdded => ThenByValue(ordered, t => t.DateAdded?.Ticks, descending),
             TrackSortKey.PlayCount => ThenByValue(ordered, t => (double)t.PlayCount, descending),
+            TrackSortKey.Artist => ThenByString(ordered, t => t.Artist, descending),
+            TrackSortKey.Genre => ThenByString(ordered, t => t.Metadata?.Genre, descending),
             _ => ordered,
         };
 
@@ -54,6 +67,8 @@ public static class TrackSort
             TrackSortKey.Duration => t.Duration is not null,
             TrackSortKey.Rating => t.Rating > 0,
             TrackSortKey.DateAdded => t.DateAdded is not null,
+            TrackSortKey.Artist => !string.IsNullOrWhiteSpace(t.Artist),
+            TrackSortKey.Genre => !string.IsNullOrWhiteSpace(t.Metadata?.Genre),
             _ => true,
         };
     }
@@ -65,4 +80,21 @@ public static class TrackSort
         => descending
             ? ordered.ThenByDescending(t => selector(t) ?? double.MinValue)
             : ordered.ThenBy(t => selector(t) ?? double.MaxValue);
+
+    // Same idea as ThenByValue but for strings (Artist/Genre): missing values are already partitioned
+    // last by HasValue, so filling them with empty string here is only a safety net.
+    private static IOrderedEnumerable<MusicTrack> ThenByString(
+        IOrderedEnumerable<MusicTrack> ordered, Func<MusicTrack, string?> selector, bool descending)
+        => descending
+            ? ordered.ThenByDescending(t => selector(t) ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            : ordered.ThenBy(t => selector(t) ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+    // Best-analyzed-first priority, independent of the enum's declared ordinal order (doc: don't rely on
+    // ordinal luck — a future status value between Ok and Failed would silently break ordinal sorting).
+    private static int StatusPriority(MediaAnalysisStatus status) => status switch
+    {
+        MediaAnalysisStatus.Ok => 0,
+        MediaAnalysisStatus.PartiallyAnalyzed => 1,
+        _ => 2, // Failed, or any future value — treated as worst until it earns its own rank
+    };
 }

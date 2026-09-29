@@ -40,11 +40,18 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     private readonly Core.Playlist.DeckTrackLoader? _deckLoader;
     private readonly IAutoCueService? _autoCueService;
     private readonly IHotCueStore? _hotCueStore;
+    private readonly IGenreHierarchyStore? _genreHierarchyStore;
+    // The user-curated genre parent/child grouping (Phase 2). Empty until a store loads one — an empty
+    // tree is the zero-cost default, byte-for-byte the old flat genre picker/filter (global #20/#22).
+    private GenreHierarchy _genreHierarchy = new();
     private readonly IWaveformProvider? _waveformProvider;
     private readonly Core.Enrichment.IMetadataProvider? _metadataProvider;
     // Reachability probe used to skip unreachable / online-only cloud placeholders before a decode so a
     // single un-downloaded OneDrive file can't hang the auto-cue pass. Injected so tests stay pure.
     private readonly Func<string, bool> _isLocallyDecodable;
+    private readonly Liveolator.Media.ServerSnapshotSync? _serverSnapshotSync;
+    // Folders whose analysis comes from the music host's snapshot; this machine never decodes them.
+    private volatile IReadOnlyList<string> _serverManagedRoots = Array.Empty<string>();
     // Track paths that have at least one stored hot cue, read once per row rebuild (one batch store read,
     // not an N-load storm) to light each row's CUE badge.
     private HashSet<string> _pathsWithCues = new(StringComparer.OrdinalIgnoreCase);
@@ -122,8 +129,11 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         IReadOnlyList<Core.Library.Import.ILibraryImporter>? importers = null,
         IReadOnlyList<Core.Library.Import.IFolderLibraryImporter>? folderImporters = null,
         Func<string, bool>? isLocallyDecodable = null,
-        Core.Enrichment.IMetadataProvider? metadataProvider = null)
+        Core.Enrichment.IMetadataProvider? metadataProvider = null,
+        IGenreHierarchyStore? genreHierarchyStore = null,
+        Liveolator.Media.ServerSnapshotSync? serverSnapshotSync = null)
     {
+        _serverSnapshotSync = serverSnapshotSync;
         _library = library ?? throw new ArgumentNullException(nameof(library));
         _dispatcher = dispatcher;
         _beatClock = beatClock;
@@ -135,6 +145,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         _contextActions = contextActions;
         _autoCueService = autoCueService;
         _hotCueStore = hotCueStore;
+        _genreHierarchyStore = genreHierarchyStore;
         _waveformProvider = waveformProvider;
         _metadataProvider = metadataProvider;
         _importService = importService;
@@ -198,6 +209,9 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
         StopCommand = ReactiveCommand.Create(Stop);
         ClearFiltersCommand = ReactiveCommand.Create(ClearFilters);
+        // Clicking a sortable column header (B1): same key toggles direction, a different key selects it
+        // fresh at ascending — the same SortKey/SortDescending the sort ComboBox + toggle already drive.
+        SelectSortKeyCommand = ReactiveCommand.Create<TrackSortKey>(SelectSortKey);
 
         // Which deck slots are actually backed is discovered through the dispatcher feedback seam
         // (doc 04) — no engine reference here. A slot reports available iff slot < engine.DeckCount,
@@ -255,6 +269,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             RebuildHotCues();
             RebuildWaveform();
         });
+
+        // Fire-and-forget: the empty default already renders/filters correctly, so there is no incorrect
+        // state to show while this is in flight (Phase 2 genre hierarchy).
+        _ = LoadGenreHierarchyAsync();
     }
 
     public ObservableCollection<string> Folders { get; } = new();
@@ -298,6 +316,26 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// none = all.
     /// </summary>
     public ObservableCollection<GenreFilterOption> Genres { get; } = new();
+
+    /// <summary>
+    /// The children of <see cref="ExpandedParentGenre"/> (Phase 2 genre hierarchy) — a scoped sub-list
+    /// revealed by picking a top-level genre that has any. Always empty when nothing is expanded, or
+    /// when the loaded <see cref="GenreHierarchy"/> is empty (the zero-cost default: no genre has
+    /// children, so this collection never populates and the picker stays single-level, exactly as
+    /// before Phase 2).
+    /// </summary>
+    public ObservableCollection<GenreFilterOption> ChildGenres { get; } = new();
+
+    private string? _expandedParentGenre;
+
+    /// <summary>The top-level genre whose children <see cref="ChildGenres"/> currently shows, or null
+    /// when nothing is expanded.</summary>
+    public string? ExpandedParentGenre
+    {
+        get => _expandedParentGenre;
+        private set => this.RaiseAndSetIfChanged(ref _expandedParentGenre, value);
+    }
+
     public ObservableCollection<int> Years { get; } = new();
     public ObservableCollection<string> FileTypes { get; } = new();
 
@@ -310,8 +348,8 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <summary>The sortable columns offered in the sort picker.</summary>
     public IReadOnlyList<TrackSortKey> SortKeys { get; } = new[]
     {
-        TrackSortKey.Title, TrackSortKey.Bpm, TrackSortKey.Key, TrackSortKey.Duration,
-        TrackSortKey.Rating, TrackSortKey.DateAdded, TrackSortKey.PlayCount,
+        TrackSortKey.Title, TrackSortKey.Artist, TrackSortKey.Bpm, TrackSortKey.Key, TrackSortKey.Duration,
+        TrackSortKey.Rating, TrackSortKey.DateAdded, TrackSortKey.PlayCount, TrackSortKey.Genre, TrackSortKey.Status,
     };
 
     /// <summary>Per-folder scan/update status (one row per added folder) for the folder-status window.</summary>
@@ -380,6 +418,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     /// <summary>Resets every facet, the status filter, and the search box back to "show all" (B1).</summary>
     public ReactiveCommand<Unit, Unit> ClearFiltersCommand { get; }
 
+    /// <summary>Clicking a column header (B1): the parameter is that column's <see cref="TrackSortKey"/>.
+    /// Selects it at ascending order, or toggles direction when it's already the active key.</summary>
+    public ReactiveCommand<TrackSortKey, Unit> SelectSortKeyCommand { get; }
+
     /// <summary>True when playback is wired (Live Mode on); the UI hides transport controls otherwise.</summary>
     public bool IsLiveModeEnabled => _dispatcher is not null;
 
@@ -437,7 +479,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get
         {
-            string[] chosen = Genres.Where(g => g.IsSelected).Select(g => g.Name).ToArray();
+            string[] chosen = Genres.Concat(ChildGenres).Where(g => g.IsSelected).Select(g => g.Name).ToArray();
             return chosen.Length == 0 ? null : string.Join('|', chosen);
         }
     }
@@ -448,12 +490,12 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         get
         {
-            int count = Genres.Count(g => g.IsSelected);
-            return count switch
+            GenreFilterOption[] chosen = Genres.Concat(ChildGenres).Where(g => g.IsSelected).ToArray();
+            return chosen.Length switch
             {
                 0 => "Genre",
-                1 => Genres.First(g => g.IsSelected).Name,
-                _ => $"{count} genres"
+                1 => chosen[0].Name,
+                _ => $"{chosen.Length} genres"
             };
         }
     }
@@ -581,16 +623,16 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
 
             _sampleFolders = new HashSet<string>(sampleFolders, StringComparer.OrdinalIgnoreCase);
 
-            List<TrackRowViewModel>? rows = null;
             if (cached.Count > 0)
-            {
                 _library.Restore(cached);
-                // Re-apply the saved sample designations so a restored catalog comes back with the
-                // right Track/Sample split (reclassifies in place, no re-decode).
-                if (_sampleFolders.Count > 0)
-                    _library.SetSampleFolders(_sampleFolders);
-                rows = BuildRows();
-            }
+            // Before the rows are built, so a launch shows what the music host analyzed since the last run.
+            Liveolator.Media.ServerSnapshotSyncResult server =
+                await SyncFromServerAsync(folders, cancellationToken).ConfigureAwait(false);
+            // Re-apply the saved sample designations so a restored catalog comes back with the right
+            // Track/Sample split (reclassifies in place, no re-decode).
+            if (_sampleFolders.Count > 0)
+                _library.SetSampleFolders(_sampleFolders);
+            List<TrackRowViewModel>? rows = _library.All.Count > 0 ? BuildRows() : null;
 
             RxApp.MainThreadScheduler.Schedule(() =>
             {
@@ -603,7 +645,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                     _all = rows;
                     RebuildFacets();
                     ApplyFilter();
-                    ScanStatus = $"{rows.Count} tracks (restored)";
+                    ScanStatus = WithServerStatus($"{rows.Count} tracks (restored)", server);
                 }
 
                 RefreshFolderStatuses();
@@ -622,6 +664,24 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private async Task<Liveolator.Media.ServerSnapshotSyncResult> SyncFromServerAsync(
+        IReadOnlyList<string> folders, CancellationToken cancellationToken)
+    {
+        if (_serverSnapshotSync is null)
+            return Liveolator.Media.ServerSnapshotSyncResult.None;
+        Liveolator.Media.ServerSnapshotSyncResult result =
+            await _serverSnapshotSync.SyncAsync(folders, cancellationToken).ConfigureAwait(false);
+        _serverManagedRoots = result.ManagedRoots;
+        return result;
+    }
+
+    private static string WithServerStatus(string status, Liveolator.Media.ServerSnapshotSyncResult server)
+        => server.Messages.Count == 0 ? status : $"{status} — from server: {string.Join(" ", server.Messages)}";
+
+    // A server-managed track waiting for the host's next snapshot is not this machine's to decode.
+    private bool IsLocalAnalysisCandidate(string path)
+        => !_serverManagedRoots.Any(root => FolderScope.IsUnder(path, root)) && _isLocallyDecodable(path);
+
     // Runs the re-analysis pass off the UI thread (fire-and-forget): the app stays responsive and comes
     // up immediately while previously-unanalyzed tracks get a real BPM/key. A no-op when there is nothing
     // to analyze or no store to persist to.
@@ -630,13 +690,13 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         // "Nothing to do" must mean the same thing here as inside the pass, or we spin up a background task
         // and announce a completed analysis for a library the pass will skip entirely — every file offline
         // or an online-only cloud placeholder.
-        if (_store is null || !_library.PathsNeedingAnalysis().Any(_isLocallyDecodable))
+        if (_store is null || !_library.PathsNeedingAnalysis().Any(IsLocalAnalysisCandidate))
             return;
 
         var service = new CatalogReanalysisService(
             _library, _store,
             onError: e => RxApp.MainThreadScheduler.Schedule(() => ScanStatus = e),
-            isLocallyDecodable: _isLocallyDecodable);
+            isLocallyDecodable: IsLocalAnalysisCandidate);
 
         // Tie the pass to the view-model lifetime (Dispose cancels it) while still honouring any external
         // token the caller supplied.
@@ -1043,10 +1103,18 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             // incremental scan (owner ask, 2026-07): a crash / close / network drop mid-scan keeps every
             // track scanned so far, instead of one whole-catalog save at the end that loses it all. Cheap
             // on the per-row store (SQLite). The handlers are self-guarded (ScanAsync forbids throwing).
-            await _library.ScanAsync(
-                folders, progress, CancellationToken.None,
-                onEntryProcessed: PersistScannedTrackAsync,
-                onEntryRemoved: DeleteScannedTrackAsync).ConfigureAwait(false);
+            // A folder the music host publishes a snapshot for takes the host's analysis and is left out
+            // of the local scan: decoding it here would read every file over the network.
+            Liveolator.Media.ServerSnapshotSyncResult server =
+                await SyncFromServerAsync(folders, CancellationToken.None).ConfigureAwait(false);
+            List<string> localFolders = folders
+                .Where(f => !server.ManagedRoots.Contains(f, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+            if (localFolders.Count > 0)
+                await _library.ScanAsync(
+                    localFolders, progress, CancellationToken.None,
+                    onEntryProcessed: PersistScannedTrackAsync,
+                    onEntryRemoved: DeleteScannedTrackAsync).ConfigureAwait(false);
 
             // Re-apply the sample designations so newly-scanned files under a samples folder are
             // classified as Samples (reclassifies the catalog in place; no-op when none are set). New
@@ -1066,10 +1134,10 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
                 _all = rows;
                 RebuildFacets();
                 ApplyFilter();
-                ScanStatus = offlineFolders.Count == 0
+                ScanStatus = WithServerStatus(offlineFolders.Count == 0
                     ? $"{rows.Count} tracks"
                     : $"{rows.Count} tracks — {offlineFolders.Count} folder(s) OFFLINE, skipped: " +
-                      $"{string.Join("; ", offlineFolders)}. Reconnect the drive/share, then Scan again.";
+                      $"{string.Join("; ", offlineFolders)}. Reconnect the drive/share, then Scan again.", server);
                 ScanProgressValue = 100;
                 RefreshFolderStatuses();
                 _ = RefreshCuePresenceAsync();
@@ -1599,7 +1667,7 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
             Status: SelectedStatus,
             MinDuration: ShowShortClips ? null : MinimumVisibleDuration);
 
-        IReadOnlyList<MusicTrack> filtered = TrackQuery.Apply(rowByTrack.Keys, filter, TrackQuery.MaxResults);
+        IReadOnlyList<MusicTrack> filtered = TrackQuery.Apply(rowByTrack.Keys, filter, TrackQuery.MaxResults, _genreHierarchy);
         IReadOnlyList<MusicTrack> ordered = TrackSort.Apply(filtered, SortKey, SortDescending);
 
         Tracks.Clear();
@@ -1642,20 +1710,151 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         if (SelectedFileType is not null && !facets.FileTypes.Contains(SelectedFileType)) SelectedFileType = null;
     }
 
-    // Rebuilds the genre picker after a scan, carrying any still-present selection across. A genre that
-    // left the catalog drops off the picker instead of silently going on filtering from a control the
-    // user can no longer see.
+    // Rebuilds the genre picker after a scan, carrying any still-present top-level selection across, and
+    // keeps the expanded child sub-list (if any) in sync. A genre that left the catalog drops off the
+    // picker instead of silently going on filtering from a control the user can no longer see. With an
+    // empty GenreHierarchy every genre is top-level (TopLevelGenres returns all of them unchanged), so
+    // this is byte-for-byte the old flat list — the zero-cost default (Phase 2 stop-ship guarantee).
     private void RebuildGenreOptions(IReadOnlyList<string> names)
     {
         var chosen = Genres.Where(g => g.IsSelected)
             .Select(g => g.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        IReadOnlyList<string> topLevel = _genreHierarchy.TopLevelGenres(names);
+
         Genres.Clear();
-        foreach (string name in names)
-            Genres.Add(new GenreFilterOption(name, chosen.Contains(name), OnGenreToggled));
+        foreach (string name in topLevel)
+            Genres.Add(MakeGenreOption(name, chosen.Contains(name), () => OnTopGenreToggled(name), topLevel));
+
+        RebuildChildGenres();
 
         RaiseGenreFilterChanged();
+    }
+
+    // Keeps the child sub-list in sync with the top-level list after a facet rebuild: collapses it when
+    // its parent left the catalog, otherwise re-derives the children from the (possibly changed) catalog
+    // while carrying forward which of them were checked.
+    private void RebuildChildGenres()
+    {
+        string? parent = ExpandedParentGenre;
+        if (parent is null || Genres.All(g => !string.Equals(g.Name, parent, StringComparison.OrdinalIgnoreCase)))
+        {
+            ExpandedParentGenre = null;
+            ChildGenres.Clear();
+            return;
+        }
+
+        var chosen = ChildGenres.Where(g => g.IsSelected)
+            .Select(g => g.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        IReadOnlyList<string> topLevel = Genres.Select(g => g.Name).ToList();
+
+        ChildGenres.Clear();
+        foreach (string child in _genreHierarchy.ChildrenOf(parent))
+            ChildGenres.Add(MakeGenreOption(child, chosen.Contains(child), OnChildGenreToggled, topLevel));
+    }
+
+    // A top-level checkbox moved. When that genre has children (Phase 2 hierarchy), (re)expand the
+    // scoped sub-list under it — switching to a different parent starts its children unchecked, since a
+    // sub-list the user can no longer see should not go on filtering invisibly. A genre with no children
+    // never touches the expansion state at all: today's exact single-level behavior (stop-ship guarantee).
+    private void OnTopGenreToggled(string name)
+    {
+        IReadOnlyList<string> children = _genreHierarchy.ChildrenOf(name);
+        if (children.Count > 0)
+        {
+            bool sameParent = string.Equals(ExpandedParentGenre, name, StringComparison.OrdinalIgnoreCase);
+            var chosen = sameParent
+                ? ChildGenres.Where(g => g.IsSelected).Select(g => g.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            IReadOnlyList<string> topLevel = Genres.Select(g => g.Name).ToList();
+
+            ExpandedParentGenre = name;
+            ChildGenres.Clear();
+            foreach (string child in children)
+                ChildGenres.Add(MakeGenreOption(child, chosen.Contains(child), OnChildGenreToggled, topLevel));
+        }
+
+        OnGenreToggled();
+    }
+
+    // Builds one genre-picker row: the filter checkbox plus the Phase 3 "Group under…" curation control.
+    // topLevelCandidates is the full current top-level genre set, already known to the caller (never
+    // rebuilt mid-loop), so every row offers the same consistent candidate list. Candidates are top-level
+    // genres only and never include the row's own name, so the combo can never offer a choice
+    // GenreHierarchy.SetParent would reject — invariant (a) (a parent must be top-level) is satisfied by
+    // construction. CanGroupUnder hides the control instead when this genre already has children, so
+    // invariant (b) is likewise unreachable from the UI.
+    private GenreFilterOption MakeGenreOption(
+        string name, bool isSelected, Action onToggled, IReadOnlyList<string> topLevelCandidates)
+    {
+        List<string> candidates = topLevelCandidates
+            .Where(n => !string.Equals(n, name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return new GenreFilterOption(
+            name, isSelected, onToggled,
+            parent: _genreHierarchy.ParentOf(name),
+            canGroupUnder: _genreHierarchy.ChildrenOf(name).Count == 0,
+            groupUnderCandidates: candidates,
+            onGroupUnderChanged: newParent => OnGroupUnderChanged(name, newParent));
+    }
+
+    // The "Group under…" combo's selection changed (Phase 3): re-parent the genre, persist it, and
+    // rebuild the picker so the new grouping shows immediately. A rejection here is structurally
+    // unreachable given the candidate-list/CanGroupUnder guards above (GenreHierarchy only offers/allows
+    // top-level targets and hides the control on a genre that already has children) — GenreHierarchy
+    // still enforces its invariants, so this is defense in depth, not the primary guard.
+    private void OnGroupUnderChanged(string genre, string? newParent)
+    {
+        GenreHierarchy updated;
+        try
+        {
+            updated = _genreHierarchy.SetParent(genre, newParent);
+        }
+        catch (ArgumentException ex)
+        {
+            ScanStatus = $"Could not group \"{genre}\": {ex.Message}";
+            return;
+        }
+
+        _genreHierarchy = updated;
+        _ = PersistGenreHierarchyAsync();
+        RebuildGenreOptions(TrackFacets.Of(_all.Select(r => r.Track)).Genres);
+        ApplyFilter();
+    }
+
+    // Fire-and-forget persist of the curated genre hierarchy, guarded exactly like every other save in
+    // this file (e.g. RecordPlayAsync): never throws out of the fire-and-forget, reports a failure on the
+    // status line, never fails silently (global standards #16/#26).
+    private async Task PersistGenreHierarchyAsync()
+    {
+        if (_genreHierarchyStore is null)
+            return;
+
+        try
+        {
+            await _genreHierarchyStore.SaveAsync(_genreHierarchy, _lifetime.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // View-model disposed mid-save — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(
+                () => ScanStatus = $"Genre grouping saved; persisting it failed: {ex.Message}");
+        }
+    }
+
+    // A child checkbox moved: same ripple as a top-level toggle (closed label + query), no expansion change.
+    private void OnChildGenreToggled()
+    {
+        RaiseGenreFilterChanged();
+        ApplyFilter();
     }
 
     // One checkbox in the genre picker moved: the closed label and the query both follow from that toggle.
@@ -1671,11 +1870,52 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
         this.RaisePropertyChanged(nameof(GenreFilterLabel));
     }
 
+    // Loads the persisted genre hierarchy (Phase 2) without blocking the UI thread. A synchronously-
+    // completed store (e.g. the test fake) resolves inline; a real JSON read completes later and is
+    // applied when it lands. Before this resolves, the empty GenreHierarchy default already renders and
+    // filters exactly as today, so there is no incorrect intermediate state to guard against.
+    private async Task LoadGenreHierarchyAsync()
+    {
+        if (_genreHierarchyStore is null)
+            return;
+
+        try
+        {
+            GenreHierarchy loaded = await _genreHierarchyStore.LoadAsync(_lifetime.Token).ConfigureAwait(false);
+            RxApp.MainThreadScheduler.Schedule(() =>
+            {
+                _genreHierarchy = loaded;
+                RebuildGenreOptions(TrackFacets.Of(_all.Select(r => r.Track)).Genres);
+                ApplyFilter();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // View-model disposed before the load finished — nothing to do.
+        }
+        catch (Exception ex)
+        {
+            RxApp.MainThreadScheduler.Schedule(() => ScanStatus = $"Could not load genre hierarchy: {ex.Message}");
+        }
+    }
+
     private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> values)
     {
         target.Clear();
         foreach (T value in values)
             target.Add(value);
+    }
+
+    /// <summary>Same key toggles <see cref="SortDescending"/>; a different key selects it fresh at ascending.</summary>
+    private void SelectSortKey(TrackSortKey key)
+    {
+        if (SortKey == key)
+            SortDescending = !SortDescending;
+        else
+        {
+            SortKey = key;
+            SortDescending = false;
+        }
     }
 
     // Resets every filter back to "show all" in one batch, re-querying just once at the end.

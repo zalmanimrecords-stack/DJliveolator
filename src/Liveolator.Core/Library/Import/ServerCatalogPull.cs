@@ -24,7 +24,8 @@ public sealed record ServerCatalogPullPlan(
     int NotFoundLocally,
     int HandCorrectedUntouched,
     int SkippedInUse,
-    IReadOnlyList<ServerCatalogDisagreement> Disagreements)
+    IReadOnlyList<ServerCatalogDisagreement> Disagreements,
+    int TracksAdopted = 0)
 {
     public static ServerCatalogPullPlan Empty { get; } =
         new(Array.Empty<MusicTrack>(), 0, 0, 0, 0, 0, Array.Empty<ServerCatalogDisagreement>());
@@ -36,6 +37,7 @@ public sealed record ServerCatalogPullPlan(
     public string Describe()
     {
         var parts = new List<string> { $"Added analysis to {TracksGainingAnalysis} track(s)" };
+        if (TracksAdopted > 0) parts.Add($"{TracksAdopted} new track(s) imported with their analysis");
         if (TracksNowPhaseSyncReady > 0) parts.Add($"{TracksNowPhaseSyncReady} can now phase-sync");
         if (Disagreements.Count > 0) parts.Add($"{Disagreements.Count} disagree with your grids (flagged)");
         if (HandCorrectedUntouched > 0) parts.Add($"{HandCorrectedUntouched} hand-corrected track(s) untouched");
@@ -80,16 +82,6 @@ public static class ServerCatalogPull
     public const string DisagreementSource = "server";
 
     /// <summary>
-    /// Work out what pulling <paramref name="serverTracks"/> into <paramref name="localCatalog"/> would do.
-    /// Server paths are translated with <see cref="PortablePath.Rebase"/>; a row whose path does not map,
-    /// or maps to a file this catalog has never seen, is counted and skipped - v1 enriches existing rows
-    /// and never adds new ones.
-    /// </summary>
-    /// <param name="pathsInUse">
-    /// Tracks currently loaded on a deck. Rewriting a loaded track's grid can change how the mixer behaves
-    /// under the DJ's hands mid-mix, so those rows are deferred rather than written.
-    /// </param>
-    /// <summary>
     /// The catalog as it looks once <paramref name="plan"/> is applied: every row the plan upserts
     /// replaces its counterpart by path, and every other row is carried through untouched. Pure — it
     /// returns a new list rather than mutating the library, so the caller decides when the swap happens
@@ -113,12 +105,27 @@ public static class ServerCatalogPull
         return merged.Values.ToList();
     }
 
+    /// <summary>
+    /// Work out what pulling <paramref name="serverTracks"/> into <paramref name="localCatalog"/> would do.
+    /// Server paths are translated with <see cref="PortablePath.Rebase"/>; a row whose path does not map is
+    /// counted and skipped, and so is a row this catalog has never seen unless
+    /// <paramref name="adoptMissing"/> is set.
+    /// </summary>
+    /// <param name="pathsInUse">
+    /// Tracks currently loaded on a deck. Rewriting a loaded track's grid can change how the mixer behaves
+    /// under the DJ's hands mid-mix, so those rows are deferred rather than written.
+    /// </param>
+    /// <param name="adoptMissing">
+    /// Import an unseen server row whole, rebased. This is what restores a fresh install: the row keeps the
+    /// server's file fingerprint, so the next scan recognises the file instead of decoding it again.
+    /// </param>
     public static ServerCatalogPullPlan Plan(
         IReadOnlyList<MusicTrack> serverTracks,
         IReadOnlyCollection<MusicTrack> localCatalog,
         string? serverPathPrefix,
         string? localPathPrefix,
-        IReadOnlySet<string>? pathsInUse = null)
+        IReadOnlySet<string>? pathsInUse = null,
+        bool adoptMissing = false)
     {
         ArgumentNullException.ThrowIfNull(serverTracks);
         ArgumentNullException.ThrowIfNull(localCatalog);
@@ -132,7 +139,7 @@ public static class ServerCatalogPull
 
         var upserts = new List<MusicTrack>();
         var disagreements = new List<ServerCatalogDisagreement>();
-        int gained = 0, phaseSyncReady = 0, notFound = 0, handCorrected = 0, inUse = 0;
+        int gained = 0, phaseSyncReady = 0, notFound = 0, handCorrected = 0, inUse = 0, adopted = 0;
 
         foreach (MusicTrack server in serverTracks)
         {
@@ -143,9 +150,25 @@ public static class ServerCatalogPull
             string? localPath = translatingPaths
                 ? PortablePath.Rebase(server.File.Path, serverPathPrefix, localPathPrefix)
                 : server.File.Path;
-            if (localPath is null || !local.TryGetValue(localPath, out MusicTrack? existing))
+            if (localPath is null)
             {
                 notFound++;
+                continue;
+            }
+
+            if (!local.TryGetValue(localPath, out MusicTrack? existing))
+            {
+                if (adoptMissing)
+                {
+                    MusicTrack adoptedRow = server with { File = server.File with { Path = localPath } };
+                    upserts.Add(adoptedRow);
+                    local[localPath] = adoptedRow;
+                    adopted++;
+                }
+                else
+                {
+                    notFound++;
+                }
                 continue;
             }
 
@@ -181,7 +204,7 @@ public static class ServerCatalogPull
         }
 
         return new ServerCatalogPullPlan(
-            upserts, gained, phaseSyncReady, notFound, handCorrected, inUse, disagreements);
+            upserts, gained, phaseSyncReady, notFound, handCorrected, inUse, disagreements, adopted);
     }
 
     private static MusicTrack Merge(

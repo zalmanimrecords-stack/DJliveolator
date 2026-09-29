@@ -35,7 +35,7 @@ public sealed class ServerCatalogPullToolTests : IDisposable
             bpm is null ? MediaAnalysisStatus.PartiallyAnalyzed : MediaAnalysisStatus.Ok,
             Error: null);
 
-    private async Task<LibrarySession> SeedAsync()
+    private async Task<LibrarySession> SeedAsync(bool localHoldsTheTrack = true)
     {
         Directory.CreateDirectory(ServerDir);
         Directory.CreateDirectory(LocalDir);
@@ -44,7 +44,8 @@ public sealed class ServerCatalogPullToolTests : IDisposable
         await server.SaveMusicAsync(new[] { Track(TrackPath, bpm: 145.0) }, CancellationToken.None);
 
         var local = new SqliteCatalogStore(LocalDir);
-        await local.SaveMusicAsync(new[] { Track(TrackPath, bpm: null) }, CancellationToken.None);
+        if (localHoldsTheTrack)
+            await local.SaveMusicAsync(new[] { Track(TrackPath, bpm: null) }, CancellationToken.None);
 
         var importService = new LibraryImportService(
             new JsonHotCueStore(LocalDir), new JsonPlaylistStore(LocalDir), p => ImportFileProbe.Stat(p));
@@ -68,7 +69,7 @@ public sealed class ServerCatalogPullToolTests : IDisposable
         LibrarySession session = await SeedAsync();
 
         ServerPullSummaryDto preview = await session.PullFromServerAsync(
-            ServerDir, null, null, apply: false, CancellationToken.None);
+            ServerDir, null, null, apply: false, adoptMissing: false, CancellationToken.None);
 
         Assert.False(preview.Applied);
         Assert.Equal(1, preview.TracksGainingAnalysis);
@@ -85,7 +86,7 @@ public sealed class ServerCatalogPullToolTests : IDisposable
         LibrarySession session = await SeedAsync();
 
         ServerPullSummaryDto applied = await session.PullFromServerAsync(
-            ServerDir, null, null, apply: true, CancellationToken.None);
+            ServerDir, null, null, apply: true, adoptMissing: false, CancellationToken.None);
 
         Assert.True(applied.Applied);
         Assert.Equal(1, applied.TracksGainingAnalysis);
@@ -96,13 +97,43 @@ public sealed class ServerCatalogPullToolTests : IDisposable
     }
 
     [Fact]
+    public async Task PullFromServer_RestoresAnEmptyCatalog_WhenAdoptingMissingTracks()
+    {
+        LibrarySession session = await SeedAsync(localHoldsTheTrack: false);
+
+        ServerPullSummaryDto applied = await session.PullFromServerAsync(
+            ServerDir, null, null, apply: true, adoptMissing: true, CancellationToken.None);
+
+        Assert.Equal(1, applied.TracksAdopted);
+        IReadOnlyList<MusicTrack> onDisk =
+            await new SqliteCatalogStore(LocalDir).LoadMusicAsync(CancellationToken.None);
+        Assert.Equal(145.0, Assert.Single(onDisk).Bpm!.Bpm, 6);
+    }
+
+    /// <summary>The server's catalog may sit on a network share and belong to a running server, so the
+    /// pull must read it without writing anything there, not even WAL sidecars.</summary>
+    [Fact]
+    public async Task PullFromServer_LeavesTheServersCatalogUntouched()
+    {
+        LibrarySession session = await SeedAsync();
+        string serverDb = Path.Combine(ServerDir, "catalog.db");
+        byte[] before = await File.ReadAllBytesAsync(serverDb);
+
+        await session.PullFromServerAsync(
+            ServerDir, null, null, apply: true, adoptMissing: true, CancellationToken.None);
+
+        Assert.Equal(before, await File.ReadAllBytesAsync(serverDb));
+        Assert.Equal(new[] { serverDb }, Directory.GetFiles(ServerDir));
+    }
+
+    [Fact]
     public async Task PullFromServer_RefusesADirectoryThatIsNotThere()
     {
         LibrarySession session = await SeedAsync();
 
         ArgumentException error = await Assert.ThrowsAsync<ArgumentException>(
             () => session.PullFromServerAsync(
-                Path.Combine(_root, "nope"), null, null, apply: false, CancellationToken.None));
+                Path.Combine(_root, "nope"), null, null, apply: false, adoptMissing: false, CancellationToken.None));
 
         // The message has to name the fix, because an agent cannot see the filesystem to work it out.
         Assert.Contains("catalog.db", error.Message);

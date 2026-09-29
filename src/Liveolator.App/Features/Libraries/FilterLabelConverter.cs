@@ -28,6 +28,9 @@ public sealed class FilterLabelConverter : IValueConverter
             TrackSortKey.Rating => "Rating",
             TrackSortKey.DateAdded => "Recently added",
             TrackSortKey.PlayCount => "Play count",
+            TrackSortKey.Artist => "Artist",
+            TrackSortKey.Genre => "Genre",
+            TrackSortKey.Status => "Analysis",
             _ => value.ToString() ?? string.Empty,
         };
 

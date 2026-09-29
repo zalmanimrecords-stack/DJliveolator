@@ -10,7 +10,9 @@ namespace Liveolator.Core.Persistence;
 /// </summary>
 /// <remarks>
 /// Loads are tolerant: a missing, unreadable, or incompatible-version file yields an empty result
-/// (triggering a clean re-scan) and a warning, never an exception (global standards #16/#26). Saves
+/// (triggering a clean re-scan) and a warning, never an exception (global standards #16/#26). The one
+/// exception is a catalog that exists but is damaged: every call then throws
+/// <see cref="CatalogCorruptException"/> rather than serving an empty library over a broken file. Saves
 /// are atomic (temp-then-move) so an interrupted write never corrupts the persisted state.
 /// </remarks>
 public interface IMusicCatalogStore

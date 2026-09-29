@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "liveolator": {
-      "command": "dotnet",
-      "args": [
-        "src/Liveolator.Mcp/bin/Debug/net8.0/liveolator-mcp.dll",
-        "--stdio"
-      ]
+      "type": "http",
+      "url": "http://127.0.0.1:5176/"
     },
     "liveolator-srv": {
       "type": "http",

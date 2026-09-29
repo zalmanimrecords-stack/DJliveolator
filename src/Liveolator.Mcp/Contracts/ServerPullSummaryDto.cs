@@ -22,7 +22,8 @@ public sealed record ServerPullSummaryDto(
     int HandCorrectedUntouched,
     int SkippedInUse,
     IReadOnlyList<ServerPullDisagreementDto> Disagreements,
-    string Message)
+    string Message,
+    int TracksAdopted = 0)
 {
     public static ServerPullSummaryDto From(ServerCatalogPullPlan plan, bool applied) => new(
         applied,
@@ -32,5 +33,6 @@ public sealed record ServerPullSummaryDto(
         plan.HandCorrectedUntouched,
         plan.SkippedInUse,
         plan.Disagreements.Select(ServerPullDisagreementDto.From).ToList(),
-        plan.Describe());
+        plan.Describe(),
+        plan.TracksAdopted);
 }

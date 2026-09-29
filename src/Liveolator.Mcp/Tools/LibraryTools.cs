@@ -217,8 +217,9 @@ public sealed class LibraryTools
                  "scanning server into this catalog. One way, server to local, and it fills gaps only: " +
                  "a local tempo always wins and a disagreement is reported rather than resolved, a " +
                  "hand-corrected track is never touched, and every library field (rating, play count, " +
-                 "date added) is preserved. Enriches tracks this catalog already holds and never adds " +
-                 "new ones. PREVIEWS BY DEFAULT - call again with apply=true to write. Pass the path " +
+                 "date added) is preserved. Enriches tracks this catalog already holds; set adoptMissing " +
+                 "to also import server tracks this catalog lacks (restores a fresh install without " +
+                 "re-analysis). PREVIEWS BY DEFAULT - call again with apply=true to write. Pass the path " +
                  "prefixes only when the two machines mount the library at different roots; leave them " +
                  "empty when both see the same paths.")]
     public static Task<ServerPullSummaryDto> PullServerCatalog(
@@ -229,9 +230,11 @@ public sealed class LibraryTools
         [Description("The same library's root as this machine spells it — the UNC share or drive path.")]
         string? localPathPrefix = null,
         [Description("Write the merge. Leave false to preview what it would do.")] bool apply = false,
+        [Description("Also import server tracks this catalog does not hold yet, with their analysis.")]
+        bool adoptMissing = false,
         CancellationToken cancellationToken = default)
         => session.PullFromServerAsync(
-            catalogDirectory, serverPathPrefix, localPathPrefix, apply, cancellationToken);
+            catalogDirectory, serverPathPrefix, localPathPrefix, apply, adoptMissing, cancellationToken);
 
     private static TEnum? ParseOptionalEnum<TEnum>(string? value, string name, string valid)
         where TEnum : struct, Enum

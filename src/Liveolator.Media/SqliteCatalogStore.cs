@@ -42,6 +42,11 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private bool _initialized;
+    // Once set, every call throws it: a damaged file is neither served as empty nor written to.
+    private CatalogCorruptException? _corrupt;
+
+    private const int SqliteCorrupt = 11;
+    private const int SqliteNotADatabase = 26;
 
     public SqliteCatalogStore(string? rootDirectory = null, Action<string>? onWarning = null)
     {
@@ -142,6 +147,10 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
                 }
             }
         }
+        catch (SqliteException ex) when (IsCorruption(ex))
+        {
+            throw MarkCorrupt(ex.Message, ex);
+        }
         catch (SqliteException ex)
         {
             _onWarning?.Invoke($"Catalog database '{_dbPath}' is unreadable ({ex.Message}); re-analyzing from scratch.");
@@ -229,6 +238,10 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
                 }
             }
         }
+        catch (SqliteException ex) when (IsCorruption(ex))
+        {
+            throw MarkCorrupt(ex.Message, ex);
+        }
         catch (SqliteException ex)
         {
             _onWarning?.Invoke($"Visual catalog database '{_dbPath}' is unreadable ({ex.Message}).");
@@ -309,6 +322,10 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
             while (reader.Read())
                 result.Add(reader.GetString(0));
         }
+        catch (SqliteException ex) when (IsCorruption(ex))
+        {
+            throw MarkCorrupt(ex.Message, ex);
+        }
         catch (SqliteException ex)
         {
             _onWarning?.Invoke($"Folder list '{kind}' in '{_dbPath}' is unreadable ({ex.Message}).");
@@ -319,14 +336,22 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
     {
+        if (_corrupt is not null)
+            throw _corrupt;
         if (_initialized)
             return;
         await _initGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_corrupt is not null)
+                throw _corrupt;
             if (_initialized)
                 return;
+            bool existed = File.Exists(_dbPath) && new FileInfo(_dbPath).Length > 0;
             using SqliteConnection connection = OpenConnection();
+            // Checked before anything can write (CREATE TABLE below), once per store instance.
+            if (existed)
+                VerifyIntact(connection);
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
                 @"CREATE TABLE IF NOT EXISTS tracks (path TEXT PRIMARY KEY, schema_version INTEGER NOT NULL, data TEXT NOT NULL);
@@ -335,10 +360,41 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             _initialized = true;
         }
+        catch (SqliteException ex) when (IsCorruption(ex))
+        {
+            throw MarkCorrupt(ex.Message, ex);
+        }
         finally
         {
             _initGate.Release();
         }
+    }
+
+    private void VerifyIntact(SqliteConnection connection)
+    {
+        string verdict;
+        try
+        {
+            using SqliteCommand check = connection.CreateCommand();
+            check.CommandText = "PRAGMA quick_check(1);";
+            verdict = check.ExecuteScalar() as string ?? "no answer";
+        }
+        catch (SqliteException ex) when (IsCorruption(ex))
+        {
+            throw MarkCorrupt(ex.Message, ex);
+        }
+        if (!string.Equals(verdict, "ok", StringComparison.Ordinal))
+            throw MarkCorrupt(verdict, null);
+    }
+
+    private static bool IsCorruption(SqliteException ex)
+        => ex.SqliteErrorCode is SqliteCorrupt or SqliteNotADatabase;
+
+    private CatalogCorruptException MarkCorrupt(string detail, Exception? inner)
+    {
+        _corrupt ??= new CatalogCorruptException(_dbPath, detail, inner);
+        _onWarning?.Invoke(_corrupt.Message);
+        return _corrupt;
     }
 
     private SqliteConnection OpenConnection()

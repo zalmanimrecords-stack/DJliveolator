@@ -67,9 +67,22 @@ public sealed class JsonCatalogStore : IMusicCatalogStore, IVisualCatalogStore
     /// <summary>Full path of the persisted sample-folder designations JSON file.</summary>
     public string SampleFoldersPath => Path.Combine(_directory, "sample-folders.json");
 
-    /// <summary>Default persistence root: <c>%APPDATA%/Liveolator</c> (or the XDG/Mac equivalent).</summary>
+    /// <summary>Environment override for the persistence root, shared with the MCP server's <c>--data</c>.</summary>
+    public const string DataDirectoryVariable = "LIVEOLATOR_DATA";
+
+    /// <summary>
+    /// Default persistence root: <c>LIVEOLATOR_DATA</c> when set, otherwise <c>%APPDATA%/Liveolator</c> (or
+    /// the XDG/Mac equivalent).
+    /// </summary>
+    /// <remarks>The override exists so test hosts that boot the real App can never touch the user's data:
+    /// a headless App.Tests run once wrote into the real catalog through this default.</remarks>
     public static string DefaultRoot()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator");
+    {
+        string? overridden = Environment.GetEnvironmentVariable(DataDirectoryVariable);
+        return string.IsNullOrWhiteSpace(overridden)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator")
+            : overridden;
+    }
 
     public Task SaveMusicAsync(IEnumerable<MusicTrack> tracks, CancellationToken cancellationToken = default)
     {

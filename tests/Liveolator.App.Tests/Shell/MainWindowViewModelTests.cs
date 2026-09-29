@@ -102,7 +102,8 @@ public sealed class MainWindowViewModelTests
     }
 
     private static MainWindowViewModel BuildShell(
-        AppSettings? appSettings = null, AudioEngineStatus? audioStatus = null, DjViewModel? dj = null)
+        AppSettings? appSettings = null, AudioEngineStatus? audioStatus = null, DjViewModel? dj = null,
+        DataRootStatus? dataRootStatus = null)
     {
         var library = new MusicLibrary(new FakeFileEnumerator(), new FakeAudioDecoder());
         var status = new ShellStatusViewModel(
@@ -117,7 +118,24 @@ public sealed class MainWindowViewModelTests
             new LibrariesViewModel(library), new LiveViewModel(), dj ?? new DjViewModel(),
             new DjProViewModel(new PerformanceDeckSet()),
             studio, settings, midiLearn, status,
-            new SystemVolumeControlViewModel(), appSettings, audioStatus);
+            new SystemVolumeControlViewModel(), appSettings, audioStatus, dataRootStatus);
+    }
+
+    [Fact]
+    public void DataRootWarning_IsHidden_WhenTheDataFolderIsNotRedirected()
+    {
+        var vm = BuildShell(dataRootStatus: DataRootStatus.Healthy);
+
+        Assert.False(vm.HasDataRootWarning);
+    }
+
+    [Fact]
+    public void DataRootWarning_IsShown_WhenTheDataFolderIsRedirected()
+    {
+        var vm = BuildShell(dataRootStatus: new DataRootStatus("Data folder is redirected."));
+
+        Assert.True(vm.HasDataRootWarning);
+        Assert.Equal("Data folder is redirected.", vm.DataRootWarning);
     }
 
     [Fact]

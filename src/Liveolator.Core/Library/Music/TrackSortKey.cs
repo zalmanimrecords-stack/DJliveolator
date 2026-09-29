@@ -23,4 +23,14 @@ public enum TrackSortKey
 
     /// <summary>How many times the track was loaded to a deck (0 = never played).</summary>
     PlayCount,
+
+    /// <summary>Track artist (from tags); untagged tracks sort last.</summary>
+    Artist,
+
+    /// <summary>Track genre (from tags); untagged tracks sort last.</summary>
+    Genre,
+
+    /// <summary>Analysis outcome (backs the ANALYSIS column); best-analyzed sorts first ascending. Every
+    /// track always has a status, so — like <see cref="Title"/> — there is no "missing" partition.</summary>
+    Status,
 }

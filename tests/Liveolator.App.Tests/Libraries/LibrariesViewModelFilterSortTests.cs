@@ -274,6 +274,40 @@ public sealed class LibrariesViewModelFilterSortTests : IDisposable
     }
 
     [Fact]
+    public async Task SelectSortKey_with_a_new_key_sorts_ascending()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+        vm.SortKey = TrackSortKey.Title;
+        vm.SortDescending = true; // prove a different key resets this, rather than inheriting it
+
+        await vm.SelectSortKeyCommand.Execute(TrackSortKey.Bpm).ToTask();
+
+        Assert.Equal(TrackSortKey.Bpm, vm.SortKey);
+        Assert.False(vm.SortDescending);
+        Assert.Equal(
+            TrackSort.Apply(vm.Tracks.Select(t => t.Track), TrackSortKey.Bpm, descending: false).Select(t => t.File.Path),
+            vm.Tracks.Select(t => t.Track.File.Path));
+    }
+
+    [Fact]
+    public async Task SelectSortKey_with_the_active_key_toggles_direction_back_and_forth()
+    {
+        LibrariesViewModel vm = await SeededViewModelAsync();
+        vm.SortKey = TrackSortKey.Bpm;
+        vm.SortDescending = false;
+
+        await vm.SelectSortKeyCommand.Execute(TrackSortKey.Bpm).ToTask();
+        Assert.Equal(TrackSortKey.Bpm, vm.SortKey);
+        Assert.True(vm.SortDescending);
+        Assert.Equal(
+            TrackSort.Apply(vm.Tracks.Select(t => t.Track), TrackSortKey.Bpm, descending: true).Select(t => t.File.Path),
+            vm.Tracks.Select(t => t.Track.File.Path));
+
+        await vm.SelectSortKeyCommand.Execute(TrackSortKey.Bpm).ToTask();
+        Assert.False(vm.SortDescending);
+    }
+
+    [Fact]
     public async Task ClearFilters_resets_facets_search_and_shows_all()
     {
         LibrariesViewModel vm = await SeededViewModelAsync();
