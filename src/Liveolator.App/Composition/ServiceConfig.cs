@@ -304,9 +304,26 @@ public static class ServiceConfig
         // catalog without clobbering each other's rows. One store binds both the music
         // (IMusicCatalogStore) and the visual (IVisualCatalogStore) catalog domains. A one-time migration
         // carries an existing JSON catalog over so users don't re-scan on first launch after the switch.
-        CatalogMigration.JsonToSqliteIfNeeded(persistenceRoot, w => System.Diagnostics.Trace.TraceWarning(w));
+        // Warnings go to the log file, not Trace: no trace listener is registered, so a corrupt catalog
+        // once reported itself to nobody.
+        ILogger catalogLog = loggerFactory.CreateLogger("Liveolator.Catalog");
+        // Probed before any store opens a file: under package virtualization (launched from Claude
+        // desktop, say) every write here lands in a private fork of the library.
+        string? redirectedTo = AppDataRedirection.DetectRedirect(
+            persistenceRoot, w => catalogLog.LogWarning("{Warning}", w));
+        if (redirectedTo is not null)
+            catalogLog.LogError(
+                "Data folder {Root} is redirected by package virtualization to {Redirect}; this run uses a private copy of the library.",
+                persistenceRoot, redirectedTo);
+        services.AddSingleton(redirectedTo is null
+            ? DataRootStatus.Healthy
+            : new DataRootStatus(
+                "This copy of Liveolator was started from another app and is using a private copy of your "
+                + "library. Changes made now will not appear when you open Liveolator normally."));
+        CatalogMigration.JsonToSqliteIfNeeded(persistenceRoot, w => catalogLog.LogWarning("{Warning}", w));
         var catalogStore = new SqliteCatalogStore(
-            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+            persistenceRoot, onWarning: w => catalogLog.LogWarning("{Warning}", w));
+        services.AddSingleton(new CatalogBackup(persistenceRoot));
         services.AddSingleton<IMusicCatalogStore>(catalogStore);
         services.AddSingleton<IVisualCatalogStore>(catalogStore);
         services.AddSingleton<IMediaIdentityStore>(
@@ -342,6 +359,14 @@ public static class ServiceConfig
         var hotCueStore = new JsonHotCueStore(
             persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
         services.AddSingleton<IHotCueStore>(hotCueStore);
+
+        // User-curated genre parent/child grouping (Phase 2 of the genre-hierarchy feature) — its own
+        // JSON file, same reasoning as the hot-cue store above: an empty tree (nothing curated yet) is
+        // the zero-cost default, so the Libraries genre picker/filter behave exactly as before until a
+        // DJ actually assigns a parent.
+        var genreHierarchyStore = new JsonGenreHierarchyStore(
+            persistenceRoot, onWarning: w => System.Diagnostics.Trace.TraceWarning(w));
+        services.AddSingleton<IGenreHierarchyStore>(genreHierarchyStore);
 
         // Automatic hot-cue placement (doc 11/16): an offline pass that decodes a track, detects its
         // musical structure (drop/breakdown/build/phrases) and writes suggested cues into the same hot-cue
@@ -743,11 +768,15 @@ public static class ServiceConfig
             sp.GetRequiredService<TrackContextActions>(),
             autoCueService: sp.GetService<Liveolator.Core.Analysis.Cues.IAutoCueService>(),
             hotCueStore: sp.GetService<IHotCueStore>(),
+            genreHierarchyStore: sp.GetService<IGenreHierarchyStore>(),
             waveformProvider: sp.GetService<IWaveformProvider>(),
             importService: sp.GetService<LibraryImportService>(),
             importers: sp.GetServices<ILibraryImporter>().ToList(),
             folderImporters: sp.GetServices<IFolderLibraryImporter>().ToList(),
-            metadataProvider: sp.GetService<IMetadataProvider>()));
+            metadataProvider: sp.GetService<IMetadataProvider>(),
+            serverSnapshotSync: new ServerSnapshotSync(
+                sp.GetRequiredService<MusicLibrary>(), sp.GetRequiredService<IMusicCatalogStore>(),
+                onWarning: w => catalogLog.LogWarning("{Warning}", w))));
 
         // VJ / Visual Library tab (Track C C1): browse/search/filter the scanned image + video catalog.
         services.AddSingleton<VisualLibraryViewModel>(sp => new VisualLibraryViewModel(

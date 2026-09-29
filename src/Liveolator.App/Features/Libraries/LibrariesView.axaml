@@ -3,6 +3,7 @@
              xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
              xmlns:shared="clr-namespace:Liveolator.App.Features.Shared"
              xmlns:controls="clr-namespace:Liveolator.App.Controls"
+             xmlns:music="clr-namespace:Liveolator.Core.Library.Music;assembly=Liveolator.Core"
              xmlns:sys="using:System"
              x:Class="Liveolator.App.Features.Libraries.LibrariesView"
              x:DataType="lib:LibrariesViewModel">
@@ -82,13 +83,46 @@
           <Button.Flyout>
             <Flyout Placement="BottomEdgeAlignedLeft">
               <ScrollViewer MaxHeight="320">
-                <ItemsControl ItemsSource="{Binding Genres}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="lib:GenreFilterOption">
-                      <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected}" Margin="0,1" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <StackPanel>
+                  <ItemsControl ItemsSource="{Binding Genres}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="lib:GenreFilterOption">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                          <CheckBox Grid.Column="0" Content="{Binding Name}" IsChecked="{Binding IsSelected}" />
+                          <!-- Phase 3 curation control: assigns/clears this genre's parent. Hidden when
+                               this genre already has children of its own (GenreHierarchy's depth guard —
+                               it can't also become someone else's child without pushing those children to
+                               a third level), so the combo never offers a choice that would be rejected. -->
+                          <ComboBox Grid.Column="1" MinWidth="120" Margin="8,0,0,0"
+                                    IsVisible="{Binding CanGroupUnder}"
+                                    ItemsSource="{Binding GroupUnderOptions}"
+                                    SelectedItem="{Binding GroupUnderSelection}"
+                                    ToolTip.Tip="Group this genre under a top-level genre, or send it back to top level" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <!-- Sub-genres of the currently expanded top-level genre (Phase 2 genre hierarchy).
+                       Hidden entirely when nothing is expanded — an empty GenreHierarchy never shows it. -->
+                  <TextBlock Classes="faint" Margin="18,4,0,0"
+                             IsVisible="{Binding ChildGenres.Count}"
+                             Text="{Binding ExpandedParentGenre, StringFormat='Sub-genres of {0}'}" />
+                  <ItemsControl ItemsSource="{Binding ChildGenres}" Margin="18,0,0,0"
+                                IsVisible="{Binding ChildGenres.Count}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="lib:GenreFilterOption">
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                          <CheckBox Grid.Column="0" Content="{Binding Name}" IsChecked="{Binding IsSelected}" />
+                          <ComboBox Grid.Column="1" MinWidth="120" Margin="8,0,0,0"
+                                    IsVisible="{Binding CanGroupUnder}"
+                                    ItemsSource="{Binding GroupUnderOptions}"
+                                    SelectedItem="{Binding GroupUnderSelection}"
+                                    ToolTip.Tip="Group this genre under a top-level genre, or send it back to top level" />
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
               </ScrollViewer>
             </Flyout>
           </Button.Flyout>
@@ -152,13 +186,119 @@
             <TextBlock Grid.Column="2" Classes="mono faint" VerticalAlignment="Center"
                        Text="{Binding ResultSummary}" />
           </Grid>
-          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2*,1.2*,64,46,58,128" Margin="11,0,9,8">
-            <TextBlock Grid.Column="1" Classes="faint" Text="TITLE" />
-            <TextBlock Grid.Column="2" Classes="faint" Text="ARTIST" />
-            <TextBlock Grid.Column="3" Classes="faint" Text="BPM" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="4" Classes="faint" Text="KEY" HorizontalAlignment="Right" />
-            <TextBlock Grid.Column="5" Classes="faint" Text="TIME" HorizontalAlignment="Right" Margin="0,0,12,0" />
-            <TextBlock Grid.Column="6" Classes="faint" Text="ANALYSIS" />
+          <!-- Column headers are click targets (B1 — header-click sort): each label is wrapped in a Button
+               bound to SelectSortKeyCommand, with the chrome set explicitly (Transparent/0-border) rather
+               than by a class — every Button.* style in the theme is the raised hardware-chrome look, wrong
+               for a flat header label (the same "chrome set explicitly, not by a class" idiom already used
+               above for the genre filter button). The trailing glyph (▲/▼) shows only on the active sort
+               column, via SortGlyphConverter reading the same SortKey/SortDescending the ComboBox + toggle
+               already drive, so header-click and the dropdown sort control never disagree. -->
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="14,2*,1.2*,64,46,58,0.9*,64" Margin="11,0,9,8">
+            <Button Grid.Column="1" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalContentAlignment="Left"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Title}"
+                    ToolTip.Tip="Sort by title">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="TITLE" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalContentAlignment="Left"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Artist}"
+                    ToolTip.Tip="Sort by artist">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="ARTIST" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="3" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalAlignment="Right" HorizontalContentAlignment="Right"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Bpm}"
+                    ToolTip.Tip="Sort by BPM">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="BPM" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="4" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalAlignment="Right" HorizontalContentAlignment="Right"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Key}"
+                    ToolTip.Tip="Sort by key">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="KEY" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="5" Margin="0,0,12,0" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalAlignment="Right" HorizontalContentAlignment="Right"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Duration}"
+                    ToolTip.Tip="Sort by length">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="TIME" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="6" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalContentAlignment="Left"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Genre}"
+                    ToolTip.Tip="Sort by genre">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="GENRE" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
+            <Button Grid.Column="7" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand"
+                    HorizontalContentAlignment="Left"
+                    Command="{Binding SelectSortKeyCommand}" CommandParameter="{x:Static music:TrackSortKey.Status}"
+                    ToolTip.Tip="Sort by analysis status">
+              <StackPanel Orientation="Horizontal" Spacing="3">
+                <TextBlock Classes="faint" Text="ANALYSIS" />
+                <TextBlock Classes="faint" FontSize="9">
+                  <TextBlock.Text>
+                    <MultiBinding Converter="{x:Static lib:SortGlyphConverter.Instance}">
+                      <Binding Path="SortKey" /><Binding Path="SortDescending" />
+                    </MultiBinding>
+                  </TextBlock.Text>
+                </TextBlock>
+              </StackPanel>
+            </Button>
           </Grid>
           <ListBox Classes="rows"
                    ItemsSource="{Binding Tracks}"
@@ -167,7 +307,7 @@
                    ToolTip.Tip="Double-click a track to load it onto Deck A">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="lib:TrackRowViewModel">
-                <Grid ColumnDefinitions="14,2*,1.2*,64,46,58,128" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="14,2*,1.2*,64,46,58,0.9*,64" VerticalAlignment="Center">
                   <Grid.ContextFlyout>
                     <MenuFlyout>
                       <MenuItem Header="Add to Deck A" Command="{Binding Menu.LoadToDeckACommand}" />
@@ -208,21 +348,24 @@
                   <TextBlock Grid.Column="3" Classes="mono muted" Text="{Binding Bpm}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="4" Classes="mono accent" Text="{Binding Key}" HorizontalAlignment="Right" />
                   <TextBlock Grid.Column="5" Classes="mono faint" Text="{Binding Duration}" HorizontalAlignment="Right" Margin="0,0,12,0" />
-                  <!-- Per-component analysis badges: lit when present, dim when absent (theme tokens only). -->
-                  <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
+                  <TextBlock Grid.Column="6" Classes="muted" Text="{Binding Genre}" TextTrimming="CharacterEllipsis" />
+                  <!-- Per-component analysis badges: lit when present, dim when absent (theme tokens only).
+                       One-letter labels (B/K/C/G/S) — the tooltip below still names all five in full, so
+                       shrinking the visible label loses no information. -->
+                  <StackPanel Grid.Column="7" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center"
                               ToolTip.Tip="What's analyzed: BPM, key, hot cues, genre, structure">
                     <!-- Three-state: missing (Faint) / analyzed (Accent) / online-conflict (Red).
                          The tip names both values + the online source (GetSongBPM attribution). -->
-                    <TextBlock Classes="mono" FontSize="9" Text="BPM"
+                    <TextBlock Classes="mono" FontSize="9" Text="B"
                                ToolTip.Tip="{Binding BpmBadgeTip}"
                                Foreground="{Binding BpmBadgeToken, Converter={x:Static lib:ThemeTokenToBrushConverter.Instance}}" />
-                    <TextBlock Classes="mono" FontSize="9" Text="KEY"
+                    <TextBlock Classes="mono" FontSize="9" Text="K"
                                Foreground="{Binding HasKey, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Accent}" />
-                    <TextBlock Classes="mono" FontSize="9" Text="CUE"
+                    <TextBlock Classes="mono" FontSize="9" Text="C"
                                Foreground="{Binding HasCues, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Green}" />
-                    <TextBlock Classes="mono" FontSize="9" Text="GEN"
+                    <TextBlock Classes="mono" FontSize="9" Text="G"
                                Foreground="{Binding HasGenre, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Amber}" />
-                    <TextBlock Classes="mono" FontSize="9" Text="STR"
+                    <TextBlock Classes="mono" FontSize="9" Text="S"
                                Foreground="{Binding HasStructure, Converter={x:Static lib:PresenceToBrushConverter.Instance}, ConverterParameter=Violet}" />
                   </StackPanel>
                 </Grid>

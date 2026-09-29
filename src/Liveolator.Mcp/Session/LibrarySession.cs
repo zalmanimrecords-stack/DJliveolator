@@ -147,6 +147,7 @@ public sealed class LibrarySession
         string? serverPathPrefix,
         string? localPathPrefix,
         bool apply,
+        bool adoptMissing,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogDirectory);
@@ -160,13 +161,11 @@ public sealed class LibrarySession
         {
             await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-            var serverStore = new SqliteCatalogStore(
-                catalogDirectory, onWarning: w => _logger.LogWarning("Server catalog: {Warning}", w));
             IReadOnlyList<MusicTrack> serverTracks =
-                await serverStore.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+                await LoadServerSnapshotAsync(catalogDirectory, cancellationToken).ConfigureAwait(false);
 
             ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
-                serverTracks, _library.All, serverPathPrefix, localPathPrefix);
+                serverTracks, _library.All, serverPathPrefix, localPathPrefix, adoptMissing: adoptMissing);
 
             if (!apply || plan.TracksToUpsert.Count == 0)
                 return ServerPullSummaryDto.From(plan, applied: false);
@@ -180,6 +179,35 @@ public sealed class LibrarySession
             return ServerPullSummaryDto.From(plan, applied: true);
         }
         finally { _gate.Release(); }
+    }
+
+    // The server's file is read through a verified local snapshot: opening it with the store would put a
+    // WAL on a network share and write to someone else's database.
+    private async Task<IReadOnlyList<MusicTrack>> LoadServerSnapshotAsync(
+        string catalogDirectory, CancellationToken cancellationToken)
+    {
+        string snapshotDirectory = Path.Combine(Path.GetTempPath(), $"liveolator-server-pull-{Guid.NewGuid():N}");
+        try
+        {
+            SqliteCatalogSnapshot.Copy(
+                Path.Combine(catalogDirectory, "catalog.db"), Path.Combine(snapshotDirectory, "catalog.db"),
+                sourceIsForeign: true);
+            using var snapshot = new SqliteCatalogStore(
+                snapshotDirectory, onWarning: w => _logger.LogWarning("Server catalog: {Warning}", w));
+            return await snapshot.LoadMusicAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(snapshotDirectory))
+                    Directory.Delete(snapshotDirectory, recursive: true);
+            }
+            catch (IOException ex)
+            {
+                _logger.LogWarning(ex, "Could not remove the server-catalog snapshot {Directory}.", snapshotDirectory);
+            }
+        }
     }
 
     private LibraryImport ParseImport(string format, string path)

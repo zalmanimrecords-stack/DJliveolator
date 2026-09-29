@@ -219,6 +219,17 @@
                  Text="{Binding AudioEngineWarning}" />
     </Border>
 
+    <!-- data-folder warning: launched from a packaged app, this run works on a private copy of the library. -->
+    <Border DockPanel.Dock="Top"
+            Background="{DynamicResource Red}"
+            Padding="14,8"
+            IsVisible="{Binding HasDataRootWarning}">
+      <TextBlock Foreground="{DynamicResource AccentInk}"
+                 HorizontalAlignment="Center"
+                 TextWrapping="Wrap"
+                 Text="{Binding DataRootWarning}" />
+    </Border>
+
     <!-- selected page (resolved by ViewLocator) -->
     <ContentControl Margin="12" Content="{Binding CurrentTab.Page}" />
 

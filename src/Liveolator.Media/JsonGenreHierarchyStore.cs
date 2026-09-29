@@ -34,9 +34,8 @@ public sealed class JsonGenreHierarchyStore : IGenreHierarchyStore
     /// <summary>Full path of the genre hierarchy JSON file.</summary>
     public string GenreHierarchyPath => Path.Combine(_directory, "genre-hierarchy.json");
 
-    /// <summary>Default persistence root: <c>%APPDATA%/Liveolator</c> (or the XDG/Mac equivalent).</summary>
-    public static string DefaultRoot()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator");
+    /// <summary>Default persistence root; see <see cref="JsonCatalogStore.DefaultRoot"/>.</summary>
+    public static string DefaultRoot() => JsonCatalogStore.DefaultRoot();
 
     public async Task<GenreHierarchy> LoadAsync(CancellationToken cancellationToken = default)
     {

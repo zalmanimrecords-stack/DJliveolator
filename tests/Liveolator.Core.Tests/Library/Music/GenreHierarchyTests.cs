@@ -55,15 +55,17 @@ public class GenreHierarchyTests
     [Fact]
     public void SetParent_TransitiveCycle_IsRejected_StateUnchanged()
     {
-        // House -> Electronic, Deep House -> House. Now try Electronic -> Deep House, which would
-        // close the loop Electronic -> Deep House -> House -> Electronic.
-        var hierarchy = new GenreHierarchy()
-            .SetParent("House", "Electronic")
-            .SetParent("Deep House", "House");
+        // House -> Electronic. The old (unbounded-depth) model would have let "Deep House -> House" go
+        // through and only caught the eventual transitive cycle (Electronic -> House -> Deep House ->
+        // ... -> Electronic) once the closing edge was added. The Phase 3 depth guard now rejects it
+        // earlier still, at this very step: House already has a parent (Electronic), and a parent must
+        // always be top-level — so a 3-level chain, transitive cycle or not, can never be built at all.
+        var hierarchy = new GenreHierarchy().SetParent("House", "Electronic");
         var mappingsBefore = new Dictionary<string, string>(hierarchy.Mappings);
 
-        Assert.Throws<ArgumentException>(() => hierarchy.SetParent("Electronic", "Deep House"));
+        var ex = Assert.Throws<ArgumentException>(() => hierarchy.SetParent("Deep House", "House"));
 
+        Assert.Contains("top-level", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(mappingsBefore, hierarchy.Mappings);
     }
 
@@ -74,5 +76,42 @@ public class GenreHierarchyTests
 
         Assert.Throws<ArgumentException>(() => hierarchy.SetParent("House", "House"));
         Assert.Null(hierarchy.ParentOf("House"));
+    }
+
+    // Phase 3 depth guard: exactly two levels, main genre -> sub-genre, never deeper.
+
+    [Fact]
+    public void SetParent_ParentThatIsItselfAChild_IsRejected_StateUnchanged()
+    {
+        // House is top-level, Deep House is its child. Deep House is therefore NOT a valid parent.
+        var hierarchy = new GenreHierarchy().SetParent("Deep House", "House");
+        var mappingsBefore = new Dictionary<string, string>(hierarchy.Mappings);
+
+        var ex = Assert.Throws<ArgumentException>(() => hierarchy.SetParent("Tech House", "Deep House"));
+
+        Assert.Contains("top-level", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(mappingsBefore, hierarchy.Mappings);
+    }
+
+    [Fact]
+    public void SetParent_GenreThatAlreadyHasChildren_IsRejected_StateUnchanged()
+    {
+        // House already has a child (Deep House), so House can't become someone else's child too.
+        var hierarchy = new GenreHierarchy().SetParent("Deep House", "House");
+        var mappingsBefore = new Dictionary<string, string>(hierarchy.Mappings);
+
+        var ex = Assert.Throws<ArgumentException>(() => hierarchy.SetParent("House", "Electronic"));
+
+        Assert.Contains("sub-genres", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(mappingsBefore, hierarchy.Mappings);
+    }
+
+    [Fact]
+    public void SetParent_LegitimateTwoLevelAssignment_StillSucceeds()
+    {
+        var hierarchy = new GenreHierarchy().SetParent("Tech House", "House");
+
+        Assert.Equal("House", hierarchy.ParentOf("Tech House"));
+        Assert.Equal(new[] { "Tech House" }, hierarchy.ChildrenOf("House"));
     }
 }

@@ -206,6 +206,73 @@ public class ServerCatalogPullTests
         Assert.Equal(1, plan.NotFoundLocally);
     }
 
+    /// <summary>A fresh install has an empty catalog, so enrich-only would restore nothing. Adoption takes
+    /// the whole server row, rebased, and keeps its file fingerprint so the next scan skips the file
+    /// instead of decoding it again.</summary>
+    [Fact]
+    public void Plan_AdoptsAnUnseenRow_RebasedAndWhole_WhenAsked()
+    {
+        MusicTrack server = Track("/srv/music/GMS/a.flac") with
+        {
+            File = new ScannedFile("/srv/music/GMS/a.flac", 13745280, ServerScan),
+            Bpm = new BpmResult(145.0, 0.9) { DownbeatSeconds = 1.2 },
+            Status = MediaAnalysisStatus.Ok,
+            AnalysisIsManual = true,
+            Rating = 5,
+        };
+
+        ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
+            new[] { server }, Array.Empty<MusicTrack>(), "/srv/music", @"M:\", adoptMissing: true);
+
+        MusicTrack adopted = Assert.Single(plan.TracksToUpsert);
+        Assert.Equal(@"M:\GMS\a.flac", adopted.File.Path);
+        Assert.Equal(13745280, adopted.File.SizeBytes);
+        Assert.Equal(ServerScan, adopted.File.LastModifiedUtc);
+        Assert.Equal(145.0, adopted.Bpm!.Bpm, 6);
+        Assert.True(adopted.AnalysisIsManual);
+        Assert.Equal(5, adopted.Rating);
+        Assert.Equal(1, plan.TracksAdopted);
+        Assert.Equal(0, plan.NotFoundLocally);
+    }
+
+    [Fact]
+    public void Plan_StillSkipsAPathThatDoesNotMap_WhenAdopting()
+    {
+        MusicTrack server = Track("/elsewhere/a.mp3") with { Bpm = new BpmResult(145.0, 0.9) };
+
+        ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
+            new[] { server }, Array.Empty<MusicTrack>(), "/srv/music", @"M:\", adoptMissing: true);
+
+        Assert.Empty(plan.TracksToUpsert);
+        Assert.Equal(1, plan.NotFoundLocally);
+    }
+
+    [Fact]
+    public void Plan_KeepsTheHandCorrectedVeto_WhenAdopting()
+    {
+        MusicTrack local = Track("/m/a.mp3") with { AnalysisIsManual = true };
+        MusicTrack server = Track("/m/a.mp3") with { Bpm = new BpmResult(145.0, 0.9) };
+
+        ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
+            new[] { server }, new[] { local }, null, null, adoptMissing: true);
+
+        Assert.Empty(plan.TracksToUpsert);
+        Assert.Equal(1, plan.HandCorrectedUntouched);
+    }
+
+    [Fact]
+    public void Apply_AddsAdoptedRows()
+    {
+        MusicTrack existing = Track("/m/a.mp3");
+        MusicTrack server = Track("/m/new.mp3") with { Bpm = new BpmResult(145.0, 0.9) };
+
+        ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
+            new[] { server }, new[] { existing }, null, null, adoptMissing: true);
+        IReadOnlyList<MusicTrack> after = ServerCatalogPull.Apply(new[] { existing }, plan);
+
+        Assert.Equal(2, after.Count);
+    }
+
     /// <summary>The server and this machine mount the same library at different roots, so paths are
     /// rebased before they are matched.</summary>
     [Fact]
@@ -284,5 +351,13 @@ public class ServerCatalogPullTests
         Assert.StartsWith("Added analysis to 12 track(s)", line);
         Assert.Contains("9 can now phase-sync", line);
         Assert.Contains("3 hand-corrected track(s) untouched", line);
+    }
+
+    [Fact]
+    public void Describe_ReportsAdoptedTracks()
+    {
+        ServerCatalogPullPlan plan = ServerCatalogPullPlan.Empty with { TracksAdopted = 2616 };
+
+        Assert.Contains("2616 new track(s) imported with their analysis", plan.Describe());
     }
 }

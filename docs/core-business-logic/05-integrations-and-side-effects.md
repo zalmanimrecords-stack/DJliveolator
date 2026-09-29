@@ -32,13 +32,16 @@ retry, timeout or idempotency policy. Recorded in [11](./11-open-questions-and-a
 ## Persistent stores
 
 Rooted at the per-user application-data folder resolved by `JsonCatalogStore.DefaultRoot`
-(`%APPDATA%/Liveolator` on Windows, the macOS or XDG equivalent elsewhere):
+(`LIVEOLATOR_DATA` when set, otherwise `%APPDATA%/Liveolator` on Windows and the macOS or XDG
+equivalent elsewhere):
 
 ```text
 <app-data>/Liveolator/
-  catalog.music.json          music catalog cache (regenerable)
-  catalog.visual.json         visual-media catalog cache (regenerable)
-  scan-folders.json           the scan roots the user added
+  catalog.db                  SQLite catalog: tracks, visual assets, scan/sample folders (WAL mode)
+  backups/catalog-*.db        the newest 3 verified copies, one per App launch (CatalogBackup)
+  catalog.cues.json           hot cues per track
+  library.identities.json     media identity fingerprints (Library Doctor)
+  catalog.music.json          legacy JSON catalog; migrated once into catalog.db
   cache/waveforms/*.wave      regenerable binary spectral overviews (128 files / 256 MiB maximum)
   live/
     mappings/<name>.json      ControllerMappingProfile
@@ -52,8 +55,33 @@ Track-linked visual programmes are stored separately by `JsonTrackVisualProgramS
 file per track named by a SHA-256 hash of the normalised path, with the full path and file
 fingerprint kept inside the programme for validation and relinking. Separated stems
 (`StemStore`) and the optional Python environment (`PythonRuntime`) live under *local* application
-data, since they are large and regenerable. A SQLite catalog store (`SqliteCatalogStore`) is an
-alternative to the JSON catalog.
+data, since they are large and regenerable.
+
+### Catalog integrity (2026-09-29)
+
+- **Package virtualization.** A process launched from an MSIX package, such as Claude desktop, has its
+  `%APPDATA%` writes redirected to the package's `LocalCache`. It therefore works on a private fork of
+  the catalog. Such a fork was corrupted by pairing with the App's live WAL.
+  `AppDataRedirection.DetectRedirect` probes the root at startup. The MCP server refuses to start. The
+  App logs an error and shows a banner.
+- **A damaged catalog fails loud.** `SqliteCatalogStore` runs `quick_check` on first open. From then on,
+  every call throws `CatalogCorruptException` instead of returning an empty library and accepting writes
+  into the broken file.
+- **Verified copies only.** Backups and the server pull go through `SqliteCatalogSnapshot`, which uses
+  SQLite's online backup and then an integrity check, and never a file copy. A foreign database (a
+  server's) is opened `immutable`, so nothing is written next to it.
+- **Server-managed folders (2026-09-29).**
+  - **On the host.** `docker/mcp/scan-and-publish.sh` runs hourly from cron on the music host and
+    scans the library through the host's own MCP server. It then publishes a verified single-file
+    snapshot to `<music>/.liveolator/catalog.db`, taken from an immutable read and renamed into place.
+    The snapshot records the folder the host scanned.
+  - **On the App.** `ServerSnapshotSync` adopts that snapshot for any scan folder that has one. It does
+    this at startup and before every scan, using `ServerCatalogPull` with adoption, so a local tempo and
+    hand corrections still win. The folder then counts as server-managed: the App's scan and its
+    background re-analysis both skip it, so nothing there is decoded over the network. A row the server
+    no longer lists is dropped only when its file is gone as well.
+- **Tests never touch real data.** App.Tests sets `LIVEOLATOR_DATA` to a temp folder in a module
+  initializer.
 
 ### Storage rules
 
@@ -124,7 +152,9 @@ gaps only: it merges analysis (beat grid, downbeat, key, cues, structure, loudne
 scanning server's own `catalog.db`, but a local tempo always wins on disagreement (reported in
 `ServerPullSummaryDto.Disagreements`, never auto-resolved), a hand-corrected track is never touched,
 and no library field (rating, play count, date added) is overwritten. It enriches tracks the local
-catalog already holds and never adds new ones. `apply=false` (the default) previews the plan without
+catalog already holds. With `adoptMissing=true` it also imports the server's rows the catalog lacks,
+whole and with rebased paths, keeping their file fingerprints so the next scan skips them. That is how
+a fresh install restores itself. `apply=false` (the default) previews the plan without
 writing; the preview and the write compute the identical plan from the same read, so the numbers an
 agent shows a DJ are the rows that later get written.
 

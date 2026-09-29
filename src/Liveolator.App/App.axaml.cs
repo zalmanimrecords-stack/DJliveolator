@@ -19,6 +19,7 @@ using Liveolator.Core.Persistence;
 using Liveolator.Core.Settings;
 using Liveolator.Core.Skins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Liveolator.App;
 
@@ -55,10 +56,16 @@ public partial class App : Application
                 services.GetRequiredService<IMusicCatalogStore>().LoadMusicAsync().GetAwaiter().GetResult();
             if (cachedTracks is { Count: > 0 })
                 musicLibrary.Restore(cachedTracks);
+            // Only after a load that passed the store's integrity check, so a damaged catalog never
+            // rotates the last good copy out.
+            StartCatalogBackup(services);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Trace.TraceWarning($"Eager catalog preload failed: {ex.Message}");
+            // Logged, not Traced: a damaged catalog (CatalogCorruptException) must leave a trace in the log.
+            services.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Liveolator.Catalog")
+                .LogError(ex, "Eager catalog preload failed: {Message}", ex.Message);
         }
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -309,6 +316,26 @@ public partial class App : Application
             // guards against the command plumbing itself throwing.
             System.Diagnostics.Trace.TraceWarning($"Startup scan failed: {ex.Message}.");
         }
+    }
+
+    // One verified catalog copy per launch, off the UI thread (a large catalog takes a moment to copy).
+    private static void StartCatalogBackup(IServiceProvider services)
+    {
+        var backup = services.GetRequiredService<Liveolator.Media.CatalogBackup>();
+        ILogger log = services.GetRequiredService<ILoggerFactory>().CreateLogger("Liveolator.Catalog");
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                string? copy = backup.CreateVerified(DateTime.UtcNow);
+                if (copy is not null)
+                    log.LogInformation("Catalog backed up to {Backup}.", copy);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Catalog backup failed: {Message}", ex.Message);
+            }
+        });
     }
 
     private static ControlSkinFile? ResolveSkin(IControlSkinCatalog catalog, string? skinId)

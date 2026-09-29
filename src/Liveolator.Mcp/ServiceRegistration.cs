@@ -40,8 +40,19 @@ internal static class ServiceRegistration
         // and the app share one catalog without clobbering each other's rows. A one-time migration carries
         // a legacy JSON catalog over. One store serves both the music and visual catalog seams.
         string dataDirectory = config.DataDirectory ?? JsonCatalogStore.DefaultRoot();
+        // Refuse rather than warn: under package virtualization this server would work on a private fork
+        // of the catalog, and that fork has already corrupted once by pairing with the App's WAL.
+        string? redirectedTo = AppDataRedirection.DetectRedirect(
+            dataDirectory, msg => Console.Error.WriteLine($"warn: {msg}"));
+        if (redirectedTo is not null)
+            throw new InvalidOperationException(
+                $"The data folder '{dataDirectory}' is redirected by Windows package virtualization to " +
+                $"'{redirectedTo}', so this server was launched from a packaged app (such as Claude desktop) " +
+                "and would work on a private copy of the catalog that can corrupt. Run the server outside " +
+                "the package over HTTP, or pass --data with a folder outside AppData.");
+        // Runs before the logger exists; stderr is the one channel both transports surface.
         CatalogMigration.JsonToSqliteIfNeeded(
-            dataDirectory, msg => System.Diagnostics.Trace.TraceWarning(msg));
+            dataDirectory, msg => Console.Error.WriteLine($"warn: {msg}"));
         services.AddSingleton(sp => new SqliteCatalogStore(
             dataDirectory,
             onWarning: msg => sp.GetRequiredService<ILogger<SqliteCatalogStore>>().LogWarning("{Warning}", msg)));

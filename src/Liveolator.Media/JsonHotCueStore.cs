@@ -47,9 +47,8 @@ public sealed class JsonHotCueStore : IHotCueStore
     /// <summary>Full path of the per-track cue JSON file.</summary>
     public string CuesPath => Path.Combine(_directory, "catalog.cues.json");
 
-    /// <summary>Default persistence root: <c>%APPDATA%/Liveolator</c> (or the XDG/Mac equivalent).</summary>
-    public static string DefaultRoot()
-        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Liveolator");
+    /// <summary>Default persistence root; see <see cref="JsonCatalogStore.DefaultRoot"/>.</summary>
+    public static string DefaultRoot() => JsonCatalogStore.DefaultRoot();
 
     public async Task<TrackCueRecord?> LoadAsync(string trackPath, CancellationToken cancellationToken = default)
     {

@@ -36,7 +36,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         ShellStatusViewModel status,
         SystemVolumeControlViewModel systemVolume,
         AppSettings? appSettings = null,
-        AudioEngineStatus? audioStatus = null)
+        AudioEngineStatus? audioStatus = null,
+        Core.Persistence.DataRootStatus? dataRootStatus = null)
     {
         ArgumentNullException.ThrowIfNull(libraries);
         ArgumentNullException.ThrowIfNull(live);
@@ -53,6 +54,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         SystemVolume = systemVolume;
         Limiter = dj.Mixer;
         AudioEngineWarning = audioStatus?.Warning;
+        DataRootWarning = dataRootStatus?.Warning;
 
         // Surface live playback up to the shell so it can hold discrete responsive reflows while a deck plays
         // (see MainWindow). Forward the deck-set's change as our own so the view can bind/observe one property.
@@ -98,6 +100,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     /// <summary>True when there is an audio-engine warning to show (drives the banner's visibility).</summary>
     public bool HasAudioEngineWarning => !string.IsNullOrEmpty(AudioEngineWarning);
+
+    /// <summary>Set when the data folder is redirected, so this run works on a private copy of the library
+    /// rather than the App's own. Shown as a shell banner, because nothing else about that looks wrong.</summary>
+    public string? DataRootWarning { get; }
+
+    public bool HasDataRootWarning => !string.IsNullOrEmpty(DataRootWarning);
 
     /// <summary>True while either deck is playing — the shell holds discrete responsive reflows until the
     /// set is paused so a resize/projector change mid-mix never jumps the layout under the DJ's hands.</summary>

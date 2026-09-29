@@ -12,15 +12,16 @@ public class TrackSortTests
     private static readonly DateTime T = new(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private static MusicTrack Track(
-        string title, double? bpm = 120, string? camelot = "8A", int durationSeconds = 240)
+        string title, double? bpm = 120, string? camelot = "8A", int durationSeconds = 240,
+        string? artist = null, string? genre = null, MediaAnalysisStatus status = MediaAnalysisStatus.Ok)
     {
-        var meta = new TrackMetadata(title, null, null, null, null, null, null, null, null, null, null, null);
+        var meta = new TrackMetadata(title, artist, null, null, genre, null, null, null, null, null, null, null);
         BpmResult? bpmResult = bpm is { } b ? new BpmResult(b, 0.9) : null;
         MusicalKey? key = camelot is null ? null : new MusicalKey(0, KeyMode.Major, camelot, 0.9);
         return new MusicTrack(
             new ScannedFile($"/m/{title}.mp3", 1000, T),
             bpmResult, key,
-            TimeSpan.FromSeconds(durationSeconds), TrackCues.None, MediaAnalysisStatus.Ok, null, meta);
+            TimeSpan.FromSeconds(durationSeconds), TrackCues.None, status, null, meta);
     }
 
     [Fact]
@@ -141,6 +142,111 @@ public class TrackSortTests
         var tracks = new[] { Track("Gamma", bpm: 120), Track("Alpha", bpm: 120), Track("Beta", bpm: 120) };
 
         var sorted = TrackSort.Apply(tracks, TrackSortKey.Bpm, descending: false);
+
+        Assert.Equal(new[] { "Alpha", "Beta", "Gamma" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Artist_ascending_orders_case_insensitively_untagged_last()
+    {
+        var tracks = new[]
+        {
+            Track("A", artist: "beta"),
+            Track("B", artist: null), // untagged → last
+            Track("C", artist: "Alpha"),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Artist, descending: false);
+
+        Assert.Equal(new[] { "C", "A", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Artist_descending_reverses_present_values_untagged_still_last()
+    {
+        var tracks = new[]
+        {
+            Track("A", artist: "beta"),
+            Track("B", artist: null),
+            Track("C", artist: "Alpha"),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Artist, descending: true);
+
+        Assert.Equal(new[] { "A", "C", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Genre_ascending_orders_case_insensitively_untagged_last()
+    {
+        var tracks = new[]
+        {
+            Track("A", genre: "House"),
+            Track("B", genre: null), // untagged → last
+            Track("C", genre: "electronic"),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Genre, descending: false);
+
+        Assert.Equal(new[] { "C", "A", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Genre_descending_reverses_present_values_untagged_still_last()
+    {
+        var tracks = new[]
+        {
+            Track("A", genre: "House"),
+            Track("B", genre: null),
+            Track("C", genre: "electronic"),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Genre, descending: true);
+
+        Assert.Equal(new[] { "A", "C", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Status_ascending_orders_best_analyzed_first()
+    {
+        var tracks = new[]
+        {
+            Track("A", status: MediaAnalysisStatus.Failed),
+            Track("B", status: MediaAnalysisStatus.Ok),
+            Track("C", status: MediaAnalysisStatus.PartiallyAnalyzed),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Status, descending: false);
+
+        Assert.Equal(new[] { "B", "C", "A" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Status_descending_reverses_to_worst_analyzed_first()
+    {
+        var tracks = new[]
+        {
+            Track("A", status: MediaAnalysisStatus.Failed),
+            Track("B", status: MediaAnalysisStatus.Ok),
+            Track("C", status: MediaAnalysisStatus.PartiallyAnalyzed),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Status, descending: true);
+
+        Assert.Equal(new[] { "A", "C", "B" }, sorted.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Status_ties_break_by_title_deterministically()
+    {
+        var tracks = new[]
+        {
+            Track("Gamma", status: MediaAnalysisStatus.Ok),
+            Track("Alpha", status: MediaAnalysisStatus.Ok),
+            Track("Beta", status: MediaAnalysisStatus.Ok),
+        };
+
+        var sorted = TrackSort.Apply(tracks, TrackSortKey.Status, descending: false);
 
         Assert.Equal(new[] { "Alpha", "Beta", "Gamma" }, sorted.Select(t => t.Title));
     }
