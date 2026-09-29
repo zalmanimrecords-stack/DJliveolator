@@ -56,7 +56,7 @@ $ErrorActionPreference = "Stop"
 $missing = @{ RemoteHost = $RemoteHost; MusicDir = $MusicDir; DataDir = $DataDir; LabelDir = $LabelDir;
               SetsDir = $SetsDir; RemoteRoot = $RemoteRoot }.GetEnumerator() | Where-Object { -not $_.Value }
 if ($missing) {
-    throw "Missing deploy target: $(($missing.Name | Sort-Object) -join ', '). Pass them, or set the LIVEOLATOR_MCP_* env vars (the private env script does)."
+    throw "Missing deploy target: $(($missing.Name | Sort-Object) -join ', '). Pass them, or set the LIVEOLATOR_MCP_* env vars (internal-info/liveolator/env.ps1 in the private skills repo does)."
 }
 $repo = Split-Path -Parent $PSScriptRoot
 $publishDir = Join-Path $repo "artifacts/dist/linux-x64"

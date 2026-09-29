@@ -22,11 +22,11 @@ check "SSH deploy target (root@<ip>)"   'root@([0-9]{1,3}\.){3}[0-9]{1,3}'
 check "hardcoded password/secret/token" '(password|passwd|secret|api[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'$<>{} ]{6,}'
 
 # The maintainer's real hosts, IPs, user names and paths are themselves internal, so they are not
-# listed here: they live in the private repo, cloned at <main checkout>/private (git-ignored).
-private_patterns="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/private/leak-patterns.txt"
+# listed here: they live in the maintainer's private skills repo (override with LIVEOLATOR_PRIVATE_DIR).
+private_patterns="${LIVEOLATOR_PRIVATE_DIR:-$HOME/.claude/skills/internal-info/liveolator}/leak-patterns.txt"
 if [ -f "$private_patterns" ]; then
   alternation=$(grep -Ev '^[[:space:]]*(#|$)' "$private_patterns" | tr -d '\r' | paste -sd'|' -)
-  [ -n "$alternation" ] && check "internal host / path / name (private/leak-patterns.txt)" "$alternation"
+  [ -n "$alternation" ] && check "internal host / path / name (private leak-patterns.txt)" "$alternation"
 fi
 
 if [ -n "$hits" ]; then

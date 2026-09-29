@@ -7,8 +7,8 @@ set -u
 
 z="0000000000000000000000000000000000000000"
 pat='root@([0-9]{1,3}\.){3}[0-9]{1,3}|BEGIN (OPENSSH|RSA|EC|DSA|PGP) PRIVATE KEY|(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}'
-# Real hosts/IPs/names are internal themselves: kept in the private repo, not in this file.
-private_patterns="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/private/leak-patterns.txt"
+# Real hosts/IPs/names are internal themselves: kept in the maintainer's private skills repo, not in this file.
+private_patterns="${LIVEOLATOR_PRIVATE_DIR:-$HOME/.claude/skills/internal-info/liveolator}/leak-patterns.txt"
 if [ -f "$private_patterns" ]; then
   alternation=$(grep -Ev '^[[:space:]]*(#|$)' "$private_patterns" | tr -d '\r' | paste -sd'|' -)
   [ -n "$alternation" ] && pat="$pat|$alternation"
