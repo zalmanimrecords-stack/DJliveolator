@@ -41,7 +41,6 @@ public sealed class GenreFilterOption : ReactiveObject
         Name = name;
         _isSelected = isSelected;
         _onToggled = onToggled;
-        Parent = parent;
         CanGroupUnder = canGroupUnder;
         GroupUnderOptions = new[] { TopLevelOption }.Concat(groupUnderCandidates ?? Array.Empty<string>()).ToList();
         _onGroupUnderChanged = onGroupUnderChanged ?? (_ => { });
@@ -64,9 +63,6 @@ public sealed class GenreFilterOption : ReactiveObject
             _onToggled();
         }
     }
-
-    /// <summary>This genre's parent at the time this option was built, or null when top-level.</summary>
-    public string? Parent { get; }
 
     /// <summary>Whether the "Group under…" control should be shown for this row (false when this genre
     /// already has children — see the constructor note).</summary>

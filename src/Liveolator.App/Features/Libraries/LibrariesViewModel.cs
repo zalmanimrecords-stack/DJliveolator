@@ -669,8 +669,11 @@ public sealed class LibrariesViewModel : ViewModelBase, IDisposable
     {
         if (_serverSnapshotSync is null)
             return Liveolator.Media.ServerSnapshotSyncResult.None;
-        Liveolator.Media.ServerSnapshotSyncResult result =
-            await _serverSnapshotSync.SyncAsync(folders, cancellationToken).ConfigureAwait(false);
+        // Task.Run because SQLite's async API completes synchronously: without it the share probe, the
+        // snapshot copy over SMB and the integrity check all run on the UI thread, and a share that is
+        // down freezes the launch.
+        Liveolator.Media.ServerSnapshotSyncResult result = await Task.Run(
+            () => _serverSnapshotSync.SyncAsync(folders, cancellationToken), cancellationToken).ConfigureAwait(false);
         _serverManagedRoots = result.ManagedRoots;
         return result;
     }

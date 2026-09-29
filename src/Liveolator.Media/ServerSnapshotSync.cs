@@ -60,20 +60,21 @@ public sealed class ServerSnapshotSync
             if (published is not { } server)
                 continue;
 
+            var catalog = _library.All;
             ServerCatalogPullPlan plan = ServerCatalogPull.Plan(
-                server.Tracks, _library.All, server.ServerRoot, root, adoptMissing: true);
+                server.Tracks, catalog, server.ServerRoot, root, adoptMissing: true);
 
             var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (MusicTrack track in server.Tracks)
                 if (PortablePath.Rebase(track.File.Path, server.ServerRoot, root) is { } local)
                     listed.Add(local);
-            List<string> gone = _library.All
+            List<string> gone = catalog
                 .Select(t => t.File.Path)
                 .Where(p => FolderScope.IsUnder(p, root) && !listed.Contains(p) && !_fileExists(p))
                 .ToList();
 
             var goneSet = new HashSet<string>(gone, StringComparer.OrdinalIgnoreCase);
-            _library.Restore(ServerCatalogPull.Apply(_library.All, plan).Where(t => !goneSet.Contains(t.File.Path)));
+            _library.Restore(ServerCatalogPull.Apply(catalog, plan).Where(t => !goneSet.Contains(t.File.Path)));
             if (plan.TracksToUpsert.Count > 0)
                 await _store.SaveMusicAsync(plan.TracksToUpsert, cancellationToken).ConfigureAwait(false);
             foreach (string path in gone)

@@ -47,7 +47,7 @@ public static class SqliteCatalogSnapshot
             command.CommandText = "PRAGMA journal_mode=DELETE;";
             command.ExecuteNonQuery();
         }
-        catch (SqliteException ex) when (ex.SqliteErrorCode is 11 or 26)
+        catch (SqliteException ex) when (SqliteCatalogStore.IsCorruption(ex))
         {
             DeleteQuietly(destinationDatabase);
             throw new CatalogCorruptException(sourceDatabase, ex.Message, ex);

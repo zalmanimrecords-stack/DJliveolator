@@ -387,7 +387,7 @@ public sealed class SqliteCatalogStore : IMusicCatalogStore, IVisualCatalogStore
             throw MarkCorrupt(verdict, null);
     }
 
-    private static bool IsCorruption(SqliteException ex)
+    internal static bool IsCorruption(SqliteException ex)
         => ex.SqliteErrorCode is SqliteCorrupt or SqliteNotADatabase;
 
     private CatalogCorruptException MarkCorrupt(string detail, Exception? inner)
