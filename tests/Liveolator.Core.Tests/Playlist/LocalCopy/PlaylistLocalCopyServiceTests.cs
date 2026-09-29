@@ -49,6 +49,15 @@ public class PlaylistLocalCopyServiceTests
     }
 
     [Fact]
+    public async Task Copy_OfALocalPlaylist_KeepsItsName()
+    {
+        await Service().CopyAsync(
+            new PlaylistRecord("Friday (local)", new[] { A }), Catalog(A), new[] { Nas }, Gig);
+
+        Assert.Equal("Friday (local)", Assert.Single(_playlistStore.Saved).Name);
+    }
+
+    [Fact]
     public async Task Copy_WithoutEnoughFreeSpace_CopiesNothing()
     {
         _copier.FreeBytes = 1500; // two 1000-byte tracks

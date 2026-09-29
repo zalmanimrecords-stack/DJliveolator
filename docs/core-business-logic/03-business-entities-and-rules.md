@@ -138,6 +138,10 @@ records in `Liveolator.Media` are serialisation formats. Neither owns domain mea
 - **An unreachable file is skipped, not failed.** A disconnected drive or an un-downloaded cloud
   placeholder is passed over by background analysis rather than marked failed and stripped of its
   BPM, key, cues and structure. `Verified`.
+- **An unreachable library folder is not a deleted one.** A scan only drops rows for files missing from a
+  folder that returned at least one file. An offline share returns none, so its catalog is kept, not
+  wiped. As a result, a folder emptied on purpose keeps its rows until the Library Doctor reports them
+  missing. *Enforced in* `MediaLibrary.ScanAsync`; covered by `MediaLibraryScopedScanTests`. `Verified`.
 - **A per-file failure degrades to status, not an aborted scan.** *Enforced in* the library scan path;
   see [04](./04-critical-flows.md).
 

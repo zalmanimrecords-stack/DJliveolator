@@ -185,6 +185,17 @@ public sealed class JsonSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveThenLoad_RoundTripsTheLocalCopyFolder_AndAnOlderFileReadsNull()
+    {
+        var store = NewStore();
+        Assert.Null((await store.LoadAsync()).LocalCopyFolder);
+
+        await store.SaveAsync(AppSettings.Default with { LocalCopyFolder = @"C:\Gig" });
+
+        Assert.Equal(@"C:\Gig", (await store.LoadAsync()).LocalCopyFolder);
+    }
+
+    [Fact]
     public async Task Load_OlderFileWithoutMixSec_DefaultsToTenSeconds()
     {
         var store = NewStore();

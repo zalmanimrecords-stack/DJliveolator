@@ -40,6 +40,9 @@ public sealed record AppSettings
     /// <summary>Mixer preferences (MIX SEC, the AUTO crossfade time).</summary>
     public MixerSettings Mixer { get; init; } = MixerSettings.Default;
 
+    /// <summary>The folder a playlist was last copied to for offline use, offered first next time; null until one is chosen.</summary>
+    public string? LocalCopyFolder { get; init; }
+
     /// <summary>The default preferences (system audio device, default buffer, no controller).</summary>
     public static AppSettings Default { get; } = new();
 
