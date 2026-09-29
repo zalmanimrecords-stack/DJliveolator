@@ -28,6 +28,15 @@ public static class LocalCopyPlanner
 
         foreach (string source in playlist.TrackPaths)
         {
+            // Rebase and IsUnder compare prefixes only, so "<share>\a\..\..\x" would pass both and the
+            // copy would be written wherever the dots resolve. Catalog paths can come from a snapshot on
+            // a share other machines write to, so they are not trusted here.
+            if (HasDotSegment(source))
+            {
+                items.Add(new LocalCopyItem(source, null, LocalCopyStep.UnsafePath, null));
+                continue;
+            }
+
             if (!catalogByPath.TryGetValue(source, out MusicTrack? track))
             {
                 items.Add(new LocalCopyItem(source, null, LocalCopyStep.NotCatalogued, null));
@@ -57,6 +66,9 @@ public static class LocalCopyPlanner
 
     public static long BytesToCopy(IEnumerable<LocalCopyItem> items)
         => items.Where(i => i.Step == LocalCopyStep.Copy).Sum(i => i.Track!.File.SizeBytes);
+
+    private static bool HasDotSegment(string path)
+        => path.Split('/', '\\').Any(segment => segment is "." or "..");
 
     private static string DestinationFor(string source, IReadOnlyList<string> scanFolders, string destinationRoot)
     {

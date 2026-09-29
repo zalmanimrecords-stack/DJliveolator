@@ -149,6 +149,7 @@ public sealed class PlaylistLocalCopyService
     {
         LocalCopyStep.NotCatalogued => "Not in the library, so there is no analysis to copy. Scan its folder first.",
         LocalCopyStep.NameClash => "Another track in this playlist, from a different folder, has the same local path.",
+        LocalCopyStep.UnsafePath => "The path contains '.' or '..', so it was not copied.",
         _ => step.ToString(),
     };
 }

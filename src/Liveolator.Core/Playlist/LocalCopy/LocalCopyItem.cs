@@ -16,6 +16,9 @@ public enum LocalCopyStep
 
     /// <summary>Another entry from a different folder already claims the same destination path.</summary>
     NameClash,
+
+    /// <summary>The path has a <c>.</c> or <c>..</c> segment, so its copy could land outside the destination.</summary>
+    UnsafePath,
 }
 
 /// <param name="SourcePath">The playlist entry as stored (usually a network path).</param>

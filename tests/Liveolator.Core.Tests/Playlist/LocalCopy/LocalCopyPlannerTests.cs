@@ -53,6 +53,20 @@ public class LocalCopyPlannerTests
         Assert.Equal(LocalCopyStep.Copy, items[1].Step);
     }
 
+    [Theory]
+    [InlineData(@"\\nas\music\a\..\..\..\Users\dj\Startup\x.bat")]
+    [InlineData(@"\\nas\music\.\a.mp3")]
+    [InlineData(@"\\nas\music\a/../../b.mp3")]
+    [InlineData(@"\\nas\music\..")]
+    public void Plan_PathWithDotSegments_IsRefused_SoACopyCannotEscapeTheDestination(string source)
+    {
+        LocalCopyItem item = Single(LocalCopyPlanner.Plan(
+            Playlist(source), Catalog(source), new[] { Nas }, Gig, _ => null));
+
+        Assert.Equal(LocalCopyStep.UnsafePath, item.Step);
+        Assert.Null(item.DestinationPath);
+    }
+
     [Fact]
     public void Plan_UncataloguedPath_IsReportedNotDropped()
     {
