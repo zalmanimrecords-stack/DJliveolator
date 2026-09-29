@@ -43,7 +43,7 @@ public static class PortablePath
 
     /// <summary>
     /// Re-roots <paramref name="path"/> from one share prefix to another, e.g. the Linux mount point a
-    /// server catalogued a track under (<c>/media/simon/external_4tb/x.mp3</c>) to the UNC share the same
+    /// server catalogued a track under (<c>/srv/x.mp3</c>) to the UNC share the same
     /// file is reached by here (<c>\host\Storage\x.mp3</c>). Returns <c>null</c> when the path does not
     /// start with <paramref name="fromPrefix"/> — that row belongs to some other root and is not ours to
     /// translate, which is a normal outcome, not an error.

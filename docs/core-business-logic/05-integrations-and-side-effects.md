@@ -180,7 +180,7 @@ result that looks fine until someone presses play.
 
 - **stdio** (default) — a local child process an AI client spawns directly; no network exposure at all.
 - **HTTP** (`--http --port N --bind ADDR`) — used for the always-on deployment on the music host
-  (`simonsrv`), so a scan that reads audio over SMB at roughly 1 MB/s runs where the files actually
+  (the machine that holds the music), so a scan that reads audio over SMB at roughly 1 MB/s runs where the files actually
   are instead of over the network. Shipped as a headless Linux container
   (`docker/mcp/Dockerfile` + `docker/mcp/docker-compose.yml`): a self-contained `linux-x64` publish
   (`scripts/deploy-mcp-server.ps1`) on `mcr.microsoft.com/dotnet/runtime-deps`, plus ffmpeg and the
@@ -192,6 +192,6 @@ result that looks fine until someone presses play.
 because Docker forwards a published port to the container's own network interface and a server bound
 to the container's loopback would make that port dead; the isolation then comes entirely from the
 compose file publishing `127.0.0.1:5175:5175` on the **host**, which keeps the server off the LAN just
-as strictly. An agent reaches it over an SSH tunnel (`ssh -N -L 5175:127.0.0.1:5175 simonsrv`), never
+as strictly. An agent reaches it over an SSH tunnel (`ssh -N -L 5175:127.0.0.1:5175 <music-host>`), never
 directly. Runs alongside any pre-existing server on a different port and data directory, so the
 catalog already in service is never at risk while a new build is being judged.

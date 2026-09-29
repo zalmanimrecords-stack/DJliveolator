@@ -54,12 +54,12 @@ The repo root has a project-scoped [`.mcp.json`](../.mcp.json):
 Start Claude Code with the repo as its working directory and the tools appear as
 `mcp__liveolator__<tool>`. **The path is relative** — if your working directory is not the repo root,
 replace it with the absolute path:
-`C:\Users\SimonRosenfeld\DEV\Liveolator\src\Liveolator.Mcp\bin\Debug\net8.0\liveolator-mcp.dll`.
+`<repo>\src\Liveolator.Mcp\bin\Debug\net8.0\liveolator-mcp.dll`.
 
 Registering it yourself from the CLI:
 
 ```bash
-claude mcp add liveolator -- dotnet C:/Users/SimonRosenfeld/DEV/Liveolator/src/Liveolator.Mcp/bin/Debug/net8.0/liveolator-mcp.dll --stdio
+claude mcp add liveolator -- dotnet <repo>/src/Liveolator.Mcp/bin/Debug/net8.0/liveolator-mcp.dll --stdio
 ```
 
 ### Claude Desktop / any other stdio client
@@ -121,7 +121,7 @@ stdin hits EOF and the host shuts down before the responses flush. Keep stdin op
 ```powershell
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = "dotnet"; $psi.Arguments = "src\Liveolator.Mcp\bin\Debug\net8.0\liveolator-mcp.dll --stdio"
-$psi.WorkingDirectory = "C:\Users\SimonRosenfeld\DEV\Liveolator"
+$psi.WorkingDirectory = "<repo>"
 $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.UseShellExecute = $false
 $p = [System.Diagnostics.Process]::Start($psi)
 Get-Content handshake.jsonl | ForEach-Object { $p.StandardInput.WriteLine($_) }

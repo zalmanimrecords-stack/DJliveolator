@@ -18,7 +18,7 @@ namespace Liveolator.App.Tests.Libraries;
 /// </summary>
 public sealed class LibrariesViewModelServerSnapshotTests : IDisposable
 {
-    private const string ServerRoot = "/media/simon/external_4tb/Navidrome/music";
+    private const string ServerRoot = "/srv/library/music";
     private readonly string _share = Path.Combine(Path.GetTempPath(), $"liveolator-share-{Guid.NewGuid():N}");
 
     public LibrariesViewModelServerSnapshotTests()

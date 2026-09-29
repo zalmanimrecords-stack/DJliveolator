@@ -12,7 +12,7 @@ namespace Liveolator.Media.Tests;
 /// </summary>
 public sealed class ServerSnapshotSyncTests : IDisposable
 {
-    private const string ServerRoot = "/media/simon/external_4tb/Navidrome/music";
+    private const string ServerRoot = "/srv/library/music";
     private readonly TempDirectory _share = new();
     private readonly TempDirectory _local = new();
 

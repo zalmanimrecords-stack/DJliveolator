@@ -8,16 +8,16 @@ public sealed class AppDataRedirectionTests
     public void IsPackageRedirect_FlagsAWriteThatLandedInAPackageCache()
     {
         Assert.True(AppDataRedirection.IsPackageRedirect(
-            @"C:\Users\SIMONR~1\AppData\Roaming\Liveolator",
-            @"C:\Users\SimonRosenfeld\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Liveolator\p.tmp"));
+            @"C:\Users\DJUSER~1\AppData\Roaming\Liveolator",
+            @"C:\Users\DjUserName\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Liveolator\p.tmp"));
     }
 
     [Fact]
     public void IsPackageRedirect_AcceptsAnUnredirectedPath_EvenWhenSpelledWithShortNames()
     {
         Assert.False(AppDataRedirection.IsPackageRedirect(
-            @"C:\Users\SIMONR~1\AppData\Local\Temp\x",
-            @"C:\Users\SimonRosenfeld\AppData\Local\Temp\x\p.tmp"));
+            @"C:\Users\DJUSER~1\AppData\Local\Temp\x",
+            @"C:\Users\DjUserName\AppData\Local\Temp\x\p.tmp"));
     }
 
     [Fact]

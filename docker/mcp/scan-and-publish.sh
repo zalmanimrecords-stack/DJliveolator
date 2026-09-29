@@ -11,9 +11,10 @@
 set -uo pipefail
 
 URL=${LIVEOLATOR_MCP_URL:-http://127.0.0.1:5175/}
-MUSIC=${LIVEOLATOR_MUSIC_DIR:-/media/simon/external_4tb/Navidrome/music}
-CATALOG=${LIVEOLATOR_CATALOG:-/home/simon/liveolator/next-data/catalog.db}
-LOG=${LIVEOLATOR_SCAN_LOG:-/home/simon/liveolator/scan.log}
+# Host paths are deployment-specific and not kept in the public repo; the crontab line sets them.
+MUSIC=${LIVEOLATOR_MUSIC_DIR:?set LIVEOLATOR_MUSIC_DIR to the music folder on this host}
+CATALOG=${LIVEOLATOR_CATALOG:?set LIVEOLATOR_CATALOG to the MCP server catalog.db on this host}
+LOG=${LIVEOLATOR_SCAN_LOG:?set LIVEOLATOR_SCAN_LOG to the scan log path on this host}
 LAST=${LOG%.log}-last.json
 PUBLISH_DIR="$MUSIC/.liveolator"
 

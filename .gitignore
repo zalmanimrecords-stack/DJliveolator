@@ -62,9 +62,12 @@ AGENTS.md
 CLAUDE.md
 dj-software-auditor.zip
 
-# The website has a private-repo home (SimonRoseDorix/LiveolatorWebsite), but its 42 files are
+# The website has a private-repo home, but its 42 files are
 # still TRACKED here and publish-website-release.ps1 edits changelog.json / site.ts in-tree, so
 # every release commits its own website changes. Ignoring the directory therefore only broke
 # `git add website/` while changing nothing about what is tracked — ignore rules do not untrack.
 # Re-add these rules in the same commit that actually untracks the files and moves the release
 # sync to a cross-repo flow. website/.gitignore already covers dist/, .astro/ and node_modules/.
+
+# Maintainer-only private repo (internal hosts, paths, ops notes). Its own git repo - never commit here.
+/private/

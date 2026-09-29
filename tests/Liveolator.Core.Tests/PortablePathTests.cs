@@ -13,7 +13,7 @@ public class PortablePathTests
 {
     [Theory]
     [InlineData(@"C:\music\My Track.mp3", "My Track.mp3")]      // Windows drive path
-    [InlineData(@"\\192.168.68.131\Storage\track.flac", "track.flac")] // UNC share
+    [InlineData(@"\\nas\Storage\track.flac", "track.flac")] // UNC share
     [InlineData("/Users/dj/song.wav", "song.wav")]             // Unix path
     [InlineData(@"mixed/path\to\file.aac", "file.aac")]        // both separators
     [InlineData("bare.mp3", "bare.mp3")]                       // no separator
@@ -37,11 +37,11 @@ public class PortablePathTests
     public void Rebase_maps_a_posix_mount_to_a_unc_share()
     {
         Assert.Equal(
-            @"\192.168.68.131\Storage\Navidrome\music\a\b.mp3",
+            @"\nas\Storage\library\music\a\b.mp3",
             PortablePath.Rebase(
-                "/media/simon/external_4tb/Navidrome/music/a/b.mp3",
-                "/media/simon/external_4tb",
-                @"\192.168.68.131\Storage"));
+                "/srv/library/music/a/b.mp3",
+                "/srv",
+                @"\nas\Storage"));
     }
 
     [Fact]
