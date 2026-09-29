@@ -17,6 +17,7 @@ namespace Liveolator.Mcp.Tests;
 public sealed class LibraryToolsTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"liveolator-mcp-tests-{Guid.NewGuid():N}");
+    private readonly EmptyEnumerator _enumerator = new();
 
     [Fact]
     public async Task ListTracks_UsesRichFiltersSortAndPaging()
@@ -65,9 +66,9 @@ public sealed class LibraryToolsTests : IDisposable
     [Fact]
     public async Task ScanMusicFolders_WalksOnlyTheFoldersItIsGiven()
     {
-        // The enumerator finds nothing, so every folder this scan walks loses its tracks. That makes it
-        // visible which folders were walked: asking for one folder must not re-walk — or empty — another
-        // library that happens to share the data root (issue #3).
+        // Asking for one folder must not re-walk — or empty — another library that happens to share the
+        // data root (issue #3). The enumerator finds nothing, which reads as an offline folder, so even the
+        // walked folder keeps its track.
         string curated = Path.Combine(_directory, "curated");
         string other = Path.Combine(_directory, "other");
         LibrarySession session = await CreateSessionAsync(
@@ -78,9 +79,8 @@ public sealed class LibraryToolsTests : IDisposable
 
         Assert.Equal(new[] { curated }, summary.Folders);
         Assert.Contains(other, summary.KnownFolders);
-        IReadOnlyList<TrackInfo> remaining = await LibraryTools.ListTracks(session);
-        TrackInfo survivor = Assert.Single(remaining);
-        Assert.Equal(Path.Combine(other, "theirs.mp3"), survivor.Path);
+        Assert.Equal(new[] { curated }, _enumerator.Walked);
+        Assert.Equal(2, (await LibraryTools.ListTracks(session)).Count);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class LibraryToolsTests : IDisposable
         var importService = new LibraryImportService(
             new JsonHotCueStore(_directory), new JsonPlaylistStore(_directory), p => ImportFileProbe.Stat(p));
         return new LibrarySession(
-            new EmptyEnumerator(),
+            _enumerator,
             new EmptyDecoder(),
             new TrackAnalyzer(),
             NullTrackMetadataReader.Instance,
@@ -185,12 +185,18 @@ public sealed class LibraryToolsTests : IDisposable
             kind,
             TrackAnalyzer.CurrentVersion);
 
+    /// <summary>Finds nothing, and records which folders it was asked to walk.</summary>
     private sealed class EmptyEnumerator : IFileEnumerator
     {
+        public List<string> Walked { get; } = new();
+
         public IEnumerable<ScannedFile> Enumerate(
             IReadOnlyList<string> folders,
             IReadOnlySet<string> extensions)
-            => Array.Empty<ScannedFile>();
+        {
+            Walked.AddRange(folders);
+            return Array.Empty<ScannedFile>();
+        }
     }
 
     private sealed class EmptyDecoder : IAudioDecoder
