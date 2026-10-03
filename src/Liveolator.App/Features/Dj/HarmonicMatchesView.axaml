@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dj="clr-namespace:Liveolator.App.Features.Dj"
+             xmlns:lib="clr-namespace:Liveolator.App.Features.Libraries"
+             x:Class="Liveolator.App.Features.Dj.HarmonicMatchesView"
+             x:DataType="dj:HarmonicMatchesViewModel">
+
+  <!-- DJ PRO harmonic matches (under deck A): tracks that fit the track on the chosen deck, closest BPM first.
+       KEY / BPM / GENRE each switch their gate off independently. -> A / -> B load a free deck or queue onto a
+       playing one. Collapsible so laptop tiers can hand the height back to the deck. -->
+  <Border Classes="panel">
+    <Grid RowDefinitions="Auto,Auto,*" Margin="10,6">
+
+      <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
+        <Button Grid.Column="0" Classes="spartan" Padding="6,2" Content="MATCHES"
+                Command="{Binding ToggleExpandedCommand}" ToolTip.Tip="Show / hide the harmonic matches" />
+        <RadioButton Grid.Column="1" GroupName="HarmonicSource" Content="A" Margin="8,0,0,0"
+                     IsChecked="{Binding IsSourceA}" ToolTip.Tip="Match the track on deck A" />
+        <RadioButton Grid.Column="2" GroupName="HarmonicSource" Content="B" Margin="4,0,0,0"
+                     IsChecked="{Binding IsSourceB}" ToolTip.Tip="Match the track on deck B" />
+        <TextBlock Grid.Column="3" Classes="mono faint" VerticalAlignment="Center" Margin="10,0"
+                   TextTrimming="CharacterEllipsis" Text="{Binding Summary}" />
+        <ToggleButton Grid.Column="4" Classes="spartan" Padding="6,2" Content="KEY"
+                      IsChecked="{Binding MatchKey}" ToolTip.Tip="Only harmonically compatible keys (same, ±1, relative)" />
+        <ToggleButton Grid.Column="5" Classes="spartan" Padding="6,2" Margin="4,0,0,0" Content="BPM"
+                      IsChecked="{Binding MatchBpm}" ToolTip.Tip="Only tracks within ±6 BPM" />
+        <ToggleButton Grid.Column="6" Classes="spartan" Padding="6,2" Margin="4,0,0,0" Content="GENRE"
+                      IsChecked="{Binding MatchGenre}" ToolTip.Tip="Only the same genre (untagged tracks stay, at the bottom)" />
+      </Grid>
+
+      <TextBlock Grid.Row="1" Classes="mono accent" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                 IsVisible="{Binding IsExpanded}" Text="{Binding LoadStatus}" />
+
+      <ListBox Grid.Row="2" Classes="rows" Margin="0,4,0,0" MaxHeight="190"
+               IsVisible="{Binding IsExpanded}" ItemsSource="{Binding Matches}">
+        <ListBox.ItemTemplate>
+          <DataTemplate x:DataType="lib:TrackRowViewModel">
+            <Grid ColumnDefinitions="52,40,*,Auto" VerticalAlignment="Center">
+              <TextBlock Grid.Column="0" Classes="mono accent" Text="{Binding Bpm}"
+                         HorizontalAlignment="Right" Margin="0,0,8,0" />
+              <TextBlock Grid.Column="1" Classes="mono" Text="{Binding Key}" />
+              <TextBlock Grid.Column="2" TextTrimming="CharacterEllipsis">
+                <Run Text="{Binding Title}" />
+                <Run Classes="muted" Text="{Binding Artist, StringFormat=' · {0}'}" />
+              </TextBlock>
+              <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
+                <Button Classes="key" Content="A" Width="28" Height="22" Padding="0"
+                        CommandParameter="{Binding}"
+                        Command="{Binding $parent[ListBox].((dj:HarmonicMatchesViewModel)DataContext).LoadRowToDeckACommand}"
+                        ToolTip.Tip="Send to deck A (loads if free, queues if playing)" />
+                <Button Classes="key" Content="B" Width="28" Height="22" Padding="0"
+                        CommandParameter="{Binding}"
+                        Command="{Binding $parent[ListBox].((dj:HarmonicMatchesViewModel)DataContext).LoadRowToDeckBCommand}"
+                        ToolTip.Tip="Send to deck B (loads if free, queues if playing)" />
+              </StackPanel>
+            </Grid>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Grid>
+  </Border>
+</UserControl>

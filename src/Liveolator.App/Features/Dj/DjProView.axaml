@@ -21,11 +21,25 @@
             <TextBlock Grid.Column="0" Classes="mono accent" FontWeight="SemiBold"
                        VerticalAlignment="Center" Text="A" />
             <controls:DeckWaveform Grid.Column="1" DataContext="{Binding Decks.DeckA}" Folded="True" />
+            <Panel Grid.Column="1" DataContext="{Binding UpNextA}" IsHitTestVisible="False"
+                   HorizontalAlignment="Right" VerticalAlignment="Top">
+              <Border x:DataType="dj:DeckUpNextViewModel" IsVisible="{Binding HasNext, FallbackValue=False}"
+                      Padding="6,1" CornerRadius="3" Background="{DynamicResource S1}">
+                <TextBlock Classes="mono" Text="{Binding NextTitle, StringFormat='PLAYING NEXT · {0}'}" />
+              </Border>
+            </Panel>
           </Grid>
           <Grid ColumnDefinitions="20,*">
             <TextBlock Grid.Column="0" Classes="mono" FontWeight="SemiBold"
                        Foreground="{DynamicResource DeckBIdentity}" VerticalAlignment="Center" Text="B" />
             <controls:DeckWaveform Grid.Column="1" DataContext="{Binding Decks.DeckB}" Folded="True" CombAtTop="True" />
+            <Panel Grid.Column="1" DataContext="{Binding UpNextB}" IsHitTestVisible="False"
+                   HorizontalAlignment="Right" VerticalAlignment="Top">
+              <Border x:DataType="dj:DeckUpNextViewModel" IsVisible="{Binding HasNext, FallbackValue=False}"
+                      Padding="6,1" CornerRadius="3" Background="{DynamicResource S1}">
+                <TextBlock Classes="mono" Text="{Binding NextTitle, StringFormat='PLAYING NEXT · {0}'}" />
+              </Border>
+            </Panel>
           </Grid>
         </StackPanel>
 
@@ -42,7 +56,7 @@
     <!-- PERFORMANCE: each deck column is [FX · HOT CUES] / [LOOP · SYNC · TRACK] / deck, around the mixer. The racks
          share one row above each deck; UniformGrid skips the hidden STEMS rack, so FX + cues split the row when stems are off. -->
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*">
-      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto" Margin="0,0,10,0">
+      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,10,0">
         <UniformGrid Grid.Row="0" Rows="1" Margin="0,0,0,6">
           <dj:DeckStemRackView IsVisible="{x:Static comp:StemsFeature.IsEnabled}" Margin="0,0,3,0" DataContext="{Binding StemRackA}" />
           <dj:DeckFxRackView Margin="3,0,3,0" DataContext="{Binding FxRackA}" />
@@ -54,6 +68,9 @@
           <dj:DjProTrackBrowseView Margin="3,0,0,0" PrevCommand="{Binding BrowsePrevACommand}" NextCommand="{Binding BrowseNextACommand}" />
         </UniformGrid>
         <dj:DjProDeckView Grid.Row="2" DataContext="{Binding Decks.DeckA}" />
+        <Border Grid.Row="3" Margin="0,6,0,0" IsVisible="{Binding HasMatches}">
+          <dj:HarmonicMatchesView DataContext="{Binding Matches}" />
+        </Border>
       </Grid>
 
       <dj:DjProMixerView Grid.Column="1" Margin="0,0,10,0" VerticalAlignment="Top" DataContext="{Binding Decks.Mixer}" />

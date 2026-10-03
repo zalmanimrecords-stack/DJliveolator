@@ -830,10 +830,15 @@ public static class ServiceConfig
         // DJ PRO tab: a denser DJ surface built ALONGSIDE the DJ tab (never replacing it). It drives the
         // SAME shared decks + mixer and reuses the DJ tab's track browser instance (one source of truth) —
         // an external FX rack + per-stem knobs are layered on in later phases.
+        // Under deck A: harmonic matches for the track on A or B; each deck's waveform shows its queue head.
         services.AddSingleton<DjProViewModel>(sp => new DjProViewModel(
             sp.GetRequiredService<PerformanceDeckSet>(),
             sp.GetRequiredService<IPerformanceActionDispatcher>(),
-            sp.GetRequiredService<DjViewModel>().Browser));
+            sp.GetRequiredService<DjViewModel>().Browser,
+            new HarmonicMatchesViewModel(
+                sp.GetRequiredService<MusicLibrary>(), sp.GetRequiredService<IPerformanceActionDispatcher>()),
+            new DeckUpNextViewModel(livePlaylist, sp.GetRequiredService<MusicLibrary>()),
+            new DeckUpNextViewModel(deckBPlaylist, sp.GetRequiredService<MusicLibrary>())));
 
         // Settings tab (doc 12): detect audio output + MIDI equipment and persist the choice. The
         // device catalogs degrade to empty lists when native bass/rtmidi is absent (so the tab works
