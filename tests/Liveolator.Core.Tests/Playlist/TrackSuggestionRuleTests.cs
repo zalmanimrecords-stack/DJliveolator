@@ -241,4 +241,54 @@ public class TrackSuggestionRuleTests
     [Fact]
     public void Validate_RejectsANegativeTolerance()
         => Assert.Throws<ArgumentOutOfRangeException>(() => new TrackSuggestionOptions(BpmTolerance: -1).Validate());
+
+    // ---------- opt-in toggles for the DJ PRO harmonic-match widget ----------
+
+    [Fact]
+    public void MatchKey_KeepsOnlyCamelotCompatibleKeys()
+    {
+        MusicTrack seed = Track("seed.mp3", camelot: "8A");
+        var candidates = new[]
+        {
+            Track("same.mp3", camelot: "8A"),
+            Track("down.mp3", camelot: "7A"),
+            Track("up.mp3", camelot: "9A"),
+            Track("relative.mp3", camelot: "8B"),
+            Track("clash.mp3", camelot: "3B"),
+            Track("energy-boost.mp3", camelot: "10A"),
+        };
+
+        var result = _rule.Suggest(seed, candidates, new TrackSuggestionOptions(MatchKey: true));
+
+        Assert.Equal(
+            new[] { "down.mp3", "relative.mp3", "same.mp3", "up.mp3" },
+            Paths(result).OrderBy(p => p, StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public void MatchKey_HidesCandidatesWithoutAKey()
+        => Assert.Empty(_rule.Suggest(
+            Track("seed.mp3", camelot: "8A"),
+            new[] { Track("keyless.mp3", camelot: null) },
+            new TrackSuggestionOptions(MatchKey: true)));
+
+    [Fact]
+    public void MatchKey_SeedWithoutKey_SkipsTheKeyGate()
+        => Assert.Equal(
+            new[] { "any.mp3" },
+            Paths(_rule.Suggest(
+                Track("seed.mp3", camelot: null),
+                new[] { Track("any.mp3", camelot: "3B") },
+                new TrackSuggestionOptions(MatchKey: true))));
+
+    [Fact]
+    public void MatchBpmOff_KeepsFarTemposButStillRanksClosestFirst()
+    {
+        MusicTrack seed = Track("seed.mp3", bpm: 140);
+        var candidates = new[] { Track("far.mp3", bpm: 174), Track("near.mp3", bpm: 141) };
+
+        var result = _rule.Suggest(seed, candidates, new TrackSuggestionOptions(MatchBpm: false));
+
+        Assert.Equal(new[] { "near.mp3", "far.mp3" }, Paths(result));
+    }
 }

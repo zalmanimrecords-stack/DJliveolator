@@ -90,6 +90,7 @@ public sealed class MainWindowViewModel : ViewModelBase
                 (tab?.Page as DjViewModel)?.Browser?.Refresh();
                 // DJ PRO reuses the DJ tab's browser instance, so refresh it on entry there too.
                 (tab?.Page as DjProViewModel)?.Browser?.Refresh();
+                (tab?.Page as DjProViewModel)?.Matches?.Refresh();
             });
     }
 

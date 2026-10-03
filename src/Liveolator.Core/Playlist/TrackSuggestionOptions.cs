@@ -23,10 +23,17 @@ public enum GenreMatch
 /// 6.0 the harmonic set builder uses, so the two surfaces agree on what "close" means.</param>
 /// <param name="Genre">How strictly the genre signal is applied. <see cref="GenreMatch.Off"/> is the
 /// escape hatch for a library where most tracks are untagged.</param>
+/// <param name="MatchKey">Opt-in: also FILTER on key (<see cref="Analysis.Key.Camelot.IsCompatible"/>),
+/// hiding keyless candidates. Off by default so the 2026-09-13 "key only orders" rule stands; the DJ PRO
+/// harmonic-match widget turns it on (owner request, 2026-09-29). A keyless seed skips the gate.</param>
+/// <param name="MatchBpm">When false the tempo window no longer filters; candidates still rank by
+/// distance from the seed's BPM.</param>
 public sealed record TrackSuggestionOptions(
     int Limit = 20,
     double BpmTolerance = 6.0,
-    GenreMatch Genre = GenreMatch.Strict)
+    GenreMatch Genre = GenreMatch.Strict,
+    bool MatchKey = false,
+    bool MatchBpm = true)
 {
     /// <summary>Validates the request, throwing for values that cannot produce suggestions.</summary>
     public void Validate()

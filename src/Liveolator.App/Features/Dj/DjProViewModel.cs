@@ -21,13 +21,22 @@ public sealed class DjProViewModel : ViewModelBase, IDisposable
     /// <param name="decks">The shared decks + crossfader (doc 11) — the same instance the DJ/LIVE tabs drive.</param>
     /// <param name="dispatcher">The one action layer; drives the per-deck FX racks. Null disables them.</param>
     /// <param name="browser">The shared DJ track browser; null when no catalog is wired (headless/tests).</param>
+    /// <param name="matches">The harmonic-match widget under deck A; null hides it (headless/tests).</param>
+    /// <param name="upNextA">Deck A's "PLAYING NEXT" queue readout; null hides it.</param>
+    /// <param name="upNextB">Deck B's "PLAYING NEXT" queue readout; null hides it.</param>
     public DjProViewModel(
         PerformanceDeckSet decks,
         IPerformanceActionDispatcher? dispatcher = null,
-        DjBrowserViewModel? browser = null)
+        DjBrowserViewModel? browser = null,
+        HarmonicMatchesViewModel? matches = null,
+        DeckUpNextViewModel? upNextA = null,
+        DeckUpNextViewModel? upNextB = null)
     {
         Decks = decks ?? throw new ArgumentNullException(nameof(decks));
         Browser = browser;
+        Matches = matches;
+        UpNextA = upNextA;
+        UpNextB = upNextB;
         // The "effects outside" racks — one per live deck (A = slot 0, B = slot 1), driving the same
         // built-in FX chain the DJ tab's FX-mode button drives, but as always-visible knobs.
         FxRackA = new DeckFxRackViewModel(dispatcher, slot: 0);
@@ -79,11 +88,23 @@ public sealed class DjProViewModel : ViewModelBase, IDisposable
     /// <summary>True when a browser is available to show (drives the browser band's visibility).</summary>
     public bool HasBrowser => Browser is not null;
 
-    // Only the stem racks hold a subscription (to DeckStemGain feedback for availability); the decks/mixer/
-    // browser are shared instances owned elsewhere, and the FX racks only emit.
+    /// <summary>The harmonic-match widget under deck A, or null when no catalog is wired.</summary>
+    public HarmonicMatchesViewModel? Matches { get; }
+
+    public bool HasMatches => Matches is not null;
+
+    public DeckUpNextViewModel? UpNextA { get; }
+
+    public DeckUpNextViewModel? UpNextB { get; }
+
+    // The stem racks, matches and up-next readouts hold subscriptions; the decks/mixer/browser are shared
+    // instances owned elsewhere, and the FX racks only emit.
     public void Dispose()
     {
         StemRackA.Dispose();
         StemRackB.Dispose();
+        Matches?.Dispose();
+        UpNextA?.Dispose();
+        UpNextB?.Dispose();
     }
 }

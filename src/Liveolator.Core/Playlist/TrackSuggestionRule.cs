@@ -9,7 +9,8 @@ namespace Liveolator.Core.Playlist;
 /// passed (owner decision, 2026-09-13). That split is deliberate and is the opposite of
 /// <see cref="HarmonicSetBuilder"/>, where Camelot compatibility is a hard gate: a chained set must
 /// stay mixable end to end, whereas a suggestion list must stay populated. The two answer different
-/// questions and neither replaces the other.
+/// questions and neither replaces the other. <see cref="TrackSuggestionOptions.MatchKey"/> is the opt-in
+/// exception, for the DJ PRO harmonic-match widget where the owner asked for key as a filter.
 /// <para>Pure and IO-free, like every rule in this namespace, and deterministic: the order is total,
 /// tie-broken on title, so the same inputs always produce the same list.</para>
 /// </summary>
@@ -40,6 +41,7 @@ public sealed class TrackSuggestionRule
         IReadOnlySet<string> seedGenre =
             GenreTag.Normalize(options.Genre == GenreMatch.Off ? null : seed.Metadata?.Genre);
         bool judgeGenre = seedGenre.Count > 0;
+        string? seedKey = options.MatchKey ? seed.Key?.Camelot : null;
 
         var ranked = new List<TrackSuggestion>();
 
@@ -53,7 +55,11 @@ public sealed class TrackSuggestionRule
             // Null delta = one side has no detected tempo, so there is nothing to gate on. The
             // candidate stays and sorts last rather than being excluded for missing data.
             double? bpmDelta = TempoDelta(seed, candidate);
-            if (bpmDelta is not null && Math.Abs(bpmDelta.Value) > options.BpmTolerance)
+            if (options.MatchBpm && bpmDelta is not null && Math.Abs(bpmDelta.Value) > options.BpmTolerance)
+                continue;
+
+            if (!string.IsNullOrEmpty(seedKey)
+                && (candidate.Key?.Camelot is not { } key || !Camelot.IsCompatible(seedKey, key)))
                 continue;
 
             int genreTier = 0;
