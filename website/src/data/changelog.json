@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.10.4",
+    "date": "2026-10-03",
+    "notes": [
+      "New on DJ PRO: MATCHES, right under deck A. It lists the tracks that fit what is playing on deck A or deck B, by KEY, BPM and GENRE. Switch each one on or off, and the closest tempo comes first.",
+      "Tap A or B on a match to send it to that deck. If the deck is already playing, the track waits in its queue instead of cutting in.",
+      "PLAYING NEXT: each deck's waveform now shows the next track waiting in its queue, so you always know what you queued.",
+      "The matches list only rebuilds when you load a track or change a switch, so rows never jump under your finger mid-set. Collapse the panel to give the height back to the deck."
+    ]
+  },
+  {
     "version": "0.10.2",
     "date": "2026-09-26",
     "notes": [
