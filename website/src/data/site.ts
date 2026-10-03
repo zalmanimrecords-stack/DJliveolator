@@ -33,7 +33,7 @@ const defaults = {
   // Cache-buster for the screenshots specifically. Bump this when the images are
   // re-rendered WITHOUT a version bump, so Cloudflare's edge (which keys on the query)
   // serves the fresh files instead of the cached ones (see website/DEPLOY.md).
-  shotRev: "3",
+  shotRev: "4",
   // Email-gated download: the button posts the visitor's email here and the WP
   // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
   // `productSlug` must match a product key in the newsletter plugin settings.
@@ -150,15 +150,9 @@ export const shots: Shot[] = [
   },
   {
     src: "/screenshots/dj.png",
-    alt: "Liveolator DJ PRO tab showing two decks with jog wheels, EQ and crossfader",
+    alt: "Liveolator DJ PRO tab with two decks, mixer, hot cues, FX and a list of tracks that match the deck",
     label: "DJ PRO",
-    caption: "Full two-deck focus: jog wheels, 3-band EQ, filter, hot cues and loops.",
-  },
-  {
-    src: "/screenshots/vj.png",
-    alt: "Liveolator VJ tab asset browser for images and video",
-    label: "VJ",
-    caption: "Bring in your images and video, scan a folder, then composite in layers.",
+    caption: "Two decks, 3-band EQ, hot cues and loops, plus the tracks that fit what is playing.",
   },
   {
     src: "/screenshots/studio.png",
