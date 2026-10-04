@@ -5,7 +5,7 @@ import { site } from "../data/site";
 <section class="hero" id="top">
   <div class="container hero-inner">
     <div class="hero-copy">
-      <span class="pill"><span class="dot"></span> {site.stage} · free forever &amp; open source</span>
+      <span class="pill"><span class="dot"></span> {site.stage} · free forever</span>
 
       <h1>
         Mix the music.<br />
@@ -14,35 +14,35 @@ import { site } from "../data/site";
       </h1>
 
       <p class="lede">
-        {site.name} is a cross-platform DJ + VJ performance app. The visuals are
-        locked to the music on a single shared beat clock — so every cut, effect
-        and transition lands on the beat, automatically.
+        {site.name} is a DJ app for Windows with visuals built in. Your visuals
+        follow the music on a single beat, so every cut, effect and transition
+        lands in time, automatically.
       </p>
 
       <p class="alpha-note">
-        <strong>Heads up:</strong> this is an early <strong>alpha</strong> — it's
-        rough and there are plenty of bugs. It's free, and always will be, so your
-        <a href="#feedback">bug reports and ideas</a> matter so much.
+        <strong>Heads up:</strong> Liveolator is still an early <strong>alpha</strong>,
+        so expect a few rough edges. It's free, and always will be, so your
+        <a href="#feedback">feedback and ideas</a> matter a lot.
       </p>
 
       <div class="hero-actions">
         <a class="btn btn-primary" href="#download">Download for Windows</a>
-        <a class="btn btn-ghost" href={site.repoUrl} target="_blank" rel="noopener">View source on GitHub</a>
+        <a class="btn btn-ghost" href="/changelog">See what's new</a>
       </div>
 
       <ul class="hero-meta">
         <li>Windows</li>
-        <li>Any MIDI controller</li>
-        <li>DJ + VJ in one app</li>
+        <li>Works with your MIDI controller</li>
+        <li>DJ + visuals in one app</li>
       </ul>
     </div>
 
     <figure class="hero-shot reveal">
       <img
-        src={`/screenshots/live.png?v=${site.version}-${site.shotRev}`}
-        alt="Liveolator LIVE view — dual waveforms, two decks, mixer and a visuals strip"
+        src={`/screenshots/dj.png?v=${site.version}-${site.shotRev}`}
+        alt="Liveolator DJ PRO: two decks, mixer, hot cues, FX and a list of tracks that match the deck"
         width="1440"
-        height="900"
+        height="960"
         loading="eager"
         decoding="async"
       />

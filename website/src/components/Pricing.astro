@@ -2,10 +2,10 @@
 import { site } from "../data/site";
 
 const perks = [
-  "Both engines — DJ and VJ — fully unlocked",
-  "Use it for real gigs, no watermark, no time limit",
-  "Open source under the GPLv3 — audit it, fork it, keep it",
-  "Every update, free — forever",
+  "Two decks, mixer and visuals, all unlocked",
+  "Play real gigs: no watermark, no time limit",
+  "Every update is free, forever",
+  "Open source (GPLv3), so it stays free for good",
   "Your feedback shapes what gets built next",
 ];
 ---
@@ -15,19 +15,17 @@ const perks = [
     <div class="price-card card reveal">
       <div class="price-left">
         <p class="eyebrow">Pricing</p>
-        <h2>Free forever — and open source</h2>
+        <h2>Free forever</h2>
         <p class="price-note">
-          Liveolator is completely free, and it always will be — no account, no
-          trial countdown, no locked features. It's also
-          <strong>open source under the GPLv3</strong>: the full source is on
-          GitHub for anyone to read, audit or fork. The goal is simple — get it
-          into the hands of DJs and VJs and build the rest with their feedback.
+          Liveolator is completely free, and it always will be: no account, no
+          trial countdown, no locked features. The goal is simple. Get it into
+          the hands of DJs and let your feedback shape the rest. It's also open
+          source (GPLv3) for anyone curious, with the code on
+          <a href={site.repoUrl} target="_blank" rel="noopener">GitHub</a>.
         </p>
         <div class="price-actions">
           <a class="btn btn-primary" href="#download">Download for Windows</a>
-          <a class="btn btn-ghost" href={site.repoUrl} target="_blank" rel="noopener">
-            View source on GitHub
-          </a>
+          <a class="btn btn-ghost" href="#feedback">Tell us what you think</a>
         </div>
       </div>
 

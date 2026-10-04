@@ -39,15 +39,12 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $srcDir   = Join-Path $repoRoot 'artifacts/ui-shots'
 $destDir  = Join-Path $repoRoot 'website/public/screenshots'
 
-# Canonical capture name -> website filename. Edit if the tab set changes. dj.png is a curated
-# DJ PRO shot (matches list visible) and is not synced: the harness only captures an empty DJ PRO.
+# Canonical capture name -> website filename. Empty on purpose: the website shows curated screenshots
+# of the running app. The UiShots harness only captures empty screens with an audio-engine banner,
+# which is not what a DJ should see. Add an entry here only for a capture worth publishing.
 # LIVE and DJ use the "loaded console" captures (ShowcaseUiShots) — tracks + waveforms + a beatmatch — so
 # the site shows the app in use rather than empty decks; STUDIO/VJ/LIBRARIES use the plain tab captures.
-$map = [ordered]@{
-    '00-LIVE-loaded.png' = 'live.png'
-    '02-STUDIO.png'      = 'studio.png'
-    '04-LIBRARIES.png'   = 'libraries.png'
-}
+$map = [ordered]@{}
 
 # --- Optional re-capture --------------------------------------------------------
 if ($Capture) {

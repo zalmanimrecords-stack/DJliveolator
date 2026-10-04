@@ -31,7 +31,7 @@ export const manual: ManualSection[] = [
         items: [
           "Download the installer from the home page and run it.",
           "Follow the setup wizard; it installs Liveolator and the bundled audio engine.",
-          "Launch it. You land on the LIVE tab with two empty decks.",
+          "Launch it, then open the DJ PRO tab. That is where your two decks and the mixer live.",
         ],
       },
       {
@@ -46,20 +46,20 @@ export const manual: ManualSection[] = [
     blocks: [
       {
         kind: "p",
-        text: "Liveolator works with any class-compliant MIDI controller — a DJ controller, a pad grid, a mixer or a keyboard. Nothing is hardcoded to a specific device: you map controls yourself with MIDI-learn.",
+        text: "Liveolator works with practically any USB MIDI controller: a DJ controller, a pad grid, a mixer or a keyboard. There is no fixed list of supported gear. You teach Liveolator what each control does by moving it (this is called MIDI learn).",
       },
       {
         kind: "steps",
         items: [
           "Plug the controller in before launching (or reopen the app after connecting).",
           "Go to the MAPPINGS area and pick the control you want to bind.",
-          "Click Learn, then move the knob, fader or pad on your hardware — Liveolator captures it.",
+          "Click Learn, then move the knob, fader or pad on your hardware. Liveolator picks it up.",
           "Repeat for the controls you use. Your mapping is saved automatically.",
         ],
       },
       {
         kind: "p",
-        text: "Because mapping is learn-based, two people with completely different controllers can both drive the same actions. The Ableton Push 1 and Behringer CMD STUDIO 2A are known to work well.",
+        text: "Because you teach it, two people with completely different controllers can drive the same things. The Ableton Push 1 and Behringer CMD STUDIO 2A are known to work well.",
       },
     ],
   },
@@ -74,12 +74,11 @@ export const manual: ManualSection[] = [
       {
         kind: "list",
         items: [
-          "LIVE — your performance screen: both decks, the mixer and the visuals output together.",
-          "DJ PRO — the same two decks with more room for detailed deck work.",
-          "STUDIO — a timeline for laying out and rendering a set.",
-          "VJ — the visual assets and layers.",
-          "LIBRARIES — your music catalog.",
-          "SETTINGS — audio output, diagnostics and logs.",
+          "LIVE: the visuals screen. Pick a look and tweak it while you play.",
+          "DJ PRO: your two decks and the mixer, with FX, hot cues, loops, matching tracks and a track browser.",
+          "LIBRARIES: your music catalog and playlists.",
+          "STUDIO: a timeline for laying out and rendering a set.",
+          "SETTINGS: audio output, diagnostics and logs.",
         ],
       },
     ],
@@ -101,6 +100,8 @@ export const manual: ManualSection[] = [
           "Hot cues: set and jump to cue points; numbered pads make them quick to trigger.",
           "Loops: set a beat-length loop and toggle it on the fly.",
           "Mixer: per-channel HI/MID/LOW EQ, a filter, channel faders and the crossfader, plus headphone CUE.",
+          "AUTO crossfade: press AUTO and the crossfader glides to the other deck over the time you set with MIX SEC (0 to 20 seconds, 0 is an instant cut). Press AUTO again to stop it. It won't fade into a deck that isn't playing.",
+          "MATCHES: under deck A, a list of tracks that fit what's on deck A or B by key, BPM and genre. Switch each one on or off. The closest tempo comes first. Tap A or B to send a track to that deck. On a playing deck it waits in the queue, and PLAYING NEXT on the waveform shows what's lined up.",
         ],
       },
       {
@@ -117,9 +118,13 @@ export const manual: ManualSection[] = [
         kind: "steps",
         items: [
           "On LIBRARIES, add a music folder and press Scan to catalog your tracks.",
-          "Liveolator analyzes BPM and musical key, and can auto-assign hot cues.",
+          "Liveolator works out each track's BPM and key, and can set hot cues for you.",
           "Filter and sort by artist, genre, year, BPM or key to find the next track.",
         ],
+      },
+      {
+        kind: "p",
+        text: "Playing somewhere without Wi-Fi, or without your music drive? Open a playlist in the playlist builder and choose Copy to this computer. The tracks come across with their BPM, key and beat grids, so the set plays from your laptop alone.",
       },
       {
         kind: "p",
@@ -147,19 +152,19 @@ export const manual: ManualSection[] = [
     ],
   },
   {
-    id: "vj",
-    title: "VJ: visuals",
+    id: "visuals",
+    title: "Visuals",
     blocks: [
       {
         kind: "p",
-        text: "The visual engine composites your own images, video clips and live camera input in layers, with GPU effects — Resolume-style. You bring the footage; there's no MilkDrop-style generator.",
+        text: "The visuals play on the LIVE tab and follow the same beat as your decks, so they stay locked to the mix without any work from you.",
       },
       {
         kind: "steps",
         items: [
-          "On VJ, add a folder of images/videos and press Scan.",
-          "Build up layers and apply effects to each.",
-          "Everything reacts to the same beat clock the music runs on, so the visuals stay locked to the mix.",
+          "Open LIVE and choose a visual look.",
+          "Adjust its controls while you play. You can also map them to your controller.",
+          "Mix on DJ PRO and the visuals ride the beat.",
         ],
       },
     ],
