@@ -33,7 +33,7 @@ const defaults = {
   // Cache-buster for the screenshots specifically. Bump this when the images are
   // re-rendered WITHOUT a version bump, so Cloudflare's edge (which keys on the query)
   // serves the fresh files instead of the cached ones (see website/DEPLOY.md).
-  shotRev: "5",
+  shotRev: "6",
   // Email-gated download: the button posts the visitor's email here and the WP
   // backend (zalmanim.com) emails back a signed, 24h link to `downloadUrl`.
   // `productSlug` must match a product key in the newsletter plugin settings.
