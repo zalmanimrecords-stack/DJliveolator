@@ -73,12 +73,21 @@ if ($absent) {
     throw "Publish output is incomplete - missing: $($absent -join ', '). Refusing to package."
 }
 
+# Settings -> Diagnostics shows this string to users; 0.10.4 shipped with git's error text in it.
+$productVersion = (Get-Item (Join-Path $publishDir 'Liveolator.App.exe')).VersionInfo.ProductVersion
+if ($productVersion -cnotmatch "^$([regex]::Escape($version))(\+[0-9a-f]{7,40})?$") {
+    throw "Built exe reports version '$productVersion'; expected '$version' or '$version+<commit>'. Refusing to package."
+}
+Write-Host "Exe version: $productVersion"
+
 # --- 5. Compile the installer with Inno Setup ------------------------------------------
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if ($iscc) { $isccPath = $iscc.Source }
 else {
-    $isccPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-    if (-not (Test-Path $isccPath)) {
+    # winget may install Inno per-user (LOCALAPPDATA) instead of machine-wide.
+    $isccPath = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $isccPath) {
         throw 'Inno Setup 6 not found. Install it (winget install JRSoftware.InnoSetup) and retry.'
     }
 }
