@@ -72,8 +72,13 @@ public sealed class TrackAnalyzer
     /// is deliberately untouched — it still refines on the HPSS envelope, and the 12 Beatport-verified
     /// tempos of the measured set are unchanged. Existing tracks re-analyze on next scan; a hand-corrected
     /// track needs <see cref="Library.Music.MusicLibrary.ForceReanalyzeAsync"/>, which now refreshes the
-    /// grid while keeping the correction.</remarks>
-    public const int CurrentVersion = 12;
+    /// grid while keeping the correction.
+    /// v13: a vouched beat anchor moves back onto the kick's CLICK (<see cref="Bpm.KickClickAnchor"/>). The
+    /// low band follows the kick's body, which arrives a design-dependent time after the click: measured on two
+    /// built sets (psytrance and techno, 2026-10-31) the v12 grid sat 14-87 ms after the &gt;2 kHz click, so
+    /// joins flammed by the difference — 15-43 ms on most of them, heard as beats drifting through the blend.
+    /// The renderer and the tempos were exact on the same sets. Existing tracks re-analyze on next scan.</remarks>
+    public const int CurrentVersion = 13;
 
     /// <summary>Sample rate the analysis pipeline runs at; decoders resample to this.</summary>
     public const int AnalysisSampleRate = 44100;
