@@ -170,6 +170,13 @@ public sealed class BpmDetector
         // coherence is used as that gate; see KickPhaseGate for why both are uninformative here.
         PhaseAnchor anchor = MeasurePhase(mono, sampleRate, bpm);
 
+        // v13: the low band follows the kick's BODY, which arrives a design-dependent 14-50 ms after the click
+        // the ear aligns — so two records synced grid-to-grid flammed by the difference. Only a vouched anchor
+        // is refined: the gates have already put it on the kick, which is what makes a short one-sided search
+        // for the click safe.
+        if (anchor.Vouched)
+            anchor = anchor.ShiftedBy(KickClickAnchor.Offset(mono, sampleRate, bpm, anchor.PhaseSeconds));
+
         // Fallbacks, in order: the kick fit's resultant phase (continuous/sub-frame) while the kick structure
         // is strong, else the broadband estimator, which is then the only phase signal there is.
         double firstBeatSeconds = anchor.Vouched
@@ -223,6 +230,15 @@ public sealed class BpmDetector
         IReadOnlyList<double> Onsets)
     {
         public bool Vouched => KickPhaseGate.Passes(MarginRatio, WindowDisagreementSeconds);
+
+        // The onsets move with the phase: they are what SET PHASE snaps the grid onto, so they must sit on it.
+        public PhaseAnchor ShiftedBy(double seconds) => seconds == 0.0
+            ? this
+            : this with
+            {
+                PhaseSeconds = PhaseSeconds + seconds,
+                Onsets = Onsets.Select(t => t + seconds).Where(t => t >= 0.0).ToArray(),
+            };
 
         public static PhaseAnchor Unmeasurable { get; } = new(0.0, 0.0, null, Array.Empty<double>());
     }
