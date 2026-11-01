@@ -98,12 +98,16 @@ $remote = @"
 set -e
 mkdir -p '$DataDir'
 $seed
-sudo chown -R 10001:10001 '$DataDir' 2>/dev/null || chown -R 10001:10001 '$DataDir' 2>/dev/null || true
+# sudo -n, never plain sudo: this script arrives on bash's stdin, so a password prompt would read the
+# script's own next lines as the password and the deploy would die mid-way (exit 2).
+sudo -n chown -R 10001:10001 '$DataDir' 2>/dev/null || chown -R 10001:10001 '$DataDir' 2>/dev/null || true
 # Renders are written BY the container into a folder the owner browses. The label drive is owned by the
 # desktop uid, not the image's 10001, so without an own-able directory here every render fails on
 # permission. Never fall back to chmod 777: any local account could then replace a render.
 mkdir -p '$SetsDir'
-sudo chown 10001:10001 '$SetsDir' 2>/dev/null || chown 10001:10001 '$SetsDir' 2>/dev/null || { echo "cannot hand '$SetsDir' to uid 10001 (the container user) - renders would fail on permission" >&2; exit 1; }
+if [ "`$(stat -c %u '$SetsDir')" != 10001 ]; then
+  sudo -n chown 10001:10001 '$SetsDir' 2>/dev/null || chown 10001:10001 '$SetsDir' 2>/dev/null || { echo "cannot hand '$SetsDir' to uid 10001 (the container user) - renders would fail on permission. Run once on the host: sudo chown 10001:10001 '$SetsDir' && sudo chmod 755 '$SetsDir'" >&2; exit 1; }
+fi
 cd '$RemoteRoot'
 export LIVEOLATOR_MUSIC_DIR='$MusicDir'
 export LIVEOLATOR_DATA_DIR='$DataDir'
